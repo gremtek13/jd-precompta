@@ -371,17 +371,37 @@ export function compteDeProvisionPropose(genre: GenreDeProvision, comptes: Compt
 export const formulaireDeProvisionVide = (genre: GenreDeProvision, comptes: ComptesDInventaire): FormulaireDeProvision =>
   ({ genre, compte: compteDeProvisionPropose(genre, comptes), objet: '', reprise: '', citation: null })
 
+/** Le formulaire d'une provision ouverte, pour la REMPLACER : ce que la base porte, tel qu'une saisie le relit — ce qu'elle cite
+ *  compris, PROPOSÉ de nouveau (le cabinet le change ou le retire). */
+export function formulaireDeLaProvision(p: Provision): FormulaireDeProvision {
+  return {
+    genre: p.genre, compte: p.compte_provision, objet: p.objet,
+    reprise: p.reprise_centimes === null ? '' : texteDesCentimes(p.reprise_centimes),
+    citation: p.facture_id != null ? { genre: 'facture', id: p.facture_id } : p.piece_citee_id != null ? { genre: 'piece', id: p.piece_citee_id } : null,
+  }
+}
+
 export type VerdictDeLaProvision =
-  | { etat: 'permis'; provision: Record<string, unknown>; confirmation: string }
+  | {
+    etat: 'permis'
+    provision: Record<string, unknown>
+    /** La version que la saisie remplace ; nulle pour une provision neuve. */
+    versionLue: number | null
+    confirmation: string
+  }
   | { etat: 'refuse'; refus: string[] }
 
-/** Le verdict de l'ouverture d'une provision, sur l'exercice affiché (`ouverte_en`) : les refus de `enregistrer_provision`, dans
- *  l'ordre du module (le mode, l'exercice, le genre, le compte, l'objet), puis ceux que la base seule dit, dans son ordre : ce
- *  qu'elle cite (la facture ou la pièce, jugées sur ce qui est LU, `justificatifs` ; nul : pas lus), puis la part reprise. */
+/** Le verdict de l'ouverture d'une provision sur l'exercice affiché, ou du REMPLACEMENT d'une provision ouverte (`remplace`), qui
+ *  garde son exercice d'ouverture : les refus de `enregistrer_provision`, dans l'ordre du module (le mode, l'exercice, le genre, le
+ *  compte, l'objet), puis ceux que la base seule dit, dans son ordre : ce qu'elle cite (la facture ou la pièce, jugées sur ce qui
+ *  est LU, `justificatifs` ; nul : pas lus), la part reprise, puis, pour un remplacement, une évaluation qui la fige (étape 8 ; le
+ *  gel de son exercice est déjà celui du module, et la version lue part avec l'appel). */
 export function verdictDeLaProvision(
-  f: FormulaireDeProvision, ctx: ContexteDeLInventaire, d: Pick<DonneesDeLInventaire, 'comptes' | 'premierExercice'>,
-  justificatifs: JustificatifsDuDossier | null,
+  f: FormulaireDeProvision, ctxAffiche: ContexteDeLInventaire, d: Pick<DonneesDeLInventaire, 'comptes' | 'premierExercice' | 'operations'>,
+  justificatifs: JustificatifsDuDossier | null, remplace: Provision | null,
 ): VerdictDeLaProvision {
+  // Un remplacement ne déplace pas la provision vers l'exercice affiché : elle reste ouverte là où elle l'a été.
+  const ctx: ContexteDeLInventaire = remplace === null ? ctxAffiche : { ...ctxAffiche, exercice: remplace.ouverte_en }
   const compte = f.compte.trim()
   const objet = f.objet.trim()
   // Le plan des dotations et des reprises se juge à l'évaluation, jamais à l'ouverture : la base ne le lit qu'alors.
@@ -400,16 +420,18 @@ export function verdictDeLaProvision(
     if (Number.isNaN(reprise)) refus.push(MOTS_DES_REFUS.ciblePrecedente)
     else if (d.premierExercice === null || ctx.exercice !== d.premierExercice) refus.push(MOTS_DES_PROVISIONS_A_L_ECRAN.partRepriseHorsDuPremierExercice)
   }
+  if (remplace !== null && d.operations.some((o) => o.provision_id === remplace.id)) refus.push(MOTS_DES_PROVISIONS_A_L_ECRAN.dejaEvaluee)
   if (refus.length > 0) return { etat: 'refuse', refus }
   return {
     etat: 'permis',
+    versionLue: remplace?.version ?? null,
     provision: {
-      id: null, genre: f.genre, compte_provision: compte, objet, ouverte_en: ctx.exercice,
+      id: remplace?.id ?? null, genre: f.genre, compte_provision: compte, objet, ouverte_en: ctx.exercice,
       facture_id: f.citation?.genre === 'facture' ? f.citation.id : null, piece_citee_id: f.citation?.genre === 'piece' ? f.citation.id : null,
       reprise_centimes: reprise,
     },
     confirmation: [
-      'Ouvrir cette provision ?',
+      remplace === null ? 'Ouvrir cette provision ?' : `Remplacer la provision « ${remplace.objet} » ? Elle n’est pas encore évaluée : rien d’autre ne change avec elle.`,
       `${LIBELLES_DES_GENRES[f.genre]} « ${objet} », au compte ${compte}, ouverte sur l’exercice ${ctx.exercice}`
         + `${reprise === null ? '' : `, pour ${euros(reprise)} du solde repris`}.`,
       ligneDeLaCitation(f.citation, justificatifs),

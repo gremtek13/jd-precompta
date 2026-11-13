@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { composerRegularisation, MOTS_DES_REFUS, prorataApresLaCloture, type ComptesDInventaire, type EcritureDInventaire } from './inventaire'
 import {
   CHOIX_DU_CABINET, centimesDeLaSaisie, compteDeProvisionPropose, compteDeRegularisationPropose, confirmationDuRetrait, derniereValidee,
-  declarationEnVigueur, ecrituresAJour, euros, evaluationDeLExercice, formulaireDeLOperation, formulaireDeProvisionVide, formulaireVide,
+  declarationEnVigueur, ecrituresAJour, euros, evaluationDeLExercice, formulaireDeLaProvision, formulaireDeLOperation, formulaireDeProvisionVide, formulaireVide,
   MOTS_DES_PROVISIONS_A_L_ECRAN, natureAvecTvaDAttente, operationsDeLExercice, propositionDuProrata, provisionsDeLExercice,
   refusDeLaDeclarationALEcran, refusDuRetraitDeLaDeclarationALEcran, refusDuRetraitDeLaProvision, refusDuRetraitDeLOperation,
   regularisationsDeLExercice, texteDesCentimes, verdictDeLEvaluation, verdictDeLaProvision, verdictDeLaRegularisation,
@@ -227,7 +227,7 @@ describe('l’ouverture d’une provision', () => {
   const saisie = (p = {}) => ({ ...formulaireDeProvisionVide('risque', COMPTES), objet: 'Litige avec un fournisseur', ...p })
 
   it('permet une provision pour risques sur l’exercice affiché, sans facture ni pièce, et nomme ce qui part', () => {
-    const v = verdictDeLaProvision(saisie(), ctx(), donnees(), null)
+    const v = verdictDeLaProvision(saisie(), ctx(), donnees(), null, null)
     if (v.etat !== 'permis') throw new Error(v.refus.join(' / '))
     expect(v.provision).toEqual({
       id: null, genre: 'risque', compte_provision: '151110', objet: 'Litige avec un fournisseur', ouverte_en: 2025, facture_id: null,
@@ -238,24 +238,24 @@ describe('l’ouverture d’une provision', () => {
   })
 
   it('ne juge pas le plan des dotations et des reprises à l’ouverture : la base ne le lit qu’à l’évaluation', () => {
-    expect(verdictDeLaProvision(saisie(), ctx(), donnees({ comptes: { provisions_risques: '151110' } }), null).etat).toBe('permis')
+    expect(verdictDeLaProvision(saisie(), ctx(), donnees({ comptes: { provisions_risques: '151110' } }), null, null).etat).toBe('permis')
   })
 
   it('refuse un compte hors de sa racine, un objet vide, un dossier en trésorerie, aux mots de la base', () => {
-    expect(verdictDeLaProvision(saisie({ compte: '491100' }), ctx(), donnees(), null)).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.compteDeProvision.risque] })
-    expect(verdictDeLaProvision(saisie({ genre: 'depreciation_creance', compte: '151110' }), ctx(), donnees(), null))
+    expect(verdictDeLaProvision(saisie({ compte: '491100' }), ctx(), donnees(), null, null)).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.compteDeProvision.risque] })
+    expect(verdictDeLaProvision(saisie({ genre: 'depreciation_creance', compte: '151110' }), ctx(), donnees(), null, null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.compteDeProvision.depreciation_creance] })
-    expect(verdictDeLaProvision(saisie({ objet: ' ' }), ctx(), donnees(), null)).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.objet] })
-    expect(verdictDeLaProvision(saisie(), ctx({ mode: 'tresorerie' }), donnees(), null)).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.tresorerie] })
+    expect(verdictDeLaProvision(saisie({ objet: ' ' }), ctx(), donnees(), null, null)).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.objet] })
+    expect(verdictDeLaProvision(saisie(), ctx({ mode: 'tresorerie' }), donnees(), null, null)).toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.tresorerie] })
   })
 
   it('une part reprise s’ouvre au premier exercice du dossier seulement ; illisible, elle se refuse', () => {
-    const premier = verdictDeLaProvision(saisie({ reprise: '3 000,00' }), ctx({ exercice: 2024 }), donnees({ premierExercice: 2024 }), null)
+    const premier = verdictDeLaProvision(saisie({ reprise: '3 000,00' }), ctx({ exercice: 2024 }), donnees({ premierExercice: 2024 }), null, null)
     expect(premier.etat).toBe('permis')
     if (premier.etat === 'permis') expect(premier.provision).toMatchObject({ reprise_centimes: 300_000, ouverte_en: 2024 })
-    expect(verdictDeLaProvision(saisie({ reprise: '3 000,00' }), ctx(), donnees({ premierExercice: 2024 }), null))
+    expect(verdictDeLaProvision(saisie({ reprise: '3 000,00' }), ctx(), donnees({ premierExercice: 2024 }), null, null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_PROVISIONS_A_L_ECRAN.partRepriseHorsDuPremierExercice] })
-    expect(verdictDeLaProvision(saisie({ reprise: '3x' }), ctx({ exercice: 2024 }), donnees({ premierExercice: 2024 }), null))
+    expect(verdictDeLaProvision(saisie({ reprise: '3x' }), ctx({ exercice: 2024 }), donnees({ premierExercice: 2024 }), null, null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.ciblePrecedente] })
   })
 
@@ -469,24 +469,24 @@ describe('la pièce citée, choisie dans l’onglet', () => {
   it('une provision cite une pièce ou la facture d’une créance : l’une ou l’autre colonne, jamais les deux', () => {
     const base = { ...formulaireDeProvisionVide('depreciation_creance', COMPTES), objet: 'Créance douteuse' }
     expect(base.citation).toBeNull()
-    const parFacture = verdictDeLaProvision({ ...base, citation: { genre: 'facture', id: 'f1' } }, ctx(), donnees(), J)
+    const parFacture = verdictDeLaProvision({ ...base, citation: { genre: 'facture', id: 'f1' } }, ctx(), donnees(), J, null)
     if (parFacture.etat !== 'permis') throw new Error(parFacture.refus.join(' / '))
     expect(parFacture.provision).toMatchObject({ facture_id: 'f1', piece_citee_id: null })
     expect(parFacture.confirmation).toContain('Facture citée : Facture F2025-007')
-    const parPiece = verdictDeLaProvision({ ...base, citation: { genre: 'piece', id: 'v1' } }, ctx(), donnees(), J)
+    const parPiece = verdictDeLaProvision({ ...base, citation: { genre: 'piece', id: 'v1' } }, ctx(), donnees(), J, null)
     if (parPiece.etat !== 'permis') throw new Error(parPiece.refus.join(' / '))
     expect(parPiece.provision).toMatchObject({ facture_id: null, piece_citee_id: 'v1' })
   })
 
   it('le refus de ce qu’elle cite vient après l’objet et avant la part reprise, dans l’ordre de la base', () => {
     const v = verdictDeLaProvision(
-      { ...formulaireDeProvisionVide('risque', COMPTES), objet: ' ', reprise: '10,00', citation: { genre: 'facture', id: 'f1' } }, ctx(), donnees(), J,
+      { ...formulaireDeProvisionVide('risque', COMPTES), objet: ' ', reprise: '10,00', citation: { genre: 'facture', id: 'f1' } }, ctx(), donnees(), J, null,
     )
     expect(v).toEqual({
       etat: 'refuse',
       refus: [MOTS_DES_REFUS.objet, MOTS_DES_JUSTIFICATIFS.factureHorsDeLaDepreciation, MOTS_DES_PROVISIONS_A_L_ECRAN.partRepriseHorsDuPremierExercice],
     })
-    expect(verdictDeLaProvision({ ...formulaireDeProvisionVide('depreciation_creance', COMPTES), objet: 'x', citation: { genre: 'piece', id: 'p1' } }, ctx(), donnees(), J))
+    expect(verdictDeLaProvision({ ...formulaireDeProvisionVide('depreciation_creance', COMPTES), objet: 'x', citation: { genre: 'piece', id: 'p1' } }, ctx(), donnees(), J, null))
       .toEqual({ etat: 'refuse', refus: [MOTS_DES_JUSTIFICATIFS.pieceHorsDesVentes] })
   })
 })
@@ -514,5 +514,40 @@ describe('les mots des provisions, ceux de la migration', () => {
 
   it('chaque refus que l’écran redit se trouve dans la migration, au même mot', () => {
     for (const [cle, mot] of Object.entries(MOTS_DES_PROVISIONS_A_L_ECRAN)) expect(MIGRATION, cle).toContain(mot)
+  })
+})
+
+// REMPLACER UNE PROVISION OUVERTE (INV5-Q1, suite) : `enregistrer_provision` avec son identifiant et la version lue, tant qu'elle
+// n'est ni figée ni évaluée ; elle garde son exercice d'ouverture, quel que soit l'exercice affiché.
+describe('remplacer une provision ouverte', () => {
+  const ouverte = provision({ id: 'p1', version: 3, ouverte_en: 2025, piece_citee_id: 'v1' })
+
+  it('le formulaire relit ce que la base porte, ce qu’elle cite compris', () => {
+    expect(formulaireDeLaProvision(ouverte)).toEqual({
+      genre: 'risque', compte: '151110', objet: 'Litige avec un fournisseur', reprise: '', citation: { genre: 'piece', id: 'v1' },
+    })
+    expect(formulaireDeLaProvision(provision({ id: 'p2', genre: 'depreciation_creance', compte_provision: '491100', facture_id: 'f1', reprise_centimes: 30_050 })))
+      .toMatchObject({ reprise: '300,50', citation: { genre: 'facture', id: 'f1' } })
+  })
+
+  it('part avec son identifiant, la version lue et son exercice d’ouverture, même affichée sur un exercice plus récent', () => {
+    const v = verdictDeLaProvision({ ...formulaireDeLaProvision(ouverte), citation: { genre: 'piece', id: 'p9' } }, ctx({ exercice: 2026 }), donnees(), null, ouverte)
+    if (v.etat !== 'permis') throw new Error(v.refus.join(' / '))
+    expect(v.versionLue).toBe(3)
+    expect(v.provision).toMatchObject({ id: 'p1', ouverte_en: 2025, piece_citee_id: 'p9', facture_id: null })
+    expect(v.confirmation).toContain('Remplacer la provision « Litige avec un fournisseur » ?')
+    expect(v.confirmation).toContain('ouverte sur l’exercice 2025')
+    const neuve = verdictDeLaProvision(formulaireDeLaProvision(ouverte), ctx(), donnees(), null, null)
+    if (neuve.etat !== 'permis') throw new Error('refusé')
+    expect(neuve.versionLue).toBeNull()
+    expect(neuve.provision.id).toBeNull()
+  })
+
+  it('une provision évaluée, ou ouverte sur un exercice validé, ne se remplace pas : les mots de la base', () => {
+    const evaluee = donnees({ operations: [operation({ id: 'e1', nature: 'provision', provision_id: 'p1' })] })
+    expect(verdictDeLaProvision(formulaireDeLaProvision(ouverte), ctx(), evaluee, null, ouverte))
+      .toEqual({ etat: 'refuse', refus: [MOTS_DES_PROVISIONS_A_L_ECRAN.dejaEvaluee] })
+    expect(verdictDeLaProvision(formulaireDeLaProvision(ouverte), ctx({ exercice: 2026, anneesValidees: [2025] }), donnees(), null, ouverte))
+      .toEqual({ etat: 'refuse', refus: [MOTS_DES_REFUS.exerciceFige] })
   })
 })

@@ -11,7 +11,7 @@ import { lireLInventaireDuDossier, type LectureDeLInventaireDeLEcran } from '../
 import {
   compteDeProvisionPropose, compteDeRegularisationPropose, confirmationDeLaDeclaration, confirmationDuRetrait,
   confirmationDuRetraitDeLaDeclaration, confirmationDuRetraitDeLaProvision, declarationEnVigueur, ecrituresAJour, euros,
-  evaluationDeLExercice, formulaireDeLOperation, formulaireDeProvisionVide, formulaireVide, LIBELLES_DES_GENRES, LIBELLES_DES_NATURES,
+  evaluationDeLExercice, formulaireDeLaProvision, formulaireDeLOperation, formulaireDeProvisionVide, formulaireVide, LIBELLES_DES_GENRES, LIBELLES_DES_NATURES,
   natureAvecTvaDAttente, NATURES_SAISIES, propositionDuProrata, provisionsDeLExercice, refusDeLaDeclarationALEcran,
   refusDuRetraitDeLaDeclarationALEcran, refusDuRetraitDeLaProvision, refusDuRetraitDeLOperation, regularisationsDeLExercice,
   texteDesCentimes, verdictDeLEvaluation, verdictDeLaProvision, verdictDeLaRegularisation, type ContexteDeLInventaire,
@@ -92,6 +92,8 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   const [remplace, setRemplace] = useState<OperationInventaire | null>(null)
   const [saisieProvision, setSaisieProvision] = useState<FormulaireDeProvision>(() => formulaireDeProvisionVide('risque', {}))
   const [compteProv, setCompteProv] = useState<string | null>(null)
+  // La provision ouverte que le formulaire remplace (tant qu'elle n'est pas évaluée), ou nulle : il en ouvre une neuve.
+  const [remplaceProvision, setRemplaceProvision] = useState<Provision | null>(null)
   // La cible saisie pour chaque provision, au 31 décembre de l'exercice affiché.
   const [cibles, setCibles] = useState<Record<string, string>>({})
   const [message, setMessage] = useState<Message | null>(null)
@@ -166,8 +168,8 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
     return error ? messageErreur(error, 'raison inconnue') : null
   }
 
-  async function appelerEnregistrerLaProvision(laProvision: Record<string, unknown>) {
-    const { error } = await supabase.rpc('enregistrer_provision', { p_dossier_id: dossierId, p_provision: laProvision, p_version_lue: null })
+  async function appelerEnregistrerLaProvision(laProvision: Record<string, unknown>, versionLue: number | null) {
+    const { error } = await supabase.rpc('enregistrer_provision', { p_dossier_id: dossierId, p_provision: laProvision, p_version_lue: versionLue })
     return error ? messageErreur(error, 'raison inconnue') : null
   }
 
@@ -222,7 +224,7 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   // Les verdicts, calculés sur la saisie TELLE QU'ELLE PART : un refus se dit avant le clic.
   const verdict = donnees !== null && ctx !== null ? verdictDeLaRegularisation(formulaire, ctx, donnees, remplace, justificatifs) : null
   const verdictDeLaProvisionSaisie = donnees !== null && ctx !== null && provision.objet.trim() !== ''
-    ? verdictDeLaProvision(provision, ctx, donnees, justificatifs) : null
+    ? verdictDeLaProvision(provision, ctx, donnees, justificatifs, remplaceProvision) : null
 
   async function enregistrer() {
     if (ecritureEnCours.current || verdict === null || verdict.etat !== 'permis') return
@@ -251,19 +253,37 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   async function ouvrirLaProvision() {
     if (ecritureEnCours.current || verdictDeLaProvisionSaisie === null || verdictDeLaProvisionSaisie.etat !== 'permis') return
     if (!window.confirm(verdictDeLaProvisionSaisie.confirmation)) return
-    const { provision: laProvision } = verdictDeLaProvisionSaisie
+    const { provision: laProvision, versionLue } = verdictDeLaProvisionSaisie
     await agir(
-      () => appelerEnregistrerLaProvision(laProvision),
-      `Provision ouverte : ${provision.objet.trim()}.`,
-      'La provision n’a pas été ouverte',
-      () => { setSaisieProvision((p) => formulaireDeProvisionVide(p.genre, {})); setCompteProv(null) },
+      () => appelerEnregistrerLaProvision(laProvision, versionLue),
+      `${remplaceProvision === null ? 'Provision ouverte' : 'Provision remplacée'} : ${provision.objet.trim()}.`,
+      remplaceProvision === null ? 'La provision n’a pas été ouverte' : 'La provision n’a pas été remplacée',
+      () => remettreLaProvision(),
     )
+  }
+
+  function remettreLaProvision() {
+    setSaisieProvision((p) => formulaireDeProvisionVide(p.genre, {}))
+    setCompteProv(null)
+    setRemplaceProvision(null)
+  }
+
+  function preparerLeRemplacementDeLaProvision(p: Provision) {
+    if (ecritureEnCours.current) return
+    setRemplaceProvision(p)
+    setMessage(null)
+    const f = formulaireDeLaProvision(p)
+    setSaisieProvision(f)
+    setCompteProv(f.compte)
   }
 
   async function retirerLaProvision(p: Provision) {
     if (ecritureEnCours.current) return
     if (!window.confirm(confirmationDuRetraitDeLaProvision(p))) return
-    await agir(() => appelerRetirerLaProvision(p.id, p.version), `Provision retirée : ${p.objet}.`, 'La provision n’a pas été retirée')
+    await agir(
+      () => appelerRetirerLaProvision(p.id, p.version), `Provision retirée : ${p.objet}.`, 'La provision n’a pas été retirée',
+      () => { if (remplaceProvision?.id === p.id) remettreLaProvision() },
+    )
   }
 
   async function evaluer(p: Provision) {
@@ -355,7 +375,8 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
   const refusRetirerLaDeclaration = declaration === null ? null : refusDuRetraitDeLaDeclarationALEcran(declaration, ctx)
   const prorata = formulaire.nature === 'cca' || formulaire.nature === 'pca' ? propositionDuProrata(formulaire, ctx) : null
   const avecTva = natureAvecTvaDAttente(formulaire.nature, assujettiTva)
-  const premierExercice = donnees.premierExercice === exercice
+  // La part reprise se juge sur l'exercice d'ouverture de la provision : celui qu'un remplacement garde.
+  const premierExerciceDeLaProvision = donnees.premierExercice === (remplaceProvision?.ouverte_en ?? exercice)
   // Ce qui se propose à chaque formulaire, selon ce que la base acceptera ; vide tant que les pièces ne sont pas lues.
   const optionsDeLaRegularisation = justificatifs === null ? [] : optionsDeCitation({ pieces: piecesCitablesParUneRegularisation(justificatifs), factures: [] })
   const optionsDeLaProvision = justificatifs === null ? [] : optionsDeCitation(citablesParUneProvision(provision.genre, justificatifs))
@@ -556,7 +577,7 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
         className="card" style={{ marginBottom: 20 }} aria-label="Ouverture d’une provision"
         onSubmit={(e) => { e.preventDefault(); void ouvrirLaProvision() }}
       >
-        <strong>Ouvrir une provision</strong>
+        <strong>{remplaceProvision === null ? 'Ouvrir une provision' : `Remplacer la provision « ${remplaceProvision.objet} » (ouverte en ${remplaceProvision.ouverte_en})`}</strong>
         <p className="muted" style={{ margin: '6px 0 0' }}>
           Une provision pour risques (litige) ou la dépréciation d’une créance, suivie d’un exercice à l’autre : elle s’évalue chaque
           31 décembre, la dotation ou la reprise se calcule par différence avec l’exercice précédent.
@@ -579,7 +600,7 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
             <label htmlFor="prov-objet">Objet (il part au FEC)</label>
             <input id="prov-objet" type="text" autoComplete="off" maxLength={200} placeholder="ex. Litige avec un fournisseur" value={provision.objet} onChange={(e) => setSaisieProvision((p) => ({ ...p, objet: e.target.value }))} />
           </div>
-          {premierExercice && (
+          {premierExerciceDeLaProvision && (
             <div className="field">
               <label htmlFor="prov-reprise">Part du solde repris de son compte</label>
               <input id="prov-reprise" type="text" inputMode="decimal" autoComplete="off" placeholder="vide : née ici" value={provision.reprise} onChange={(e) => setSaisieProvision((p) => ({ ...p, reprise: e.target.value }))} />
@@ -602,8 +623,13 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
             type="submit" className="btn btn-primary btn-sm"
             disabled={enCours || verdictDeLaProvisionSaisie === null || verdictDeLaProvisionSaisie.etat !== 'permis'}
           >
-            Ouvrir la provision
+            {remplaceProvision === null ? 'Ouvrir la provision' : 'Remplacer la provision'}
           </button>
+          {remplaceProvision !== null && (
+            <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => remettreLaProvision()}>
+              Annuler le remplacement de la provision
+            </button>
+          )}
         </div>
       </form>
 
@@ -668,6 +694,10 @@ function InventaireDuDossier({ dossierId, dossierNom, modele, assujettiTva }: {
                             Retirer l’évaluation
                           </button>
                         )}
+                        {/* Remplacer et retirer ont les mêmes refus : le mode, le gel de son exercice, une évaluation qui la fige. */}
+                        <button type="button" className="btn btn-outline btn-sm" disabled={enCours || refusRetirerLaProvision !== null} title={refusRetirerLaProvision ?? undefined} onClick={() => preparerLeRemplacementDeLaProvision(p)}>
+                          Remplacer
+                        </button>
                         <button type="button" className="btn btn-outline btn-sm" disabled={enCours || refusRetirerLaProvision !== null} title={refusRetirerLaProvision ?? undefined} onClick={() => void retirerLaProvision(p)}>
                           Retirer la provision
                         </button>
