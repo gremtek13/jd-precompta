@@ -12,7 +12,7 @@
 -- Mutations qui doivent virer au rouge (jouées sur la réplique, le 12/11/2026) : retirer le refus (a), (b), (c) ou (d) ;
 -- comparer le compte sans `rtrim` ; garder la porte du super-administrateur à la mise à jour aussi.
 --
--- LA CLASSE DU COMPTE (PC7-Q2 ; la migration PRÉPARÉE supabase/preparees/20261112234000_classes_des_categories.sql) : le
+-- LA CLASSE DU COMPTE (PC7-Q2 ; la migration supabase/schema/20261113182305_classes_des_categories.sql, en production depuis le 13/11/2026) : le
 -- refus (e) — une catégorie du dossier dont le compte, non nul, n'est pas de la classe 6 ou 7 suivie de deux chiffres, à
 -- l'insertion ou quand il change, pour tout auteur, la restauration comprise — se joue aux étapes 40 à 49, quand la
 -- dernière des deux lignes d'historique `classes_des_categories` et `retour_classes_des_categories` est la première ; sinon

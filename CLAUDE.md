@@ -782,7 +782,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   existant) → « PC5 : LE MODÈLE DE PLAN DU CABINET (PRÉPARÉ, PAS APPLIQUÉ) », « PC5B : APPLIQUER LE
   MODÈLE DU CABINET À UN DOSSIER, À L'ÉCRAN (LIGNE 43) » ; PC7 en production depuis le 12/11/2026 (`categories_du_dossier`, la garde de la table ; l'écran sous
   `CATEGORIES_DU_DOSSIER_PREVUES` levé, le troisième temps de la balance attendant aussi PC6) → « PC7 : LES CATÉGORIES DU DOSSIER, DONT CELLES DE SA
-  BALANCE » ; puis PC8 et PC9, sur décision → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
+  BALANCE » ; le compte d'une catégorie du dossier hors des classes 6 et 7 refusé en base depuis le 13/11/2026
+  (`classes_des_categories`, PC7-Q2, `CLASSES_DES_CATEGORIES_PREVUES` levé ; celui d'une commune, PC7Q2-Q1, préparé)
+  → « PC7-Q2 EN PRODUCTION » ; puis PC8 et PC9, sur décision → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
   PLAN ».
 
 ## Feuille de route — page Notion à tenir à jour

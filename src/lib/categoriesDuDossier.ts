@@ -159,7 +159,8 @@ export function codeDUneCategorieDuDossier(compte: string, codesPris: ReadonlySe
 }
 
 // ── LA CLASSE DU COMPTE, EN BASE (PC7-Q2 ; la réponse du cabinet du 12/11/2026 : « Oui, en lot à part ») ────────────────
-// La migration PRÉPARÉE `classes_des_categories` (supabase/preparees/20261112234000_classes_des_categories.sql ; son essai,
+// La migration `classes_des_categories` (en production depuis le 13/11/2026, par l'outil, sur l'accord du cabinet —
+// PC7Q2-migration ; supabase/schema/20261113182305_classes_des_categories.sql ; son essai,
 // supabase/essais/categoriesDuDossier.sql, étapes 40 à 49 ; HISTORIQUE.md, « 12/11/2026 — PC7-Q2 : LA CLASSE DU COMPTE D'UNE
 // CATÉGORIE DU DOSSIER, EN BASE ») ajoute à la garde de `categories` le refus (e) : une catégorie DU DOSSIER dont le compte,
 // non nul, n'est pas de la classe 6 ou 7 suivie de deux chiffres — le prédicat des fonctions du relevé —, à l'insertion ou
@@ -168,10 +169,10 @@ export function codeDUneCategorieDuDossier(compte: string, codesPris: ReadonlySe
 // plan comptable général (règlement ANC n° 2014-03), art. 1121-1 et sa liste (classe 6, charges ; classe 7, produits), art.
 // 1131-1.
 
-/** Baissé jusqu'à l'application de `classes_des_categories` : la carte « Comptes manquants » (onglet Écritures) ne refuse
- *  pas encore avant le clic le compte d'une catégorie du dossier hors des classes 6 et 7, que la base accepterait. Il se
- *  lève la migration en base (son essai), puis le déploiement ; il se baisse AVANT tout retour de la migration. */
-export const CLASSES_DES_CATEGORIES_PREVUES = false
+/** Levé le 13/11/2026, la migration `classes_des_categories` en base : la carte « Comptes manquants » (onglet Écritures)
+ *  refuse avant le clic le compte d'une catégorie du dossier hors des classes 6 et 7, que la base refuse aussi. Il se
+ *  baisse AVANT tout retour de la migration. */
+export const CLASSES_DES_CATEGORIES_PREVUES = true
 
 /** Le prédicat de la base (`compte_comptable !~ '^[67][0-9]{2}'`, refusé) : un compte de charge ou de produit. */
 export function estUnCompteDeChargeOuDeProduit(compte: string): boolean {
