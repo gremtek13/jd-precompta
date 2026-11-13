@@ -493,6 +493,13 @@ en trésorerie).
 - **Les lecteurs du brouillon par compte** (concordance, « à régénérer », bilan, balance, révision, assistant) doivent
   savoir qu'une ligne d'affectation n'est pas un écart : `grep "ecritures_brouillon"` dans `src` et `supabase/functions`
   avant AFF3.
+- **Les fonctions qui vident le brouillon d'un exercice** (AFF2-Q3 (A), tranchée par le cabinet le 13/11/2026) : la garde
+  d'AFF2 refuse toute écriture directe sur une ligne d'affectation, y compris d'une fonction qui viderait le brouillon
+  d'un exercice ; elle ne s'ouvre PAS à la validation (l'option (B), écartée). AFF3 recense donc, dans la base
+  (`pg_proc.prosrc`) et dans l'application (`grep "ecritures_brouillon"`), chaque fonction qui retire ou réécrit des
+  lignes du brouillon d'un exercice entier, et la fait ÉCARTER les lignes qui citent `affectation_id` — comme les
+  fonctions du relevé ne touchent que les lignes propres au mouvement (`lignesPropresAuMouvement.test.ts`), un garde du
+  même patron les tenant ; une fonction oubliée lèverait le refus de la garde, du côté fermé.
 - **La sauvegarde** : deux tables et une colonne ; une sauvegarde lue avant la migration échouerait sans le drapeau.
 - **Le document pris pour un acte** : un projet de procès-verbal n'est pas une assemblée tenue. Le pied du document et la
   preuve proposée à la révision le disent ; le cabinet garde la validation juridique.

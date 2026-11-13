@@ -69,7 +69,8 @@ recompose l'écriture en entiers et la compare à celle de l'application, une so
 - **Le code le sait et le dit** : `lib/bilan.ts` porte `COMPTE_D_INVENTAIRE` et le point `inventaire-non-revu`
   (« … et cette écriture ne se passe pas encore dans l'application »).
 - **La balance reprise peut en porter** (à-nouveaux d'un dossier repris en engagement) : un 486 ou un 151 repris reste tel
-  quel d'année en année, faux dès la première clôture.
+  quel d'année en année, faux dès la première clôture. Le 151 et le 491 se ventilent en provisions (INV-Q11) ; le 486, le
+  487, le 408 et le 418 reçoivent une régularisation reprise (INV3-Q2 (A), § 11).
 
 ### 1.3 Un défaut relevé en concevant (à corriger dans INV6, ou à part)
 
@@ -201,6 +202,8 @@ une CCA, la facture de janvier pour une FNP) par une colonne de `operations_inve
 - `empreinte_exercice` couvre déjà toutes les lignes validées de l'exercice : rien à changer pour elles ; la forme 2 de
   l'empreinte (INAL2) scelle aussi les sources citées — l'opération d'inventaire y entre comme une source (INV3), une
   forme 3 si la forme 2 ne peut s'étendre sans changer l'empreinte des exercices déjà validés (aucun en production).
+  Tranché le 13/11/2026 (INV3-Q1 (A)) : la forme 2 s'étend, sans forme nouvelle et sans changer le texte d'un exercice
+  qui ne porte aucune régularisation (§ 11).
 - `soldes_a_reporter` ne change pas : 486, 487, 408, 418, 15, 491 sont des comptes de bilan (classes 1 à 5), leurs soldes
   passent en à-nouveaux de N+1 comme les autres ; l'extourne les solde ensuite au 1er janvier.
 
@@ -238,6 +241,7 @@ ne supprime ni ne change un type. Une seule REMPLACE une fonction existante : `v
 | `periode_debut`, `periode_fin` | date | facultatives ; le prorata proposé (INV-Q6), gardé pour l'état d'inventaire |
 | `objet` | text not null | 1 à 200 caractères, sans saut de ligne |
 | `piece_citee_id` | uuid | `references pieces` sans action ; une pièce du même dossier (contrôle) |
+| `reprise` | boolean not null default false | INV3-Q2 (A) : une régularisation reprise d'une balance au 1er janvier — de l'exercice que la balance clôt, une CCA, un PCA, une FNP ou une FAE ; seule son extourne s'écrit (§ 11) |
 | `provision_id` | uuid | `references provisions` ; non nul si et seulement si `nature = 'provision'` |
 | `version` | integer not null default 1 | incrémentée à chaque remplacement ; la saisie retient la version lue |
 | `cree_par`, `cree_le`, `modifie_par`, `modifie_le` | | posées par la fonction, jamais par l'appelant |
@@ -597,3 +601,44 @@ relevé des provisions 2033-D et la réintégration fiscale (ligne 37).
 - **Options** : (A) proposée, rien d'écrit sans un clic par ligne ; (B) rien proposé.
 - **Recommandation : (A)** : les régularisations reviennent d'une année sur l'autre (loyers, assurances, abonnements) ; la
   règle « rien n'est validé ni importé automatiquement » tient, puisque chaque ligne attend son clic.
+
+## 11. Les réponses du 13/11/2026 : INV3-Q1 et INV3-Q2, dans les migrations préparées
+
+### INV3-Q1 (A) — L'empreinte d'un exercice validé scelle aussi son inventaire
+
+- La forme 2 de l'empreinte (INAL2) s'étend, sans forme nouvelle : `empreinte_exercice_forme_2` (INV3) joint aux pièces
+  de l'exercice celles que ses régularisations citent, directement ou par leur provision (`pieces_scellees_par_l_inventaire`),
+  et ajoute un SIXIÈME bloc, ses régularisations (`regularisations_scellees` : une par ligne, un tableau jsonb canonique —
+  identifiant, exercice, nature, reprise, comptes, montant et TVA en centimes, période, objet, pièce citée ; pour une
+  évaluation, sa provision). Chaque régularisation est scellée une fois : par l'exercice qui la constate, une évaluation
+  de provision comprise, même sans écart ; une régularisation reprise, par l'exercice de son extourne.
+- **Rien ne change pour l'existant** : le bloc n'existe que quand l'exercice scelle une régularisation, et l'ensemble des
+  pièces est inchangé sans elles. Un exercice sans régularisation — tout BNC en trésorerie, et l'exercice 2025 que la
+  répétition générale validera avant que l'inventaire n'entre en production — garde son texte d'hier, octet pour octet.
+  La garde de fin d'INV3 le rejoue sur toute la base : les exercices qui se vérifient avant elle se vérifient après, tous,
+  et aucun autre, sinon rien ne s'applique.
+- Ce qui est scellé ne change plus : la régularisation et la provision le sont déjà par leurs gardes ; le FICHIER d'une
+  pièce que l'inventaire d'un exercice validé scelle (son chemin, son empreinte de dépôt, sa version lisible, son dossier)
+  ne change plus, et elle ne se supprime plus (`garder_fichier_scelle_par_l_inventaire`) ; le stockage ne le retire plus
+  (`fichier_fige`, comme INAL1 pour une pièce qu'une écriture validée cite). Le reste de la pièce se traite comme toute
+  pièce : la facture de janvier qu'une facture non parvenue cite se valide et s'écrit dans l'exercice suivant.
+- Hors de l'empreinte : la déclaration de l'inventaire (figée par sa garde). Le paquet d'archive (INAL3,
+  `piecesCiteesParLExercice`) devra compter les pièces de l'inventaire avant la levée d'`INVENTAIRE_PREVU`.
+
+### INV3-Q2 (A) — La régularisation reprise d'une balance
+
+- Une balance reprise au 1er janvier qui porte d'anciennes CCA, PCA, FNP ou FAE (486, 487, 408, 418) reçoit une
+  régularisation REPRISE par régularisation de l'ancien logiciel (`operations_inventaire.reprise`, INV2) : de l'exercice
+  que la balance clôt (l'année qui précède l'ouverture), sa constatation dans la balance, seule son EXTOURNE au 1er janvier
+  s'écrit, recomposée et comparée comme toute régularisation (`composerRegularisationReprise`, src/lib/inventaire.ts). Son
+  compte de régularisation se prend dans la balance, sous la racine de sa nature — jamais le 4084, que l'inventaire ne
+  range pas (INV1-Q1) ; la TVA d'attente d'une FNP ou d'une FAE au compte du rôle. Pièce : « Inventaire AAAA » de
+  l'exercice que la balance clôt, comme toute régularisation de cet exercice.
+- La validation du premier exercice (INV3, point f) exige chaque reprise à jour, à sa place (la balance ouvre toujours
+  l'exercice au 1er janvier), puis la CONFRONTE au solde repris : au 1er janvier, les extournes des régularisations
+  reprises soldent exactement chaque compte de régularisation de la balance et chaque compte qu'elles touchent, sous le
+  486, le 487, le 408 (hors du 4084), le 418, le 44586 et le 44587. Un compte repris qu'aucune régularisation reprise
+  n'extourne retient donc la validation, sous les mots de la base (`reprise-non-extournee`) : la balance qui porte une
+  CCA de l'ancien logiciel ne s'ouvre qu'avec son extourne.
+- Hors de la reprise, posée au cabinet (INV3Q2-Q1) : les charges à payer et produits à recevoir d'une balance (4282, 4286,
+  4382, 4386, 44812, 1688, 518, 4482, 439), que l'inventaire range aussi.
