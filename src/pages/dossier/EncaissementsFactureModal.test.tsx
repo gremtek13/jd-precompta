@@ -9,6 +9,7 @@ import { RATTACHEMENT_APRES_LA_FRONTIERE } from '../../lib/encaissementsFactures
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { CAISSE_JUGEE_PAR_LA_BASE } from '../../lib/caisseDesEncaissements'
 import { DRAPEAU_DES_REPRISES_AU_CLIENT } from '../../lib/reprisesAuClient'
+import { DRAPEAU_DE_LA_PIECE_RECUE } from '../../lib/recuParLaPieceCitee'
 
 import type {
   EncaissementFacture, EncaissementFactureTaux, FactureEmise, FactureSuperpdpEvent, LigneBancaire, Piece, ReglementGroupe,
@@ -292,6 +293,7 @@ beforeEach(() => {
   faux.reprise = null
   faux.refusReprise = null
   DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = false
+  DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = false
   drapeauCaisse.leve = true
   onUpdated.mockReset()
 
@@ -2364,5 +2366,47 @@ describe('EncaissementsFactureModal — une facture reprise de l’ancien logici
     monter()
     await bouton()
     expect(faux.rpcs).toEqual([])
+  })
+
+  // A8Q5Q3-Q2 (lib/recuParLaPieceCitee.ts, la migration préparée `recu_par_la_piece_citee`) : ce que la pièce citée a reçu
+  // avant la reprise, plancher de l'encaissé avant la reprise. Son drapeau baissé, la base rend six clés et la fenêtre juge
+  // sur le déclaré ; levé, sept, et le reste proposé part du plus grand des deux.
+  it('A8Q5Q3-Q2, son drapeau baissé : sept clés rendues se lisent illisibles, et rien n’est proposé', async () => {
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+    faux.reprise = { ...RENDU, recu_par_sa_piece_centimes: 20000 }
+    monter({ facture: REPRISE })
+    await screen.findByText(/Ce que la facture reprise portait avant la reprise/)
+    expect(screen.queryByRole('button', { name: 'Enregistrer l’encaissement' })).toBeNull()
+  })
+
+  for (const qui of ['cabinet', 'client'] as const) {
+    it(`A8Q5Q3-Q2, son drapeau levé, ${qui === 'client' ? 'le client « Ventes »' : 'le cabinet'} : le reste part de ce que la pièce a reçu, quand il dépasse le déclaré`, async () => {
+      DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+      DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = true
+      // Un seul taux, pour que le reçu se juge au total : 1 355,50 − 200 (reçus par la pièce, plus que les 10 déclarés) − 50.
+      faux.reprise = {
+        ...RENDU, encaisse_par_taux: [{ taux: 20, encaisse_centimes: 1000 }], credite_par_les_repris_par_taux: [],
+        credite_par_les_repris_centimes: 0, recu_par_sa_piece_centimes: 20000,
+      }
+      monter({ facture: REPRISE, ...(qui === 'client' ? { client: { banque: false } } : {}) })
+      await bouton()
+      // Le reste proposé part du reçu : 1 355,50 − 200 = 1 155,50 €.
+      expect(champ('Montant encaissé (€)').value).toBe('1155,50')
+      // La facture de l'essai porte trois taux : le reçu qui dépasse le déclaré ne se répartit pas, et la fenêtre le dit avant
+      // le clic, la saisie remplie, sans laisser enregistrer.
+      await saisirSansMouvement('2027-10-20', 'virement')
+      await screen.findByText(/a reçu, avant la reprise, plus que l.import n.en déclare encaissé, et la facture porte plusieurs taux de TVA/)
+      expect(screen.getByRole('button', { name: 'Enregistrer l’encaissement' }).hasAttribute('disabled')).toBe(true)
+      expect(faux.rpcs.map((r) => r.nom)).not.toContain('enregistrer_encaissement')
+    })
+  }
+
+  it('A8Q5Q3-Q2, son drapeau levé, un reçu que le déclaré couvre : le reste d’hier', async () => {
+    DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+    DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = true
+    faux.reprise = { ...RENDU, recu_par_sa_piece_centimes: 1000 }
+    monter({ facture: REPRISE })
+    await bouton()
+    expect(champ('Montant encaissé (€)').value).toBe('1295,50')
   })
 })

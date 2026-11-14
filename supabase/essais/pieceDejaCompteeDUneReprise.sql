@@ -16,8 +16,11 @@
 --      valide sans elle, et le paiement de N+1 par la facture reprise compte une fois, en N+1.
 --   4. LA PIÈCE FIGÉE PAYÉE EN N (A8Q5-Q1) : citée après la validation, ce qu'elle a compté avant la reprise est la base des
 --      encaissements (A8b) quand l'import le déclare — le registre refuse d'encaisser une seconde fois.
---   5. LE TÉMOIN DE CE QUI RESTE (A8Q5Q3-Q2) : l'import qui déclare zéro encaissé avant la reprise, la pièce figée payée en N
---      est citée, et le registre accepte d'encaisser de nouveau — la même vente compterait en N et en N+1.
+--   5. CE QUI RESTAIT (A8Q5Q3-Q2) : l'import qui déclare zéro encaissé avant la reprise, la pièce figée payée en N est
+--      citée. Avec la migration `recu_par_la_piece_citee` (sa dernière ligne d'historique, pas son retour), le registre part
+--      de ce que la pièce a reçu et refuse d'encaisser une seconde fois (« il reste 0,00 € ») ; sans elle, EN ATTENTE, il
+--      accepte, et la même vente compte en N et en N+1 — le défaut qu'elle ferme. Le reste du mécanisme :
+--      supabase/essais/recuParLaPieceCitee.sql.
 --
 -- Un dossier jetable du cabinet du dossier `test` (préfixe `a8530000-0000-4000-8000`) : DQ, basculé, en trésorerie,
 -- redevable ; sa pièce de vente P (120 € TTC, datée du 20 novembre de N) ; le mouvement M1 qui la paie le 10 décembre de N,
@@ -73,6 +76,9 @@ declare
   compte constant text := $q$select coalesce((select sum(x.montant) from ecritures_brouillon x where x.piece_id = '{P}' and x.compte = '706000' and x.statut = 'validee'), 0)::text
     || ' en ' || {N} || ' ; ' || coalesce((select string_agg(c.date_effet::text || '=' || c.ttc_centimes, ',' order by c.date_effet)
          from calcul_vente_facturee({R1}) c where c.genre = 'part'), 'aucune part')$q$;
+  -- A8Q5Q3-Q2 en base : la dernière ligne d'historique de `recu_par_la_piece_citee` est la sienne, pas celle de son retour.
+  q2 constant boolean := coalesce((select m.name = 'recu_par_la_piece_citee' from supabase_migrations.schema_migrations m
+    where m.name in ('recu_par_la_piece_citee', 'retour_recu_par_la_piece_citee') order by m.version desc limit 1), false);
   e record; v_code text; v_msg text; v_req text; v_pose text; v_obs text; v_f record; v_texte text;
   verdicts jsonb := '[]'::jsonb;
 begin
@@ -115,9 +121,13 @@ begin
       (4, '4. payée en N, figée, puis citée (A8Q5-Q1), l''import déclarant ce paiement encaissé avant la reprise : le registre n''encaisse pas une seconde fois',
         payee || replace(valider, '{NUM}', num_payee) || replace(replace(importer, '{L}', lot), '{E}', '120') || citer, encaisser, 'chef',
         '22023', 'L''encaissement dépasserait ce que la facture reprise porte encore, nette de ses avoirs et de ce qui en était encaissé avant la reprise : il reste 0,00 € à encaisser.'),
-      (5, '5. témoin de ce qui reste (A8Q5Q3-Q2) : l''import déclare zéro encaissé avant la reprise, la pièce figée se cite, et la même vente compte en N et en N+1',
-        payee || replace(valider, '{NUM}', num_payee) || replace(replace(importer, '{L}', lot), '{E}', '0') || citer || encaisser || ';', compte, 'postgres',
-        'OK', '100 en {N} ; {R}=12000')
+      (5, case when q2 then '5. A8Q5Q3-Q2 : l''import déclare zéro encaissé avant la reprise, la pièce figée payée en N se cite, et le registre part de ce qu''elle a reçu — il n''encaisse pas une seconde fois'
+               else '5. EN ATTENTE de recu_par_la_piece_citee (A8Q5Q3-Q2) : l''import déclare zéro encaissé avant la reprise, la pièce figée se cite, et la même vente compte en N et en N+1 — le défaut' end,
+        payee || replace(valider, '{NUM}', num_payee) || replace(replace(importer, '{L}', lot), '{E}', '0') || citer || case when q2 then '' else encaisser || ';' end,
+        case when q2 then encaisser else compte end, case when q2 then 'chef' else 'postgres' end,
+        case when q2 then '22023' else 'OK' end,
+        case when q2 then 'L''encaissement dépasserait ce que la facture reprise porte encore, nette de ses avoirs et de ce qui en était encaissé avant la reprise : il reste 0,00 € à encaisser.'
+             else '100 en {N} ; {R}=12000' end)
     ) as t(rang, etape, pose, requete, profil, code, attendu) loop
       v_code := 'OK'; v_msg := null; v_obs := null; v_pose := null; v_req := null;
       begin

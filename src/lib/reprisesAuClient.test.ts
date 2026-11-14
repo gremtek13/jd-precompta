@@ -152,7 +152,9 @@ describe('la migration, confrontée au module', () => {
   it('l’essai attend les mots du module', () => {
     expect(ESSAI).toContain(`refus constant text := '${REFUS_DES_REPRISES_AU_CLIENT.acces}';`)
     expect(ESSAI).toContain(`introuvable constant text := '${REFUS_DES_REPRISES_AU_CLIENT.introuvable}';`)
-    expect(ESSAI).toContain(`'OK', '${CLES_DE_LA_REPRISE.join(',')}'),`)
+    // Les six clés, et la septième sous la migration `recu_par_la_piece_citee` (A8Q5Q3-Q2), que l'essai attend selon sa ligne
+    // d'historique.
+    expect(ESSAI).toContain(`'OK', '${CLES_DE_LA_REPRISE.slice(0, 5).join(',')},'\n          || case when q2 then 'recu_par_sa_piece_centimes,' else '' end || '${CLES_DE_LA_REPRISE[5]}'),`)
   })
 })
 
