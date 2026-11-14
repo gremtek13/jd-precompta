@@ -3,7 +3,9 @@
 // pose que pour le cabinet du dossier (migration PRÉPARÉE `auteur_des_connexions_plateformes`) ; l'Edge Function
 // `plateforme-agreee`, sa constante `AUTEUR_DES_CONNEXIONS_EN_BASE` levée, en dit un booléen dans la vue publique
 // (`ecrite_par_le_cabinet`, jamais le compte) et refuse la relève depuis l'espace client sur une connexion que le cabinet
-// n'a pas écrite (`raison: "connexion_hors_du_cabinet"`). Ce module, pur, dit l'un et l'autre aux deux espaces.
+// n'a pas écrite (`raison: "connexion_hors_du_cabinet"`) ; sa constante baissée, elle ne sait pas qui l'a écrite et refuse
+// toute relève par un accès client (`raison: "auteur_de_la_connexion_non_lu"`), du côté fermé. Ce module, pur, dit l'un et
+// l'autre aux deux espaces.
 //
 // `AUTEUR_DES_CONNEXIONS_PREVU` se lève avec la migration et la fonction déployée sa constante levée : baissé, l'écran
 // d'hier — ni la ligne de l'auteur dans la fiche de la plateforme, ni le refus nommé (la phrase générique du serveur).
@@ -14,6 +16,9 @@ export const AUTEUR_DES_CONNEXIONS_PREVU: boolean = false
 
 /** La raison que la fonction nomme quand le cabinet n'a pas écrit la configuration en vigueur. */
 export const RAISON_CONNEXION_HORS_DU_CABINET = 'connexion_hors_du_cabinet'
+
+/** La raison que la fonction nomme quand elle ne lit pas encore l'auteur : la relève par un accès client reste fermée. */
+export const RAISON_AUTEUR_NON_LU = 'auteur_de_la_connexion_non_lu'
 
 /** Ce que la vue publique de la connexion dit de son auteur : rien tant que la fonction ne le lit pas. */
 export interface AuteurDeLaVue {
@@ -39,8 +44,15 @@ export function auteurDeLaConnexionDit(
     : 'pas par ton cabinet : « Relever ma plateforme » attend qu’il l’enregistre'
 }
 
-/** Le refus nommé de la relève, dit au client ; null quand le drapeau est baissé ou que la raison est une autre. */
+/**
+ * Le refus nommé de la relève, dit au client ; null quand la raison est une autre. L'auteur non lu se dit quel que soit le
+ * drapeau : c'est la fonction d'aujourd'hui qui le nomme. L'auteur lu qui n'est pas le cabinet, sous le drapeau seulement.
+ */
 export function refusDeLAuteurDitAuClient(raison: string | null, drapeau: boolean = AUTEUR_DES_CONNEXIONS_PREVU): string | null {
+  if (raison === RAISON_AUTEUR_NON_LU) {
+    return 'La relève depuis ton espace n’est pas encore ouverte : elle ne passe que par une connexion à ta plateforme que ton '
+      + 'cabinet a enregistrée, et cela ne se vérifie pas encore. Parles-en à ton cabinet.'
+  }
   if (!drapeau || raison !== RAISON_CONNEXION_HORS_DU_CABINET) return null
   return 'La connexion à ta plateforme n’a pas été enregistrée par ton cabinet : la relève depuis ton espace attend qu’il '
     + 'l’enregistre lui-même. Parles-en à ton cabinet.'
