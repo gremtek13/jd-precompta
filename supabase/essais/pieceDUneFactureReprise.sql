@@ -307,7 +307,7 @@ begin
         and (select string_agg(p.polname::text || ':' || p.polcmd::text || ':' || array_to_string(p.polroles::regrole[], ',') || ':'
                                || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ':' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''),
                                ' ' order by p.polname collate "C")
-               from pg_policy p where p.polrelid = 'public.pieces_des_factures_reprises'::regclass and p.polname <> 'deux_facteurs')
+               from pg_policy p where p.polrelid = 'public.pieces_des_factures_reprises'::regclass and not (p.polname = 'deux_facteurs' and not p.polpermissive))
             = 'pieces_des_factures_reprises_lecture:r:authenticated:admin_du_dossier(dossier_id): '
               || 'pieces_des_factures_reprises_restauration:a:authenticated::is_super_admin()'
         and (select string_agg(p.proname::text || ':' || p.prosecdef::int || ':' || array_to_string(p.proconfig, ',') || ':'
