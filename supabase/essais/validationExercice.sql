@@ -870,7 +870,7 @@ begin
       ('cle_validation', '(uuid)'), ('frontiere_validation', '(uuid)'), ('exercice_fige', '(uuid, integer)'), ('garder_ecritures_validees', '()'),
       ('garder_soldes_reportes', '()'), ('soldes_a_reporter', '(uuid, integer)')) as t(f, a)$q$, '',
       'cle_validation:false:false,empreinte_exercice:false:true,exercice_fige:false:false,frontiere_validation:false:false,garder_ecritures_validees:false:false,garder_soldes_reportes:false:false,soldes_a_reporter:false:false,valider_exercice:false:true,verifier_exercice_valide:false:true'],
-    array['valeur', '144. un exercice validé est lu par le cabinet, réinséré par le super-administrateur, jamais modifié', 'postgres', $q$select string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, '+'), ',' order by policyname collate "C") from pg_policies where schemaname = 'public' and tablename = 'exercices_valides'$q$, '',
+    array['valeur', '144. un exercice validé est lu par le cabinet, réinséré par le super-administrateur, jamais modifié', 'postgres', $q$select string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, '+'), ',' order by policyname collate "C") from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) pg_policies where schemaname = 'public' and tablename = 'exercices_valides'$q$, '',
       'exercices_valides_lecture:SELECT:authenticated,exercices_valides_restauration:INSERT:authenticated'],
 
     -- ══ 150 à 190. Les quatre champs du FEC d'un BNC en trésorerie (lot FEC22b ; genre « …f ») ═══════════════════

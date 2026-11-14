@@ -315,7 +315,7 @@ begin
   select exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
                  and not attisdropped) into ventes_du_client;
   select string_agg(p.policyname || ' ' || p.roles::text || ' ' || p.cmd, ', ' order by p.policyname) into obs
-    from pg_policies p where p.schemaname = 'public' and p.tablename = 'transmissions_factures';
+    from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p where p.schemaname = 'public' and p.tablename = 'transmissions_factures';
   verdicts := verdicts || jsonb_build_object('controle', '34. catalogue : la lecture du cabinet, la restauration — et, les ventes du client en base, la lecture au droit « Ventes » —, rien d''autre',
     'observe', obs, 'ok', obs = 'transmissions_factures_lecture {authenticated} SELECT, '
       || case when ventes_du_client then 'transmissions_factures_lecture_ventes {authenticated} SELECT, ' else '' end

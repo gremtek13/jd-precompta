@@ -97,7 +97,7 @@ begin
       ('02', 'controle', 'aucune clé étrangère ne part de devis.contact_id', 'proprietaire',
         $q$select count(*)::text from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey) where c.conrelid = 'public.devis'::regclass and c.contype = 'f' and a.attname = 'contact_id'$q$, 'OK', '0', null),
       ('03', 'controle', 'les policies des devis : trois, inchangées', 'proprietaire',
-        $q$select string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, ','), ' ' order by policyname) from pg_policies where schemaname = 'public' and tablename = 'devis'$q$, 'OK', 'devis_lecture:SELECT:authenticated devis_lecture_ventes:SELECT:authenticated devis_restauration:INSERT:authenticated', null),
+        $q$select string_agg(policyname || ':' || cmd || ':' || array_to_string(roles, ','), ' ' order by policyname) from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) pg_policies where schemaname = 'public' and tablename = 'devis'$q$, 'OK', 'devis_lecture:SELECT:authenticated devis_lecture_ventes:SELECT:authenticated devis_restauration:INSERT:authenticated', null),
       ('04', 'controle', 'les trois fonctions : aux connectés, ni à l''anonyme ni à PUBLIC', 'proprietaire',
         $q$select string_agg(f || ':' || has_function_privilege('authenticated', f, 'execute')::text || has_function_privilege('anon', f, 'execute')::text
              || coalesce((select bool_or(a.grantee = 0)::text from pg_proc p, aclexplode(p.proacl) a where p.oid = f::regprocedure), 'public'), ' ' order by f)

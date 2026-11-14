@@ -115,12 +115,12 @@ begin
       -- ══ 0. Le catalogue ══════════
       ('0a', 'valeur', 'la table sous RLS, ses trois policies : lecture du cabinet, lecture du droit « Ventes », insertion de restauration ; aucune autre', 'proprietaire', null,
         $q$select c.relname || ':' || c.relrowsecurity || ':' || coalesce((select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/'
-                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from pg_policy p where p.polrelid = c.oid), 'aucune')
+                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = c.oid), 'aucune')
              from pg_class c where c.oid = 'public.articles'::regclass$q$,
         'OK', 'articles:true:articles_lecture/r/true/authenticated,articles_lecture_ventes/r/true/authenticated,articles_restauration/a/true/authenticated', null),
       ('0b', 'valeur', 'leurs prédicats : le cabinet du dossier, l''accès qui porte « Ventes », le super-administrateur', 'proprietaire', null,
         $q$select string_agg(p.polname || '=' || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), ' ; ' order by p.polname)
-             from pg_policy p where p.polrelid = 'public.articles'::regclass$q$,
+             from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'public.articles'::regclass$q$,
         'OK', 'articles_lecture=admin_du_dossier(dossier_id)| ; articles_lecture_ventes=client_du_dossier(dossier_id, ''ventes''::text)| ; articles_restauration=|is_super_admin()', null),
       ('0c', 'valeur', 'les trois fonctions : security definer, search_path fixé ; ni anon ni PUBLIC ne les exécutent', 'proprietaire', null,
         $q$select string_agg(p.proname || ' ' || p.prosecdef || ' ' || array_to_string(p.proconfig, ',') || ' anon ' || has_function_privilege('anon', p.oid, 'execute')

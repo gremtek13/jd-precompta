@@ -453,7 +453,7 @@ begin
   select exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
                  and not attisdropped) into ventes_du_client;
   select string_agg(p.policyname || ' ' || p.roles::text || ' ' || p.cmd || ' ' || coalesce(p.qual, '-') || ' ' || coalesce(p.with_check, '-'), ' | ' order by p.policyname) into obs
-    from pg_policies p where p.schemaname = 'public' and p.tablename = 'statuts_factures_recus';
+    from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p where p.schemaname = 'public' and p.tablename = 'statuts_factures_recus';
   verdicts := verdicts || jsonb_build_object('controle', '42. catalogue : la lecture du cabinet et la restauration du super-administrateur — et, les ventes du client en base, la lecture au droit « Ventes » —, rien d''autre',
     'observe', obs, 'ok', obs = 'statuts_factures_recus_lecture {authenticated} SELECT admin_du_dossier(dossier_id) -'
       || case when ventes_du_client then ' | statuts_factures_recus_lecture_ventes {authenticated} SELECT client_du_dossier(dossier_id, ''ventes''::text) -' else '' end
@@ -488,7 +488,7 @@ begin
     'observe', obs, 'ok', obs = 'CREATE INDEX statuts_factures_recus_facture ON public.statuts_factures_recus USING btree (facture_id)');
 
   select string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || ' ' || (not a.attnotnull)::text, ', ' order by a.attname)
-      || ' — policies ' || (select count(*) from pg_policies where schemaname = 'public' and tablename = 'connexions_plateformes')
+      || ' — policies ' || (select count(*) from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) pg_policies where schemaname = 'public' and tablename = 'connexions_plateformes')
     into obs from pg_attribute a
    where a.attrelid = 'public.connexions_plateformes'::regclass and a.attname in ('cycle_vie_depuis', 'cycle_vie_lu_le') and not a.attisdropped;
   verdicts := verdicts || jsonb_build_object('controle', '47. catalogue : le point de reprise des statuts sur la connexion, qui reste sans aucune policy',

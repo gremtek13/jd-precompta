@@ -136,12 +136,12 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '1. huit colonnes, nommées : ni nom de fichier, ni extension, ni expéditeur, ni objet',
     'observe', coalesce(obs, 'aucune'), 'ok', coalesce(obs = 'dossier_id,empreinte,id,octets,raison,recue_le,vue_le,vue_par', false));
 
-  select count(*) into n from pg_policy po
+  select count(*) into n from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) po
    where po.polrelid = 'public.pieces_jointes_ecartees'::regclass and po.polroles = array['authenticated'::regrole]::oid[] and (
      (po.polcmd = 'r' and pg_get_expr(po.polqual, po.polrelid) = 'admin_du_dossier(dossier_id)' and po.polwithcheck is null)
      or (po.polcmd = 'a' and po.polqual is null and pg_get_expr(po.polwithcheck, po.polrelid) = 'is_super_admin()'));
-  select count(*) into m from pg_policy po where po.polrelid = 'public.pieces_jointes_ecartees'::regclass;
-  select string_agg(po.polname, ', ' order by po.polname) into obs from pg_policy po
+  select count(*) into m from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) po where po.polrelid = 'public.pieces_jointes_ecartees'::regclass;
+  select string_agg(po.polname, ', ' order by po.polname) into obs from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) po
    where po.polrelid = 'public.pieces_jointes_ecartees'::regclass
      and (coalesce(pg_get_expr(po.polqual, po.polrelid), '') || coalesce(pg_get_expr(po.polwithcheck, po.polrelid), ''))
          ~ '(memberships|client_du_dossier|gere_les_ventes|gere_la_banque|droits_sur_le_dossier)';

@@ -362,7 +362,7 @@ begin
     'ok', accepte and code_recu = 'P0001' and n = 1);
 
   -- ══ 37 à 39. Ce que le catalogue dit, faute de pouvoir le jouer ici ═══════════════════════════════════════════
-  select concat_ws(', ', 'rls ' || c.relrowsecurity, 'policies ' || (select count(*) from pg_policies p
+  select concat_ws(', ', 'rls ' || c.relrowsecurity, 'policies ' || (select count(*) from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p
            where p.schemaname = 'public' and p.tablename = 'connexions_plateformes'))
     into obs from pg_class c where c.oid = 'public.connexions_plateformes'::regclass;
   verdicts := verdicts || jsonb_build_object('controle', '37. catalogue : la connexion sous RLS, sans aucune policy',
@@ -373,7 +373,7 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '38. catalogue : la suppression d''un dossier emporte sa connexion',
     'observe', obs, 'ok', obs = 'connexions_plateformes_dossier_id_fkey:c');
 
-  select p.roles::text || ' ' || p.cmd into obs from pg_policies p
+  select p.roles::text || ' ' || p.cmd into obs from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p
    where p.schemaname = 'public' and p.tablename = 'pieces' and p.policyname = 'pieces_insert';
   verdicts := verdicts || jsonb_build_object('controle', '39. catalogue : l''insertion d''une pièce réservée aux comptes connectés',
     'observe', obs, 'ok', obs = '{authenticated} INSERT');

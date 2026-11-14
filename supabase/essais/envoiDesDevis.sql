@@ -124,7 +124,7 @@ begin
       ('5', 'valeur', 'les deux policies de la table, inchangées : celle du cabinet, la lecture du client « Ventes » des envois de factures et de devis (et, depuis la migration relances_des_factures, des relances de factures : le motif les admet)', 'proprietaire', null,
         $q$select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/' || array_to_string(p.polroles::regrole[]::text[], ',')
                || '/' || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '/' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), ' | ' order by p.polname)
-             from pg_policy p where p.polrelid = 'public.emails_envoyes'::regclass$q$,
+             from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'public.emails_envoyes'::regclass$q$,
         'OK', 'emails_envoyes_all/*/true/-/admin_du_dossier(dossier_id)/admin_du_dossier(dossier_id) | emails_envoyes_lecture_ventes/r/true/authenticated/(client_du_dossier(dossier_id, ''ventes''::text) AND (type = ANY (ARRAY[''facture''::text, ''devis''::text%])))/', null),
 
       -- ══ 6 à 16. Ce qui s'écrit ══════════

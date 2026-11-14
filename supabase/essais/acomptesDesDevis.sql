@@ -1318,7 +1318,7 @@ begin
                'acomptes_en_vigueur', 'finale_active_du_devis', 'acompte_repartir_sur_les_restes', 'acompte_refus_de_la_finale_laissee', 'garder_marque_d_acompte', 'garder_lignes_d_acompte')$q$,
         'OK', 'acompte_en_euros:false:search_path=public:false:false | acompte_en_taux:false:search_path=public:false:false | acompte_refus_de_la_finale_laissee:false:search_path=public:false:false | acompte_repartir_sur_les_restes:false:search_path=public:false:false | acomptes_en_vigueur:false:search_path=public:false:false | facturer_acompte_devis:true:search_path=public:true:false | finale_active_du_devis:false:search_path=public:false:false | garder_lignes_d_acompte:true:search_path=public:false:false | garder_marque_d_acompte:true:search_path=public:false:false', null),
       ('6', 'valeur', 'les policies des trois tables, inchangées', 'proprietaire', null,
-        $q$select string_agg(polrelid::regclass::text || '.' || polname, ' | ' order by polname collate "C") from pg_policy
+        $q$select string_agg(polrelid::regclass::text || '.' || polname, ' | ' order by polname collate "C") from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) pg_policy
             where polrelid in ('public.factures_emises'::regclass, 'public.facture_lignes'::regclass, 'public.devis_factures'::regclass)$q$,
         'OK', 'devis_factures.devis_factures_lecture | devis_factures.devis_factures_lecture_ventes | devis_factures.devis_factures_restauration | facture_lignes.facture_lignes_all | facture_lignes.facture_lignes_lecture_ventes | factures_emises.factures_emises_all | factures_emises.factures_emises_lecture_ventes', null),
 

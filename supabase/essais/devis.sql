@@ -144,7 +144,7 @@ begin
       -- ══ 0. Le catalogue ══════════
       ('0a', 'valeur', 'les trois tables sous RLS, leurs policies : lecture du cabinet, lecture du droit « Ventes », insertion de restauration ; aucune sur la série', 'proprietaire', null,
         $q$select string_agg(c.relname || ':' || c.relrowsecurity || ':' || coalesce((select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/'
-                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from pg_policy p where p.polrelid = c.oid), 'aucune'), ' | ' order by c.relname)
+                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = c.oid), 'aucune'), ' | ' order by c.relname)
              from pg_class c where c.oid in ('public.devis'::regclass, 'public.devis_factures'::regclass, 'public.devis_numerotation'::regclass)$q$,
         'OK', 'devis:true:devis_lecture/r/true/authenticated,devis_lecture_ventes/r/true/authenticated,devis_restauration/a/true/authenticated | devis_factures:true:devis_factures_lecture/r/true/authenticated,devis_factures_lecture_ventes/r/true/authenticated,devis_factures_restauration/a/true/authenticated | devis_numerotation:true:aucune', null),
       ('0b', 'valeur', 'les quatre fonctions : security definer, search_path fixé ; ni anon ni PUBLIC ne les exécutent', 'proprietaire', null,

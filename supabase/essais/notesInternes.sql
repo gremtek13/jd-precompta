@@ -136,16 +136,16 @@ begin
   end if;
 
   -- ══ 5 et 6. Le catalogue ═══════════════════════════════════════════════════════════════════════════════════
-  select count(*) into n from pg_policy po
+  select count(*) into n from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) po
    where po.polrelid = 'public.notes_internes'::regclass and po.polcmd = '*' and po.polroles = array['authenticated'::regrole]::oid[]
      and pg_get_expr(po.polqual, po.polrelid) = 'admin_du_dossier(dossier_id)'
      and pg_get_expr(po.polwithcheck, po.polrelid) like '(admin_du_dossier(dossier_id) AND %'
      and pg_get_expr(po.polwithcheck, po.polrelid) like '%p.dossier_id = notes_internes.dossier_id%'
      and pg_get_expr(po.polwithcheck, po.polrelid) like '%d.dossier_id = notes_internes.dossier_id%';
-  select count(*) into m from pg_policy po where po.polrelid = 'public.notes_internes'::regclass;
+  select count(*) into m from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) po where po.polrelid = 'public.notes_internes'::regclass;
   verdicts := verdicts || jsonb_build_object('controle', '5. une seule policy, pour toutes les commandes, aux connectés, sur admin_du_dossier et la cible du dossier ; RLS active',
     'observe', m || ' policy(s), ' || n || ' conforme(s), RLS ' || (select relrowsecurity from pg_class where oid = 'public.notes_internes'::regclass)
-      || ', branche client ' || (select count(*) from pg_policy po where po.polrelid = 'public.notes_internes'::regclass
+      || ', branche client ' || (select count(*) from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) po where po.polrelid = 'public.notes_internes'::regclass
                                    and (coalesce(pg_get_expr(po.polqual, po.polrelid), '') || coalesce(pg_get_expr(po.polwithcheck, po.polrelid), '')) like '%memberships%'),
     'ok', coalesce(m = 1 and n = 1 and (select relrowsecurity from pg_class where oid = 'public.notes_internes'::regclass), false));
 

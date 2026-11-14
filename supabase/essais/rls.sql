@@ -65,22 +65,22 @@
 --   6quinquies. Les LETTRES DE MISSION (LM4, ligne 47 ; bloc « Les lettres de mission », après le dossier du cabinet) :
 --      LM1 à LM7 — les six fonctions ni par l'anonyme, ni par un compte rattaché à rien, ni par le client ; le chef écrit
 --      et lit (contrôle positif) ; le client ne lit rien ; l'insertion directe au super-administrateur seul ; le catalogue,
---      le drapeau de l'acceptation en ligne baissé — et trois mutations ; avant la migration `lettres_de_mission`, une
+--      le drapeau de l'acceptation en ligne baissé — et quatre mutations ; avant la migration `lettres_de_mission`, une
 --      ligne « EN ATTENTE ».
 --   6quinquies-bis. Les FACTURES D'HONORAIRES (LM7, ligne 47 ; bloc « Les factures d'honoraires », après les lettres de
 --      mission) : HF1 à HF7 — la fonction ni par l'anonyme, ni par un compte rattaché à rien, ni par le client ; le chef
 --      facture et lit (contrôle positif) ; le client ne lit rien ; l'insertion directe au super-administrateur seul ; le
---      catalogue — et trois mutations ; avant la migration `honoraires_factures`, une ligne « EN ATTENTE ».
+--      catalogue — et quatre mutations ; avant la migration `honoraires_factures`, une ligne « EN ATTENTE ».
 --   6quinquies-ter. Le DÉPÔT DES FACTURES D'HONORAIRES chez le client (LM8, ligne 47 ; bloc « Le dépôt des factures
 --      d'honoraires chez le client », après les factures d'honoraires) : HD1 à HD7 — la fonction ni par l'anonyme, ni par
 --      un compte rattaché à rien, ni par le client ; le chef dépose et lit (contrôle positif) ; le client ne lit aucun dépôt
 --      ni ceux du cabinet, mais lit que sa pièce vient de son cabinet ; l'insertion directe au super-administrateur seul ;
---      le catalogue — et trois mutations ; avant la migration `depot_des_honoraires`, une ligne « EN ATTENTE ».
+--      le catalogue — et quatre mutations ; avant la migration `depot_des_honoraires`, une ligne « EN ATTENTE ».
 --   6quinquies-quater. La FICHE DE FACTURATION LIÉE au dossier d'un client (LM3, ligne 47 ; bloc « La fiche de facturation
 --      d'un client du cabinet, liée à son dossier », après le dépôt des honoraires) : FL1 à FL7 — ni l'anonyme, ni un
 --      compte rattaché à rien, ni le client ne lient ni ne lisent l'identité ; le chef lie et lit (contrôle positif) ;
 --      l'insertion directe au super-administrateur seul ; ni un compte rattaché à rien ni le client ne délient (LM3-Q1
---      (B)) ; le catalogue — et quatre mutations ; avant la migration
+--      (B)) ; le catalogue — et cinq mutations ; avant la migration
 --      `fiche_liee_au_dossier_du_client`, une ligne « EN ATTENTE ».
 --   6quinquies-quinquies. Les MISSIONS D'UN CLIENT, sans ses honoraires (LM5-Q2, ligne 47 ; bloc « Les missions d'un
 --      client, sans ses honoraires », après la fiche liée) : MV1 à MV7 — la lecture ni par l'anonyme, ni par un compte
@@ -844,20 +844,20 @@
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM4, ligne 47 : migration `lettres_de_mission`, PRÉPARÉE, pas
 -- appliquée, après LM1), qui range les modèles et les lettres de mission dans le dossier du cabinet. Le bloc LM (LM1 à LM7,
--- M-LM2, M-LM5, M-LM7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM4 ».
+-- M-LM2, M-LM5, M-LM7, M-LM7b) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM4 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM7, ligne 47 : migration `honoraires_factures`, PRÉPARÉE, pas
 -- appliquée, après LM1 et LM4), qui lie une facture du dossier du cabinet à la période d'honoraires qu'elle facture. Le
--- bloc HF (HF1 à HF7, M-HF2, M-HF5, M-HF7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 —
+-- bloc HF (HF1 à HF7, M-HF2, M-HF5, M-HF7, M-HF7b) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 —
 -- LM7 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM8, ligne 47 : migration `depot_des_honoraires`, PRÉPARÉE, pas
 -- appliquée, après LM1, LM4 et LM7), qui dépose la facture d'honoraires validée dans le dossier de son client. Le bloc HD
--- (HD1 à HD7, M-HD2, M-HD5, M-HD7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM8 ».
+-- (HD1 à HD7, M-HD2, M-HD5, M-HD7, M-HD7b) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM8 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM3, ligne 47 : migration `fiche_liee_au_dossier_du_client`, PRÉPARÉE,
 -- pas appliquée, après LM1), qui lie une fiche du dossier du cabinet au dossier de son client, et la délie (LM3-Q1 (B)).
--- Le bloc FL (FL1 à FL7, M-FL2, M-FL3, M-FL6, M-FL7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM3 ».
+-- Le bloc FL (FL1 à FL7, M-FL2, M-FL3, M-FL6, M-FL6b, M-FL7) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 11/11/2026 — LM3 ».
 --
 -- 11/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (LM5-Q2, ligne 47 : migration `missions_du_client`, PRÉPARÉE, pas
 -- appliquée, après LM1 et LM4), qui ne crée ni ne change aucune policy, mais une fonction de lecture `security definer` :
@@ -892,6 +892,15 @@
 -- avec, 246 lignes, 0 en faute, 144 sur 144 ; de même avec la porte d'accès préparée (`acces_avant_les_gardes`),
 -- appliquée avant ou après elle. Banc du leurre SÛR dans les deux états. Ce qu'il rend : HISTORIQUE.md, « 13/11/2026 —
 -- LE CABINET D'UN DOSSIER NE CHANGE QUE PAR LE SUPER-ADMINISTRATEUR ».
+--
+-- 13/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (la double authentification exigée, C7 : migration
+-- `deux_facteurs_exiges`, PRÉPARÉE, pas appliquée). LM7, HF7, HD7 et FL6 comptaient toutes les policies de leurs tables :
+-- la restrictive `deux_facteurs` que la migration pose sur chaque table les aurait mis en faute. Ils comptent désormais
+-- hors d'elle, au filtre du bloc DP (« autres / en tout »), et chacun reçoit une mutation, M-LM7b, M-HF7b, M-HD7b, M-FL6b,
+-- qui pose une restrictive d'un AUTRE nom, que le contrôle doit compter. Joué ENTIER, en une transaction, sur une copie
+-- de la réplique au niveau de la production (218 migrations) : sans la migration, 240 lignes, 0 en faute, 143 mutations
+-- sur 143 ; avec elle (le talon de GoTrue d'abord), 244 lignes, 0 en faute, 150 sur 150 — avant ce lot, 4 en faute.
+-- Ce qu'il rend : HISTORIQUE.md, « 13/11/2026 — DES ESSAIS DE LA BASE REMIS AU SCHÉMA ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -3081,12 +3090,30 @@ begin
     'observe', n || ' exécutable(s)', 'mord', n = 1);
   verdicts := verdicts || jsonb_build_object('controle', 'LM7. l''acceptation en ligne : le drapeau de la base rend faux', 'cible', 'acceptation_en_ligne_ouverte',
     'observe', public.acceptation_en_ligne_ouverte()::text, 'ok', not public.acceptation_en_ligne_ouverte());
-  select count(*) into n from pg_policies
-   where schemaname = 'public' and tablename in ('lettres_de_mission', 'modeles_lettre_de_mission')
-     and not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'));
-  verdicts := verdicts || jsonb_build_object('controle', 'LM7. les deux tables : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
-    'cible', 'lettres_de_mission, modeles_lettre_de_mission', 'observe', n || ' autre(s)', 'ok', n = 0
-      and (select count(*) from pg_policies where schemaname = 'public' and tablename in ('lettres_de_mission', 'modeles_lettre_de_mission')) = 4);
+  -- LM7 : les policies hors la restrictive `deux_facteurs` de la double authentification exigée (C7), qu'elles portent
+  -- dès que celle-ci est en base (le bloc DF la juge) — le filtre du bloc DP : « autres / en tout », attendu « 0/4 ». La
+  -- mutation M-LM7b pose une restrictive d'un AUTRE nom, de toutes les commandes, sur lettres_de_mission : LM7 doit la compter.
+  declare
+    q constant text := $q$select count(*) filter (where not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'))) || '/' || count(*)
+      from pg_policies where schemaname = 'public' and tablename in ('lettres_de_mission', 'modeles_lettre_de_mission')
+       and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')$q$;
+    obs text;
+  begin
+    execute q into obs;
+    verdicts := verdicts || jsonb_build_object('controle', 'LM7. les deux tables : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
+      'cible', 'lettres_de_mission, modeles_lettre_de_mission', 'observe', obs || ' (autres / en tout, hors la restrictive deux_facteurs)', 'ok', obs = '0/4');
+    obs := null;
+    begin
+      create policy rls_mutation_restrictive on public.lettres_de_mission as restrictive for all to authenticated
+        using (true) with check (true);
+      execute q into obs;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then
+      if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+    end;
+    mutations := mutations || jsonb_build_object('mutation', 'M-LM7b — LM7 rejoué, une restrictive d''un autre nom sur lettres_de_mission',
+      'attendu', 'LM7 en faute (1/5)', 'observe', coalesce(obs, 'rien vu'), 'mord', coalesce(obs = '1/5', false));
+  end;
   verdicts := verdicts || jsonb_build_object('controle', 'LM. le jeu d''essai des lettres de mission s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
@@ -3265,11 +3292,30 @@ begin
      and has_function_privilege('proprietaire', p.oid, 'execute');
   mutations := mutations || jsonb_build_object('mutation', 'M-HF7 — HF7 rejoué pour le propriétaire', 'attendu', 'la garde exécutable',
     'observe', n || ' exécutable(s)', 'mord', n = 1);
-  select count(*) into n from pg_policies
-   where schemaname = 'public' and tablename = 'honoraires_factures' and not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'));
-  verdicts := verdicts || jsonb_build_object('controle', 'HF7. la table des liens : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
-    'cible', 'honoraires_factures', 'observe', n || ' autre(s)', 'ok', n = 0
-      and (select count(*) from pg_policies where schemaname = 'public' and tablename = 'honoraires_factures') = 2);
+  -- HF7 : les policies hors la restrictive `deux_facteurs` de la double authentification exigée (C7), qu'elles portent
+  -- dès que celle-ci est en base (le bloc DF la juge) — le filtre du bloc DP : « autres / en tout », attendu « 0/2 ». La
+  -- mutation M-HF7b pose une restrictive d'un AUTRE nom, de toutes les commandes, sur honoraires_factures : HF7 doit la compter.
+  declare
+    q constant text := $q$select count(*) filter (where not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'))) || '/' || count(*)
+      from pg_policies where schemaname = 'public' and tablename = 'honoraires_factures'
+       and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')$q$;
+    obs text;
+  begin
+    execute q into obs;
+    verdicts := verdicts || jsonb_build_object('controle', 'HF7. la table des liens : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
+      'cible', 'honoraires_factures', 'observe', obs || ' (autres / en tout, hors la restrictive deux_facteurs)', 'ok', obs = '0/2');
+    obs := null;
+    begin
+      create policy rls_mutation_restrictive on public.honoraires_factures as restrictive for all to authenticated
+        using (true) with check (true);
+      execute q into obs;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then
+      if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+    end;
+    mutations := mutations || jsonb_build_object('mutation', 'M-HF7b — HF7 rejoué, une restrictive d''un autre nom sur honoraires_factures',
+      'attendu', 'HF7 en faute (1/3)', 'observe', coalesce(obs, 'rien vu'), 'mord', coalesce(obs = '1/3', false));
+  end;
   verdicts := verdicts || jsonb_build_object('controle', 'HF. le jeu d''essai des factures d''honoraires s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
@@ -3473,11 +3519,30 @@ begin
      and has_function_privilege('proprietaire', p.oid, 'execute');
   mutations := mutations || jsonb_build_object('mutation', 'M-HD7 — HD7 rejoué pour le propriétaire', 'attendu', 'la garde exécutable',
     'observe', n || ' exécutable(s)', 'mord', n = 1);
-  select count(*) into n from pg_policies
-   where schemaname = 'public' and tablename = 'honoraires_deposes' and not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'));
-  verdicts := verdicts || jsonb_build_object('controle', 'HD7. la table des dépôts : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
-    'cible', 'honoraires_deposes', 'observe', n || ' autre(s)', 'ok', n = 0
-      and (select count(*) from pg_policies where schemaname = 'public' and tablename = 'honoraires_deposes') = 2);
+  -- HD7 : les policies hors la restrictive `deux_facteurs` de la double authentification exigée (C7), qu'elles portent
+  -- dès que celle-ci est en base (le bloc DF la juge) — le filtre du bloc DP : « autres / en tout », attendu « 0/2 ». La
+  -- mutation M-HD7b pose une restrictive d'un AUTRE nom, de toutes les commandes, sur honoraires_deposes : HD7 doit la compter.
+  declare
+    q constant text := $q$select count(*) filter (where not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'))) || '/' || count(*)
+      from pg_policies where schemaname = 'public' and tablename = 'honoraires_deposes'
+       and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')$q$;
+    obs text;
+  begin
+    execute q into obs;
+    verdicts := verdicts || jsonb_build_object('controle', 'HD7. la table des dépôts : des policies to authenticated, de lecture et de restauration seulement (lecture du catalogue)',
+      'cible', 'honoraires_deposes', 'observe', obs || ' (autres / en tout, hors la restrictive deux_facteurs)', 'ok', obs = '0/2');
+    obs := null;
+    begin
+      create policy rls_mutation_restrictive on public.honoraires_deposes as restrictive for all to authenticated
+        using (true) with check (true);
+      execute q into obs;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then
+      if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+    end;
+    mutations := mutations || jsonb_build_object('mutation', 'M-HD7b — HD7 rejoué, une restrictive d''un autre nom sur honoraires_deposes',
+      'attendu', 'HD7 en faute (1/3)', 'observe', coalesce(obs, 'rien vu'), 'mord', coalesce(obs = '1/3', false));
+  end;
   verdicts := verdicts || jsonb_build_object('controle', 'HD. le jeu d''essai des dépôts d''honoraires s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
@@ -3686,11 +3751,30 @@ begin
      and has_function_privilege('proprietaire', p.oid, 'execute');
   mutations := mutations || jsonb_build_object('mutation', 'M-FL6 — FL6 rejoué pour le propriétaire', 'attendu', 'les deux gardes exécutables',
     'observe', n || ' exécutable(s)', 'mord', n = 2);
-  select count(*) into n from pg_policies
-   where schemaname = 'public' and tablename = 'contacts' and not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'));
-  verdicts := verdicts || jsonb_build_object('controle', 'FL6. les contacts : trois policies to authenticated, deux lectures et la restauration, rien d''autre (lecture du catalogue)',
-    'cible', 'contacts', 'observe', n || ' autre(s)', 'ok', n = 0
-      and (select count(*) from pg_policies where schemaname = 'public' and tablename = 'contacts') = 3);
+  -- FL6 : les policies hors la restrictive `deux_facteurs` de la double authentification exigée (C7), qu'elles portent
+  -- dès que celle-ci est en base (le bloc DF la juge) — le filtre du bloc DP : « autres / en tout », attendu « 0/3 ». La
+  -- mutation M-FL6b pose une restrictive d'un AUTRE nom, de toutes les commandes, sur contacts : FL6 doit la compter.
+  declare
+    q constant text := $q$select count(*) filter (where not (roles = '{authenticated}' and cmd in ('SELECT', 'INSERT'))) || '/' || count(*)
+      from pg_policies where schemaname = 'public' and tablename = 'contacts'
+       and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')$q$;
+    obs text;
+  begin
+    execute q into obs;
+    verdicts := verdicts || jsonb_build_object('controle', 'FL6. les contacts : trois policies to authenticated, deux lectures et la restauration, rien d''autre (lecture du catalogue)',
+      'cible', 'contacts', 'observe', obs || ' (autres / en tout, hors la restrictive deux_facteurs)', 'ok', obs = '0/3');
+    obs := null;
+    begin
+      create policy rls_mutation_restrictive on public.contacts as restrictive for all to authenticated
+        using (true) with check (true);
+      execute q into obs;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then
+      if sqlerrm <> 'ANNULATION_ESSAI' then obs := coalesce(obs, '') || ' [' || sqlstate || ' ' || sqlerrm || ']'; end if;
+    end;
+    mutations := mutations || jsonb_build_object('mutation', 'M-FL6b — FL6 rejoué, une restrictive d''un autre nom sur contacts',
+      'attendu', 'FL6 en faute (1/4)', 'observe', coalesce(obs, 'rien vu'), 'mord', coalesce(obs = '1/4', false));
+  end;
   verdicts := verdicts || jsonb_build_object('controle', 'FL. le jeu d''essai des fiches liées s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))

@@ -314,7 +314,7 @@ begin
 
   select count(*) || ' ' || md5(string_agg(p.policyname || ' ' || p.roles::text || ' ' || p.cmd || ' ' || coalesce(p.qual, '-')
            || ' ' || coalesce(p.with_check, '-'), ' | ' order by p.policyname)) into obs
-    from pg_policies p where p.schemaname = 'public' and p.tablename = 'pieces';
+    from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p where p.schemaname = 'public' and p.tablename = 'pieces';
   verdicts := verdicts || jsonb_build_object('controle', '36. catalogue : les policies de pieces sont celles d''avant la migration',
     'observe', obs, 'ok', obs = '4 95217063cdf4065ac70bf19b67c62fda');
 

@@ -50,7 +50,7 @@ declare
   verdicts jsonb := '[]'::jsonb;
 begin
   -- La migration d'abord : sans elle, une ligne le dit, en faute seulement si l'historique la porte sans retour arrière.
-  if not exists (select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_depot_d_un_original') then
+  if not exists (select 1 from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'storage.objects'::regclass and p.polname = 'ventes_depot_d_un_original') then
     select max(version) filter (where name = 'originaux_des_imports'), max(version) filter (where name = 'retour_originaux_des_imports')
       into applique, retour from supabase_migrations.schema_migrations;
     verdicts := verdicts || jsonb_build_object('controle', '0. EN ATTENTE : la migration originaux_des_imports (A8d2a) n''est pas en base',
@@ -120,24 +120,24 @@ begin
         'OK', 'ventes:false:20971520:image/png,image/jpeg,application/pdf,text/plain,text/csv', null),
       ('0b', 'valeur', 'les quatre policies du seau, aux connectés, permissives : deux dépôts, la lecture, la suppression', 'proprietaire', null,
         $q$select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/' || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname)
-             from pg_policy p where p.polrelid = 'storage.objects'::regclass
+             from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'storage.objects'::regclass
               and (coalesce(pg_get_expr(p.polqual, p.polrelid), '') || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')) like '%''ventes''%'$q$,
         'OK', 'ventes_depot_d_un_logo/a/true/authenticated,ventes_depot_d_un_original/a/true/authenticated,ventes_lecture/r/true/authenticated,ventes_suppression_par_le_chef/d/true/authenticated', null),
       ('0c', 'valeur', 'la lecture et le dépôt d''un original, mot pour mot : la forme du chemin d''abord, le cabinet du dossier pour un original', 'proprietaire', null,
         $q$select string_agg(p.polname || '=' || replace(regexp_replace(coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), '\s+', ' ', 'g'),
                -- A8D2A-Q1 (`originaux_retenus_par_leur_import`, préparée) : la libération suit le cas `imports/`.
                'THEN (admin_du_dossier(((storage.foldername(name))[1])::uuid) OR original_libere(name)) WHEN', 'THEN admin_du_dossier(((storage.foldername(name))[1])::uuid) WHEN'), ' ; ' order by p.polname)
-             from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname in ('ventes_lecture', 'ventes_depot_d_un_original')$q$,
+             from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'storage.objects'::regclass and p.polname in ('ventes_lecture', 'ventes_depot_d_un_original')$q$,
         'OK', 'ventes_depot_d_un_original=|((bucket_id = ''ventes''::text) AND CASE WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/imports/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}\\.(pdf|xml|csv)$''::text) THEN admin_du_dossier(((storage.foldername(name))[1])::uuid) ELSE false END) ; ventes_lecture=((bucket_id = ''ventes''::text) AND CASE WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/imports/''::text) THEN admin_du_dossier(((storage.foldername(name))[1])::uuid) WHEN (name ~ ''^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/''::text) THEN gere_les_ventes(((storage.foldername(name))[1])::uuid) ELSE false END)|', null),
       ('0d', 'valeur', 'le dépôt d''un logo et la suppression, inchangés : leurs prédicats à l''empreinte d''avant', 'proprietaire', null,
         $q$select string_agg(md5(regexp_replace(coalesce(pg_get_expr(p.polqual, p.polrelid), ''),
                -- A8D2A-Q1 (`originaux_retenus_par_leur_import`, préparée) : le cas `imports/` de la suppression, retiré.
                '\n\s+WHEN \(name ~ ''\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}/imports/''::text\) THEN \(\(\(EXISTS .*?OR original_libere\(name\)\)', '')
                || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')), ',' order by p.polname)
-             from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polname in ('ventes_depot_d_un_logo', 'ventes_suppression_par_le_chef')$q$,
+             from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'storage.objects'::regclass and p.polname in ('ventes_depot_d_un_logo', 'ventes_suppression_par_le_chef')$q$,
         'OK', '9a5e3e9e053c8bb2b488263129f69de3,597459152cb7f38b77cf309d8b0e53aa', null),
       ('0e', 'valeur', 'aucune policy de mise à jour, ni « pour tout », n''atteint le seau : un original ne se modifie ni ne s''écrase', 'proprietaire', null,
-        $q$select count(*)::text from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polcmd in ('w', '*')
+        $q$select count(*)::text from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'storage.objects'::regclass and p.polcmd in ('w', '*')
               and (coalesce(pg_get_expr(p.polqual, p.polrelid), '') || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '')) !~ 'bucket_id = ''(pieces|packs|cabinet-logos)''::text'$q$,
         'OK', '0', null),
       ('0f', 'valeur', 'la fonction des paramètres : la version d''avant à l''octet près, plus les trois lignes de la borne du logo', 'proprietaire', null,

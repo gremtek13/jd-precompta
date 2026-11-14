@@ -869,7 +869,7 @@ begin
   select exists (select 1 from pg_attribute where attrelid = 'public.factures_emises'::regclass and attname = 'valide_par'
                  and not attisdropped) into ventes_du_client;
   select string_agg(p.tablename || '.' || p.policyname || ' ' || p.roles::text || ' ' || p.cmd || ' ' || coalesce(p.qual, '-') || ' ' || coalesce(p.with_check, '-'), ' | ' order by p.tablename, p.policyname) into obs
-    from pg_policies p where p.schemaname = 'public' and p.tablename in ('encaissements_factures', 'encaissements_factures_taux');
+    from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p where p.schemaname = 'public' and p.tablename in ('encaissements_factures', 'encaissements_factures_taux');
   verdicts := verdicts || jsonb_build_object('controle', '93. catalogue : la lecture du cabinet et la restauration du super-administrateur — et, les ventes du client en base, la lecture au droit « Ventes » —, rien d''autre',
     'observe', obs, 'ok', obs = 'encaissements_factures.encaissements_factures_lecture {authenticated} SELECT admin_du_dossier(dossier_id) -'
       || case when ventes_du_client then ' | encaissements_factures.encaissements_factures_lecture_ventes {authenticated} SELECT client_du_dossier(dossier_id, ''ventes''::text) -' else '' end

@@ -360,7 +360,7 @@ begin
 
   -- ══ 25 à 27. Ce que le catalogue dit, faute de pouvoir le jouer ══════════════════════════════════════════
   select string_agg(p.cmd || ' ' || array_to_string(p.roles, ',') || ' ' || coalesce(p.qual, ''), ' | ')
-    into obs from pg_policies p where p.schemaname = 'public' and p.tablename = 'lettrages_manuels';
+    into obs from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p where p.schemaname = 'public' and p.tablename = 'lettrages_manuels';
   verdicts := verdicts || jsonb_build_object('controle', '25. catalogue : une seule policy, qui couvre aussi la suppression',
     'observe', obs, 'ok', obs = 'ALL authenticated admin_du_dossier(dossier_id)');
 
