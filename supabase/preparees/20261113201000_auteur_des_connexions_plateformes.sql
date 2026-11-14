@@ -18,12 +18,16 @@
 --      `garder_auteur_de_la_connexion`, BEFORE INSERT OR UPDATE) : une configuration neuve n'est à personne. Ce qui ne
 --      touche pas la configuration (le point de reprise, la dernière récupération, le relevé des statuts, `updated_at`
 --      seul) le laisse tel quel ; et personne ne l'écrit en direct, ni le rôle des Edge Functions, ni le propriétaire
---      (42501).
+--      (42501). La VERSION d'une configuration écrite est celle de la base (relecture du 14/11/2026) : une mise à jour de
+--      la configuration ou de `updated_at` en reçoit une neuve, plus tardive que la précédente (`clock_timestamp()`, au
+--      moins une microseconde après l'ancienne), quelle que soit celle que l'appelant propose — deux écritures ne portent
+--      jamais la même, et l'attestation, qui cite la version que la base a rendue à l'écriture, ne vise que celle-là.
 --   2. `attester_connexion_plateforme(dossier, version)`, `security definer`, appelée par l'Edge Function SOUS LA SESSION de
 --      l'appelant juste après qu'elle a écrit : si la base reconnaît le cabinet du dossier (`admin_du_dossier`, le
 --      super-administrateur compris), elle pose `ecrite_par` (auth.uid(), jamais un paramètre) et `ecrite_le` sur la
 --      configuration À CETTE VERSION (`updated_at`) ; sinon 42501, avant toute lecture ; une version qui a changé depuis,
---      22023 (rien n'est attribué : une écriture du client glissée entre les deux temps reste à personne).
+--      22023 (rien n'est attribué : une écriture du client glissée entre les deux temps reste à personne — elle a reçu de
+--      la base une autre version, même tirée par l'Edge Function dans la même milliseconde).
 -- Une connexion écrite par un accès client reste donc sans auteur — la base ne l'attribue à personne —, et l'Edge Function
 -- refuse sur elle la réception par le client, derrière sa constante `AUTEUR_DES_CONNEXIONS_EN_BASE`.
 --
@@ -115,13 +119,15 @@ comment on column public.connexions_plateformes.ecrite_le is
 -- ══ 2. La garde de l'auteur ══════════
 -- Aux droits de l'appelant, chemin vide : elle ne lit que la ligne. Hors de l'attestation, l'auteur ne s'écrit jamais, et
 -- une configuration qui change l'efface ; dans l'attestation (le réglage `jd.auteur_de_la_connexion`, le dossier de la
--- ligne), seul l'auteur change.
+-- ligne), seul l'auteur change. Une mise à jour de la configuration ou de la version reçoit la version de la base.
 create function public.garder_auteur_de_la_connexion()
 returns trigger
 language plpgsql
 security invoker
 set search_path = ''
 as $fonction$
+declare
+  v_configuration boolean;
 begin
   if tg_op = 'UPDATE'
      and pg_catalog.current_setting('jd.auteur_de_la_connexion', true) is not distinct from old.dossier_id::text then
@@ -144,11 +150,17 @@ begin
   end if;
   -- Une configuration qui change n'est plus celle que le cabinet a écrite : son auteur s'efface, jusqu'à ce que le cabinet
   -- l'écrive à son tour.
-  if (new.dossier_id, new.nom, new.url_flux, new.url_jeton, new.client_id, new.client_secret, new.organisation_id, new.portee)
+  v_configuration := (new.dossier_id, new.nom, new.url_flux, new.url_jeton, new.client_id, new.client_secret, new.organisation_id, new.portee)
      is distinct from
-     (old.dossier_id, old.nom, old.url_flux, old.url_jeton, old.client_id, old.client_secret, old.organisation_id, old.portee) then
+     (old.dossier_id, old.nom, old.url_flux, old.url_jeton, old.client_id, old.client_secret, old.organisation_id, old.portee);
+  if v_configuration then
     new.ecrite_par := null;
     new.ecrite_le := null;
+  end if;
+  -- Sa version est celle de la base, plus tardive que la précédente : l'attestation, qui la cite, ne vise jamais une autre
+  -- écriture que celle qui l'a reçue, fût-elle proposée dans la même milliseconde.
+  if v_configuration or new.updated_at is distinct from old.updated_at then
+    new.updated_at := greatest(pg_catalog.clock_timestamp(), old.updated_at operator(pg_catalog.+) interval '1 microsecond');
   end if;
   return new;
 end
@@ -157,7 +169,7 @@ $fonction$;
 revoke all on function public.garder_auteur_de_la_connexion() from public, anon, authenticated;
 
 comment on function public.garder_auteur_de_la_connexion() is
-  'Garde de connexions_plateformes (B4RS-Q1) : l''auteur ne s''écrit que par attester_connexion_plateforme (42501), qui n''écrit que lui ; toute écriture de la configuration l''efface. Aucun rôle de l''API ne l''exécute.';
+  'Garde de connexions_plateformes (B4RS-Q1) : l''auteur ne s''écrit que par attester_connexion_plateforme (42501), qui n''écrit que lui ; toute écriture de la configuration l''efface ; une mise à jour de la configuration ou de la version reçoit la version de la base, plus tardive que la précédente. Aucun rôle de l''API ne l''exécute.';
 
 create trigger connexions_plateformes_auteur
   before insert or update on public.connexions_plateformes
@@ -203,7 +215,7 @@ comment on function public.attester_connexion_plateforme(uuid, timestamptz) is
 do $fin$
 begin
   if md5(replace((select p.prosrc from pg_catalog.pg_proc p where p.oid = 'public.garder_auteur_de_la_connexion()'::regprocedure), chr(13), ''))
-       <> 'cb99dc3ced1b63011fdc468ba330663e'
+       <> 'e48b49003974ed54b9c758d1154ec5ce'
      or (select p.prosecdef or p.proconfig is distinct from array['search_path=""'] from pg_catalog.pg_proc p
           where p.oid = 'public.garder_auteur_de_la_connexion()'::regprocedure)
      or has_function_privilege('anon', 'public.garder_auteur_de_la_connexion()', 'execute')
