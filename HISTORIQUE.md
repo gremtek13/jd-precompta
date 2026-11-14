@@ -52696,3 +52696,20 @@ taisait une restrictive d'un autre nom) — À REJOUER sur une réplique. Défau
 **BilanTab** : le drapeau `INVENTAIRE_EXPORTE` par un accesseur, sept cas (non déclaré, déclaré, déclaration d'un autre
 dossier, baissé sans lecture, trésorerie, trois lectures partielles) ; 3 mutations sur 3 tuées (le mode, l'inventaire ignoré,
 la lecture partielle).
+
+### 14/11/2026 — LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES SUR UNE COPIE DE LA RÉPLIQUE MÈRE (RIEN EN PRODUCTION)
+
+(Agent architecte.) Les 31 préparées, rejouées par leur texte et le propriétaire, avec leur ligne d'historique, sur une copie de
+la mère (PostgreSQL 17, 218 migrations, égale à la production par `signature.sql`). **Seules**, après leurs dépendances déclarées :
+30 s'appliquent, leurs essais sont justes, chaque bloc EN ATTENTE de `rls.sql` se lève, chaque retour rend la signature d'avant
+(neuf familles, stockage, rôles, données ; la double authentification en ses deux temps). **e7a refuse** : sa garde attend le
+corps d'`enregistrer_facture` d'`acomptes_des_devis`, repris depuis par A8a puis LM1 — un rebasage, pas une retouche (la fusion à
+trois voies est sans conflit ; migration, retour et trois tests de `factureInternationale.test.ts` à reprendre ensemble).
+**La chaîne** (e6b, B1, B2, B3b, B4, B7, LM6, MCB5g, MCB5g-Q2, INV2, LIA2, AFF2, INV4, INV3, EXD2, INAL5, PC6, les six du 13/11
+au soir, puis PC7Q2-Q1, CFCS-Q1, RATT-Q1, SECU3-Q2, SECU3-Q1, la porte, la double authentification en dernier) : 248 migrations,
+`rls.sql` 310 lignes, 0 en faute, 195 mutations sur 195, aucune EN ATTENTE ; les retours, à rebours, rendent la mère. **Les
+ordres** (les 24 des quatre sœurs du brouillon ; INV3 avant et après chacune de celles qui touchent la validation ; P1T-Q2 avant et
+après B1 ; la porte, la double authentification et les resserrements d'abord) : même base, mêmes essais. **Quinze essais étaient
+en retard** (des pièces déplacées sans leur chemin sous CFCS-Q1, des listes fermées du catalogue, e6b, e7a, B3b, un compte de B2
+avant sa ligne EN ATTENTE) : remis, justes dans les deux états, leurs mutations mordent, banc SÛR. **Restent** : six tables neuves
+que le leurre ne garnit pas ; le socle à régénérer au collage ; la garde d'INV3 ne lit pas l'empreinte de ce qu'elle remplace.
