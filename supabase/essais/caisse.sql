@@ -1785,7 +1785,9 @@ begin
     array['controle4', '214f. MUTATION : son paiement retiré, elle change de type', 'chef', $q$select retirer_operation_caisse('{P8}', '{PQV}');
       update pieces set type_piece = 'note_frais' where id = '{QV}'$q$,
       'OK', ''],
-    array['controle4', '214g. MUTATION : une pièce qu''aucun paiement ne cite change de dossier', 'chef', $q$update pieces set dossier_id = '{W8}' where id = '{QO}'$q$,
+    -- Son chemin la suit : depuis CFCS-Q1 (`chemin_dans_son_dossier`, préparée), le premier segment du chemin d'une pièce est
+    -- son dossier (`pieces_storage_path_dans_son_dossier`) ; le pas passe dans les deux états.
+    array['controle4', '214g. MUTATION : une pièce qu''aucun paiement ne cite change de dossier', 'chef', $q$update pieces set dossier_id = '{W8}', storage_path = '{W8}/essai-qo.pdf' where id = '{QO}'$q$,
       'OK', ''],
     array['fait4', '214h. un paiement de 15 € de la pièce de vente QB1 de B8, le 12/03', 'chef', $q$select regler_piece_par_la_caisse('{B8}', '{QB1}', '2026-03-12', 15)$q$,
       'OK', ''],

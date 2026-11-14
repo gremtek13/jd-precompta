@@ -79,10 +79,18 @@ declare
   ligne_lue constant text := 'DT A essai-adresse-a@example.test le 2026-10-01';
   refus_garde constant text := 'L''adresse d''un accès retiré ne s''écrit que par le retrait de l''accès.';
   refus_reecriture constant text := 'L''adresse d''un accès retiré ne se réécrit pas : elle ne part qu''avec son dossier.';
-  -- Les déclencheurs de memberships : ceux de P1-trace et de la caisse, et celui-ci, rangé après celui de la trace.
-  -- Et (13/11/2026) celui du dossier du cabinet (LM1, que la liste ignorait depuis sa mise en base : le contrôle 31 était en
-  -- faute sur toute base qui la porte), et celui de l'accès dans la trace (P1T-Q2, préparée), rangé avant celui-ci.
-  declencheurs constant text := case when to_regprocedure('public.garder_acces_au_dossier_du_cabinet()') is null then ''
+  -- Les déclencheurs de memberships, une liste FERMÉE : ceux de P1-trace et de la caisse, et celui-ci, rangé après celui de
+  -- la trace. Et (13/11/2026) celui du dossier du cabinet (LM1, que la liste ignorait depuis sa mise en base : le contrôle 31
+  -- était en faute sur toute base qui la porte), et celui de l'accès dans la trace (P1T-Q2, préparée), rangé avant celui-ci.
+  -- Et, migrations préparées : INAL5 (`depart_du_client`) pose `memberships_dossier_conserve`, présent avec sa garde ; la
+  -- porte d'accès (`acces_avant_les_gardes`) se pose sur memberships quand cette garde y est, l'une ou l'autre la posant :
+  -- présente avec les deux fonctions, rangée la première (le trait bas).
+  declencheurs constant text := case when to_regprocedure('public.acces_avant_les_gardes()') is not null
+                                       and to_regprocedure('public.garder_dossier_conserve()') is not null
+                                     then '_acces_avant_les_gardes, ' else '' end
+    || case when to_regprocedure('public.garder_dossier_conserve()') is not null
+            then 'memberships_dossier_conserve, ' else '' end
+    || case when to_regprocedure('public.garder_acces_au_dossier_du_cabinet()') is null then ''
       else 'memberships_dossier_du_cabinet, ' end
     || 'memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits'
     || case when to_regprocedure('public.tracer_les_acces()') is null then '' else ', memberships_trace_des_droits_acces' end

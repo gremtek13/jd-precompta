@@ -403,7 +403,9 @@ begin
       '23505', '%"pieces_hors_de_france_une_suite"'],
     array['controle', '124. une pièce qui a une fiche ne change pas de dossier', 'postgres', $q$update pieces set dossier_id = '{A}' where id = '{P1}'$q$,
       '23514', 'Cette pièce a une fiche « hors de France » : elle ne change plus de dossier.'],
-    array['controle', '124b. une pièce sans fiche, si', 'postgres', $q$update pieces set dossier_id = '{A}' where id = '{P5}'$q$, 'OK', ''],
+    -- Son chemin la suit : depuis CFCS-Q1 (`chemin_dans_son_dossier`, préparée), le premier segment du chemin d'une pièce est
+    -- son dossier ; le pas passe dans les deux états.
+    array['controle', '124b. une pièce sans fiche, si', 'postgres', $q$update pieces set dossier_id = '{A}', storage_path = '{A}/essai-e2-p5.pdf' where id = '{P5}'$q$, 'OK', ''],
     -- 124c écrivait `notes`, colonne retirée par P0 (`anciennes_notes_supprimees`, 06/11/2026 : les notes vivent dans
     -- `notes_internes`) ; l'intention n'est pas une note, mais une écriture ordinaire de la pièce qui nomme son dossier
     -- sans le changer : elle écrit désormais le fournisseur (13/11/2026).

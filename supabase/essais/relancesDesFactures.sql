@@ -73,10 +73,14 @@ begin
         $q$insert into memberships (id, user_id, dossier_id, role, email) values ('{ACCES}', '{CLIENT}', '{DA}', 'client', 'essai-relance@exemple.invalid')$q$, 'OK', null, null),
 
       -- ══ 1 et 2. Le catalogue ══════════
+      -- La liste reste FERMÉE : B3b (`relance_des_demandes_par_email`, préparée) y ajoute « relance_demande », présent avec
+      -- sa fonction (`journaliser_relance_de_demande`).
       ('1', 'valeur', 'la contrainte du type admet aussi « relance_facture », sous son nom d''hier', 'proprietaire', null,
         $q$select coalesce(string_agg(conname || ' ' || pg_get_constraintdef(oid), ' | ' order by conname), 'aucune') from pg_constraint
             where conrelid = 'public.emails_envoyes'::regclass and contype = 'c' and conname = 'emails_envoyes_type_check'$q$,
-        'OK', 'emails_envoyes_type_check CHECK ((type = ANY (ARRAY[''facture''::text, ''relance_pieces''::text, ''devis''::text, ''relance_facture''::text])))', null),
+        'OK', 'emails_envoyes_type_check CHECK ((type = ANY (ARRAY[''facture''::text, ''relance_pieces''::text, ''devis''::text, ''relance_facture''::text'
+          || case when exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname = 'journaliser_relance_de_demande')
+                  then ', ''relance_demande''::text' else '' end || '])))', null),
       ('2', 'valeur', 'les deux policies : celle du cabinet inchangée, la lecture du client « Ventes » étendue aux seules relances de factures', 'proprietaire', null,
         $q$select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/' || array_to_string(p.polroles::regrole[]::text[], ',')
                || '/' || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '/' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), ' | ' order by p.polname)

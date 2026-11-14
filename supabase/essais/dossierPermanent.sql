@@ -419,7 +419,9 @@ begin
       '23514', 'Cette pièce est citée par le dossier permanent (statuts) : elle ne change plus de dossier, sauf avec son dossier.'],
     array['controle', '135. un document cité par la version courante', 'chef', $q$update documents_divers set dossier_id = '{A}' where id = '{D2}'$q$,
       '23514', 'Ce document est cité par le dossier permanent (lettre de mission) : il ne change plus de dossier, sauf avec son dossier.'],
-    array['controle', '136. une pièce qu''aucune entrée ne cite, si', 'chef', $q$update pieces set dossier_id = '{A}' where id = '{P4}'$q$, 'OK', ''],
+    -- Son chemin la suit : depuis CFCS-Q1 (`chemin_dans_son_dossier`, préparée), le premier segment du chemin d'une pièce est
+    -- son dossier ; le pas passe dans les deux états.
+    array['controle', '136. une pièce qu''aucune entrée ne cite, si', 'chef', $q$update pieces set dossier_id = '{A}', storage_path = '{A}/essai-r7-p4.pdf' where id = '{P4}'$q$, 'OK', ''],
     array['controle', '137. et le contenu d''une source citée reste libre', 'chef', $q$update pieces set date_piece = '2026-01-01', dossier_id = dossier_id where id = '{P1}'$q$, 'OK', ''],
     array['controle', '138a. chaque nature sous son libellé : la lettre de mission', 'chef', $q$select consigner_au_dossier_permanent('{T}', 'lettre_mission', 'L', null, '{"piece_id": "{P4}"}'::jsonb, null, null, null); update pieces set dossier_id = '{A}' where id = '{P4}'$q$,
       '23514', 'Cette pièce est citée par le dossier permanent (lettre de mission) : elle ne change plus de dossier, sauf avec son dossier.'],
