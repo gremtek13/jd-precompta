@@ -52625,3 +52625,20 @@ mettait jamais en faute (honorairesFactures 56, depotDesHonoraires 63).
 une fonction, un déclencheur de trop) le remet en faute ; `rls.sql` 240/0/143 sans la préparée, 244/0/150 avec (avant : 4 en
 faute) ; les 38 essais de C à 0 en faute dans les deux états, et une restrictive `zzz_restrictive` posée sur chaque table les met
 en faute sur les mêmes contrôles que la vraie avant le lot ; banc du leurre SÛR sur les essais changés.
+
+### 13/11/2026 — FEC22F : LA NATOP DIT UN POSTE D'UNE SEULE FAÇON, LE LIBELLÉ DE SA LIGNE DU FORMULAIRE
+
+(Agent architecte, sans migration, `CHAMPS_BNC_EXPORTES` baissé.) Le défaut relevé par FEC22f dépassait la case AA :
+`natOpDeLaLigne` écrivait le poste sous l'orthographe du rattachement (`posteRattache`), qui garde un nom par synonyme ;
+treize lignes du formulaire s'y disaient de deux ou trois façons (AA « Recettes » / le libellé de la ligne 1, AB, AC, BB,
+BD, JY, BS, BV, BF, la ligne 22 de BH, BJ, BK « Cotisations sociales personnelles », BM, CH « Amortissements »). La liste
+fermée de `champs_bnc_du_fec` accepte tous ces noms : la base n'aurait rien refusé, l'exercice validé aurait figé le
+désordre. **Fait** : `LIBELLE_DE_LA_LIGNE` et `posteDuFormulaire` (lib/cases2035.ts) ramènent chaque synonyme au libellé
+imprimé de sa ligne (2035-A-SD 2026, public/formulaires/2035-sd-2026.pdf : ligne 1 « Recettes encaissées y compris les
+remboursements de frais », case AA), pour les catégories comme pour les constantes du moteur ; chaque libellé retenu est
+déjà dans la liste fermée. La LIGNE, pas la case : BH, BJ et BM totalisent des lignes qui ont chacune leur libellé, et une
+ligne qui alimente une « dont » ou DB garde le sien. `posteRattache`, `natOpFigee` et `CLASSE_DU_POSTE` intacts. **Preuves** :
+le relevé de toute la liste sous les deux natures (cases2035.test.ts), un cas par source (champsBncDuFec.test.ts), le FEC
+fictif (fecFictif.test.ts : AA d'un seul libellé) ; 8 mutations sur 8 tuées. **Reste** (FEC22F-Q2) : « Frais de
+déplacement(s) » sans ligne sûre (23 ou 24), et deux libellés qui diffèrent de l'imprimé faute d'être en base (ligne 10
+sans sa parenthèse, ligne 21 en « des »), que seule une migration ajouterait.
