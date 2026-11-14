@@ -153,7 +153,7 @@ begin
         'OK', 'false'),
       ('0e', 'valeur', 'la table des paramètres garde ses trois policies, aucune autre : l''accès « Banque » ne la lit pas, la fonction est sa seule porte', 'proprietaire', null,
         $q$select c.relname || ':' || c.relrowsecurity || ':' || coalesce((select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/'
-                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from pg_policy p where p.polrelid = c.oid), 'aucune')
+                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = c.oid), 'aucune')
              from pg_class c where c.oid = 'public.parametres_facturation'::regclass$q$,
         'OK', 'parametres_facturation:true:parametres_facturation_lecture/r/true/authenticated,parametres_facturation_lecture_ventes/r/true/authenticated,parametres_facturation_restauration/a/true/authenticated'),
 

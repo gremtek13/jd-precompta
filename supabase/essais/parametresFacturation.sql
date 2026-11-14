@@ -140,12 +140,12 @@ begin
       -- ══ 0. Le catalogue ══════════
       ('0a', 'valeur', 'la table sous RLS, ses trois policies : lecture du cabinet, lecture du droit « Ventes », insertion de restauration ; aucune autre', 'proprietaire', null,
         $q$select c.relname || ':' || c.relrowsecurity || ':' || coalesce((select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/'
-                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from pg_policy p where p.polrelid = c.oid), 'aucune')
+                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = c.oid), 'aucune')
              from pg_class c where c.oid = 'public.parametres_facturation'::regclass$q$,
         'OK', 'parametres_facturation:true:parametres_facturation_lecture/r/true/authenticated,parametres_facturation_lecture_ventes/r/true/authenticated,parametres_facturation_restauration/a/true/authenticated', null),
       ('0b', 'valeur', 'leurs prédicats : le cabinet du dossier, l''accès qui porte « Ventes », le super-administrateur', 'proprietaire', null,
         $q$select string_agg(p.polname || '=' || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), ' ; ' order by p.polname)
-             from pg_policy p where p.polrelid = 'public.parametres_facturation'::regclass$q$,
+             from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'public.parametres_facturation'::regclass$q$,
         'OK', 'parametres_facturation_lecture=admin_du_dossier(dossier_id)| ; parametres_facturation_lecture_ventes=client_du_dossier(dossier_id, ''ventes''::text)| ; parametres_facturation_restauration=|is_super_admin()', null),
       ('0c', 'valeur', 'les deux fonctions : security definer, search_path fixé ; ni anon ni PUBLIC ne les exécutent ; la garde, personne', 'proprietaire', null,
         $q$select string_agg(p.proname || ' ' || p.prosecdef || ' ' || array_to_string(p.proconfig, ',') || ' anon ' || has_function_privilege('anon', p.oid, 'execute')
@@ -177,7 +177,7 @@ begin
         'OK', 'denomination_imprimee:text,rcs_ville:text,forme_juridique:text,capital:numeric', null),
       ('0h', 'valeur', 'les policies de dossiers : la seule qui modifie est celle du cabinet du dossier, en lecture comme en vérification ; aucune n''ouvre au client autre chose que la lecture', 'proprietaire', null,
         $q$select string_agg(p.polname || '/' || p.polcmd::text || '/' || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), ' ; ' order by p.polname)
-             from pg_policy p where p.polrelid = 'public.dossiers'::regclass and p.polcmd <> 'r'$q$,
+             from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'public.dossiers'::regclass and p.polcmd <> 'r'$q$,
         'OK', 'dossiers_delete/d/est_chef_du_cabinet(cabinet_id)| ; dossiers_update/w/admin_du_dossier(id)|admin_du_dossier(id) ; dossiers_write/a/|est_chef_du_cabinet(cabinet_id)', null),
       -- Depuis l'étape PC4 (ligne 43), `regler_plan_du_dossier` écrit `dossiers` une fois : le compte du dirigeant, qu'elle
       -- déplace avec son rôle, et aucune des quatre colonnes ; elle se compte à part, sa seule écriture lue dans son texte.

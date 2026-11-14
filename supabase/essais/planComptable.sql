@@ -271,7 +271,7 @@ begin
                             and po.polroles = array['authenticated'::regrole]::oid[] and po.polqual is null
                             and pg_get_expr(po.polwithcheck, po.polrelid) = 'is_super_admin()'),
          count(*)
-    into n, m, restauration, k from pg_policy po where po.polrelid in ('public.roles_comptables'::regclass, 'public.plan_comptable_dossier'::regclass);
+    into n, m, restauration, k from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) po where po.polrelid in ('public.roles_comptables'::regclass, 'public.plan_comptable_dossier'::regclass);
   select count(*) into total from pg_class c where c.oid in ('public.roles_comptables'::regclass, 'public.plan_comptable_dossier'::regclass)
    and c.relrowsecurity;
   verdicts := verdicts || jsonb_build_object('controle', '4. une policy de lecture par table, aux connectés : le catalogue pour tous, le plan sur admin_du_dossier ; '

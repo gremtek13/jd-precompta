@@ -95,7 +95,7 @@ begin
       ('3', 'valeur', 'les deux policies d''emails_envoyes, inchangées', 'proprietaire', null,
         $q$select string_agg(p.polname || '/' || p.polcmd::text || '/' || array_to_string(p.polroles::regrole[]::text[], ',')
                || '/' || coalesce(pg_get_expr(p.polqual, p.polrelid), ''), ' | ' order by p.polname)
-             from pg_policy p where p.polrelid = 'public.emails_envoyes'::regclass$q$,
+             from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'public.emails_envoyes'::regclass$q$,
         'OK', 'emails_envoyes_all/*/-/admin_du_dossier(dossier_id) | emails_envoyes_lecture_ventes/r/authenticated/(client_du_dossier(dossier_id, ''ventes''::text) AND (type = ANY (ARRAY[''facture''::text, ''devis''::text, ''relance_facture''::text])))', null),
 
       -- ══ 4 à 14. Ce qui s'inscrit ══════════

@@ -136,12 +136,12 @@ begin
       -- ══ 0. Le catalogue ══════════
       ('0a', 'valeur', 'la table sous RLS, ses trois policies : lecture du cabinet, lecture du droit « Ventes », insertion de restauration ; aucune autre', 'proprietaire', null,
         $q$select c.relname || ':' || c.relrowsecurity || ':' || coalesce((select string_agg(p.polname || '/' || p.polcmd::text || '/' || p.polpermissive || '/'
-                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from pg_policy p where p.polrelid = c.oid), 'aucune')
+                 || array_to_string(p.polroles::regrole[]::text[], ','), ',' order by p.polname) from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = c.oid), 'aucune')
              from pg_class c where c.oid = 'public.adresses_reception'::regclass$q$,
         'OK', 'adresses_reception:true:adresses_reception_lecture/r/true/authenticated,adresses_reception_lecture_ventes/r/true/authenticated,adresses_reception_restauration/a/true/authenticated', null),
       ('0b', 'valeur', 'leurs prédicats : le cabinet du dossier, l''accès qui porte « Ventes », le super-administrateur', 'proprietaire', null,
         $q$select string_agg(p.polname || '=' || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || '|' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''), ' ; ' order by p.polname)
-             from pg_policy p where p.polrelid = 'public.adresses_reception'::regclass$q$,
+             from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = 'public.adresses_reception'::regclass$q$,
         'OK', 'adresses_reception_lecture=admin_du_dossier(dossier_id)| ; adresses_reception_lecture_ventes=client_du_dossier(dossier_id, ''ventes''::text)| ; adresses_reception_restauration=|is_super_admin()', null),
       ('0c', 'valeur', 'les deux fonctions : security definer, search_path fixé, l''état stable ; ni anon ni PUBLIC ne les exécutent', 'proprietaire', null,
         $q$select string_agg(p.proname || ' ' || p.prosecdef || ' ' || p.provolatile::text || ' ' || array_to_string(p.proconfig, ',') || ' anon ' || has_function_privilege('anon', p.oid, 'execute')
@@ -175,7 +175,7 @@ begin
              from pg_proc p where p.oid = 'public.garder_adresse_reception()'::regprocedure$q$,
         'OK', 'adresses_reception_gardes:avant,ligne,insert,update,delete>garder_adresse_reception | false search_path=public false false', null),
       ('0g', 'valeur', 'les deux tables des connexions : RLS activée, AUCUNE policy — l''état les lit pour le client sans les lui ouvrir', 'proprietaire', null,
-        $q$select string_agg(c.relname || ':' || c.relrowsecurity || ':' || (select count(*) from pg_policy p where p.polrelid = c.oid), ',' order by c.relname)
+        $q$select string_agg(c.relname || ':' || c.relrowsecurity || ':' || (select count(*) from (select * from pg_policy where not (polname = 'deux_facteurs' and not polpermissive)) p where p.polrelid = c.oid), ',' order by c.relname)
              from pg_class c where c.oid in ('public.connexions_plateformes'::regclass, 'public.superpdp_credentials'::regclass)$q$,
         'OK', 'connexions_plateformes:true:0,superpdp_credentials:true:0', null),
       ('0h', 'valeur', 'les colonnes que le client « Ventes » lit, dans leur ordre (« ! » : non nulle)', 'proprietaire', null,

@@ -310,10 +310,13 @@ begin
                        'periode_civile_debut', 'periode_civile_fin')
      and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute');
   perform pg_temp.noter(55, 'les six contrôles : aux droits de l''appelant, authenticated seul', '6', n::text);
+  -- Les policies hors la restrictive `deux_facteurs` de la double authentification exigée (C7, préparée), qu'elle pose sur
+  -- chaque table : « conformes / en tout », le filtre du bloc DP de rls.sql. Une policy de plus, même restrictive d'un
+  -- autre nom, rompt le compte (jusque-là « (et d'autres) » s'ajoutait après le chiffre, que `noter` juge au préfixe).
   select count(*) into n from pg_policies where schemaname = 'public' and tablename = 'honoraires_factures'
-     and roles = '{authenticated}' and cmd in ('SELECT', 'INSERT');
-  perform pg_temp.noter(56, 'deux policies to authenticated, lecture et restauration', '2', n::text
-    || case when (select count(*) from pg_policies where schemaname = 'public' and tablename = 'honoraires_factures') = 2 then '' else ' (et d''autres)' end);
+     and roles = '{authenticated}' and cmd in ('SELECT', 'INSERT') and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE');
+  perform pg_temp.noter(56, 'deux policies to authenticated, lecture et restauration, et aucune autre hors la restrictive deux_facteurs', '2/2 policies', n::text
+    || '/' || (select count(*) from pg_policies where schemaname = 'public' and tablename = 'honoraires_factures' and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) || ' policies');
 
   -- En dernier : le brouillon supprimé directement (la policy des factures) emporte aussi ses liens ; le dossier aussi.
   r := pg_temp.essayer(membre, format($q$delete from factures_emises where id = %L returning 1$q$, f5));

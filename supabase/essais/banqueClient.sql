@@ -107,19 +107,19 @@ begin
                   where c.relnamespace = 'public'::regnamespace and c.relname in ('justificatifs_proposes', 'precisions_mouvements'))
          || ' | ' || (select string_agg(p.tablename || '.' || p.policyname || ' ' || left(p.cmd, 3) || ' ' || array_to_string(p.roles, ',')
                        || ' ' || coalesce(p.qual, '-') || ' ' || coalesce(p.with_check, '-'), ' ; ' order by p.tablename, p.policyname)
-                       from pg_policies p where p.schemaname = 'public' and p.tablename in ('justificatifs_proposes', 'precisions_mouvements'))$q$,
+                       from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p where p.schemaname = 'public' and p.tablename in ('justificatifs_proposes', 'precisions_mouvements'))$q$,
       -- La commande de chaque policy par ses trois premières lettres : ce fichier se joue en production par l'outil
       -- d'exécution, qui soumet le mot d'une suppression à une confirmation — même dans un texte attendu.
       '', 'justificatifs_proposes true, precisions_mouvements true | justificatifs_proposes.justificatifs_proposes_lecture SEL authenticated gere_la_banque(dossier_id) - ; justificatifs_proposes.justificatifs_proposes_restauration INS authenticated - is_super_admin() ; precisions_mouvements.precisions_mouvements_lecture SEL authenticated gere_la_banque(dossier_id) - ; precisions_mouvements.precisions_mouvements_restauration INS authenticated - is_super_admin() ; precisions_mouvements.precisions_mouvements_suppression_cabinet DEL authenticated admin_du_dossier(dossier_id) -'],
     array['valeur', '2. le contrôle de solde d''un relevé se lit au droit « Banque », et ne s''écrit qu''au cabinet', 'postgres',
       $q$select string_agg(p.policyname || ' ' || p.cmd || ' ' || array_to_string(p.roles, ',') || ' ' || coalesce(p.qual, '-')
                 || ' ' || coalesce(p.with_check, '-'), ' ; ' order by p.policyname)
-           from pg_policies p where p.schemaname = 'public' and p.tablename = 'controles_releves_bancaires'$q$,
+           from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p where p.schemaname = 'public' and p.tablename = 'controles_releves_bancaires'$q$,
       '', 'controles_releves_bancaires_all ALL public admin_du_dossier(dossier_id) admin_du_dossier(dossier_id) ; controles_releves_bancaires_lecture_banque SELECT authenticated client_du_dossier(dossier_id, ''banque''::text) -'],
     array['valeur', '3. le resserrement : les lectures client des mouvements, des parts et des règlements groupés passent au droit « Banque », pour les seuls comptes connectés', 'postgres',
       $q$select string_agg(p.tablename || '.' || p.policyname || ' ' || p.cmd || ' ' || array_to_string(p.roles, ',') || ' ' || coalesce(p.qual, '-'), ' ; '
                 order by p.tablename, p.policyname)
-           from pg_policies p where p.schemaname = 'public' and p.tablename in ('lignes_bancaires', 'ventilations_bancaires', 'reglements_groupes')
+           from (select * from pg_policies where not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE')) p where p.schemaname = 'public' and p.tablename in ('lignes_bancaires', 'ventilations_bancaires', 'reglements_groupes')
             and p.policyname in ('membres peuvent lire leurs lignes bancaires', 'ventilations_bancaires_lecture_client', 'reglements_groupes_lecture_client')$q$,
       '', 'lignes_bancaires.membres peuvent lire leurs lignes bancaires SELECT authenticated client_du_dossier(dossier_id, ''banque''::text) ; reglements_groupes.reglements_groupes_lecture_client SELECT authenticated client_du_dossier(dossier_id, ''banque''::text) ; ventilations_bancaires.ventilations_bancaires_lecture_client SELECT authenticated client_du_dossier(dossier_id, ''banque''::text)'],
     array['valeur', '4. les quatre fonctions : SECURITY DEFINER, search_path fixé ; la couverture stable, les trois écritures volatiles ; les deux gardes sans DEFINER', 'postgres',

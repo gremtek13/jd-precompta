@@ -314,8 +314,10 @@ begin
    where p.pronamespace = 'public'::regnamespace and p.proname in ('garder_fiche_liee', 'garder_designation_des_fiches_liees')
      and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
   perform pg_temp.noter(50, 'les deux gardes : aucun rôle de session ne les exécute', '0', n::text);
-  select count(*) into n from pg_policies where schemaname = 'public' and tablename = 'contacts';
-  perform pg_temp.noter(51, 'les policies des contacts, inchangées (deux lectures, la restauration)', '3', n::text);
+  -- Hors la restrictive `deux_facteurs` de la double authentification exigée (C7, préparée), qu'elle pose sur chaque
+  -- table : le filtre du bloc DP de rls.sql ; une restrictive d'un autre nom reste comptée.
+  select count(*) into n from pg_policies where schemaname = 'public' and tablename = 'contacts' and not (policyname = 'deux_facteurs' and permissive = 'RESTRICTIVE');
+  perform pg_temp.noter(51, 'les policies des contacts, inchangées (deux lectures, la restauration), hors la restrictive deux_facteurs', '3 policies', n::text || ' policies');
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.prosecdef and p.proname = 'delier_fiche_liee'
      and p.proconfig = array['search_path=public']
