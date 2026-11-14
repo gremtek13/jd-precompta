@@ -52762,3 +52762,17 @@ au cabinet, l'appelant pris pour le cabinet, la constante ignorée), et les troi
 `dossier_client_id`, `delie_le`, `delie_par` non facultatifs ; un lecteur du nom ne lit qu'un `ContactNomme`, que
 `contactNomme` établit (pas une fiche liée, un nom) : la liste, le choix, la provenance, la saisie, l'effacement, l'export, les
 clients sans activité ; aucun `as` (la fiche liée de test a sa fabrique, `ficheLiee`). À déployer : `plateforme-agreee`.
+
+### 14/11/2026 — LE BANC DU LEURRE CONCLUT SUR LES PRÉPARÉES DE L'INVENTAIRE, DES STOCKS ET DE L'AFFECTATION
+
+La répétition générale du 14/11/2026 avait trouvé le banc arrêté sur la chaîne des préparées : le remplisseur écrit un exercice
+de 7 (les CHECK le bornent à 2000-2100), un compte 401000 (une nature, un genre ou un stock exigent leur racine) et ne compose ni
+les soldes lus d'une décision ni la ligne d'une décision absente — six tables vides du leurre (`operations_inventaire`,
+`provisions`, `stocks_de_cloture`, `affectations_du_resultat`, `lignes_d_affectation`, `inventaires_declares`). Un bloc
+`$inventaire$` de `leurre_complement.sql` les garnit, une ligne par leurre, chaque table sous son `to_regclass`, les montants
+en centimes du leurre. Sur une copie de la mère : sans effet sur la production d'aujourd'hui (affectation, rls,
+devisCitentUnContact SÛRS, 93 tables sur 93, avant comme après) ; munie d'INV2, LIA2, AFF2, INV4 et INV3, 99 tables sur 99 et
+les 102 essais hors de la famille « apres » SÛRS ; les cinq essais de ces migrations sont de réplique seulement, que le banc ne
+rejoue pas : rejoués hors de lui, P et L égaux, aucun motif ; la ligne des stocks retirée, le banc s'arrête sur elle.
+`essaisEnProduction.test.ts` exige qu'une table préparée ne se garnisse que sous sa propre condition ; il a trouvé la lecture
+d'un document (B2) et la ligne d'une décision conditionnées sur leur table parente seulement, désormais sur la leur.
