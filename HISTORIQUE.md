@@ -52747,3 +52747,18 @@ en direct. **Questions** : la relève du client tant que la fonction ne lit pas 
 (P1TQ2-Q1) ; la pièce d'un mouvement tenue dans son dossier (A8Q5-Q4) ; la pièce réglée sous le seuil sans réalignement
 (A8Q5Q3Q2-Q3) ; l'année du début avant l'affiliation à la CARMF (RET2-Q3) ; le compte du dirigeant sous d'autres zéros
 (PC4Q2Q1-Q2).
+
+### 14/11/2026 — B4RS1-Q3 : LA RELÈVE DU CLIENT FERMÉE TANT QUE LA FONCTION NE LIT PAS L'AUTEUR ; LM3 : `CONTACTS.NOM` NUL DANS `TYPES.TS`
+
+(Agent architecte ; aucune migration, rien déployé.) **La règle** (B4RS-Q1 (B)) : la relève des achats depuis l'espace client ne
+passe que par une connexion de plateforme dont le cabinet a écrit la configuration en vigueur. Elle ne tenait jusqu'ici, la
+constante `AUTEUR_DES_CONNEXIONS_EN_BASE` baissée, que par l'ordre des déploiements. Désormais, baissée, `plateforme-agreee`
+refuse `lister_achats` et `recevoir_achat` à tout accès client (409, `auteur_de_la_connexion_non_lu`) aussitôt sa case
+« Achats » lue, avant toute autre lecture, tout secret et tout appel ; le cabinet garde sa relève ; levée, le refus selon
+l'auteur d'hier. L'écran dit la raison au client (`refusDeLAuteurDitAuClient`, quel que soit le drapeau). Les scénarios de B4r
+qui aboutissent se rejouent sous la constante levée, la connexion attestée par le chef (`SCENARIOS_RECEPTION_SOUS_L_AUTEUR`) ;
+sept défauts plantés mordent (le refus ôté pour chaque action, posé après la lecture de la connexion, après l'appel, appliqué
+au cabinet, l'appelant pris pour le cabinet, la constante ignorée), et les trois de B4r déplacés. **LM3** : `nom: string | null`,
+`dossier_client_id`, `delie_le`, `delie_par` non facultatifs ; un lecteur du nom ne lit qu'un `ContactNomme`, que
+`contactNomme` établit (pas une fiche liée, un nom) : la liste, le choix, la provenance, la saisie, l'effacement, l'export, les
+clients sans activité ; aucun `as` (la fiche liée de test a sa fabrique, `ficheLiee`). À déployer : `plateforme-agreee`.
