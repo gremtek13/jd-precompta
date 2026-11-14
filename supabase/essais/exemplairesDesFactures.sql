@@ -552,7 +552,9 @@ begin
       '23514', 'Cette pièce est l''exemplaire de la facture F2026-0002 : elle ne change plus de dossier — défaire d''abord la désignation.'],
     array['controle', '77. une pièce désignée reste une vente', 'chef', $q$update pieces set type_piece = 'achat' where id = '{PV4}'$q$,
       '23514', 'Cette pièce est l''exemplaire de la facture F2026-0002 : elle reste une pièce de vente — défaire d''abord la désignation.'],
-    array['controle', '78. une pièce que rien ne désigne change de nature et de dossier', 'chef', $q$update pieces set type_piece = 'achat' where id = '{PV1}'; update pieces set dossier_id = '{A}' where id = '{PDEP}'$q$, 'OK', ''],
+    -- Une pièce qui change de dossier y emporte son chemin (78, 149, 227) : depuis CFCS-Q1 (`chemin_dans_son_dossier`,
+    -- préparée), le premier segment du chemin d'une pièce est son dossier ; ces pas passent dans les deux états.
+    array['controle', '78. une pièce que rien ne désigne change de nature et de dossier', 'chef', $q$update pieces set type_piece = 'achat' where id = '{PV1}'; update pieces set dossier_id = '{A}', storage_path = '{A}/essai-vf1a-pdep.pdf' where id = '{PDEP}'$q$, 'OK', ''],
     array['controle', '79. le reste d''une pièce désignée se modifie comme avant, la désignation réécrite à l''identique comprise', 'chef', $q$update pieces set date_piece = '2026-03-16', montant_ttc = 61, statut = 'validee', facture_id = facture_id, type_piece = 'vente', dossier_id = dossier_id where id = '{PV4}'$q$, 'OK', ''],
     array['controle', '80. le réglage d''une autre pièce n''ouvre rien', 'postgres', $q$select set_config('jd.exemplaire_facture', '{PV1}', true); update pieces set facture_id = null where id = '{PV4}'$q$,
       '42501', 'Une pièce ne se désigne exemplaire d''une facture, et ne cesse de l''être, que par l''application.'],
@@ -581,7 +583,7 @@ begin
     array['controle', '146. MUTATION — le contrôle 22 sur une facture validée : il doit passer', 'chef', $q$select designer_exemplaire_facture('{T}', '{PV1}', '{F2}')$q$, 'OK', ''],
     array['controle', '147. MUTATION — le contrôle 16 sur une pièce que rien ne fige : il doit passer', 'chef', $q$select designer_exemplaire_facture('{T}', '{PDEP}', '{F1}')$q$, 'OK', ''],
     array['controle', '148. MUTATION — le contrôle 48 sur une pièce désignée : il doit passer', 'chef', $q$select defaire_exemplaire_facture('{T}', '{PV4}')$q$, 'OK', ''],
-    array['controle', '149. MUTATION — le contrôle 76 sur une pièce que rien ne désigne : il doit passer', 'chef', $q$update pieces set dossier_id = '{A}' where id = '{PDEP}'$q$, 'OK', ''],
+    array['controle', '149. MUTATION — le contrôle 76 sur une pièce que rien ne désigne : il doit passer', 'chef', $q$update pieces set dossier_id = '{A}', storage_path = '{A}/essai-vf1a-pdep.pdf' where id = '{PDEP}'$q$, 'OK', ''],
 
     -- ══ 150 à 158. Ce que le catalogue dit ══════════
     array['valeur', '150. la colonne : facultative, sans valeur par défaut', 'postgres', $q$select string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || ' ' || (not a.attnotnull)::text || ' ' || coalesce(pg_get_expr(d.adbin, d.adrelid), '-'), ',') from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum where a.attrelid = 'public.pieces'::regclass and a.attname = 'facture_id' and not a.attisdropped$q$, '',
@@ -643,7 +645,7 @@ begin
       '23514', 'Désignez la pièce « essai-vf6b-pac.pdf » exemplaire de sa facture, ou déclarez-la vente hors des factures de l''application, avant de la valider : les factures de ce dossier sont la source de leurs ventes.'],
     array['controle', '226. une vente validée qui arrive dans J d''un autre dossier : jugée', 'chef', $q$update pieces set dossier_id = '{J}' where id = '{PV2}'$q$,
       '23514', 'Désignez la pièce « essai-vf1a-pv2.pdf » exemplaire de sa facture, ou déclarez-la vente hors des factures de l''application, avant de la valider : les factures de ce dossier sont la source de leurs ventes.'],
-    array['controle', '227. une vente validée qui quitte J pour un dossier qui n''a pas basculé : rien n''est jugé', 'chef', $q$update pieces set dossier_id = '{T}' where id = '{PVA}'$q$, 'OK', ''],
+    array['controle', '227. une vente validée qui quitte J pour un dossier qui n''a pas basculé : rien n''est jugé', 'chef', $q$update pieces set dossier_id = '{T}', storage_path = '{T}/essai-vf6b-pva.pdf' where id = '{PVA}'$q$, 'OK', ''],
     array['controle', '228. un lot : une seule pièce sans marque fait refuser l''instruction entière', 'chef', $q$update pieces set statut = 'validee' where id in ('{PDV}', '{PJ9}')$q$,
       '23514', 'Désignez la pièce « essai-vf6b-pj09.pdf » exemplaire de sa facture, ou déclarez-la vente hors des factures de l''application, avant de la valider : les factures de ce dossier sont la source de leurs ventes.'],
     array['controle', '229. une pièce déclarée se valide', 'chef', $q$update pieces set statut = 'validee' where id = '{PDV}'$q$, 'OK', ''],

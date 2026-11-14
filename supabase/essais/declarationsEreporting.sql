@@ -475,8 +475,11 @@ begin
     array['lecture', '74. MUTATION — le contrôle 65 affecté au BON dossier : il doit voir celles de T', 'membre', $q$select ((select count(*) from declarations_ereporting where dossier_id = '{T}') > 0)::text || ':' || ((select count(*) from declarations_ereporting_sources where dossier_id = '{T}') > 0)::text$q$, '', 'true:true'],
 
     -- ══ 80 à 88. Ce que le catalogue dit ══════════
+    -- 80 : la déclaration à neuf paramètres, ou à dix une fois e6b en base (`identifiant_du_fichier_ereporting`, préparée,
+    -- qui retire la forme à neuf : identifiantDuFichierEreporting.sql le prouve) ; les droits attendus sont les mêmes.
     array['valeur', '80. les droits d''exécution (anonyme, connecté)', 'postgres', $q$select string_agg(f || ':' || has_function_privilege('anon', 'public.' || f || a, 'execute') || ':' || has_function_privilege('authenticated', 'public.' || f || a, 'execute'), ',' order by f collate "C") from (values
-      ('declarer_ereporting_hors_application', '(uuid, text, date, date, uuid, uuid, text, jsonb, text)'), ('periode_ereporting', '(date, text)'),
+      ('declarer_ereporting_hors_application', case when to_regprocedure('public.declarer_ereporting_hors_application(uuid, text, date, date, uuid, uuid, text, jsonb, text, uuid)') is not null
+        then '(uuid, text, date, date, uuid, uuid, text, jsonb, text, uuid)' else '(uuid, text, date, date, uuid, uuid, text, jsonb, text)' end), ('periode_ereporting', '(date, text)'),
       ('garder_declaration_ereporting', '()'), ('garder_source_declaree', '()'), ('garder_piece_declaree', '()')) as t(f, a)$q$, '',
       'declarer_ereporting_hors_application:false:true,garder_declaration_ereporting:false:false,garder_piece_declaree:false:false,garder_source_declaree:false:false,periode_ereporting:false:false'],
     array['valeur', '81. ce qui contourne la RLS, et ce qui ne la contourne pas', 'postgres', $q$select string_agg(proname || ':' || prosecdef || ':' || provolatile::text, ',' order by proname collate "C") from pg_proc where pronamespace = 'public'::regnamespace and proname in ('declarer_ereporting_hors_application', 'periode_ereporting', 'garder_declaration_ereporting', 'garder_source_declaree', 'garder_piece_declaree')$q$, '',

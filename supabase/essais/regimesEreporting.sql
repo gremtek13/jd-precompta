@@ -402,7 +402,9 @@ begin
       '23514', 'Cette pièce a été écartée de l''e-reporting : elle ne change plus de dossier.'],
     array['controle', '101b. même reprise : son écart reste dans l''histoire de son dossier', 'postgres', $q$update pieces_ecartees_ereporting set retire_le = now() where id = '{E1}'; update pieces set dossier_id = '{A}' where id = '{P1}'$q$,
       '23514', 'Cette pièce a été écartée de l''e-reporting : elle ne change plus de dossier.'],
-    array['controle', '101c. une pièce jamais écartée, si', 'postgres', $q$update pieces set dossier_id = '{A}' where id = '{P6}'$q$, 'OK', ''],
+    -- Son chemin la suit : depuis CFCS-Q1 (`chemin_dans_son_dossier`, préparée), le premier segment du chemin d'une pièce est
+    -- son dossier ; le pas passe dans les deux états.
+    array['controle', '101c. une pièce jamais écartée, si', 'postgres', $q$update pieces set dossier_id = '{A}', storage_path = '{A}/essai-e5a-p6.pdf' where id = '{P6}'$q$, 'OK', ''],
     array['controle', '101d. une écriture de la pièce qui reprend son dossier sans le changer passe', 'postgres', $q$update pieces set dossier_id = dossier_id, date_piece = '2026-03-09' where id = '{P1}'$q$, 'OK', ''],
     array['controle', '102. une fiche posée après l''écart l''emporte : la fonction d''e2 ne lit pas les écarts', 'chef', $q$select enregistrer_fiche_hors_de_france('{T}', '{P1}', null, 'INV-P1', '2026-03-10', '380', null, null, 'IE', '0223', 'IE0000000T', 'services', true, null, null, null, '[{"code":"AE","taux":0,"base":120,"tva":0}]'::jsonb)$q$, 'OK', ''],
 

@@ -133,8 +133,9 @@ function rejouer(essai: string): { rejeux: Rejeu[]; deplacements: Deplacement[] 
     if (e.genre !== 'fait' && e.genre !== 'controle') continue
     const base = e.code === 'OK' ? 'OK' : `${e.code} ${e.attendu}`
 
-    // Un déplacement de pièce ou de document, précédé ou non d'une consignation : la garde des sources.
-    const dep = /^(?:select (consigner_au_dossier_permanent\([\s\S]*\)); )?update (pieces|documents_divers) set dossier_id = '\{A\}' where id = '\{(\w+)\}'$/.exec(e.appel)
+    // Un déplacement de pièce ou de document, précédé ou non d'une consignation : la garde des sources. Le chemin du
+    // fichier peut suivre son dossier (CFCS-Q1, `chemin_dans_son_dossier`, préparée : son premier segment est le dossier).
+    const dep = /^(?:select (consigner_au_dossier_permanent\([\s\S]*\)); )?update (pieces|documents_divers) set dossier_id = '\{A\}'(?:, storage_path = '\{A\}\/[^']*')? where id = '\{(\w+)\}'$/.exec(e.appel)
     if (dep) {
       const [, consignation, table, nom] = dep
       let lignes = entrees
