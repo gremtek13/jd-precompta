@@ -5,6 +5,7 @@ import {
   AUTEUR_DES_CONNEXIONS_PREVU, RAISON_CONNEXION_HORS_DU_CABINET, auteurDeLaConnexionDit, refusDeLAuteurDitAuClient,
 } from './auteurDesConnexions'
 import { refusDitAuClient } from './receptionParLeClient'
+import { indiceSql } from '../test/schema'
 
 // QUI A ÉCRIT LA CONNEXION À LA PLATEFORME DU CLIENT (B4RS-Q1) : ce que les deux espaces en disent, drapeau baissé (l'écran
 // d'hier) et levé ; la raison du refus confrontée à la fonction, et la migration à ses refus.
@@ -69,7 +70,7 @@ describe('les mots confrontés à la fonction et à la migration', () => {
   })
 
   it('l’attestation ne prend pas d’auteur en paramètre : la base le lit de la session', () => {
-    const corps = MIGRATION.slice(MIGRATION.indexOf('create function public.attester_connexion_plateforme'))
+    const corps = MIGRATION.slice(indiceSql(MIGRATION, 'create function public.attester_connexion_plateforme'))
     expect(corps).toContain('set ecrite_par = auth.uid(), ecrite_le = pg_catalog.now()')
     expect(corps).toContain("raise exception 'Accès refusé à ce dossier.' using errcode = '42501';")
   })
