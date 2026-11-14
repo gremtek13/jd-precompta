@@ -451,6 +451,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 ## Fonctionnalités actuellement en cours
 
 - **Proposition de catégorie** : à éprouver par un premier clic réel du cabinet.
+- **La répétition générale des migrations préparées** (14/11/2026, sur une copie de la réplique) : 30 des 31 s'appliquent sur
+  la production du jour, dans tous les ordres éprouvés, leurs retours rendant la base d'avant ; e7a refuse (son texte
+  d'`enregistrer_facture` est dépassé : REPET-Q1) ; la garde d'INV3 ne vérifie pas le corps qu'elle remplace (REPET-Q2) ;
+  l'ordre de collage recommandé est dans le récit ; deux préparées du 13/11 ont été corrigées par une relecture adverse
+  (la version d'une connexion posée par la base ; ce qu'une pièce a reçu lu dans son seul dossier)
+  → « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES », « LA RELECTURE ADVERSE DE SIX MIGRATIONS PRÉPARÉES ».
 - **Préparées le 13/11/2026, éprouvées sur la réplique, en attente de leur fiche** (chacune derrière son drapeau baissé) :
   le 468 sur le relevé (`le_468_sur_le_releve`, PC4Q2-Q1) ; une reprise retient la trésorerie
   (`reprises_retiennent_la_tresorerie`, A8B-Q3) ; le registre d'une facture reprise part de ce que sa pièce citée a reçu
@@ -787,7 +793,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (la garde de fin le rejoue), la régularisation reprise d'une balance confrontée au solde repris (INV3Q2-Q1 posée) ;
   INV6, fini le 13/11/2026 derrière `INVENTAIRE_EXPORTE` baissé (`lib/inventaireDesControles.ts` : le bilan, la Vue
   d'ensemble, la révision, la carte de la Clôture et les contrats du dossier permanent lisent la déclaration de
-  l'inventaire ; l'onglet ne propose rien tant qu'INV-Q12 n'est pas tranchée ; INV6-Q1) → « INV6 : L'INVENTAIRE DANS LE BILAN, LA VUE D'ENSEMBLE ET LA RÉVISION »,
+  l'inventaire ; l'onglet ne propose rien tant qu'INV-Q12 n'est pas tranchée ; INV6-Q1) ; INV7 le 14/11/2026, l'assistant lit
+  l'inventaire derrière la même constante baissée, jamais l'objet saisi (INV7-Q1) ; reste INV8, la mise en production (les
+  trois migrations, les drapeaux et la constante dans un même commit, puis l'assistant redéployé)
+  → « INV7 » → « INV6 : L'INVENTAIRE DANS LE BILAN, LA VUE D'ENSEMBLE ET LA RÉVISION »,
   « LES ÉCRITURES D'INVENTAIRE : LA CONCEPTION », « INV2 ET LIA2 : DEUX MIGRATIONS QUI SE COLLENT DANS LES DEUX
   ORDRES (LIGNES 35 ET 36) », « INV3-Q1 ET INV3-Q2 : L'EMPREINTE SCELLE L'INVENTAIRE, LA RÉGULARISATION REPRISE »,
   « LA LIASSE 2033, LES STOCKS ET L'IMPÔT SUR LES SOCIÉTÉS : LA CONCEPTION », « L'AFFECTATION DU RÉSULTAT ET
