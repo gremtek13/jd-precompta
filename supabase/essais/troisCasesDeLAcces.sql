@@ -57,6 +57,10 @@ declare
   b7 constant boolean := to_regclass('public.notes_de_frais') is not null;
   mots constant text := nullif(array_to_string(array_remove(array_remove(array_remove(array['achats', 'frais', 'documents'],
     case when b4 or b7 then 'achats' end), case when b7 then 'frais' end), case when b2 then 'documents' end), '|'), '');
+  -- P1T-Q2 (`arrivee_et_depart_des_acces`, préparée, avant ou après B1) trace aussi l'arrivée de chaque accès sous le mot
+  -- « acces », que la contrainte du droit admet alors en huitième : en base, le rang 5 lit les deux arrivées de plus, le
+  -- rang 15 le mot de plus (traceDesDroits.sql juge ce que son déclencheur écrit).
+  avec_acces_trace constant boolean := to_regprocedure('public.tracer_les_acces()') is not null;
 begin
   if not exists (select 1 from pg_attribute a where a.attrelid = 'public.memberships'::regclass and a.attname = 'droit_documents'
                   and not a.attisdropped) then
@@ -113,7 +117,9 @@ begin
       'ok', obs = 'f f f f t f t');
     execute trace using acces_a, acces_b, chef, dt, du into obs;
     verdicts := verdicts || jsonb_build_object('rang', 5, 'etape', '5. la trace : B arrive en « creation » sous ses trois cases, puis chaque case changée par le chef ; « Notes de frais » changée seule sur A, sans session', 'observe', obs,
-      'ok', obs = 'A achats cochée changement par le chef, A achats décochée changement par le chef, A frais cochée changement par sans session, '
+      'ok', obs = case when avec_acces_trace then 'A acces cochée creation par sans session, ' else '' end
+        || 'A achats cochée changement par le chef, A achats décochée changement par le chef, A frais cochée changement par sans session, '
+        || case when avec_acces_trace then 'B acces cochée creation par sans session, ' else '' end
         || 'B achats cochée creation par sans session, '
         || 'B documents cochée creation par sans session, B frais décochée changement par le chef, B frais cochée creation par sans session');
 
@@ -232,12 +238,13 @@ begin
     verdicts := verdicts || jsonb_build_object('rang', 14, 'etape', '14. le client lit ses trois cases sur sa ligne ; il ne les écrit pas (aucune ligne touchée)', 'observe', obs || ' | ' || obs2 || ' écrite(s)',
       'ok', obs = 't f t' and obs2 = '0');
 
-    -- 15. La trace connaît les sept cases : la contrainte, le déclencheur.
+    -- 15. La trace connaît les sept cases : la contrainte (et « acces » en huitième avec P1T-Q2), le déclencheur.
     select (select pg_get_constraintdef(c.oid) from pg_constraint c where c.conrelid = 'public.trace_des_droits'::regclass and c.conname = 'trace_des_droits_droit')
         || ' | ' || (select pg_get_triggerdef(tg.oid) from pg_trigger tg where tg.tgname = 'memberships_trace_des_droits' and not tg.tgisinternal)
       into obs;
-    verdicts := verdicts || jsonb_build_object('rang', 15, 'etape', '15. la trace admet et nomme les sept cases (la contrainte du droit, le déclencheur)', 'observe', obs,
-      'ok', obs = 'CHECK ((droit = ANY (ARRAY[''ventes''::text, ''banque''::text, ''caisse''::text, ''comptes''::text, ''achats''::text, ''frais''::text, ''documents''::text]))) | '
+    verdicts := verdicts || jsonb_build_object('rang', 15, 'etape', '15. la trace admet et nomme les sept cases (la contrainte du droit, « acces » en plus avec P1T-Q2 ; le déclencheur)', 'observe', obs,
+      'ok', obs = 'CHECK ((droit = ANY (ARRAY[''ventes''::text, ''banque''::text, ''caisse''::text, ''comptes''::text, ''achats''::text, ''frais''::text, ''documents''::text'
+        || case when avec_acces_trace then ', ''acces''::text' else '' end || ']))) | '
         || 'CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF droit_ventes, droit_banque, droit_caisse, droit_comptes, droit_achats, droit_frais, droit_documents, dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits()');
 
     raise exception 'ANNULATION_ESSAI_GLOBALE';

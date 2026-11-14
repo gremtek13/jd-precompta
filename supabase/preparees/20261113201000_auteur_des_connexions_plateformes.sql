@@ -62,8 +62,10 @@
 
 -- ══ 0. La garde de tête ══════════
 -- Elle refuse une seconde application ; une table qui ne serait plus celle que la garde lit (ses colonnes, sa RLS active
--- sans aucune policy) ; un déclencheur déjà posé sur elle (la garde se croit seule) ; un jugement du cabinet qui ne serait
--- plus celui que la production porte (l'empreinte du corps d'`admin_du_dossier`, les retours chariot d'un collage écartés).
+-- sans aucune policy, hors la restrictive `deux_facteurs` que la double authentification exigée pose sur chaque table de
+-- public — `deux_facteurs_exiges`, préparée, s'applique avant ou après celle-ci) ; un déclencheur déjà posé sur elle (la
+-- garde se croit seule) ; un jugement du cabinet qui ne serait plus celui que la production porte (l'empreinte du corps
+-- d'`admin_du_dossier`, les retours chariot d'un collage écartés).
 do $garde$
 declare
   v_nombre integer;
@@ -82,8 +84,9 @@ begin
     raise exception 'connexions_plateformes n''a plus les colonnes que la garde de l''auteur lit (% sur 9) : relire la table.', v_nombre;
   end if;
   if not (select c.relrowsecurity from pg_catalog.pg_class c where c.oid = 'public.connexions_plateformes'::regclass)
-     or exists (select 1 from pg_catalog.pg_policy p where p.polrelid = 'public.connexions_plateformes'::regclass) then
-    raise exception 'connexions_plateformes doit garder sa RLS sans aucune policy (elle porte le secret) : relire la table avant d''appliquer cette migration.';
+     or exists (select 1 from pg_catalog.pg_policy p where p.polrelid = 'public.connexions_plateformes'::regclass
+                 and not (p.polname = 'deux_facteurs' and not p.polpermissive)) then
+    raise exception 'connexions_plateformes doit garder sa RLS sans aucune policy hors la restrictive deux_facteurs (elle porte le secret) : relire la table avant d''appliquer cette migration.';
   end if;
   if exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = 'public.connexions_plateformes'::regclass and not t.tgisinternal) then
     raise exception 'connexions_plateformes porte déjà un déclencheur : la garde de l''auteur suppose être seule à réécrire la ligne proposée.';

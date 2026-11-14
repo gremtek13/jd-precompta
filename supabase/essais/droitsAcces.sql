@@ -99,6 +99,10 @@ declare
   -- l'insertion et le déplacement d'un accès, refuse tout accès client sur ce dossier ; il vient AVANT les gardes des
   -- droits (l'ordre des noms) ; ce qu'il refuse se joue dans `dossierDuCabinet.sql`.
   avec_lm1 boolean := to_regprocedure('public.garder_acces_au_dossier_du_cabinet()') is not null;
+  -- L'arrivée et le départ d'un accès dans la trace (P1T-Q2, migration `arrivee_et_depart_des_acces`, préparée) : son
+  -- déclencheur, sur l'insertion, le retrait et le déplacement d'un accès, vient APRÈS celui de la trace et AVANT celui de
+  -- l'adresse (l'ordre des noms) ; ce qu'il écrit se joue dans `traceDesDroits.sql`.
+  avec_acces_trace boolean := to_regprocedure('public.tracer_les_acces()') is not null;
   -- … et les cases que ce déclencheur nomme : celles de P1-trace, puis « Comptes » avec C4a (`situations_publiees`), puis
   -- « Achats », « Notes de frais » et « Documents » avec B1 (`trois_cases_de_l_acces`) — chacune le redéfinit ; l'état se
   -- lit à la colonne que chacune ajoute, comme `colonnes_tracees` de traceDesDroits.sql.
@@ -838,8 +842,8 @@ begin
 
   -- 83. Le catalogue : la garde, aux droits du propriétaire, chemin fixé, qu'aucun rôle de l'API n'exécute ; son déclencheur,
   -- APRÈS l'insertion et la mise à jour de `droit_ventes` ou de `dossier_id`, ligne par ligne, actif. La liste des
-  -- déclencheurs de `memberships` reste FERMÉE : chacun y entre avec sa migration (c10, trace, avec_adresse_retiree,
-  -- avec_lm1, en tête de l'essai), un déclencheur de plus la met en faute.
+  -- déclencheurs de `memberships` reste FERMÉE : chacun y entre avec sa migration (c10, trace, avec_acces_trace,
+  -- avec_adresse_retiree, avec_lm1, en tête de l'essai), un déclencheur de plus la met en faute.
   select p.prosecdef || ' ' || p.provolatile::text || ' ' || coalesce(array_to_string(p.proconfig, ','), '') || ' ' || l.lanname
          || ' anon ' || has_function_privilege('anon', p.oid, 'execute')
          || ' authenticated ' || has_function_privilege('authenticated', p.oid, 'execute')
@@ -856,6 +860,7 @@ begin
       || 'CREATE TRIGGER memberships_droit_ventes AFTER INSERT OR UPDATE OF droit_ventes, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_ventes() O'
       || case when trace then ' ; CREATE TRIGGER memberships_trace_des_droits AFTER INSERT OR DELETE OR UPDATE OF ' || colonnes_tracees
            || ', dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_droits() O' else '' end
+      || case when avec_acces_trace then ' ; CREATE TRIGGER memberships_trace_des_droits_acces AFTER INSERT OR DELETE OR UPDATE OF dossier_id, user_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION tracer_les_acces() O' else '' end
       || case when avec_adresse_retiree then ' ; CREATE TRIGGER memberships_trace_des_droits_adresse AFTER DELETE OR UPDATE OF dossier_id, id ON public.memberships FOR EACH ROW EXECUTE FUNCTION retenir_l_adresse_d_un_acces_retire() O' else '' end, false));
 
   -- ══ 90 à 95. Les mutations de la garde : chacune doit MORDRE ════════════════════════════════════════════════
