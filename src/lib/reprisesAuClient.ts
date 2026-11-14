@@ -2,6 +2,7 @@ import type { ReponseDeLaBase } from './couvertureReleve'
 import type { PiecesCitees } from './facturesSources'
 import type { RepriseDeLaFacture } from './encaissementsFactures'
 import { messageErreur } from './messageErreur'
+import { CLE_DU_RECU, recuParLaPieceCiteePrevu } from './recuParLaPieceCitee'
 
 // LES FACTURES REPRISES, AU CLIENT (ligne 51.5 ; A8C-Q1 et A8Q5-Q2, tranchées par le cabinet le 11/11/2026 ; HISTORIQUE.md,
 // « A8C-Q1 ET A8Q5-Q2 : LES FACTURES REPRISES, AU CLIENT »). La migration `reprises_au_client` (en production depuis le
@@ -54,6 +55,12 @@ export const CLES_DE_LA_REPRISE = [
   'nature_operation', 'reprise_le',
 ] as const
 
+/**
+ * Les sept clés qu'elle rend avec la migration `recu_par_la_piece_citee` (A8Q5Q3-Q2, lib/recuParLaPieceCitee.ts) : ce que la
+ * pièce citée a reçu en plus, dans l'ordre des autres. Lues, et elles seules, son drapeau levé.
+ */
+export const CLES_DE_LA_REPRISE_AVEC_SA_PIECE = [...CLES_DE_LA_REPRISE, CLE_DU_RECU].sort()
+
 const IDENTIFIANT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
@@ -90,12 +97,17 @@ function parTauxLu(v: unknown, cle: string, positifs: boolean): { taux: number; 
 
 /**
  * La valeur que rend `reprise_de_la_facture`, pour la facture demandée : un objet aux six clés de `CLES_DE_LA_REPRISE`, et
- * elles seules. Toute autre forme rend `null` : une valeur qu'on ne sait pas lire ne passe jamais pour un plafond.
+ * elles seules — aux sept de `CLES_DE_LA_REPRISE_AVEC_SA_PIECE`, le drapeau de la pièce citée levé (A8Q5Q3-Q2 : ce qu'elle a
+ * reçu, `recuParSaPieceCentimes`). Toute autre forme rend `null` : une valeur qu'on ne sait pas lire ne passe jamais pour un
+ * plafond.
  */
 export function repriseDeLaFactureRendue(rendu: unknown, factureId: string): RepriseDeLaFacture | null {
   if (!objetSimple(rendu)) return null
+  // Le drapeau de la pièce citée (A8Q5Q3-Q2) dit la forme que la base rend : six clés aujourd'hui, sept avec la migration.
+  const avecSaPiece = recuParLaPieceCiteePrevu()
+  const attendues: readonly string[] = avecSaPiece ? CLES_DE_LA_REPRISE_AVEC_SA_PIECE : CLES_DE_LA_REPRISE
   const cles = Object.keys(rendu).sort(ordreC)
-  if (cles.length !== CLES_DE_LA_REPRISE.length || cles.some((c, i) => c !== CLES_DE_LA_REPRISE[i])) return null
+  if (cles.length !== attendues.length || cles.some((c, i) => c !== attendues[i])) return null
   const repriseLe = rendu.reprise_le
   if (repriseLe !== null && (typeof repriseLe !== 'string' || !dateCivile(repriseLe))) return null
   const nature = rendu.nature_operation
@@ -106,6 +118,8 @@ export function repriseDeLaFactureRendue(rendu: unknown, factureId: string): Rep
   const avantParTaux = parTauxLu(rendu.encaisse_par_taux, 'encaisse_centimes', true)
   const crediteParTaux = parTauxLu(rendu.credite_par_les_repris_par_taux, 'ttc_centimes', false)
   if (!avantParTaux || !crediteParTaux) return null
+  const recu = avecSaPiece ? rendu[CLE_DU_RECU] : 0
+  if (!entierSur(recu) || recu < 0) return null
   return {
     factureId,
     repriseLe,
@@ -114,6 +128,7 @@ export function repriseDeLaFactureRendue(rendu: unknown, factureId: string): Rep
     encaisseParTaux: avantParTaux.map((t) => ({ taux: t.taux, encaisseCentimes: t.centimes })),
     crediteParLesReprisCentimes: credite,
     crediteParLesReprisParTaux: crediteParTaux.map((t) => ({ taux: t.taux, ttcCentimes: t.centimes })),
+    ...(avecSaPiece ? { recuParSaPieceCentimes: recu } : {}),
   }
 }
 

@@ -27,7 +27,10 @@
 -- transaction (`essai.reprises_au_client`), que la requête finale lit : le fichier se joue d'un seul appel, ne crée ni table
 -- ni fonction, ne contient aucune instruction de suppression, et ne rend rien qui dépende d'une ligne hors de ses dossiers.
 -- Hors de l'outil d'exécution, il se joue en UNE transaction (`psql -1`). Sans la migration, une ligne dit qu'il attend
--- (EN ATTENTE) et rien ne s'écrit.
+-- (EN ATTENTE) et rien ne s'écrit. AVEC LA MIGRATION PRÉPARÉE `recu_par_la_piece_citee` (A8Q5Q3-Q2 ; sa dernière ligne
+-- d'historique, pas son retour), `reprise_de_la_facture` rend une septième clé, `recu_par_sa_piece_centimes` — ce que la
+-- pièce citée par un lien actif a reçu, zéro ici (PV1, à valider, n'a aucun paiement ; le lien de PV2 est retiré) — : les
+-- étapes 1 à 4 l'attendent (le mécanisme, supabase/essais/recuParLaPieceCitee.sql).
 do $essai$
 declare
   chef constant text := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -86,9 +89,14 @@ declare
   introuvable constant text := 'Facture reprise introuvable dans ce dossier.';
   -- Ce que `reprise_de_la_facture` rend de R-SERV-1 : 1 420 € TTC (1 200 € à 20 %, 220 € à 10 %), 300,01 € encaissés avant
   -- la reprise à 20 %, 110 € crédités à 10 % par R-AV-1.
+  -- A8Q5Q3-Q2 en base : la dernière ligne d'historique de `recu_par_la_piece_citee` est la sienne, pas celle de son retour.
+  q2 constant boolean := coalesce((select m.name = 'recu_par_la_piece_citee' from supabase_migrations.schema_migrations m
+    where m.name in ('recu_par_la_piece_citee', 'retour_recu_par_la_piece_citee') order by m.version desc limit 1), false);
   serv constant text := '{"reprise_le": "{R}", "nature_operation": "services", "encaisse_avant_reprise_centimes": 30001,
     "encaisse_par_taux": [{"taux": 20, "encaisse_centimes": 30001}, {"taux": 10, "encaisse_centimes": 0}],
     "credite_par_les_repris_centimes": 11000, "credite_par_les_repris_par_taux": [{"taux": 10, "ttc_centimes": 11000}]}';
+  -- … et, sous A8Q5Q3-Q2, ce que sa pièce citée a reçu : zéro (le lien de PV2 est retiré).
+  serv_attendue constant text := case when q2 then rtrim(serv, '}') || ', "recu_par_sa_piece_centimes": 0}' else serv end;
   e record; v_code text; v_msg text; v_req text; v_pose text; v_obs text; v_texte text; v_f record;
   verdicts jsonb := '[]'::jsonb;
 begin
@@ -126,12 +134,16 @@ begin
       (2, '2. le client « Ventes » lit la même valeur (A8C-Q1, le contrôle positif)', '{P}', 'ventes',
         $q$select (reprise_de_la_facture('{DR}', {F:R-SERV-1}) = '{SERV}'::jsonb)::text$q$,
         'OK', 'true'),
-      (3, '3. … et rien du registre : six clés, et elles seules', '{P}', 'ventes',
+      (3, case when q2 then '3. … et rien du registre : sept clés (A8Q5Q3-Q2 : ce que sa pièce a reçu), et elles seules'
+               else '3. … et rien du registre : six clés, et elles seules' end, '{P}', 'ventes',
         $q$select string_agg(k, ',' order by k collate "C") from jsonb_object_keys(reprise_de_la_facture('{DR}', {F:R-SERV-1})) k$q$,
-        'OK', 'credite_par_les_repris_centimes,credite_par_les_repris_par_taux,encaisse_avant_reprise_centimes,encaisse_par_taux,nature_operation,reprise_le'),
+        'OK', 'credite_par_les_repris_centimes,credite_par_les_repris_par_taux,encaisse_avant_reprise_centimes,encaisse_par_taux,nature_operation,'
+          || case when q2 then 'recu_par_sa_piece_centimes,' else '' end || 'reprise_le'),
       (4, '4. une facture reprise sans encaissé ni avoir : des zéros, chaque taux de ses lignes, aucun crédit', '{P}', 'ventes',
         $q$select reprise_de_la_facture('{DR}', {F:R-SANS-1})::text$q$,
-        'OK', format('{"reprise_le": "%s", "nature_operation": "services", "encaisse_par_taux": [{"taux": 20, "encaisse_centimes": 0}], "credite_par_les_repris_centimes": 0, "credite_par_les_repris_par_taux": [], "encaisse_avant_reprise_centimes": 0}', reprise)),
+        'OK', format('{"reprise_le": "%s", "nature_operation": "services", "encaisse_par_taux": [{"taux": 20, "encaisse_centimes": 0}], '
+          || case when q2 then '"recu_par_sa_piece_centimes": 0, ' else '' end
+          || '"credite_par_les_repris_centimes": 0, "credite_par_les_repris_par_taux": [], "encaisse_avant_reprise_centimes": 0}', reprise)),
       (5, '5. la nature « mixte » se lit (A8B-Q1 : la fenêtre la refuse avant le clic)', '{P}', 'ventes',
         $q$select reprise_de_la_facture('{DR}', {F:R-MIXTE-1}) ->> 'nature_operation'$q$,
         'OK', 'mixte'),
@@ -211,7 +223,7 @@ begin
       v_code := 'OK'; v_msg := null; v_obs := null;
       begin
         for v_f in select x.rang, x.texte from (values (1, e.pose), (2, e.requete)) as x(rang, texte) where x.texte is not null loop
-          v_texte := replace(replace(replace(v_f.texte, '{P}', poser), '{C}', citer), '{SERV}', serv);
+          v_texte := replace(replace(replace(v_f.texte, '{P}', poser), '{C}', citer), '{SERV}', serv_attendue);
           v_texte := replace(replace(replace(v_texte, '{L}', lot), '{AVANT}', (reprise - 10)::text), '{AVANT2}', (reprise - 5)::text);
           v_texte := regexp_replace(v_texte, '\{F:([A-Z0-9-]+)\}',
             '(select f.id from factures_emises f where f.dossier_id = ''{DR}'' and f.numero = ''\1'')', 'g');

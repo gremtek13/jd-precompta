@@ -5,6 +5,10 @@ import {
 } from './encaissementsDesReprises'
 import { montantsDuDocument, TAUX_ADMIS } from './factureCii'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
+import {
+  encaisseAvantLaRepriseCentimes, recuARepartirEntreLesTaux, recuParLaPieceCiteePrevu, REFUS_ENCAISSEMENT_DE_LA_PIECE_CITEE,
+  type CleRefusDeLaPieceCitee,
+} from './recuParLaPieceCitee'
 import { estUneFactureReprise, estUneVente } from './facturesReprises'
 import { anneeDe, dernierJourDuMois, formatDate, formatMoney, moisDe } from './format'
 import { frequenceDesPaiements, periodeDe } from './periodesEreporting'
@@ -159,6 +163,13 @@ export interface RepriseDeLaFacture {
   crediteParLesReprisCentimes: number
   /** … et à chaque taux. */
   crediteParLesReprisParTaux: readonly CrediteDuTaux[]
+  /**
+   * Ce que la pièce qu'elle cite (le lien actif) a reçu avant la reprise, en centimes (A8Q5Q3-Q2, la clé
+   * `recu_par_sa_piece_centimes` de la migration `recu_par_la_piece_citee`, lib/recuParLaPieceCitee.ts) : le plancher de
+   * l'encaissé avant la reprise. ABSENT quand la base ne le rend pas — son drapeau baissé : la base d'aujourd'hui ne le lit
+   * pas, et le module juge comme elle, sur le déclaré seul.
+   */
+  recuParSaPieceCentimes?: number
 }
 
 // ── Les moyens de paiement ──────────────────────────────────────────────────────────────────────────────────────────
@@ -554,9 +565,16 @@ export const REFUS_ENREGISTREMENT = [
 export const REFUS_ENREGISTREMENT_DES_REPRISES: readonly { cle: string; modele: string }[] =
   refusAvecLesNeufs(REFUS_ENREGISTREMENT, REFUS_ENCAISSEMENT_D_UNE_REPRISE)
 
-/** Les refus d'`enregistrer_encaissement` tels que la base les porte, selon le drapeau : lu à chaque appel. */
+// LE REFUS DE LA PIÈCE CITÉE (A8Q5Q3-Q2 ; la migration `recu_par_la_piece_citee`, préparée) : d'une facture reprise à
+// plusieurs taux dont la pièce citée a reçu plus que le déclaré, juste avant le plafond d'une reprise. Le drapeau
+// `RECU_PAR_LA_PIECE_CITEE_PREVU` baissé, il ne se dit pas, et la liste en vigueur reste celle d'hier.
+export const REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE: readonly { cle: string; modele: string }[] =
+  refusAvecLesNeufs(REFUS_ENREGISTREMENT_DES_REPRISES, REFUS_ENCAISSEMENT_DE_LA_PIECE_CITEE)
+
+/** Les refus d'`enregistrer_encaissement` tels que la base les porte, selon les drapeaux : lus à chaque appel. */
 export function refusEnregistrementExportes(): readonly { cle: string; modele: string }[] {
-  return FACTURES_IMPORTEES_PREVUES ? REFUS_ENREGISTREMENT_DES_REPRISES : REFUS_ENREGISTREMENT
+  if (!FACTURES_IMPORTEES_PREVUES) return REFUS_ENREGISTREMENT
+  return recuParLaPieceCiteePrevu() ? REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE : REFUS_ENREGISTREMENT_DES_REPRISES
 }
 
 // Un refus de l'ÉCRAN, pas de la base (étape A8c) : une facture reprise dont l'appelant n'a pas passé — ou pas lu — ce que
@@ -569,6 +587,7 @@ export const REFUS_REPRISE_NON_LUE = {
 
 export type CleRefusEnregistrement =
   | (typeof REFUS_ENREGISTREMENT)[number]['cle'] | CleRefusEncaissementDUneReprise | typeof REFUS_REPRISE_NON_LUE.cle
+  | CleRefusDeLaPieceCitee
 
 // Les refus de `retirer_encaissement`, de même ; les rangs 6 et 7 pour une facture source seulement, le rang 8 (étape VF5h2)
 // pour une facture qui ne l'est pas, sur un mouvement classé par ses encaissements.
@@ -610,9 +629,9 @@ export function remplirModele(modele: string, valeurs: readonly string[]): strin
 }
 
 function refus(cle: CleRefusEnregistrement, ...valeurs: string[]): RefusEncaissement<CleRefusEnregistrement> {
-  // Les refus d'hier, ceux d'une reprise et celui de l'écran : la liste complète, quel que soit le drapeau — baissé, les
-  // jugements n'atteignent jamais un refus d'une reprise.
-  const { modele } = [...REFUS_ENREGISTREMENT_DES_REPRISES, REFUS_REPRISE_NON_LUE].find((r) => r.cle === cle) as { modele: string }
+  // Les refus d'hier, ceux d'une reprise, celui de la pièce citée et celui de l'écran : la liste complète, quels que soient
+  // les drapeaux — baissés, les jugements n'atteignent jamais les refus qu'ils gardent.
+  const { modele } = [...REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE, REFUS_REPRISE_NON_LUE].find((r) => r.cle === cle) as { modele: string }
   return { cle, message: remplirModele(modele, valeurs) }
 }
 
@@ -901,7 +920,13 @@ function jugerEnregistrement(
   const credites = vente != null && (source || reprise) ? creditesDesAvoirs(f.id, c.lignes, vente) : new Map<number, number>()
   const credite = [...credites.values()].reduce((total, x) => total + x, 0)
   const crediteRepris = reprise ? reprise.crediteParLesReprisCentimes : 0
-  const avant = reprise ? reprise.encaisseAvantRepriseCentimes : 0
+  // A8Q5Q3-Q2 (la migration `recu_par_la_piece_citee`, son drapeau levé) : ce que la pièce citée a reçu, que la 2035 a déjà
+  // compté, plancher de l'encaissé avant la reprise ; d'une facture à plusieurs taux, un reçu qui dépasse le déclaré ne se
+  // répartit pas sans deviner — le refus, juste avant le plafond. Sans le reçu (la base d'aujourd'hui), le déclaré seul.
+  if (reprise && recuARepartirEntreLesTaux(reprise, montantsParTauxDuDocument(f, c.lignes).length)) {
+    return refus('reprise_piece_plusieurs_taux', f.numero ?? '<NULL>')
+  }
+  const avant = reprise ? encaisseAvantLaRepriseCentimes(reprise) : 0
   const ttc = (centimesExacts(f.montant_ttc) as number) - credite - crediteRepris - avant
   if (deja + montant > ttc) {
     const cle = reprise ? 'plafond_reprise' : source ? 'plafond_facture_net' : 'plafond_facture'
@@ -2379,8 +2404,11 @@ export function resteAEncaisserDeLaReprise(
     return { taux, ttcCentimes, encaisseCentimes, resteCentimes: ttcCentimes - encaisseCentimes }
   })
   const credite = [...credites.values()].reduce((total, x) => total + x, 0)
+  // L'encaissé avant la reprise : le plus grand du déclaré et de ce que la pièce citée a reçu (A8Q5Q3-Q2), quand la base le
+  // rend ; à chaque taux, le déclaré (à un taux, le plafond du taux est celui du total ; à plusieurs, un reçu plus grand
+  // refuse l'encaissement).
   const ttcCentimes = (centimesExacts(c.facture.montant_ttc) ?? 0) - credite - reprise.crediteParLesReprisCentimes
-    - reprise.encaisseAvantRepriseCentimes
+    - encaisseAvantLaRepriseCentimes(reprise)
   const encaisseCentimes = comptes.reduce((s, e) => s + centimes(e.montant), 0)
   return { ttcCentimes, encaisseCentimes, resteCentimes: ttcCentimes - encaisseCentimes, parTaux }
 }
