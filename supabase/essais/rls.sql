@@ -8015,7 +8015,8 @@ end $pf$;
 -- plafonds d'une facture reprise ; `pieces_citees_de_la_simulation` rend au cabinet et à l'accès « Banque » les pièces
 -- citées par un lien actif. Elles contournent la RLS : elles se rejouent, chaque refus jugé à sa RAISON.
 --   RC1. Le client qui porte « Ventes » lit ce que l'encaissement de sa facture reprise demande — le contrôle POSITIF —, et
---        rien d'autre : les six clés de la fonction.
+--        rien d'autre : les six clés de la fonction ; sept avec la migration préparée `recu_par_la_piece_citee` (A8Q5Q3-Q2 ;
+--        sa dernière ligne d'historique, pas son retour), la septième disant ce que la pièce citée a reçu — zéro ici.
 --   RC2. Sans « Ventes » — « Banque » seule, puis aucune case — : « Accès refusé à ce dossier. » (42501).
 --   RC3. Le client qui porte « Banque » lit les pièces citées de son dossier (le contrôle POSITIF) ; « Ventes » seule, puis
 --        aucune case : refusé.
@@ -8040,7 +8041,11 @@ declare
   cabinet uuid;
   reprise constant date := date_trunc('month', now() at time zone 'Europe/Paris')::date;
   refus constant text := 'Accès refusé à ce dossier.';
-  cles constant text := 'credite_par_les_repris_centimes,credite_par_les_repris_par_taux,encaisse_avant_reprise_centimes,encaisse_par_taux,nature_operation,reprise_le';
+  -- A8Q5Q3-Q2 en base : la septième clé, `recu_par_sa_piece_centimes`.
+  q2 constant boolean := coalesce((select m.name = 'recu_par_la_piece_citee' from supabase_migrations.schema_migrations m
+    where m.name in ('recu_par_la_piece_citee', 'retour_recu_par_la_piece_citee') order by m.version desc limit 1), false);
+  cles constant text := 'credite_par_les_repris_centimes,credite_par_les_repris_par_taux,encaisse_avant_reprise_centimes,encaisse_par_taux,nature_operation,'
+    || case when q2 then 'recu_par_sa_piece_centimes,' else '' end || 'reprise_le';
   facture uuid; profil text; n bigint; v jsonb; obs text; motif text; message text; accepte boolean;
   erreur text; construit boolean := false;
   verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
@@ -8094,9 +8099,11 @@ begin
       end;
       reset role;
       verdicts := verdicts || case when profil = 'ventes' then jsonb_build_object(
-        'controle', 'RC1. le client « Ventes » lit ce que l''encaissement de sa facture reprise demande, six clés et elles seules (contrôle positif)',
+        'controle', 'RC1. le client « Ventes » lit ce que l''encaissement de sa facture reprise demande, '
+          || case when q2 then 'sept clés (A8Q5Q3-Q2)' else 'six clés' end || ' et elles seules (contrôle positif)',
         'cible', 'reprise_de_la_facture', 'observe', case when accepte then coalesce(v::text, '∅') else motif || ' ' || message end,
         'ok', accepte and motif = 'P0001' and (v ->> 'encaisse_avant_reprise_centimes') = '5000'
+          and (not q2 or (v ->> 'recu_par_sa_piece_centimes') = '0')
           and (select string_agg(k, ',' order by k collate "C") from jsonb_object_keys(v) k) = cles)
       else jsonb_build_object(
         'controle', 'RC2. sans « Ventes », le client ne lit pas ce qu''une facture reprise porte',
