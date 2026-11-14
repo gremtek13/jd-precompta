@@ -741,7 +741,8 @@ function code(source: string): string {
 
 // Les outils, chacun dans sa branche de `executerOutil` : le scanner les connaît tous, et un outil qu'il ne connaît pas est
 // une faute — ses lectures seraient jugées sous le nom d'un autre.
-const OUTILS = ['resume_dossier', 'lister_comptes', 'lister_ecritures', 'lister_pieces', 'points_a_traiter'] as const
+// `lister_inventaire` (INV7, ligne 35) : offert le drapeau de l'inventaire levé seulement, sa branche existe dans les deux états.
+const OUTILS = ['resume_dossier', 'lister_comptes', 'lister_ecritures', 'lister_pieces', 'points_a_traiter', 'lister_inventaire'] as const
 const HORS_DES_OUTILS = 'hors des outils'
 
 /**
@@ -756,6 +757,10 @@ const QUI_NOMMENT: Readonly<Record<string, readonly string[]>> = {
   factures_emises: ['tiers_nom'],
   // MCB5g : le libellé d'un compte bancaire et la fin de son identifiant, des textes du cabinet que le client « Banque » lit.
   comptes_bancaires: ['libelle', 'fin_d_identifiant'],
+  // INV7 : l'objet d'une régularisation d'inventaire et celui d'une provision, des textes du cabinet qui peuvent nommer un client
+  // (le litige, la créance dépréciée) — l'assistant ne les lit pas (INV7-Q1).
+  operations_inventaire: ['objet'],
+  provisions: ['objet'],
 }
 /**
  * Ce qui ne se lit jamais, ni déclaré ni passé : le client d'une facture (VF9c) ; le libellé de la banque (VF9CQ1 : il ne
@@ -765,6 +770,7 @@ const JAMAIS = [
   'factures_emises.tiers_nom', 'lignes_bancaires.libelle', 'lignes_bancaires.libelle_brut',
   'ecritures_brouillon.piece_ref', 'ecritures_brouillon.comp_aux_num', 'ecritures_brouillon.comp_aux_lib',
   'comptes_bancaires.libelle', 'comptes_bancaires.fin_d_identifiant',
+  'operations_inventaire.objet', 'provisions.objet',
 ]
 
 type Passage = 'pieceVueParLeModele' | 'ecritureVueParLeModele'
@@ -1055,6 +1061,11 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
       'admin.from("lettrages_manuels").select("id, groupe, piece_id, compte", { count: "exact" })', 'admin.from("pieces").select("id, groupe, tiers, compte", { count: "exact" })']])],
     ['le client d’une facture lu', () => chacune(source, [[
       'admin.from("factures_emises").select("id, type, numero", { count: "exact" })', 'admin.from("factures_emises").select("id, type, numero, tiers_nom", { count: "exact" })']])],
+    // INV7 : l'objet d'une régularisation, ou d'une provision, lu — un texte du cabinet qui peut nommer un client.
+    ['l’objet d’une régularisation d’inventaire lu', () => chacune(source, [[
+      'appelant.from("operations_inventaire").select("id, dossier_id, exercice, nature,', 'appelant.from("operations_inventaire").select("id, dossier_id, exercice, objet, nature,']])],
+    ['l’objet d’une provision lu', () => chacune(source, [[
+      'appelant.from("provisions").select("id, dossier_id, genre,', 'appelant.from("provisions").select("id, dossier_id, genre, objet,']])],
     ['un outil que le scanner ne connaît pas', () => chacune(source, [[
       '  if (nom === "points_a_traiter") {\n', '  if (nom === "lister_clients") {\n    return {}\n  }\n\n  if (nom === "points_a_traiter") {\n']])],
     ['une table nommée par une variable', () => chacune(source, [[
