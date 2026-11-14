@@ -1,5 +1,5 @@
 import { ajouterJours } from './format'
-import type { TypeClient } from './types'
+import type { Contact, TypeClient } from './types'
 
 // LA FICHE DE FACTURATION D'UN CLIENT DU CABINET, LIÉE À SON DOSSIER (ligne 47, lot LM3 ; LM-Q3 du 11/11/2026 : « son
 // dossier est la source »). Dans le dossier du cabinet (LM1), une fiche de `contacts` se LIE au dossier de son client
@@ -24,6 +24,19 @@ export const FICHES_LIEES_PREVUES: boolean = true
  */
 export function estFicheLiee(c: object): boolean {
   return typeof (c as { dossier_client_id?: unknown }).dossier_client_id === 'string'
+}
+
+/** Une ligne de `contacts` qui porte son nom : pas une fiche liée. */
+export type ContactNomme<T extends Pick<Contact, 'nom'> = Contact> = T & { nom: string }
+
+/**
+ * La ligne porte-t-elle son nom ? La base le tient (`contacts_nom_present` : un nom, ou un lien ; `contacts_fiche_liee_sans_identite`
+ * : liée, aucun nom) : toute ligne sans lien a le sien. Une fiche liée se nomme par l'identité que son dossier donne
+ * (`identites_des_fiches_liees`, `ligneDUneFicheLiee`), jamais par une chaîne vide : les lecteurs du nom d'un contact passent par
+ * ce prédicat, qui les écarte.
+ */
+export function contactNomme<T extends Pick<Contact, 'nom'>>(c: T): c is ContactNomme<T> {
+  return typeof c.nom === 'string' && !estFicheLiee(c)
 }
 
 /** Les refus que le lien ajoute à `enregistrer_contact`, dans l'ordre de la fonction, à ses mots et à son code. Le rang 8

@@ -119,7 +119,11 @@ describe('l’essai, lu', () => {
 
   it('les colonnes que l’essai attend de la table sont celles du type, dans leur ordre (aucun téléphone, aucune date de naissance)', () => {
     const colonnes = (etape('0f').attendu as string).split(',').map((c) => c.split(':')[0])
-    expect(colonnes).toEqual(Object.keys(contact()))
+    // L'essai ramène la table d'après LM3 (`nom` facultatif, puis les trois colonnes du lien) à sa forme d'avant : le type,
+    // fidèle à la table en base depuis le 12/11/2026, porte ces trois colonnes à la fin.
+    expect([...colonnes, 'dossier_client_id', 'delie_le', 'delie_par']).toEqual(Object.keys(contact()))
+    expect(etape('0f').ordre).toContain(',modifie_le:timestamp with time zone,dossier_client_id:uuid,delie_le:timestamp with time zone,delie_par:uuid')
+    expect(etape('0f').ordre).toContain(',type_client:text,nom:text,adresse:text,')
     expect(colonnes.filter((c) => /telephone|naissance/.test(c))).toEqual([])
   })
 })

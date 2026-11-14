@@ -51,7 +51,7 @@ import ArticleChoixModal from './ArticleChoixModal'
 import ArticleSaisieModal from './ArticleSaisieModal'
 import ConfirmationArticle from './ConfirmationArticle'
 import ContactChoixModal from './ContactChoixModal'
-import { FICHES_LIEES_PREVUES, estFicheLiee } from '../../lib/fichesLiees'
+import { FICHES_LIEES_PREVUES, contactNomme, estFicheLiee, type ContactNomme } from '../../lib/fichesLiees'
 import { lireLesIdentitesDesFichesLiees, type LectureDesIdentites } from '../../lib/fichesLieesLecture'
 import { fichesLieesAChoisir, ligneDesFichesTues, type FicheLieeAChoisir } from '../../lib/fichesLieesVue'
 import ContactSaisieModal from './ContactSaisieModal'
@@ -808,7 +808,7 @@ export default function FactureFormModal(props: Props) {
   }
 
   // Un client déjà saisi ne se remplace qu'après une confirmation qui nomme ce qui part ; une saisie vide se remplit sans.
-  function choisirContact(contact: Contact) {
+  function choisirContact(contact: ContactNomme) {
     const choix = choixDeContact(contact, dateEmission)
     const remplace = ceQueLeChoixDeContactRemplace(clientSaisi, dateEcheance, choix)
     if (remplace.length > 0) { setFenetreContact({ genre: 'remplacer', contact, choix, remplace }); return }
@@ -844,7 +844,8 @@ export default function FactureFormModal(props: Props) {
     const ecrit = await sousVerrouContact(
       'Le client n’a pas pu être enregistré.',
       () => enregistrerContact(dossierId, null, saisieQuiPart(saisie)),
-      (c) => `Client « ${nomDansUnRefus(c.nom)} » enregistré.`,
+      // Une saisie de ce fichier n'est jamais liée : la ligne rendue porte son nom, sinon rien ne se nomme.
+      (c) => (contactNomme(c) ? `Client « ${nomDansUnRefus(c.nom)} » enregistré.` : 'Client enregistré.'),
     )
     if (ecrit) {
       // Le client de la facture prend le nouveau contact pour provenance ; son échéance, elle, n'a pas de délai à suivre.

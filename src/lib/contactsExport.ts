@@ -2,7 +2,7 @@ import { CHAMPS_DANS_L_ORDRE, LIBELLES_DES_CHAMPS, type ChampDUnContact } from '
 import type { SaisieContact } from './contacts'
 import { LIBELLES_TYPE_CONTACT, saisieInitialeContact } from './contactsVue'
 import type { EspaceVentes } from './espaceVentes'
-import type { Contact } from './types'
+import type { ContactNomme } from './fichesLiees'
 
 // LA FICHE D'UN CLIENT, EN UN FICHIER (espace client, étape A4b3c ; conception : HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE
 // GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », §A.4 et son point RGPD « §6 » ; RGPD.md §1 et §6). Le client est
@@ -43,7 +43,7 @@ function valeurDuChamp(saisie: SaisieContact, champ: ChampDUnContact): string {
 }
 
 /** La fiche d'un contact : l'en-tête (les libellés de l'import, dans l'ordre de la saisie), puis UNE ligne — marque UTF-8, « ; », CRLF. */
-export function ficheDuContactCsv(contact: Contact): string {
+export function ficheDuContactCsv(contact: ContactNomme): string {
   const saisie = saisieInitialeContact(contact)
   const enTete = CHAMPS_DANS_L_ORDRE.map((c) => champDeLaFiche(LIBELLES_DES_CHAMPS[c])).join(';')
   const fiche = CHAMPS_DANS_L_ORDRE.map((c) => champDeLaFiche(valeurDuChamp(saisie, c))).join(';')

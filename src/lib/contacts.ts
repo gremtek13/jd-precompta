@@ -4,6 +4,7 @@ import { sirenValide, siretValide } from './factureCii'
 import { formatDate } from './format'
 import { FORME_ADRESSE_ELECTRONIQUE, FORME_SIREN, FORME_SIRET, LONGUEUR_CODE_SERVICE, sirenOuvert, versEntreprise } from './mentionsFacture'
 import type { ArticleExoneration, Contact, GenreContact, TypeClient } from './types'
+import { contactNomme, type ContactNomme } from './fichesLiees'
 
 // LES CONTACTS D'UN DOSSIER — LES CLIENTS DE SON CLIENT (espace client, étape A4a ; conception : HISTORIQUE.md, « L'ESPACE
 // CLIENT, LOGICIEL DE GESTION DU CLIENT : LE PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », §A.4). Un module PUR — il ne lit rien
@@ -282,7 +283,9 @@ export function refusEnregistrementContact(
     if (sirenDonne == null) return refus('siret_sans_siren')
     if (siret.slice(0, 9) !== sirenDonne) return refus('siret_autre_siren')
     const cibleId = cible.nouveau ? null : cible.contact?.id ?? null
-    const autre = contactsDuDossier.find((c) => c.dossier_id === dossierId && c.siret === siret && c.id !== cibleId)
+    // Une fiche liée n'a pas de SIRET (son dossier le donne) : la ligne qui le prend porte son nom.
+    const autre = contactsDuDossier.find((c): c is ContactNomme<ContactPourSiret> =>
+      contactNomme(c) && c.dossier_id === dossierId && c.siret === siret && c.id !== cibleId)
     if (autre) return refus('siret_pris', siret, nomDansUnRefus(autre.nom), autre.retire_le != null ? ' (retiré)' : '')
   }
   // 8. L'adresse de facturation électronique — à une entreprise ou à un organisme public, à la forme de l'annuaire, le SIREN

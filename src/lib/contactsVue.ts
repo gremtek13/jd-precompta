@@ -1,4 +1,4 @@
-import { estFicheLiee } from './fichesLiees'
+import { contactNomme, type ContactNomme } from './fichesLiees'
 import { nomDansUnRefus } from './articles'
 import { estLeClient, PAR_LE_CLIENT, type AccesDuDossier } from './auteursVentes'
 import {
@@ -34,7 +34,7 @@ export const LIBELLES_TYPE_CONTACT: Readonly<Record<TypeClient, string>> = {
 
 // ── La saisie : tout en texte, comme les champs ───────────────────────────────────────────────────────────────────────
 /** La saisie d'un contact neuf (aucun type choisi : « à préciser ») ou celle qui part du contact LU, champ pour champ. */
-export function saisieInitialeContact(contact: Contact | null): SaisieContact {
+export function saisieInitialeContact(contact: ContactNomme | null): SaisieContact {
   if (!contact) {
     return { nom: '', typeClient: '', adresse: '', siren: '', siret: '', adresseElectronique: '', codeService: '', email: '', delai: '', observations: '' }
   }
@@ -83,8 +83,8 @@ export function champsDeRechercheContact(c: Pick<Contact, 'nom' | 'siren' | 'sir
  * des dates, ni une fiche liée au dossier d'un client (LM3), qui n'a pas de nom — elle se montre à part, son identité lue de son
  * dossier (`FichesLieesSection`). Sans la migration, aucune ligne n'est liée : la liste d'hier.
  */
-export function contactsAffichables<T extends Pick<Contact, 'retire_le' | 'efface_le'>>(contacts: readonly T[]): T[] {
-  return contacts.filter((c) => etatDuContact(c) !== 'efface' && !estFicheLiee(c))
+export function contactsAffichables<T extends Pick<Contact, 'nom' | 'retire_le' | 'efface_le'>>(contacts: readonly T[]): ContactNomme<T>[] {
+  return contacts.filter((c): c is ContactNomme<T> => etatDuContact(c) !== 'efface' && contactNomme(c))
 }
 
 const ordre = new Intl.Collator('fr', { sensitivity: 'base', numeric: true })
@@ -96,7 +96,7 @@ const ordre = new Intl.Collator('fr', { sensitivity: 'base', numeric: true })
  */
 export function contactsAffiches<T extends Pick<Contact, 'id' | 'nom' | 'retire_le' | 'efface_le'>>(
   contacts: readonly T[], avecLesRetires: boolean,
-): T[] {
+): ContactNomme<T>[] {
   return contactsAffichables(contacts)
     .filter((c) => avecLesRetires || c.retire_le == null)
     .sort((a, b) =>
@@ -190,7 +190,7 @@ export function soinsDuContact(
 }
 
 export function gestesDuContact(
-  dossierId: string, articleExoneration: ArticleExoneration | null, contact: Contact, contacts: readonly ContactPourSiret[],
+  dossierId: string, articleExoneration: ArticleExoneration | null, contact: ContactNomme, contacts: readonly ContactPourSiret[],
 ): GestesDuContact {
   const refusModifier = refusEnregistrementContact(
     dossierId, articleExoneration, { nouveau: false, contact }, saisieQuiPart(saisieInitialeContact(contact)), contacts,
@@ -250,7 +250,7 @@ export interface ConfirmationDeLEffacement {
  * La confirmation d'un effacement : elle NOMME le contact et ce qui part (ses données renseignées, rien d'autre), dit que les
  * factures qui le nomment gardent leur copie, dix ans (LPF, art. L102 B, dans sa version du 1er janvier 2027 ; RGPD.md), et que le geste ne se défait pas.
  */
-export function confirmationDeLEffacement(espace: EspaceVentes, c: Contact): ConfirmationDeLEffacement {
+export function confirmationDeLEffacement(espace: EspaceVentes, c: ContactNomme): ConfirmationDeLEffacement {
   const client = espace === 'client'
   return {
     titre: `Effacer le client « ${nomDansUnRefus(c.nom)} » ?`,

@@ -21,14 +21,14 @@ import {
   LIBELLES_TYPE_CONTACT, champsDeRechercheContact, confirmationDeLEffacement, contactsAffichables, contactsAffiches, delaiAffiche,
   gestesDuContact, identifiantAffiche, infoDesSoins, mentionContactParLeClient, refusDeLaSaisieContact, signalementDesSoins,
 } from '../../lib/contactsVue'
-import type { ArticleExoneration, Contact } from '../../lib/types'
+import type { ArticleExoneration } from '../../lib/types'
 import { DEVIS_CITENT_UN_CONTACT } from '../../lib/devis'
 import { contactsSansActivite, phraseDuContactSansActivite } from '../../lib/contactsInactifs'
 import { lireLesActivitesDesContacts, type LectureDesActivites } from '../../lib/contactsInactifsLecture'
 import ContactSaisieModal from './ContactSaisieModal'
 import ContactsImportModal from './ContactsImportModal'
 import FichesLieesSection from './FichesLieesSection'
-import { FICHES_LIEES_PREVUES, type FicheLiee } from '../../lib/fichesLiees'
+import { FICHES_LIEES_PREVUES, contactNomme, type ContactNomme, type FicheLiee } from '../../lib/fichesLiees'
 
 // « CLIENTS » (espace client, étape A4b1 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT, LOGICIEL DE GESTION DU CLIENT : LE
 // PREMIER GROUPE, LA PARITÉ, ET AU-DELÀ », §A.4) : le fichier des clients du client — la liste et ses gestes (nouveau client,
@@ -79,9 +79,9 @@ export default function ContactsVue(props: Props) {
   const [recherche, setRecherche] = useState('')
   const [avecLesRetires, setAvecLesRetires] = useState(false)
   // La saisie ouverte : un contact neuf (`contact` nul) ou celui qu'on modifie, tel que la liste l'a lu.
-  const [fenetre, setFenetre] = useState<{ contact: Contact | null } | null>(null)
+  const [fenetre, setFenetre] = useState<{ contact: ContactNomme | null } | null>(null)
   // L'effacement proposé : le contact tel que la liste l'a lu, que la confirmation nomme.
-  const [aEffacer, setAEffacer] = useState<Contact | null>(null)
+  const [aEffacer, setAEffacer] = useState<ContactNomme | null>(null)
   // La fenêtre « Importer des clients » est ouverte.
   const [importOuvert, setImportOuvert] = useState(false)
   // Une fenêtre des fiches reliées (LM3) est ouverte : l'erreur s'y dit, pas ici.
@@ -171,7 +171,7 @@ export default function ContactsVue(props: Props) {
   const affiches = avantRecherche.filter((c) => correspondALaRecherche(champsDeRechercheContact(c), recherche))
   const info = infoDesSoins(espace, articleExoneration)
 
-  async function enregistrer(saisie: SaisieContact, contact: Contact | null) {
+  async function enregistrer(saisie: SaisieContact, contact: ContactNomme | null) {
     // Seconde ceinture : le bouton est déjà grisé sous ce refus.
     const refus = refusDeLaSaisieContact(dossierId, articleExoneration, contact ? { nouveau: false, contact } : { nouveau: true }, saisie, contacts)
     if (refus) {
@@ -180,12 +180,13 @@ export default function ContactsVue(props: Props) {
     }
     const ouvert = await sousVerrou('Le client n’a pas pu être enregistré.', async () => {
       const ecrit = await enregistrerContact(dossierId, contact?.id ?? null, saisieQuiPart(saisie))
-      return `Client « ${nomDansUnRefus(ecrit.nom)} » enregistré.`
+      // Une saisie de ce fichier n'est jamais liée : la ligne rendue porte son nom, sinon rien ne se nomme.
+      return contactNomme(ecrit) ? `Client « ${nomDansUnRefus(ecrit.nom)} » enregistré.` : 'Client enregistré.'
     })
     if (ouvert) setFenetre(null)
   }
 
-  async function basculer(contact: Contact) {
+  async function basculer(contact: ContactNomme) {
     const { basculer: geste } = gestesDuContact(dossierId, articleExoneration, contact, contacts)
     if (geste.refus) {
       setErreur(dire(geste.refus.message))
@@ -204,7 +205,7 @@ export default function ContactsVue(props: Props) {
     }
   }
 
-  async function effacer(contact: Contact) {
+  async function effacer(contact: ContactNomme) {
     const { effacer: refus } = gestesDuContact(dossierId, articleExoneration, contact, contacts)
     if (refus) {
       setErreur(dire(refus.message))
@@ -275,20 +276,20 @@ export default function ContactsVue(props: Props) {
   }
 
   // Rien ne s'écrit : le fichier se compose ici, depuis la ligne que la liste a lue, et ne part nulle part — ni verrou, ni base.
-  function exporterLaFiche(contact: Contact) {
+  function exporterLaFiche(contact: ContactNomme) {
     const nomDuFichier = nomFichierDeLaFiche(contact.nom, aujourdHuiAParis())
     telechargerTexte(nomDuFichier, ficheDuContactCsv(contact))
     setErreur(null)
     setMessage(messageDeLExportDeLaFiche(nomDansUnRefus(contact.nom), nomDuFichier))
   }
 
-  function ouvrir(contact: Contact | null) {
+  function ouvrir(contact: ContactNomme | null) {
     setErreur(null)
     setMessage(null)
     setFenetre({ contact })
   }
 
-  function proposerLEffacement(contact: Contact) {
+  function proposerLEffacement(contact: ContactNomme) {
     setErreur(null)
     setMessage(null)
     setAEffacer(contact)

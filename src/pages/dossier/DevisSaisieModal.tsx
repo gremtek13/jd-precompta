@@ -16,6 +16,7 @@ import { messageErreur } from '../../lib/messageErreur'
 import type { ArticleExoneration, Contact, StatutTva } from '../../lib/types'
 import ContactChoixModal from './ContactChoixModal'
 import ConfirmationArticle from './ConfirmationArticle'
+import type { ContactNomme } from '../../lib/fichesLiees'
 
 // LE FORMULAIRE D'UN BROUILLON DE DEVIS (espace client, étape P6a1) : le client et ses mentions, la date, la validité proposée
 // à un mois (modifiable), l'exécution prévue, les lignes, les conditions, les mentions légales et les notes. Il ne fait que
@@ -57,7 +58,7 @@ type Props = {
 }
 
 type LectureContacts = { lu: LectureDesContacts } | { echec: string }
-type Remplacement = { contact: Contact; remplace: string[] }
+type Remplacement = { contact: ContactNomme; remplace: string[] }
 
 export default function DevisSaisieModal(props: Props) {
   const { espace, dossierId, statutTva, cible, aujourdHui, occupe, erreur } = props
@@ -85,7 +86,7 @@ export default function DevisSaisieModal(props: Props) {
   const contactsEntiers = lectureContacts != null && 'lu' in lectureContacts && lectureContacts.lu.complete ? lectureContacts.lu.lignes : null
   const provenance = contactDeLaProvenance(saisie.contactId ?? null, contactsEntiers)
 
-  function appliquerChoix(contact: Contact) {
+  function appliquerChoix(contact: ContactNomme) {
     const { client } = choixDeContact(contact, saisie.dateEmission)
     setSaisie((s) => ({
       ...s, tiersNom: client.tiersNom, tiersAdresse: client.tiersAdresse, tiersSiret: client.tiersSiret,
@@ -94,7 +95,7 @@ export default function DevisSaisieModal(props: Props) {
   }
 
   // Un client déjà saisi ne se remplace qu'après une confirmation qui nomme ce qui part ; une saisie vide se remplit sans.
-  function choisir(contact: Contact) {
+  function choisir(contact: ContactNomme) {
     setChoixOuvert(false)
     const choix = choixDeContact(contact, saisie.dateEmission)
     const remplace = ceQueLeChoixDeContactRemplace(

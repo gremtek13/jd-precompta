@@ -2364,8 +2364,9 @@ export interface Contact {
   genre: GenreContact
   // Le type que la facture connaît ; nul pour un contact effacé seulement.
   type_client: TypeClient | null
-  // Deux cents caractères au plus ; « Contact effacé le JJ/MM/AAAA » pour un contact effacé.
-  nom: string
+  // Deux cents caractères au plus ; « Contact effacé le JJ/MM/AAAA » pour un contact effacé ; NUL pour une fiche liée au
+  // dossier d'un client (LM3, `contacts_nom_present` : un nom, ou un lien), qui se nomme par l'identité de ce dossier.
+  nom: string | null
   // Texte libre, comme `factures_emises.tiers_adresse` ; nul pour un contact effacé seulement.
   adresse: string | null
   siren: string | null
@@ -2380,14 +2381,14 @@ export interface Contact {
   delai_paiement_jours: number | null
   // Mille caractères au plus, que le client « Ventes » lit comme le cabinet (le nom `notes` est réservé).
   observations: string | null
-  // LM3 (`FICHES_LIEES_PREVUES`, lib/fichesLiees.ts) : le dossier du client qu'une fiche du dossier du cabinet désigne.
-  // En base depuis le 12/11/2026 ; liée, la fiche n'a ni nom ni identité, qui se lisent du dossier, et `estFicheLiee` écarte
-  // ces lignes des lecteurs d'hier avant qu'ils lisent `nom`. RESTE le basculement de ce type (`nom: string | null`,
-  // `dossier_client_id: string | null`), qui touche les lecteurs du nom d'un contact (vingt-cinq lieux au compilateur).
-  dossier_client_id?: string | null
-  /** LM3-Q1 (B) : quand la fiche a été déliée du dossier de son client, et par qui (facultatifs jusqu'à la migration). */
-  delie_le?: string | null
-  delie_par?: string | null
+  // LM3 (migration `fiche_liee_au_dossier_du_client`, en base depuis le 12/11/2026) : le dossier du client qu'une fiche du
+  // dossier du cabinet désigne. Liée, la fiche n'a ni nom ni identité (`contacts_fiche_liee_sans_identite`), qui se lisent
+  // du dossier (`identites_des_fiches_liees`) ; `estFicheLiee` écarte ces lignes des lecteurs d'hier, et un lecteur du nom
+  // passe par `nomDuContact` (lib/fichesLiees.ts), jamais une chaîne vide affichée comme un nom.
+  dossier_client_id: string | null
+  /** LM3-Q1 (B) : quand la fiche a été déliée du dossier de son client, et par qui, entiers ou nuls. */
+  delie_le: string | null
+  delie_par: string | null
   // Le retrait et l'effacement, chacun entier ou absent, et jamais les deux.
   retire_le: string | null
   retire_par: string | null
