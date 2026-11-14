@@ -52713,3 +52713,20 @@ après B1 ; la porte, la double authentification et les resserrements d'abord) :
 en retard** (des pièces déplacées sans leur chemin sous CFCS-Q1, des listes fermées du catalogue, e6b, e7a, B3b, un compte de B2
 avant sa ligne EN ATTENTE) : remis, justes dans les deux états, leurs mutations mordent, banc SÛR. **Restent** : six tables neuves
 que le leurre ne garnit pas ; le socle à régénérer au collage ; la garde d'INV3 ne lit pas l'empreinte de ce qu'elle remplace.
+
+### 14/11/2026 — INV7 : L'ASSISTANT LIT L'INVENTAIRE (DERRIÈRE SON DRAPEAU)
+
+(Agent architecte, lot INV7 de la conception 35, § 5.6 ; sans migration, rien déployé.) `agent-comptable` porte un bloc
+`── DÉBUT/FIN INVENTAIRE` : `INVENTAIRE_EXPORTE` (baissé, redit de src/lib/inventaire.ts), la copie des juges
+(`ciblePrecedente`, `lignesCommandees`, `regularisationAJour`, `extourneEntiere`) et des trois points de la Vue d'ensemble
+(`pointsDeLInventaire`, `premierExerciceDuDossier`). Levé et en ENGAGEMENT seulement : l'outil `lister_inventaire` (par exercice
+la déclaration, chaque régularisation sous sa nature, ses comptes, ses montants, « à jour » ou non, une pièce citée ou non ; les
+provisions numérotées) et la clé `inventaire` de `points_a_traiter`, sur les trois tables et les lignes du brouillon qui citent une
+régularisation, lues EN ENTIER au jeton de l'appelant ; illisible, « indisponible : … ». **Choix** : l'objet d'une régularisation
+ou d'une provision n'est ni lu ni transmis (il peut nommer un client, comme une pièce de vente) — la conception l'envoyait « sauf
+décision contraire » : question INV7-Q1 ; la ligne d'inventaire de `lister_ecritures` part sans libellé, dit dans la description
+levée (recomposer son libellé demande que le scanner des lectures connaisse un second drapeau). Baissé ou en trésorerie, rien ne se
+lit : les empreintes d'`agentComptableAuPlan.test.ts` (tous les scénarios d'avant) sont inchangées, à l'octet. **Preuves** :
+`agentComptableInventaire.test.ts` (copie confrontée à src/lib sur une batterie, sept dérives plantées, l'assistant levé en HTTP
+dans les deux modes, une ligne incroyable, une panne), deux scénarios du contrat drapeau baissé, le scanner VF9C-Q1 (l'outil connu,
+l'objet jamais lu) ; 10 mutations sur 10 tuées. **Reste** : INV8 (déployer l'assistant levé après les trois migrations et la levée).

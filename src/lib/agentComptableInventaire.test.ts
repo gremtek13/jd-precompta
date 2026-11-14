@@ -290,7 +290,7 @@ describe('agent-comptable en HTTP, le drapeau de l’inventaire levé (INV7)', (
     expect(r.statut).toBe(200)
     expect(lues.filter((e) => (TABLES_DE_L_INVENTAIRE as readonly string[]).includes(e.table))).toEqual([])
     expect(lues.some((e) => e.table === 'ecritures_brouillon' && e.role === 'authentifie')).toBe(false)
-    expect((recu.resultats.inventaire as { inventaire: string }).inventaire).toBe('sans_objet')
+    expect(recu.resultats.inventaire).toEqual({ inventaire: 'sans_objet', raison: 'Ce dossier tient sa comptabilité en trésorerie : il n\'a pas d\'écritures d\'inventaire.' })
     expect('inventaire' in recu.resultats.points).toBe(false)
   }, 60_000)
 
