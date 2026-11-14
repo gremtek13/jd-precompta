@@ -266,7 +266,7 @@ begin
         and (select string_agg(p.polname::text || ':' || p.polcmd::text || ':' || array_to_string(p.polroles::regrole[], ',') || ':'
                                || coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ':' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), ''),
                                ' ' order by p.polname collate "C")
-               from pg_policy p where p.polrelid = 'public.comptes_bancaires'::regclass and p.polname <> 'deux_facteurs')
+               from pg_policy p where p.polrelid = 'public.comptes_bancaires'::regclass and not (p.polname = 'deux_facteurs' and not p.polpermissive))
             = 'comptes_bancaires_cabinet:*:authenticated:admin_du_dossier(dossier_id):admin_du_dossier(dossier_id) '
               || 'comptes_bancaires_lecture_banque:r:authenticated:client_du_dossier(dossier_id, ''banque''::text):'
         and (select string_agg(a.attrelid::regclass::text || ':' || a.attnotnull::text, ' ' order by a.attrelid::regclass::text collate "C")

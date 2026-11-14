@@ -317,7 +317,7 @@ begin
     verdicts := verdicts || jsonb_build_object('rang', 48, 'etape', '48. le catalogue : RLS, policies à authenticated, les gardes et leur ordre, les fonctions',
       'ok', (select bool_and(c.relrowsecurity) from pg_class c where c.oid in ('public.imports_factures'::regclass, 'public.factures_importees'::regclass))
         and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename in ('imports_factures', 'factures_importees')
-               and p.permissive = 'PERMISSIVE') = 4
+               and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 4
         and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename in ('imports_factures', 'factures_importees')
                and p.permissive = 'PERMISSIVE' and p.roles = array['authenticated']::name[]
                and ((p.policyname like '%\_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)')

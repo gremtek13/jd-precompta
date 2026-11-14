@@ -355,7 +355,7 @@ begin
     verdicts := verdicts || jsonb_build_object('rang', 66, 'etape', '66. le catalogue : RLS, policies à authenticated, les gardes et leur ordre, les fonctions et leurs droits, les contraintes',
       'ok', (select bool_and(c.relrowsecurity) from pg_class c where c.oid in ('public.modeles_numerotation'::regclass, 'public.continuite_des_series'::regclass))
         and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename in ('modeles_numerotation', 'continuite_des_series')
-               and p.permissive = 'PERMISSIVE') = 4
+               and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 4
         and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename in ('modeles_numerotation', 'continuite_des_series')
                and p.permissive = 'PERMISSIVE' and p.roles = array['authenticated']::name[]
                and ((p.policyname like '%\_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)')
