@@ -3622,6 +3622,309 @@ async function verifierPlafondCabinet(admin: ReturnType<typeof createClient>, ca
   }
 }
 
+// ── DÉBUT INVENTAIRE ─────────────────────────────────────────────────────────────────────────────
+// LES ÉCRITURES D'INVENTAIRE, LUES PAR L'ASSISTANT (ligne 35, lot INV7 ; docs/conceptions/35-inventaire.md, § 5.6) — copiées
+// de src/lib/inventaireDeLaValidation.ts (`ciblePrecedente`, `lignesCommandees`, `regularisationAJour`, `extourneEntiere`) et
+// de src/lib/inventaireDesControles.ts (`declarationDeLExercice`, `pointsDeLInventaire`). Un dossier en ENGAGEMENT reçoit à
+// chaque clôture ses régularisations (charges et produits constatés d'avance, factures non parvenues et à établir, charges à
+// payer et produits à recevoir, provisions), que l'onglet Inventaire saisit et que la base recompose. L'assistant les LIT
+// (`lister_inventaire`) et dit les trois points de la Vue d'ensemble (`points_a_traiter`, clé `inventaire`) ; il n'écrit rien.
+//
+// LE DRAPEAU. L'assistant n'importe rien de src/lib : `INVENTAIRE_EXPORTE` redit ici celui de src/lib/inventaire.ts (le garde
+// `agentComptableInventaire.test.ts` rougit s'ils divergent), qui ne se lève qu'avec `INVENTAIRE_PREVU` — les trois tables
+// n'existent pas avant les migrations INV2, INV3 et INV4. Baissé, l'assistant ne lit aucune des trois, `lister_inventaire`
+// n'est pas offert (son appel se refuse comme un outil inconnu) et `points_a_traiter` n'a pas la clé : celui d'hier, à
+// l'octet près. En TRÉSORERIE aussi (§ 3.6) : rien ne s'y écrit, rien ne s'en lit ni ne s'en dit.
+//
+// CE QUI NE PART PAS AU MODÈLE. L'OBJET d'une régularisation ou d'une provision est un texte libre du cabinet : le litige, la
+// créance dépréciée, la facture d'assurance — il peut nommer un client. Comme le client d'une pièce de vente (VF9C-Q1), il
+// n'est ni lu ni transmis (question INV7-Q1) : une régularisation se nomme par son exercice, sa nature, ses comptes et son
+// montant. Ni la pièce citée, ni la facture dépréciée ne partent : seulement qu'une pièce est citée. Les lectures se font au
+// jeton de l'APPELANT, comme l'onglet les fait : les tables ne s'ouvrent qu'au cabinet du dossier (`admin_du_dossier`).
+const INVENTAIRE_EXPORTE = false
+
+type NatureDInventaire = "cca" | "pca" | "fnp" | "fae" | "charge_a_payer" | "produit_a_recevoir" | "provision"
+const NATURES_D_INVENTAIRE: readonly string[] = ["cca", "pca", "fnp", "fae", "charge_a_payer", "produit_a_recevoir", "provision"]
+
+// Une régularisation, telle que les juges la lisent — sans son objet, que rien ici ne lit.
+interface OperationDInventaire {
+  id: string; exercice: number; nature: NatureDInventaire; compte_resultat: string; compte_regularisation: string
+  montant_centimes: number; tva_centimes: number; provision_id: string | null; reprise: boolean; piece_citee_id: string | null
+}
+interface DeclarationDInventaire { id: string; exercice: number; retire_le: string | null }
+interface ProvisionDInventaire { id: string; genre: string; compte_provision: string; reprise_centimes: number | null }
+interface LigneDInventaire { date: string; compte: string; sens: Sens; montant: number; operation_inventaire_id: string | null }
+
+// L'inventaire lu, sans valeur par défaut : sans objet (drapeau baissé, ou trésorerie), lu EN ENTIER, ou illisible (le motif).
+type InventaireDuDossier =
+  | { etat: "sans_objet" }
+  | {
+    etat: "lu"
+    operations: readonly OperationDInventaire[]
+    declarations: readonly DeclarationDInventaire[]
+    provisions: readonly ProvisionDInventaire[]
+    // Les lignes du brouillon qui citent une régularisation : les seules que les juges regardent.
+    lignes: readonly LigneDInventaire[]
+  }
+  | { etat: "illisible"; motif: string }
+
+// La racine de la TVA d'attente d'une facture non parvenue ou à établir (les rôles `tva_factures_non_parvenues` et
+// `tva_factures_a_etablir` du catalogue de l'inventaire, src/lib/inventaire.ts) : des racines du plan comptable général.
+const RACINES_DE_LA_TVA_D_ATTENTE: Readonly<Record<string, string>> = { fnp: "44586", fae: "44587" }
+function racineDeLaTvaDAttente(nature: string): string | null {
+  return Object.prototype.hasOwnProperty.call(RACINES_DE_LA_TVA_D_ATTENTE, nature) ? RACINES_DE_LA_TVA_D_ATTENTE[nature] : null
+}
+
+interface LigneDInventaireJugee { date: string; compte: string; sens: Sens; centimes: number }
+const clotureDeLInventaire = (exercice: number) => `${exercice}-12-31`
+const lendemainDeLInventaire = (exercice: number) => `${exercice + 1}-01-01`
+const sensInverseDeLInventaire = (sens: Sens): Sens => (sens === "debit" ? "credit" : "debit")
+const centimesDeLInventaire = (montant: number) => Math.round(montant * 100)
+const parIdentifiantDInventaire = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
+function memesLignesDInventaire(attendues: readonly string[], recues: readonly string[]): boolean {
+  if (attendues.length !== recues.length) return false
+  const a = [...attendues].sort()
+  const r = [...recues].sort()
+  return a.every((x, i) => x === r[i])
+}
+
+// La provision au 31 décembre précédent d'une évaluation : la cible de la dernière évaluation de la même provision avant cet
+// exercice, sinon sa part reprise (zéro sans elle) ; rien d'une provision que la lecture ne rend pas.
+function ciblePrecedente(
+  operation: Pick<OperationDInventaire, "exercice" | "provision_id">,
+  operations: readonly Pick<OperationDInventaire, "exercice" | "provision_id" | "montant_centimes">[],
+  provisions: readonly Pick<ProvisionDInventaire, "id" | "reprise_centimes">[],
+): number | null {
+  if (operation.provision_id === null) return null
+  const precedente = operations
+    .filter((o) => o.provision_id === operation.provision_id && o.exercice < operation.exercice)
+    .reduce<Pick<OperationDInventaire, "exercice" | "montant_centimes"> | null>((r, o) => (r === null || o.exercice > r.exercice ? o : r), null)
+  if (precedente !== null) return precedente.montant_centimes
+  const provision = provisions.find((p) => p.id === operation.provision_id)
+  return provision === undefined ? null : provision.reprise_centimes ?? 0
+}
+
+// Les lignes qu'une régularisation commande (`inventaire_a_jour`) : au 31 décembre, ses comptes et son montant, la TVA
+// d'attente sous sa racine ; au 1er janvier suivant, les mêmes en sens inverse ; une évaluation de provision, l'écart à la
+// cible précédente, au 31 décembre seulement ; une régularisation reprise, son extourne seule. Nul : une nature inconnue.
+function lignesCommandees(
+  o: Pick<OperationDInventaire, "exercice" | "nature" | "compte_resultat" | "compte_regularisation" | "montant_centimes" | "tva_centimes" | "reprise">,
+  cible: number | null,
+): LigneDInventaireJugee[] | null {
+  const r = o.compte_resultat
+  const g = o.compte_regularisation
+  const m = o.montant_centimes
+  let lignes: [string, Sens, number][]
+  if (o.nature === "provision") {
+    const ecart = cible === null ? 0 : m - cible
+    lignes = ecart > 0 ? [[r, "debit", ecart], [g, "credit", ecart]] : ecart < 0 ? [[g, "debit", -ecart], [r, "credit", -ecart]] : []
+  } else {
+    const tva = racineDeLaTvaDAttente(o.nature) ?? ""
+    switch (o.nature) {
+      case "cca": lignes = [[g, "debit", m], [r, "credit", m]]; break
+      case "pca": lignes = [[r, "debit", m], [g, "credit", m]]; break
+      case "charge_a_payer": lignes = [[r, "debit", m], [g, "credit", m]]; break
+      case "produit_a_recevoir": lignes = [[g, "debit", m], [r, "credit", m]]; break
+      case "fnp": lignes = [[r, "debit", m], [tva, "debit", o.tva_centimes], [g, "credit", m + o.tva_centimes]]; break
+      case "fae": lignes = [[g, "debit", m + o.tva_centimes], [r, "credit", m], [tva, "credit", o.tva_centimes]]; break
+      default: return null
+    }
+  }
+  const constatees = lignes.filter(([, , c]) => c > 0)
+  return [
+    ...(o.reprise ? [] : constatees.map(([compte, sens, centimes]) => ({ date: clotureDeLInventaire(o.exercice), compte, sens, centimes }))),
+    ...(o.nature === "provision" ? []
+      : constatees.map(([compte, sens, centimes]) => ({ date: lendemainDeLInventaire(o.exercice), compte, sens: sensInverseDeLInventaire(sens), centimes }))),
+  ]
+}
+
+// UNE RÉGULARISATION À JOUR : les lignes du brouillon qui la citent sont, en multiensemble, celles qu'elle commande — la TVA
+// d'attente jugée sous sa racine.
+function regularisationAJour(operation: OperationDInventaire, brouillon: readonly LigneDInventaire[], cible: number | null): boolean {
+  const attendues = lignesCommandees(operation, cible)
+  if (attendues === null) return false
+  const racine = racineDeLaTvaDAttente(operation.nature)
+  const recues = brouillon.filter((l) => l.operation_inventaire_id === operation.id).map((l): LigneDInventaireJugee => ({
+    date: l.date, compte: racine !== null && l.compte.startsWith(racine) ? racine : l.compte, sens: l.sens, centimes: centimesDeLInventaire(l.montant),
+  }))
+  const cle = (l: LigneDInventaireJugee) => `${l.date}|${l.compte}|${l.sens}|${l.centimes}`
+  return memesLignesDInventaire(attendues.map(cle), recues.map(cle))
+}
+
+// L'EXTOURNE ENTIÈRE : les lignes du 1er janvier suivant sont celles de la constatation du 31 décembre, en sens inverse ;
+// une évaluation de provision n'en a aucune.
+function extourneEntiere(operation: Pick<OperationDInventaire, "id" | "exercice" | "nature">, brouillon: readonly LigneDInventaire[]): boolean {
+  const miennes = brouillon.filter((l) => l.operation_inventaire_id === operation.id)
+  const cle = (compte: string, sens: Sens, montant: number) => `${compte}|${sens}|${centimesDeLInventaire(montant)}`
+  const attendues = operation.nature === "provision" ? []
+    : miennes.filter((l) => l.date === clotureDeLInventaire(operation.exercice)).map((l) => cle(l.compte, sensInverseDeLInventaire(l.sens), l.montant))
+  const recues = miennes.filter((l) => l.date === lendemainDeLInventaire(operation.exercice)).map((l) => cle(l.compte, l.sens, l.montant))
+  return memesLignesDInventaire(attendues, recues)
+}
+
+// La déclaration en vigueur de l'inventaire d'un exercice, ou nulle.
+function declarationDeLExercice(declarations: readonly DeclarationDInventaire[], exercice: number): DeclarationDInventaire | null {
+  return declarations.find((d) => d.exercice === exercice && d.retire_le === null) ?? null
+}
+
+interface PointsDeLInventaire {
+  aDeclarer: number[]
+  aRecomposer: { exercice: number; id: string }[]
+  extournesAReprendre: { exercice: number; id: string }[]
+}
+
+// LES TROIS POINTS DE LA VUE D'ENSEMBLE (`pointsDeLInventaire`) : les exercices clos et non validés dont l'inventaire n'est
+// pas déclaré ; les régularisations d'un exercice non figé à recomposer ; celles d'un exercice validé dont l'extourne du 1er
+// janvier suivant, encore au brouillon, n'est pas entière. `premierExercice` : l'année de la reprise, sinon de la première
+// écriture ; `anneeCourante` : l'année de Paris.
+function pointsDeLInventaire(
+  inventaire: Extract<InventaireDuDossier, { etat: "lu" }>, anneesValidees: readonly number[], anneeCourante: number,
+  premierExercice: number | null,
+): PointsDeLInventaire {
+  const { operations, provisions, lignes } = inventaire
+  const validees = new Set(anneesValidees)
+  const derniereValidee = anneesValidees.length > 0 ? Math.max(...anneesValidees) : null
+  const aDeclarer: number[] = []
+  if (premierExercice !== null) {
+    const depuis = derniereValidee === null ? premierExercice : Math.max(premierExercice, derniereValidee + 1)
+    for (let exercice = depuis; exercice < anneeCourante; exercice++) {
+      if (!validees.has(exercice) && declarationDeLExercice(inventaire.declarations, exercice) === null) aDeclarer.push(exercice)
+    }
+  }
+  const tri = (a: { exercice: number; id: string }, b: { exercice: number; id: string }) => a.exercice - b.exercice || parIdentifiantDInventaire(a, b)
+  const figee = (o: OperationDInventaire) => validees.has(o.reprise ? o.exercice + 1 : o.exercice)
+  const aRecomposer = operations
+    .filter((o) => !figee(o) && !regularisationAJour(o, lignes, ciblePrecedente(o, operations, provisions)))
+    .map((o) => ({ exercice: o.exercice, id: o.id })).sort(tri)
+  const extournesAReprendre = operations
+    .filter((o) => !o.reprise && o.nature !== "provision" && validees.has(o.exercice) && !validees.has(o.exercice + 1)
+      && !extourneEntiere(o, lignes))
+    .map((o) => ({ exercice: o.exercice, id: o.id })).sort(tri)
+  return { aDeclarer, aRecomposer, extournesAReprendre }
+}
+
+// Le premier exercice du dossier, tel que la Vue d'ensemble le lit : l'année de sa reprise, sinon de sa première écriture.
+function premierExerciceDuDossier(aNouveaux: readonly { date: string }[], brouillon: readonly { date: string }[]): number | null {
+  const dates = aNouveaux.length > 0 ? aNouveaux.map((a) => a.date) : brouillon.map((e) => e.date)
+  if (dates.length === 0) return null
+  return Number(dates.reduce((min, d) => (d < min ? d : min)).slice(0, 4))
+}
+
+// La clé `inventaire` de `points_a_traiter`, sous les libellés de la Vue d'ensemble (src/lib/pointsDeLaChecklist.ts) : nulle
+// quand l'inventaire est sans objet — la clé ne se dit pas ; « indisponible : … » quand il ne se lit pas entier.
+function cleDeLInventaire(
+  inventaire: InventaireDuDossier, anneesValidees: readonly number[], anneeCourante: number, premierExercice: number | null,
+): Record<string, unknown> | string | null {
+  if (inventaire.etat === "sans_objet") return null
+  if (inventaire.etat === "illisible") return `indisponible : ${inventaire.motif}`
+  const p = pointsDeLInventaire(inventaire, anneesValidees, anneeCourante, premierExercice)
+  const exercices = (liste: readonly { exercice: number }[]) => [...new Set(liste.map((o) => o.exercice))].sort((a, b) => a - b)
+  return {
+    exercices_clos_dont_l_inventaire_n_est_pas_declare: p.aDeclarer,
+    regularisations_dont_les_ecritures_ne_sont_plus_a_jour: { nombre: p.aRecomposer.length, exercices: exercices(p.aRecomposer) },
+    regularisations_d_un_exercice_valide_sans_leur_extourne_entiere: { nombre: p.extournesAReprendre.length, exercices: exercices(p.extournesAReprendre) },
+  }
+}
+
+// Ce que `lister_inventaire` rend au modèle, ÉCRIT ici : par exercice, la déclaration et chaque régularisation — sa nature,
+// ses comptes, son montant hors taxes et sa TVA d'attente en euros, reprise ou non, à jour ou non, une pièce citée ou non, et
+// pour une évaluation le numéro de sa provision ; puis les provisions, numérotées dans l'ordre de leur identifiant, sous leur
+// genre, leur compte et leur part reprise. Jamais un objet ni un identifiant. `annee` : un seul exercice.
+function inventaireVuParLeModele(
+  inventaire: Extract<InventaireDuDossier, { etat: "lu" }>, anneesValidees: readonly number[], annee: number | null,
+): Record<string, unknown> {
+  const { operations, provisions, lignes, declarations } = inventaire
+  const euros = (centimes: number) => centimes / 100
+  const numeros = new Map([...provisions].sort(parIdentifiantDInventaire).map((p, i) => [p.id, i + 1]))
+  const annees = [...new Set([...operations.map((o) => o.exercice), ...declarations.filter((d) => d.retire_le === null).map((d) => d.exercice)])]
+    .filter((a) => annee === null || a === annee).sort((a, b) => a - b)
+  return {
+    exercices: annees.map((exercice) => ({
+      exercice,
+      exercice_valide: anneesValidees.includes(exercice),
+      inventaire_declare: declarationDeLExercice(declarations, exercice) !== null,
+      regularisations: operations.filter((o) => o.exercice === exercice).sort(parIdentifiantDInventaire).map((o) => ({
+        nature: o.nature,
+        compte_resultat: o.compte_resultat,
+        compte_regularisation: o.compte_regularisation,
+        montant: euros(o.montant_centimes),
+        tva_d_attente: euros(o.tva_centimes),
+        reprise_d_une_balance: o.reprise,
+        a_jour: regularisationAJour(o, lignes, ciblePrecedente(o, operations, provisions)),
+        piece_citee: o.piece_citee_id !== null,
+        ...(o.provision_id === null ? {} : { provision: numeros.get(o.provision_id) ?? null }),
+      })),
+    })),
+    provisions: [...provisions].sort(parIdentifiantDInventaire).map((p) => ({
+      numero: numeros.get(p.id)!,
+      genre: p.genre,
+      compte_provision: p.compte_provision,
+      part_reprise_d_une_balance: p.reprise_centimes === null ? null : euros(p.reprise_centimes),
+    })),
+  }
+}
+// ── FIN INVENTAIRE ───────────────────────────────────────────────────────────────────────────────
+
+// L'INVENTAIRE DU DOSSIER (bloc INVENTAIRE), lu comme l'onglet le lit (src/lib/inventaireLecture.ts) au jeton de l'APPELANT,
+// le drapeau levé et le dossier en engagement seulement : ses régularisations, ses déclarations, ses provisions et les lignes
+// du brouillon qui citent une régularisation, chacune EN ENTIER, les colonnes que les juges lisent, nommées — jamais l'objet,
+// la pièce citée ni la facture dépréciée au-delà de leur présence, jamais le libellé du brouillon. Lu en partie, rendu d'un
+// autre dossier ou sous une forme que les juges ne croiraient pas : illisible, et rien ne s'en dit.
+async function lireLInventaireDuDossier(
+  appelant: ReturnType<typeof createClient>, dossierId: string, mode: ModeComptable,
+): Promise<InventaireDuDossier> {
+  if (!INVENTAIRE_EXPORTE || mode !== "engagement") return { etat: "sans_objet" }
+  const [rOperations, rDeclarations, rProvisions, rLignes] = await Promise.all([
+    lireTout<Record<string, unknown>>((debut, fin) =>
+      appelant.from("operations_inventaire").select("id, dossier_id, exercice, nature, compte_resultat, compte_regularisation, montant_centimes, tva_centimes, provision_id, reprise, piece_citee_id", { count: "exact" })
+        .eq("dossier_id", dossierId).order("exercice").order("id").range(debut, fin)),
+    lireTout<Record<string, unknown>>((debut, fin) =>
+      appelant.from("inventaires_declares").select("id, dossier_id, exercice, retire_le", { count: "exact" })
+        .eq("dossier_id", dossierId).order("exercice").order("id").range(debut, fin)),
+    lireTout<Record<string, unknown>>((debut, fin) =>
+      appelant.from("provisions").select("id, dossier_id, genre, compte_provision, reprise_centimes", { count: "exact" })
+        .eq("dossier_id", dossierId).order("id").range(debut, fin)),
+    lireTout<Record<string, unknown>>((debut, fin) =>
+      appelant.from("ecritures_brouillon").select("id, dossier_id, date, compte, sens, montant, operation_inventaire_id", { count: "exact" })
+        .eq("dossier_id", dossierId).not("operation_inventaire_id", "is", null).order("id").range(debut, fin)),
+  ])
+  for (const [quoi, r] of [["les régularisations", rOperations], ["les déclarations", rDeclarations], ["les provisions", rProvisions], ["les écritures d'inventaire", rLignes]] as const) {
+    if (!r.complete) return { etat: "illisible", motif: `${quoi} : ${r.motif ?? "lecture partielle"}` }
+  }
+  const tous = [...rOperations.lignes, ...rDeclarations.lignes, ...rProvisions.lignes, ...rLignes.lignes]
+  if (tous.some((l) => l.dossier_id !== dossierId)) return { etat: "illisible", motif: "une ligne rendue n'est pas de ce dossier" }
+  const texte = (v: unknown): v is string => typeof v === "string"
+  const entier = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v)
+  const ouNul = (v: unknown) => v === null || texte(v)
+  const operationsCrues = rOperations.lignes.every((l) => texte(l.id) && entier(l.exercice) && texte(l.nature) && NATURES_D_INVENTAIRE.includes(l.nature)
+    && texte(l.compte_resultat) && texte(l.compte_regularisation) && entier(l.montant_centimes) && entier(l.tva_centimes)
+    && ouNul(l.provision_id) && typeof l.reprise === "boolean" && ouNul(l.piece_citee_id))
+  const declarationsCrues = rDeclarations.lignes.every((l) => texte(l.id) && entier(l.exercice) && ouNul(l.retire_le))
+  const provisionsCrues = rProvisions.lignes.every((l) => texte(l.id) && texte(l.genre) && texte(l.compte_provision)
+    && (l.reprise_centimes === null || entier(l.reprise_centimes)))
+  const lignesCrues = rLignes.lignes.every((l) => texte(l.date) && texte(l.compte) && (l.sens === "debit" || l.sens === "credit")
+    && typeof l.montant === "number" && Number.isFinite(l.montant) && texte(l.operation_inventaire_id))
+  if (!operationsCrues || !declarationsCrues || !provisionsCrues || !lignesCrues) {
+    return { etat: "illisible", motif: "une ligne de l'inventaire lue ne se croit pas" }
+  }
+  return {
+    etat: "lu",
+    operations: rOperations.lignes.map((l) => ({
+      id: l.id as string, exercice: l.exercice as number, nature: l.nature as NatureDInventaire, compte_resultat: l.compte_resultat as string,
+      compte_regularisation: l.compte_regularisation as string, montant_centimes: l.montant_centimes as number, tva_centimes: l.tva_centimes as number,
+      provision_id: l.provision_id as string | null, reprise: l.reprise as boolean, piece_citee_id: l.piece_citee_id as string | null,
+    })),
+    declarations: rDeclarations.lignes.map((l) => ({ id: l.id as string, exercice: l.exercice as number, retire_le: l.retire_le as string | null })),
+    provisions: rProvisions.lignes.map((l) => ({
+      id: l.id as string, genre: l.genre as string, compte_provision: l.compte_provision as string, reprise_centimes: l.reprise_centimes as number | null,
+    })),
+    lignes: rLignes.lignes.map((l) => ({
+      date: l.date as string, compte: l.compte as string, sens: l.sens as Sens, montant: l.montant as number, operation_inventaire_id: l.operation_inventaire_id as string,
+    })),
+  }
+}
+
 // ---- Outils -----------------------------------------------------------------------------------
 // Chaque outil ferme sur `admin` (client service-role) et `dossierId`/`dossier` (déjà vérifiés par
 // le serveur, jamais fournis par le modèle) : aucun paramètre d'outil ne permet de sortir de ce
@@ -3648,6 +3951,18 @@ interface OutilContexte {
   modele: ModeleComptable
 }
 
+// L'OUTIL DE L'INVENTAIRE (ligne 35, INV7 ; bloc INVENTAIRE) : il lit, il n'écrit rien, et ne dit jamais l'objet d'une
+// régularisation ni d'une provision, un texte du cabinet qui peut nommer un client.
+const OUTIL_DE_L_INVENTAIRE = {
+  name: "lister_inventaire",
+  description: "Les écritures d'inventaire d'un dossier en ENGAGEMENT (charges et produits constatés d'avance cca et pca, factures non parvenues fnp et à établir fae, charges à payer et produits à recevoir, évaluations des provisions), saisies par le cabinet dans l'onglet Inventaire et écrites au journal OD le 31 décembre, avec leur extourne au 1er janvier suivant (sauf les provisions, qui se réajustent par différence). Par exercice : exercice_valide, inventaire_declare (la validation l'attend, même sans régularisation), et chaque régularisation — nature, compte_resultat, compte_regularisation, montant hors taxes et tva_d_attente en euros, reprise_d_une_balance (seule son extourne s'écrit), a_jour (ses écritures sont celles qu'elle commande ; sinon à recomposer dans l'onglet Inventaire), piece_citee (une pièce du dossier la fonde), et pour une évaluation le numéro de sa provision, dont la cible au 31 décembre est le montant. Puis les provisions : numero, genre (risque ou depreciation_creance), compte_provision, part_reprise_d_une_balance. L'objet saisi par le cabinet n'est pas transmis : nomme une régularisation par son exercice, sa nature, ses comptes et son montant. Un dossier en trésorerie n'a pas d'inventaire (sans_objet). N'écrit rien.",
+  input_schema: {
+    type: "object" as const,
+    properties: { annee: { type: "integer", description: "Un seul exercice (ex: 2025) ; tous si omis." } },
+    additionalProperties: false,
+  },
+}
+
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "resume_dossier",
@@ -3667,6 +3982,8 @@ const TOOLS: Anthropic.Tool[] = [
     name: "lister_ecritures",
     description: "Liste les lignes du brouillon d'écritures (date, compte, libellé, sens, montant), triées par date décroissante, plafonnées à 200 lignes. Le libellé d'une ligne d'une pièce de vente se recompose de la date et du montant TTC de cette pièce (« Pièce de vente du JJ/MM/AAAA, 0,00 € ») : son client n'est pas transmis. Celui d'une ligne d'un crédit du relevé se recompose de la date et du montant du mouvement (« Crédit du relevé du JJ/MM/AAAA, 0,00 € ») : qui a payé n'est pas transmis ; de même celui d'une ligne d'un débit qui rend ou défait l'argent d'un client — écrit en tout ou en partie sur un compte de produit ou de client, ou classé par les contre-passations d'un encaissement — (« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui l'argent est rendu n'est pas transmis ; celui d'un autre débit reste. Une ligne rattachée à rien (l'écriture restée d'une pièce supprimée) n'a pas de libellé. Celui d'une ligne d'une opération de caisse se recompose de sa nature, de sa date et de son montant (« Recettes en espèces du JJ/MM/AAAA, 0,00 € » ; de même « Espèces rendues », « Apport en caisse », « Prélèvement en caisse », « Paiement par la caisse ») : la caisse ne nomme personne. Sert à comprendre en détail pourquoi un compte a bougé. Renvoie { ecritures, total_disponible, nombre_renvoye, tronque } : si tronque vaut true, la liste est incomplète — n'en tire ni total ni comptage, resserre le filtre ou passe par lister_comptes, qui agrège sans plafond."
       // MCB5g : la phrase de l'ouverture éclatée, le drapeau des comptes bancaires levé seulement ; baissé, la description d'hier.
+      // INV7 : la ligne d'une écriture d'inventaire, le drapeau de l'inventaire levé seulement ; baissé, la description d'hier.
+      + (INVENTAIRE_EXPORTE ? " Une ligne d'une écriture d'inventaire (journal OD, une régularisation du 31 décembre ou son extourne du 1er janvier suivant) part aussi sans libellé : il porte l'objet saisi par le cabinet, qui n'est pas transmis — ce n'est pas l'écriture restée d'une pièce supprimée ; lister_inventaire la décrit par sa nature, ses comptes et son montant." : "")
       + (COMPTES_BANCAIRES_PREVUS ? " Celui d'une ligne qui éclate au 1er janvier l'ouverture de la banque entre les comptes bancaires se recompose du 512 du compte qu'elle ouvre et du jour du relevé (« Ouverture du 512100 au relevé du 31/12/AAAA ») : le nom du compte bancaire n'est pas transmis." : ""),
     input_schema: {
       type: "object",
@@ -3694,9 +4011,13 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : le statut de TVA du dossier quand il est à préciser, écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, déclarations de TVA dont l'écriture de liquidation manque ou ne suit plus la déclaration, paiements ou remboursements de TVA dont l'écriture ne suit plus le mouvement, périodes de TVA dont la déclaration n'est pas enregistrée (dossier assujetti), et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Pour un dossier qui compte ses ventes par ses factures (resume_dossier : ventes_par_les_factures), aussi les mouvements réservés à des encaissements de factures, à classer, et les encaissements de factures par un moyen du relevé (virement, prélèvement, chèque, carte, effet) sans mouvement — deux points de la Checklist — ; et ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer, qui n'en est pas un : ce que la validation de l'exercice refuserait, et que l'onglet Écritures dit — { nombre, par_etat (a_ecrire, a_reecrire, a_retirer, ne_s_ecrit_pas : une source que son motif retient), premieres : les six premières, nommées par leur numéro }, ou « indisponible : … » quand la base ne l'a pas dit. La CAISSE n'y est pas vérifiée (caisse) : ses quatre contrôles — opérations de caisse à reprendre, caisse négative, recettes de caisse à revoir, versements d'espèces rangés en recette — se lisent dans l'onglet Caisse et la Vue d'ensemble. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : le statut de TVA du dossier quand il est à préciser, écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, déclarations de TVA dont l'écriture de liquidation manque ou ne suit plus la déclaration, paiements ou remboursements de TVA dont l'écriture ne suit plus le mouvement, périodes de TVA dont la déclaration n'est pas enregistrée (dossier assujetti), et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Pour un dossier qui compte ses ventes par ses factures (resume_dossier : ventes_par_les_factures), aussi les mouvements réservés à des encaissements de factures, à classer, et les encaissements de factures par un moyen du relevé (virement, prélèvement, chèque, carte, effet) sans mouvement — deux points de la Checklist — ; et ventes_facturees_a_ecrire_a_reecrire_ou_a_retirer, qui n'en est pas un : ce que la validation de l'exercice refuserait, et que l'onglet Écritures dit — { nombre, par_etat (a_ecrire, a_reecrire, a_retirer, ne_s_ecrit_pas : une source que son motif retient), premieres : les six premières, nommées par leur numéro }, ou « indisponible : … » quand la base ne l'a pas dit. La CAISSE n'y est pas vérifiée (caisse) : ses quatre contrôles — opérations de caisse à reprendre, caisse négative, recettes de caisse à revoir, versements d'espèces rangés en recette — se lisent dans l'onglet Caisse et la Vue d'ensemble. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\"."
+      // INV7 : les trois points de l'inventaire, le drapeau levé seulement ; baissé, la description d'hier.
+      + (INVENTAIRE_EXPORTE ? " Pour un dossier en engagement, aussi inventaire, les trois points de la Vue d'ensemble sur les écritures d'inventaire : exercices_clos_dont_l_inventaire_n_est_pas_declare (la validation attend l'inventaire déclaré, même sans aucune régularisation), regularisations_dont_les_ecritures_ne_sont_plus_a_jour et regularisations_d_un_exercice_valide_sans_leur_extourne_entiere ({ nombre, exercices }) — ou « indisponible : … » quand l'inventaire ne s'est pas lu en entier ; ils se traitent dans l'onglet Inventaire, et lister_inventaire les détaille." : ""),
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
+  // INV7 : l'outil de l'inventaire, offert le drapeau levé seulement (bloc INVENTAIRE) ; baissé, la liste d'hier.
+  ...(INVENTAIRE_EXPORTE ? [OUTIL_DE_L_INVENTAIRE] : []),
 ]
 
 // Enveloppe d'un outil de liste plafonnée. Le plafond est nécessaire (une réponse d'outil part dans
@@ -4504,6 +4825,33 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     )
   }
 
+  if (nom === "lister_inventaire") {
+    // INV7 (bloc INVENTAIRE). Baissé, l'outil n'est pas offert : son appel se refuse comme celui d'un outil inconnu, mot pour
+    // mot, sans rien lire. En trésorerie, rien ne s'écrit à l'inventaire (§ 3.6) : rien ne se lit.
+    // (La phrase se compose à part : les gardes de copie cherchent la fin des outils à son retour, qui doit rester unique.)
+    if (!INVENTAIRE_EXPORTE) {
+      const erreur = `Outil inconnu : ${nom}`
+      return { erreur }
+    }
+    if (ctx.modele.mode !== "engagement") {
+      return { inventaire: "sans_objet", raison: "Ce dossier tient sa comptabilité en trésorerie : il n'a pas d'écritures d'inventaire." }
+    }
+    const annee = typeof input.annee === "number" && Number.isInteger(input.annee) ? input.annee : null
+    const [inventaire, rValides] = await Promise.all([
+      lireLInventaireDuDossier(ctx.appelant, dossierId, ctx.modele.mode),
+      lireTout<{ annee: number }>((d, f) =>
+        admin.from("exercices_valides").select("annee", { count: "exact" }).eq("dossier_id", dossierId).order("annee").order("dossier_id").range(d, f)),
+    ])
+    if (inventaire.etat === "illisible") {
+      return { erreur: `L'inventaire de ce dossier n'a pas pu être lu en entier (${inventaire.motif}) : ne tire aucune conclusion sur ses régularisations, dis à l'utilisateur qu'elles sont indisponibles et renvoie-le à l'onglet Inventaire.` }
+    }
+    if (!rValides.complete) {
+      return { erreur: `Lecture partielle : ${rValides.motif} — les exercices validés ne sont pas lus ; ne conclus rien de ce résultat.` }
+    }
+    if (inventaire.etat === "sans_objet") return { inventaire: "sans_objet" }
+    return { inventaire: "lu", ...inventaireVuParLeModele(inventaire, rValides.lignes.map((v) => v.annee), annee) }
+  }
+
   if (nom === "points_a_traiter") {
     // LES VENTES FACTURÉES (VF9b, VF9c) : un dossier dont la source des ventes est LUE vraie lit aussi ses factures et le
     // registre de leurs encaissements, plus bas ; ses contrôles les jugent comme la Checklist, et il dit trois clés de plus.
@@ -4784,6 +5132,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       }, frontiere)
       : null
     const enDefaut = lireLesVentes ? await sourcesEnDefaut(admin, dossierId, anneeCourante) : null
+    // L'INVENTAIRE (ligne 35, INV7 ; bloc INVENTAIRE), d'un dossier en engagement, le drapeau levé : les trois points de la Vue
+    // d'ensemble, sur l'inventaire lu en entier au jeton de l'appelant ; illisible, la clé le dit et ne compte rien. Baissé, ou
+    // en trésorerie, rien ne se lit et la clé n'existe pas : la réponse d'hier.
+    const inventaire = cleDeLInventaire(await lireLInventaireDuDossier(ctx.appelant, dossierId, ctx.modele.mode),
+      rValides.lignes.map((v) => v.annee), anneeCourante, premierExerciceDuDossier(rANouveaux.lignes, ecrituresTyped))
 
     return {
       // Les exercices VALIDÉS : rien de ce qu'ils figent n'est réclamé ci-dessous, comme dans la Checklist — la base
@@ -4878,6 +5231,8 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       ...(releve && enDefaut ? clesDesVentesFacturees(releve, enDefaut) : {}),
       // A8c4 : le libellé de la Checklist, d'un dossier dont une facture reprise est lue — un autre n'a pas la clé.
       ...(repriseLue ? { pieces_de_vente_reglees_par_le_registre_de_leur_facture_reprise: regleesParLeurFactureReprise } : {}),
+      // INV7 : l'inventaire d'un dossier en engagement, le drapeau levé — un autre n'a pas la clé.
+      ...(inventaire === null ? {} : { inventaire }),
     }
   }
 

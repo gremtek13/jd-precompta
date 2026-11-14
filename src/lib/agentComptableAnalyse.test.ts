@@ -1467,12 +1467,12 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
   // feraient réclamer ce qu'un exercice validé a figé — d'où le même refus que les autres lectures. Et
   // `lister_comptes` les lit aussi depuis le report des soldes (ligne 34) : ils disent qu'un exercice s'ouvre par les
   // soldes reportés du précédent, ou qu'il attend sa validation (gardé par agentComptableBalance.test.ts).
-  it('lit les exercices validés dans les trois outils, refuse sur une lecture partielle, et le dit au modèle', () => {
+  it('lit les exercices validés dans les quatre outils (lister_inventaire depuis INV7), refuse sur une lecture partielle, et le dit au modèle', () => {
     const source = sourceDeployee()
     const lectures = source.match(
       /admin\.from\("exercices_valides"\)\.select\("annee", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("annee"\)\.order\("dossier_id"\)\.range\(/g,
     ) ?? []
-    expect(lectures).toHaveLength(3)
+    expect(lectures).toHaveLength(4)
     expect(source).toMatch(/const \[r1, r2, r3, r4, r5, r6\] = await Promise\.all\(/)
     expect(source).toMatch(/if \(!r6\.complete\) \{\s*return \{ erreur: `Lecture partielle : \$\{r6\.motif\}/)
     expect(source).toContain('      exercices_valides: r6.lignes.map((v) => v.annee),\n')
