@@ -11,7 +11,8 @@
 --     écrit la connexion par l'Edge Function, EC-Q4), le rôle des Edge Functions sans session et l'anonyme sont refusés
 --     (42501), une version périmée aussi (22023), sans rien attribuer ;
 --   - une écriture de la configuration (une adresse, le secret) efface l'auteur ; le point de reprise, ou la même
---     configuration réenregistrée, le laissent ;
+--     configuration réenregistrée, le laissent ; la version d'une écriture est celle de la base : deux écritures qui en
+--     proposent une même en reçoivent deux, et l'attestation de la première ne vise pas la seconde (13b) ;
 --   - le client ne lit ni n'écrit la table (aucune policy) ; le réglage de l'attestation est remis à vide ;
 --   - le catalogue : les deux colonnes et leur contrainte, la garde et l'attestation (leurs droits, leurs corps à leur
 --     empreinte), le seul déclencheur de la table.
@@ -115,6 +116,17 @@ begin
         $q$with c as (update connexions_plateformes set nom = 'Plateforme fictive', url_flux = 'https://pa.plateforme-fictive.fr/afnor',
   client_secret = 'secret-essai', updated_at = now() where dossier_id = '{DT}' returning 1) select count(*)::text from c$q$, 'R', 'OK',
         '1 | écrite par le chef'),
+      -- La version d'une configuration écrite est celle de la base (relecture du 14/11/2026) : deux écritures qui proposent la
+      -- même — la milliseconde de l'Edge Function — en reçoivent deux, et l'attestation à la version que la base a rendue à
+      -- la première ne vise pas la seconde.
+      (13, 'chef', '13b. deux écritures de la configuration proposent la même version : la seconde en reçoit une autre, et l''attestation à la version de la première se refuse (22023), sans rien attribuer',
+        $p$with c as (update connexions_plateformes set url_flux = 'https://autre.plateforme-fictive.fr/afnor',
+    updated_at = '2026-10-03 08:00:00.123+00' where dossier_id = '{DT}' returning updated_at)
+  select set_config('essai.version_de_la_premiere', c.updated_at::text, true) from c;
+  update connexions_plateformes set url_flux = 'https://tierce.plateforme-fictive.fr/afnor', updated_at = '2026-10-03 08:00:00.123+00'
+   where dossier_id = '{DT}'$p$,
+        $q$select attester_connexion_plateforme('{DT}', current_setting('essai.version_de_la_premiere')::timestamptz)::text$q$, 'R', '22023',
+        'La connexion à la plateforme a changé entre-temps, ou a été retirée : l''enregistrer de nouveau. | sans auteur'),
       (14, 'service', '14. le rôle des Edge Functions pose l''auteur en direct : refusé (42501)', null,
         $q$with c as (update connexions_plateformes set ecrite_par = '{CHEF}', ecrite_le = now() where dossier_id = '{DT}' returning 1)
   select count(*)::text from c$q$, 'R', '42501', 'GARDE'),
@@ -146,7 +158,7 @@ begin
   || ' ' || md5(replace(p.prosrc, chr(13), '')), ' ; ' order by p.proname) from pg_proc p
   where p.oid in (to_regprocedure('public.garder_auteur_de_la_connexion()'), to_regprocedure('public.attester_connexion_plateforme(uuid, timestamp with time zone)'))$q$,
         null, 'OK',
-        'attester_connexion_plateforme true search_path="" false true false 2b23f498dfbb3e921ac6c6ed5acb0fcc ; garder_auteur_de_la_connexion false search_path="" false false false cb99dc3ced1b63011fdc468ba330663e | -'),
+        'attester_connexion_plateforme true search_path="" false true false 2b23f498dfbb3e921ac6c6ed5acb0fcc ; garder_auteur_de_la_connexion false search_path="" false false false e48b49003974ed54b9c758d1154ec5ce | -'),
       (22, 'proprietaire', '22. … son déclencheur, le seul de la table, actif', null,
         $q$select string_agg(pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text, ' ; ' order by t.tgname) from pg_trigger t
   where t.tgrelid = 'public.connexions_plateformes'::regclass and not t.tgisinternal$q$, null, 'OK',
