@@ -5797,6 +5797,62 @@ const SCENARIOS_RECEPTION_PAR_LE_CLIENT: Scenario[] = [
       attendu: { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAcces },
     },
   ]),
+  // L'AUTEUR NON LU (B4RS-Q1) : la fonction servie ne lit pas l'auteur de la connexion ; la relève par un accès client se
+  // refuse aussitôt la case « Achats » lue, avant toute autre lecture, tout secret et toute dépense. Le cabinet n'est pas un
+  // accès client : sa réception ne change pas.
+  ...[LISTE_DES_ACHATS, RECEPTION_D_UN_ACHAT].map((corps): Scenario => ({
+    nom: `${corps.action} — client « Achats » sur la base de demain, l’auteur de la connexion non lu : refusé (409) avant toute lecture, tout secret et toute dépense`,
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m) },
+    requete: (s) => requeteDe(s, { personne: 'client', corps }),
+    attendu: { statut: 409, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAuteurNonLu },
+  })),
+  {
+    nom: 'lister_achats — le chef sur la base de demain : sa relève part, l’auteur de la connexion non lu',
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: LISTE_DES_ACHATS }),
+    attendu: { statut: 200, depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`, `réseau POST ${HOTE_PLATEFORME}/afnor/v1/flows/search`] },
+  },
+  {
+    nom: 'recevoir_achat — le chef sur la base de demain : la pièce s’écrit à son compte, l’auteur de la connexion non lu',
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: RECEPTION_D_UN_ACHAT }),
+    attendu: {
+      statut: 200,
+      verifier: (r, m) => {
+        const p = lignes(m, 'pieces')[0] ?? {}
+        return corpsDe(r).issue === 'recue' && p.uploaded_by === PERSONNES.chef.id && lignes(m, 'pieces').length === 1
+          ? [] : [`${r.texte.slice(0, 200)} ; ${JSON.stringify(p).slice(0, 300)}`]
+      },
+    },
+  },
+  {
+    nom: 'telecharger — le cabinet et un flux « .. » : refusé (400), sans autre appel que son jeton',
+    preparer: connexionPlateforme,
+    requete: (s) => requeteDe(s, {
+      personne: 'chef', corps: { action: 'telecharger', dossierId: D, version: VERSION_PLATEFORME, flowId: '..', document: 'original' },
+    }),
+    attendu: { statut: 400, refusEnFrancais: true, depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`] },
+  },
+]
+
+
+/**
+ * Le refus de l'auteur non lu : sa raison nommée, et rien de lu ni de demandé que les droits de l'appelant, à son jeton.
+ */
+function refusDeLAuteurNonLu(r: Resultat, monde: Monde): string[] {
+  const fautes: string[] = []
+  if (corpsDe(r).raison !== 'auteur_de_la_connexion_non_lu') fautes.push(`pas le refus de l’auteur non lu : ${r.texte.slice(0, 160)}`)
+  for (const e of monde.journal) {
+    if (e.genre === 'lecture') fautes.push(`lu avant le refus : ${decrire(e)}`)
+    if (e.genre === 'rpc' && (e.nom !== 'droits_sur_le_dossier' || e.role !== 'authentifie')) fautes.push(`demandé avant le refus : ${decrire(e)}`)
+  }
+  return fautes
+}
+
+// LA RÉCEPTION PAR L'ACCÈS « ACHATS » QUI ABOUTIT (étape B4r ; B4RS-Q1) : elle ne passe que par une connexion dont le
+// cabinet a écrit la configuration en vigueur, donc sous la source dont `AUTEUR_DES_CONNEXIONS_EN_BASE` est levée en mémoire
+// (auteurDesConnexionsHttp.test.ts), sur le schéma des migrations préparées, l'auteur de la connexion posé au chef.
+export const SCENARIOS_RECEPTION_SOUS_L_AUTEUR: readonly Scenario[] = ([
   (() => {
     const recherches: unknown[] = []
     return {
@@ -5877,14 +5933,6 @@ const SCENARIOS_RECEPTION_PAR_LE_CLIENT: Scenario[] = [
     attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
   })),
   {
-    nom: 'telecharger — le cabinet et un flux « .. » : refusé (400), sans autre appel que son jeton',
-    preparer: connexionPlateforme,
-    requete: (s) => requeteDe(s, {
-      personne: 'chef', corps: { action: 'telecharger', dossierId: D, version: VERSION_PLATEFORME, flowId: '..', document: 'original' },
-    }),
-    attendu: { statut: 400, refusEnFrancais: true, depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`] },
-  },
-  {
     // La base compare un uuid sans égard à la casse ; un chemin du stockage est un texte, et la suppression du dossier liste
     // « <dossier>/ » tel que la base l'écrit.
     nom: 'recevoir_achat — le dossier écrit en majuscules : la pièce et ses fichiers rangés sous le dossier tel que la base l’écrit',
@@ -5899,7 +5947,10 @@ const SCENARIOS_RECEPTION_PAR_LE_CLIENT: Scenario[] = [
       },
     },
   },
-]
+] as Scenario[]).map((s) => ({
+  ...s,
+  preparer: (m: Monde, voisine: (slug: string) => FonctionChargee) => { s.preparer?.(m, voisine); auteurDeLaConnexion(PERSONNES.chef.id)(m) },
+}))
 
 // L'AUTEUR DE LA CONNEXION (B4RS-Q1, tranchée le 12/11/2026 : « (B) Garder EC-Q4, refuser sur une connexion écrite par un
 // client ») : joués sur la source dont `AUTEUR_DES_CONNEXIONS_EN_BASE` est levée en mémoire (auteurDesConnexionsHttp.test.ts),

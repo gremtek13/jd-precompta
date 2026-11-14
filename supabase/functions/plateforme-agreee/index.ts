@@ -118,8 +118,9 @@ const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret
 // que la base efface à toute écriture de la configuration et que seule `attester_connexion_plateforme`, appelée sous la
 // session du cabinet, renseigne. Levée avec elle : la fonction les lit, l'action « enregistrer » du cabinet atteste ce
 // qu'elle vient d'écrire, la vue publique dit si le cabinet a écrit la configuration en vigueur, et la réception par le
-// client ne passe que par une connexion que le cabinet a écrite (bloc RÉCEPTION PAR LE CLIENT). Baissée : la fonction
-// d'hier, qui ne nomme pas ces colonnes.
+// client ne passe que par une connexion que le cabinet a écrite (bloc RÉCEPTION PAR LE CLIENT). Baissée : la fonction ne
+// nomme pas ces colonnes et ne sait donc pas qui a écrit la configuration — la réception par un accès client se refuse
+// alors toujours, du côté fermé (`auteur_de_la_connexion_non_lu`), celle du cabinet restant celle d'hier.
 const AUTEUR_DES_CONNEXIONS_EN_BASE = false
 const COLONNES_DE_L_AUTEUR = ", ecrite_par, ecrite_le"
 const COLONNES_LUES = AUTEUR_DES_CONNEXIONS_EN_BASE ? COLONNES + COLONNES_DE_L_AUTEUR : COLONNES
@@ -3518,6 +3519,12 @@ function actionPermise(table: Readonly<Record<string, DroitExige>>, action: stri
 // autre que l'annonce ; une facture adressée à une autre entreprise ne s'écrit pas, et la réponse ne dit pas laquelle ; un
 // dossier dont la synchronisation Super PDP est configurée ne se relève pas par le client (la même facture entrerait deux
 // fois, par les deux chemins qui ne se reconnaissent pas).
+// L'AUTEUR DE LA CONNEXION (B4RS-Q1) : la relève par un accès client ne passe que par une connexion dont le cabinet a écrit
+// la configuration en vigueur. Tant que la fonction ne lit pas l'auteur (`AUTEUR_DES_CONNEXIONS_EN_BASE` baissée), elle ne
+// peut pas le vérifier : un accès client est refusé (409, `auteur_de_la_connexion_non_lu`) aussitôt sa case « Achats » lue,
+// avant toute autre lecture, tout secret et tout appel à la plateforme — la règle ne dépend pas de l'ordre des
+// déploiements. Le cabinet du dossier n'est pas un accès client : sa réception ne change pas. Levée, le refus se juge sur
+// l'auteur lu (`connexion_hors_du_cabinet`).
 const TYPES_ACHATS = ["SupplierInvoice"]
 
 const LECTURE_ACHATS: LectureDesFlux<FluxVu> = {
@@ -3535,6 +3542,8 @@ interface ContexteDeLaReception {
   payload: Record<string, unknown>
   dossierId: string
   utilisateur: string
+  /** L'appelant est le cabinet du dossier (`droits_sur_le_dossier`, case « cabinet ») : tout autre est un accès client. */
+  cabinet: boolean
   appelant: { rpc: (nom: string, args: { p_dossier_id: string }) => PromiseLike<{ data: unknown; error: unknown }> }
   admin: ReturnType<typeof createClient>
   debut: number
@@ -3588,6 +3597,13 @@ async function receptionParLeClient(c: ContexteDeLaReception): Promise<Response>
   const achats = await achatsDeLAppelant(c.appelant, dossierId)
   if ("illisible" in achats) return json({ error: `L'accès à ce dossier n'a pas pu être vérifié (${achats.illisible}).` }, 503)
   if (!achats.achats) return json({ error: "Dossier introuvable." }, 404)
+  // B4RS-Q1, l'auteur non lu : du côté fermé, avant toute lecture et toute dépense (voir l'en-tête du bloc).
+  if (!AUTEUR_DES_CONNEXIONS_EN_BASE && !c.cabinet) {
+    return json({
+      error: "La relève depuis l'espace client n'est pas encore ouverte : elle ne passe que par une connexion à la plateforme que le cabinet a enregistrée, et cela ne se vérifie pas encore.",
+      raison: "auteur_de_la_connexion_non_lu",
+    }, 409)
+  }
 
   // La demande se juge avant toute lecture : un corps mal formé ne coûte rien.
   let depuis: string | null = null
@@ -3942,7 +3958,9 @@ Deno.serve(async (req: Request) => {
   })
   // La réception par l'accès « Achats » (bloc RÉCEPTION PAR LE CLIENT) a sa porte, la case « Achats », lue avant tout le reste.
   if (parLaReception) {
-    return await receptionParLeClient({ action, payload, dossierId, utilisateur, appelant: supabaseAsCaller, admin, debut, ouvrir: plateformeDe })
+    return await receptionParLeClient({
+      action, payload, dossierId, utilisateur, cabinet: lus.droits.cabinet, appelant: supabaseAsCaller, admin, debut, ouvrir: plateformeDe,
+    })
   }
   if (!actionPermise(QUI_PEUT_QUOI, action, lus.droits)) return json({ error: "Dossier introuvable." }, 404)
 
