@@ -2730,6 +2730,117 @@ const SCENARIOS_DES_VENTES: Scenario[] = [
     { valeur: 'false' }, BASCULE_A, gardeAppliquee(CONSTAT_ILLISIBLE, null, null)),
 ]
 
+// L'INVENTAIRE DANS L'ASSISTANT (ligne 35, INV7 ; bloc INVENTAIRE d'agent-comptable). Un dossier en ENGAGEMENT qui porte un
+// inventaire : une charge constatée d'avance à jour (constatée et extournée), une facture non parvenue sans ses écritures (à
+// recomposer), l'évaluation d'une provision à jour, l'inventaire de 2024 déclaré et pas celui de 2025 ; l'objet de chacune,
+// celui de la provision et le libellé de leurs écritures portent un MARQUEUR, qui ne doit jamais parvenir au modèle ; un dossier
+// voisin porte aussi une régularisation. Le modèle appelle lister_inventaire, points_a_traiter et lister_ecritures, puis répond.
+// Le drapeau baissé (la vraie source), l'assistant d'hier : l'outil n'est pas offert et se refuse comme un outil inconnu, aucune
+// des trois tables ne se lit, points_a_traiter n'a pas la clé. Levé, agentComptableInventaire.test.ts joue les mêmes mondes.
+export const MARQUEUR_DE_L_INVENTAIRE = 'Ermengarde Pouliquen'
+export const TABLES_DE_L_INVENTAIRE = ['operations_inventaire', 'inventaires_declares', 'provisions'] as const
+const OUTILS_DE_L_INVENTAIRE = [
+  { id: 'inventaire', name: 'lister_inventaire', input: {} },
+  { id: 'points', name: 'points_a_traiter', input: {} },
+  { id: 'ecritures', name: 'lister_ecritures', input: {} },
+]
+
+/** Le monde de l'inventaire, sur le dossier du scénario, dans le mode demandé. */
+export function mondeDeLInventaire(m: Monde, mode: 'engagement' | 'tresorerie') {
+  const dossier = lignes(m, 'dossiers').find((d) => d.id === D)!
+  Object.assign(dossier, { mode_comptable: mode })
+  const op = (id: string, dossierId: string, o: Record<string, unknown>) => ({
+    id, dossier_id: dossierId, exercice: 2025, tva_centimes: 0, periode_debut: null, periode_fin: null,
+    objet: `Assurance du local — ${MARQUEUR_DE_L_INVENTAIRE}`, piece_citee_id: null, reprise: false, provision_id: null, version: 1,
+    cree_par: PERSONNES.chef.id, cree_le: '2026-01-20T10:00:00Z', modifie_par: null, modifie_le: null, ...o,
+  })
+  const CCA = '1e700000-0000-4000-8000-000000000001'
+  const FNP = '1e700000-0000-4000-8000-000000000002'
+  const EVALUATION = '1e700000-0000-4000-8000-000000000003'
+  const PROVISION = '1e700000-0000-4000-8000-0000000000a1'
+  m.base.operations_inventaire = [
+    op(CCA, D, { nature: 'cca', compte_resultat: '616000', compte_regularisation: '486000', montant_centimes: 120000, piece_citee_id: 'c13f0000-0000-4000-8000-0000000000ff' }),
+    op(FNP, D, { nature: 'fnp', compte_resultat: '604000', compte_regularisation: '408100', montant_centimes: 50000, tva_centimes: 10000 }),
+    op(EVALUATION, D, { nature: 'provision', compte_resultat: '681500', compte_regularisation: '151100', montant_centimes: 30000, provision_id: PROVISION }),
+    op('1e700000-0000-4000-8000-000000000004', ID.dossierVoisin, { nature: 'cca', compte_resultat: '616000', compte_regularisation: '486000', montant_centimes: 99900 }),
+  ]
+  m.base.provisions = [{
+    id: PROVISION, dossier_id: D, genre: 'risque', compte_provision: '151100', objet: `Litige — ${MARQUEUR_DE_L_INVENTAIRE}`,
+    facture_id: null, piece_citee_id: null, ouverte_en: 2025, reprise_centimes: null, version: 1,
+    cree_par: PERSONNES.chef.id, cree_le: '2026-01-20T10:00:00Z', modifie_par: null, modifie_le: null,
+  }]
+  m.base.inventaires_declares = [
+    { id: '1e700000-0000-4000-8000-0000000000d1', dossier_id: D, exercice: 2024, declare_par: PERSONNES.chef.id, declare_le: '2025-01-15T10:00:00Z', retire_par: null, retire_le: null },
+  ]
+  const ligne = (operation: string, date: string, compte: string, sens: string, montant: number) => ({
+    id: identifiantGenere(), dossier_id: D, date, compte, sens, montant, statut: 'brouillon', operation_inventaire_id: operation,
+    libelle: `Inventaire 2025 — ${MARQUEUR_DE_L_INVENTAIRE}`, piece_id: null, ligne_bancaire_id: null, facture_id: null, encaissement_id: null,
+    immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, operation_caisse_id: null,
+  })
+  m.base.ecritures_brouillon = [
+    ligne(CCA, '2025-12-31', '486000', 'debit', 1200), ligne(CCA, '2025-12-31', '616000', 'credit', 1200),
+    ligne(CCA, '2026-01-01', '616000', 'debit', 1200), ligne(CCA, '2026-01-01', '486000', 'credit', 1200),
+    ligne(EVALUATION, '2025-12-31', '681500', 'debit', 300), ligne(EVALUATION, '2025-12-31', '151100', 'credit', 300),
+  ]
+  let tour = 0
+  m.modele = (demande) => {
+    ;(m.notes.demandesAuModele ??= []).push(demande)
+    tour += 1
+    if (tour > 1) return reponseModele('Voici l’inventaire.')
+    return {
+      content: OUTILS_DE_L_INVENTAIRE.map((o) => ({ type: 'tool_use', id: o.id, name: o.name, input: o.input })),
+      stop_reason: 'tool_use', usage: { input_tokens: 10, output_tokens: 10 },
+    }
+  }
+}
+
+/** Ce que le modèle a reçu de chaque outil de l'inventaire, et les noms des outils offerts. */
+export function ceQueLeModeleARecuDeLInventaire(m: Monde) {
+  const outils = ((m.notes.demandesAuModele ?? [])[0] as { tools?: { name: string }[] } | undefined)?.tools ?? []
+  return { resultats: resultatsDesOutils(m), offerts: outils.map((o) => o.name), demandes: JSON.stringify(m.notes.demandesAuModele ?? []) }
+}
+
+/** Le scénario de l'inventaire, dans un mode, jugé par `verifier` sur ce que le modèle a reçu. */
+export function scenarioDeLInventaire(
+  nom: string, mode: 'engagement' | 'tresorerie',
+  verifier: (recu: ReturnType<typeof ceQueLeModeleARecuDeLInventaire>, monde: Monde) => string[],
+): Scenario {
+  return {
+    nom,
+    preparer: (m) => mondeDeLInventaire(m, mode),
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+    attendu: {
+      statut: 200, depenses: ['modèle', 'modèle'],
+      verifier: (_r, m) => {
+        const recu = ceQueLeModeleARecuDeLInventaire(m)
+        const manquants = OUTILS_DE_L_INVENTAIRE.filter((o) => !recu.resultats[o.id]).map((o) => o.id)
+        return manquants.length > 0 ? [`outils sans résultat : ${manquants.join(', ')}`] : verifier(recu, m)
+      },
+    },
+  }
+}
+
+/** Le drapeau baissé : l'assistant d'hier, dans les deux modes. */
+function inventaireBaisse(recu: ReturnType<typeof ceQueLeModeleARecuDeLInventaire>, monde: Monde): string[] {
+  const fautes: string[] = []
+  if (recu.offerts.includes('lister_inventaire')) fautes.push('lister_inventaire offert, le drapeau baissé')
+  if (JSON.stringify(recu.resultats.inventaire) !== JSON.stringify({ erreur: 'Outil inconnu : lister_inventaire' })) {
+    fautes.push(`lister_inventaire ne se refuse pas comme un outil inconnu : ${JSON.stringify(recu.resultats.inventaire)}`)
+  }
+  if ('inventaire' in recu.resultats.points) fautes.push('points_a_traiter porte la clé inventaire, le drapeau baissé')
+  const lues = monde.journal.filter((e) => e.genre === 'lecture' && (TABLES_DE_L_INVENTAIRE as readonly string[]).includes(e.table))
+  if (lues.length > 0) fautes.push(`une table de l'inventaire lue, le drapeau baissé : ${lues.map((e) => (e as { table: string }).table).join(', ')}`)
+  if (recu.demandes.includes(MARQUEUR_DE_L_INVENTAIRE)) fautes.push('l’objet d’une régularisation est parvenu au modèle')
+  return fautes
+}
+
+const SCENARIOS_DE_L_INVENTAIRE: Scenario[] = [
+  scenarioDeLInventaire('INV7, le drapeau de l’inventaire baissé : un dossier en engagement qui porte un inventaire — l’outil ni offert ni lu, aucune clé, aucun objet au modèle (INV7)',
+    'engagement', inventaireBaisse),
+  scenarioDeLInventaire('INV7, le drapeau de l’inventaire baissé : un dossier en trésorerie — l’assistant d’hier (INV7)',
+    'tresorerie', inventaireBaisse),
+]
+
 const AGENT_COMPTABLE: ContratFonction = {
   slug: 'agent-comptable',
   navigateur: true,
@@ -2737,6 +2848,7 @@ const AGENT_COMPTABLE: ContratFonction = {
   scenarios: [
     preflight(),
     ...sansSession('agent-comptable', QUESTION),
+    ...SCENARIOS_DE_L_INVENTAIRE,
     {
       nom: 'les identifiants AWS absents : 500 qui nomme les secrets, rien de demandé',
       env: { AWS_ACCESS_KEY_ID: undefined },
