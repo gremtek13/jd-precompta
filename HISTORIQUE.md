@@ -52642,3 +52642,21 @@ le relevé de toute la liste sous les deux natures (cases2035.test.ts), un cas p
 fictif (fecFictif.test.ts : AA d'un seul libellé) ; 8 mutations sur 8 tuées. **Reste** (FEC22F-Q2) : « Frais de
 déplacement(s) » sans ligne sûre (23 ou 24), et deux libellés qui diffèrent de l'imprimé faute d'être en base (ligne 10
 sans sa parenthèse, ligne 21 en « des »), que seule une migration ajouterait.
+
+### 13/11/2026 — B4RS-Q1, P1T-Q2 ET RET-Q2 : TROIS MIGRATIONS PRÉPARÉES, LEURS ÉCRANS DERRIÈRE LEURS DRAPEAUX
+
+(Agent architecte ; rien en production, rien déployé ; copie de la mère 17, port 54841, 218 migrations.) **B4RS-Q1** (B) :
+`auteur_des_connexions_plateformes` (20261113201000, par l'outil) — l'Edge Function écrit la connexion sans session, donc
+l'auteur se pose en deux temps jugés par la base : toute écriture de la configuration l'efface (garde BEFORE), et seule
+`attester_connexion_plateforme`, appelée sous la session du cabinet du dossier, pose `ecrite_par = auth.uid()` à la version
+écrite ; les connexions d'avant restent sans auteur (fermé). `plateforme-agreee`, sous `AUTEUR_DES_CONNEXIONS_EN_BASE` baissée :
+le cabinet atteste ce qu'il enregistre, la vue dit un booléen, `lister_achats`/`recevoir_achat` refusent (409) avant tout appel.
+Écartés : un auteur posé par la fonction, une écriture par RPC (le navigateur contournerait les règles d'adresse), une policy.
+**P1T-Q2** : la contrainte du droit ne range pas un accès sans case sans mentir ; `arrivee_et_depart_des_acces` (202000, À
+COLLER) admet « acces » et pose `tracer_les_acces` entre la trace des cases et l'adresse — effet voulu : un accès retiré sans
+case garde son adresse (RGPD.md). `traceDesDroits.sql` (contrôle 39) et `adresseDesAccesRetires.sql` (31) ignoraient le
+déclencheur de LM1 : corrigés. **RET-Q2** : `cumul_et_dispense_du_medecin` (203000, par l'outil), sources CARMF 2026 ; la
+dispense ne se lit que les deux premières années civiles d'affiliation, non dite elle tait l'estimation. Preuves : essais
+24/24, 54/54, 18/18, 33/33, 45/45 avec, EN ATTENTE sans ; 17 mutations mordent ; `rls.sql` identique (240, 0, 139/139) ;
+banc SÛR sur les deux modèles ; chaque retour rend la signature ; barrière : `tsc -b`, lint, `vitest --changed` (210
+fichiers, 7 270 tests) et les 214 fichiers qui lisent `supabase/` (7 147). Questions : B4RS1-Q1, B4RS1-Q2, RET2-Q1, RET2-Q2.
