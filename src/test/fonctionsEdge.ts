@@ -471,6 +471,13 @@ const POLITIQUES_LECTURE: Record<string, Politique> = {
   categories: (l, u, m) => !!u && (l.dossier_id == null || adminDuDossier(m, u, l.dossier_id) || membreDuDossier(m, u, l.dossier_id)),
   // `pieces_des_factures_reprises_lecture` (migration `piece_d_une_facture_reprise`, A8-Q5) : le cabinet du dossier seul.
   pieces_des_factures_reprises: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
+  // L'INVENTAIRE (ligne 35, INV7), que l'assistant lit au jeton de l'appelant le drapeau levé : les lectures des trois
+  // migrations PRÉPARÉES — `operations_inventaire_lecture` (INV2), `provisions_cabinet` (INV4), `inventaires_declares_lecture`
+  // (INV3), le cabinet du dossier seul —, et `ecritures_brouillon_all` de l'export (`admin_du_dossier`).
+  operations_inventaire: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
+  provisions: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
+  inventaires_declares: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
+  ecritures_brouillon: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
 }
 
 /** Qui appelle une fonction SQL : le compte de la session (nul sous une clé seule), et le rôle sous lequel PostgREST la sert. */
