@@ -52677,3 +52677,19 @@ Réplique (218 migrations, égale à la production) : compteBilan 69 → 68 just
 6 sur 6 ; recuParLaPieceCitee 18, 15 sur 15 ; voisins identiques avant et après ; rls.sql 240 lignes, 0 en faute, 139 sur 139 ;
 les deux ordres de collage, une même signature ; les retours rendent celle d'avant ; banc du leurre SÛR. Restent un paiement
 d'avant la reprise rapproché après le registre (A8Q5Q3Q2-Q2) et ce que le client « Ventes » apprend du reçu (A8Q5Q3Q2-Q1).
+
+### 14/11/2026 — LE SCANNER DES ESSAIS HORS LA RESTRICTIVE, ET LE TEST D'ÉCRAN DE BILANTAB LEVÉ (INV6)
+
+(Agent architecte, sans migration ni changement de l'application.) **Le scanner** (`src/lib/essaisHorsLaRestrictive.test.ts`)
+garde la règle du 13/11 (« DES ESSAIS DE LA BASE REMIS AU SCHÉMA ») : il lit les 140 essais, toute mention de `pg_policies` /
+`pg_policy` (qualifiée ou non), juge la clause et les conjoints de son `where` — conforme (le filtre exact, sous l'alias de la
+vue), par le nom (un nom, une liste, un motif LIKE, une disjonction de noms qui ne peuvent pas être `deux_facteurs`), alias,
+littéral, ou une des 20 exceptions à raison et nombre (26 lectures : les blocs DF, SM et TO de rls.sql, ce qu'OUVRENT les
+seules permissives, les recherches par prédicat, l'inventaire, la signature, le socle, la restrictive visée elle-même). Le
+14/11 : 239 mentions dans 67 essais, 139 conformes dans 60, 52 par le nom, 0 faute. Il a trouvé quatre essais encore en
+faute, remis au filtre : `comptesBancaires` et `pieceDUneFactureReprise` (`polname <> 'deux_facteurs'`, qui taisait aussi une
+permissive de ce nom), `facturesImportees` 48 et `numerotationContinue` 66 (le compte « en tout » des seules permissives, qui
+taisait une restrictive d'un autre nom) — À REJOUER sur une réplique. Défauts plantés et 6 mutations du scanner sur 6 tuées.
+**BilanTab** : le drapeau `INVENTAIRE_EXPORTE` par un accesseur, sept cas (non déclaré, déclaré, déclaration d'un autre
+dossier, baissé sans lecture, trésorerie, trois lectures partielles) ; 3 mutations sur 3 tuées (le mode, l'inventaire ignoré,
+la lecture partielle).
