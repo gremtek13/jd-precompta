@@ -111,8 +111,14 @@ declare
   -- base, le sien, rangé après celui de la trace.
   -- Et (13/11/2026) celui du dossier du cabinet (LM1, `memberships_dossier_du_cabinet`, que la liste ignorait depuis sa mise en
   -- base : le contrôle 39 était en faute sur toute base qui la porte), et celui de l'accès dans la trace (P1T-Q2), rangé entre
-  -- la trace des cases et l'adresse.
-  declencheurs_memberships constant text := case when to_regprocedure('public.garder_acces_au_dossier_du_cabinet()') is null then ''
+  -- la trace des cases et l'adresse. Et, migrations préparées : INAL5 (`depart_du_client`) pose `memberships_dossier_conserve`,
+  -- présent avec sa garde ; la porte d'accès (`acces_avant_les_gardes`) se pose sur memberships quand cette garde y est, l'une
+  -- ou l'autre la posant : présente avec les deux fonctions, rangée la première (le trait bas).
+  declencheurs_memberships constant text := case when to_regprocedure('public.acces_avant_les_gardes()') is not null
+                                                   and to_regprocedure('public.garder_dossier_conserve()') is not null
+                                                 then '_acces_avant_les_gardes, ' else '' end
+    || case when to_regprocedure('public.garder_dossier_conserve()') is not null then 'memberships_dossier_conserve, ' else '' end
+    || case when to_regprocedure('public.garder_acces_au_dossier_du_cabinet()') is null then ''
       else 'memberships_dossier_du_cabinet, ' end
     || 'memberships_droit_caisse, memberships_droit_ventes, memberships_trace_des_droits'
     || case when to_regprocedure('public.tracer_les_acces()') is null then '' else ', memberships_trace_des_droits_acces' end
