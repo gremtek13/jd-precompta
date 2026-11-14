@@ -52660,3 +52660,20 @@ dispense ne se lit que les deux premières années civiles d'affiliation, non di
 24/24, 54/54, 18/18, 33/33, 45/45 avec, EN ATTENTE sans ; 17 mutations mordent ; `rls.sql` identique (240, 0, 139/139) ;
 banc SÛR sur les deux modèles ; chaque retour rend la signature ; barrière : `tsc -b`, lint, `vitest --changed` (210
 fichiers, 7 270 tests) et les 214 fichiers qui lisent `supabase/` (7 147). Questions : B4RS1-Q1, B4RS1-Q2, RET2-Q1, RET2-Q2.
+
+### 13/11/2026 — PC4Q2-Q1, A8B-Q3 ET A8Q5Q3-Q2 : TROIS MIGRATIONS PRÉPARÉES (PAS APPLIQUÉES)
+
+(Agent architecte ; rien en production.) Trois réponses du cabinet du 11/11/2026, à la recommandation, chacune sa migration,
+par l'OUTIL, son retour et son drapeau baissé. **PC4Q2-Q1** (`le_468_sur_le_releve`, 20261113210000) : `refus_compte_de_bilan`
+sort le 468 de la branche du 48 — le pendant du 467 (PCG 2026, art. 1214-46) — et dit le 48 du plan de 2026 (481, 486, 487,
+488 ; art. 1214-48 et 212-11 : les frais d'émission d'un emprunt en charge, l'application ne les étale pas) ;
+`LE_468_SUR_LE_RELEVE_PREVU`. **A8B-Q3** (`reprises_retiennent_la_tresorerie`, 20261113211000) : `verrouiller_modele_comptable`
+refuse, après le brouillon, le passage en engagement d'un dossier qui porte une facture « importee » (23514) ; la carte
+« Modèle comptable » le dit avant le clic (`REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES`). **A8Q5Q3-Q2** (`recu_par_la_piece_citee`,
+20261113212000) : `recu_par_la_piece` (la somme signée des paiements que la 2035 compte) ; le registre part du plus grand du
+déclaré et du reçu, et refuse un reçu plus grand à plusieurs taux ; `reprise_de_la_facture` rend une septième clé ; la citation
+verrouille la facture et refuse un double compte ; la fenêtre des encaissements juge comme la base (`RECU_PAR_LA_PIECE_CITEE_PREVU`).
+Réplique (218 migrations, égale à la production) : compteBilan 69 → 68 justes, 6 mutations sur 6 ; repriseEtModeleComptable 8,
+6 sur 6 ; recuParLaPieceCitee 18, 15 sur 15 ; voisins identiques avant et après ; rls.sql 240 lignes, 0 en faute, 139 sur 139 ;
+les deux ordres de collage, une même signature ; les retours rendent celle d'avant ; banc du leurre SÛR. Restent un paiement
+d'avant la reprise rapproché après le registre (A8Q5Q3Q2-Q2) et ce que le client « Ventes » apprend du reçu (A8Q5Q3Q2-Q1).
