@@ -55,6 +55,16 @@ vi.mock('../../lib/supabase', async () => {
   return { supabase: { from: (table: string) => { faux.appels += 1; return chaine(table) } } }
 })
 
+// L'INVENTAIRE (ligne 35, INV6) : le drapeau `INVENTAIRE_EXPORTE` joué par un accesseur — celui du module tant qu'un cas ne
+// le lève pas (l'état d'avant, éprouvé par tout le reste de ce fichier). Levé, l'écran lit l'inventaire du dossier et passe
+// `inventaireDesControles(…, mode)` au bilan.
+const inventaireDuTest = vi.hoisted(() => ({ leve: undefined as undefined | boolean }))
+vi.mock('../../lib/inventaire', async (original) => {
+  const vrai = await original<typeof import('../../lib/inventaire')>()
+  return { ...vrai, get INVENTAIRE_EXPORTE() { return inventaireDuTest.leve ?? vrai.INVENTAIRE_EXPORTE } }
+})
+afterEach(() => { inventaireDuTest.leve = undefined })
+
 let numero = 0
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   numero += 1
@@ -652,4 +662,93 @@ describe('BilanTab — l’ouverture confrontée à la clôture de l’exercice 
     expect(screen.getByText(/L’exercice 2026 n’a pas encore d’ouverture/)).toBeTruthy()
     expect(screen.queryByText(/^Ouverture :/)).toBeNull()
   })
+})
+
+// LE BRANCHEMENT DE L'INVENTAIRE (ligne 35, INV6). Le point `inventaire-non-revu` se calcule dans `lib/bilan.ts`, joué dans
+// les deux états du drapeau par bilan.test.ts ; ce qui se joue ici, c'est que l'ÉCRAN lise l'inventaire du dossier, le lui
+// passe sous le mode du dossier, et ne dise rien sur une lecture en partie. Le dossier : une société en engagement, un 486
+// repris à l'ouverture, que la seule extourne mouvemente (le 1er janvier, puis reconstitué au 31 décembre).
+describe('BilanTab — l’inventaire du dossier (INV6)', () => {
+  const NON_DECLARE = /L’inventaire de 2026 n’est pas déclaré, et un compte qu’il écrit porte un solde à la clôture : 486000\./
+  function societeAuQuatreCentQuatreVingtSix(declarations: { id: string; exercice: number; retire_le: string | null; dossier_id?: string }[] = []) {
+    faux.tables = {
+      ecritures_brouillon: [
+        ...ecrire('2026-01-01', [['616000', 'D', 300], ['486000', 'C', 300]]),
+        ...ecrire('2026-12-31', [['486000', 'D', 300], ['616000', 'C', 300]]),
+      ],
+      a_nouveaux: [
+        aNouveau({ compte: '486000', compte_origine: '486000', libelle: 'Charges constatées d’avance', sens: 'debit', montant: 300 }),
+        aNouveau({ compte: '512000', sens: 'debit', montant: 700 }),
+        aNouveau({ compte: '101000', compte_origine: '101000', libelle: 'Capital', sens: 'credit', montant: 1_000 }),
+      ],
+      categories: [], pieces: [], soldes_reportes: [],
+      operations_inventaire: [],
+      inventaires_declares: declarations.map((d) => ({ dossier_id: 'd1', ...d })),
+      provisions: [],
+    }
+  }
+
+  it('drapeau levé, l’inventaire de l’exercice clos non déclaré : le point le dit, même le 486 mouvementé par l’extourne', async () => {
+    inventaireDuTest.leve = true
+    societeAuQuatreCentQuatreVingtSix()
+    rendre()
+    await act(async () => {})
+    expect(screen.getByRole('heading', { name: 'Bilan au 31/12/2026' })).toBeTruthy()
+    expect(screen.getByText(NON_DECLARE)).toBeTruthy()
+    expect(faux.colonnes.inventaires_declares).toBe('id, exercice, retire_le')
+  })
+
+  it('drapeau levé, l’inventaire déclaré : le point se tait', async () => {
+    inventaireDuTest.leve = true
+    societeAuQuatreCentQuatreVingtSix([{ id: 'i1', exercice: 2026, retire_le: null }])
+    rendre()
+    await act(async () => {})
+    expect(screen.getByRole('heading', { name: 'Bilan au 31/12/2026' })).toBeTruthy()
+    expect(screen.queryByText(/n’est pas déclaré/)).toBeNull()
+    expect(screen.queryByText(/compte d’inventaire/)).toBeNull()
+  })
+
+  it('drapeau levé, la déclaration d’un AUTRE dossier ne compte pas : le point revient', async () => {
+    inventaireDuTest.leve = true
+    societeAuQuatreCentQuatreVingtSix([{ id: 'i2', exercice: 2026, retire_le: null, dossier_id: 'd2' }])
+    rendre()
+    await act(async () => {})
+    expect(screen.getByText(NON_DECLARE)).toBeTruthy()
+  })
+
+  it('drapeau baissé : l’écran d’hier — aucune lecture de l’inventaire, le 486 mouvementé se tait', async () => {
+    inventaireDuTest.leve = false
+    societeAuQuatreCentQuatreVingtSix()
+    rendre()
+    await act(async () => {})
+    expect(screen.getByRole('heading', { name: 'Bilan au 31/12/2026' })).toBeTruthy()
+    expect(screen.queryByText(/n’est pas déclaré/)).toBeNull()
+    expect(screen.queryByText(/compte d’inventaire/)).toBeNull()
+    expect(faux.colonnes.inventaires_declares).toBeUndefined()
+    expect(faux.colonnes.operations_inventaire).toBeUndefined()
+  })
+
+  it('drapeau levé, un dossier en trésorerie : l’inventaire est sans objet, rien ne se dit', async () => {
+    inventaireDuTest.leve = true
+    societeAuQuatreCentQuatreVingtSix()
+    rendre({ modele: EXPLOITANT })
+    await act(async () => {})
+    expect(screen.getByText(/Un BNC à la déclaration contrôlée n’établit pas de bilan/)).toBeTruthy()
+    expect(screen.queryByText(/n’est pas déclaré/)).toBeNull()
+    expect(screen.queryByText(/compte d’inventaire/)).toBeNull()
+  })
+
+  it.each(['operations_inventaire', 'inventaires_declares', 'provisions'])(
+    'drapeau levé, %s lue en partie : l’écran le dit et n’affirme rien', async (table) => {
+      inventaireDuTest.leve = true
+      societeAuQuatreCentQuatreVingtSix([{ id: 'i1', exercice: 2026, retire_le: null }])
+      faux.refusees.add(table)
+      rendre()
+      await act(async () => {})
+      expect(screen.getByText(/L’inventaire du dossier n'a pas pu être lu en entier/)).toBeTruthy()
+      expect(screen.getByText(/Le bilan ne s’établit pas sur une lecture incomplète/)).toBeTruthy()
+      expect(screen.queryByRole('table')).toBeNull()
+      expect(screen.queryByText(/€/)).toBeNull()
+      expect(screen.queryByText(/n’est pas déclaré/)).toBeNull()
+    })
 })
