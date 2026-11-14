@@ -301,6 +301,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `rls.sql` le juge (une régression y est EN FAUTE), `droitsHorsRls.sql` (réplique) tente chaque geste ; LOCK reste ouvert
   par UPDATE et DELETE ; le défaut de `supabase_admin` et le schéma `net` sont hors de portée → « LES DROITS QUE LA RLS NE
   GARDE PAS », « LES DROITS QUE LA RLS NE GARDE PAS, EN PRODUCTION ».
+- **Aucun seau n'ouvre la mise à jour d'un objet, et une mise à jour relit la cible comme l'insertion** (relecture du
+  13/11/2026) : `stockage_sans_mise_a_jour` (à coller) et `texte_ocr_coherent_a_la_mise_a_jour` (par l'outil), préparées,
+  attendent SECU3-Q1 et Q2 ; trois scanners gardent la règle, leurs exceptions nommées tombant avec les migrations
+  (`stockageSansMiseAJour.test.ts`, `policiesDeMiseAJour.test.ts`, `deuxFacteursDesTablesNeuves.test.ts` : toute préparée
+  qui crée une table pose la restrictive `deux_facteurs` sous condition) ; un essai qui compte des policies met cette
+  restrictive à part (`essaisHorsLaRestrictive.test.ts`) → « SECU3-Q1 ET SECU3-Q2 », « DES ESSAIS DE LA BASE REMIS AU SCHÉMA ».
 - RLS activée sur toutes les tables. **Les accès clients sont restreints** (dépôt de pièces, pas de montants,
   catégories, packs ni autres onglets) — ne jamais les élargir sans décision explicite. **Trois domaines font
   exception** (décision du cabinet du 09/10/2026, « remplacer MEG ») : les devis, les factures et leur facture
@@ -445,6 +451,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 ## Fonctionnalités actuellement en cours
 
 - **Proposition de catégorie** : à éprouver par un premier clic réel du cabinet.
+- **Préparées le 13/11/2026, éprouvées sur la réplique, en attente de leur fiche** (chacune derrière son drapeau baissé) :
+  le 468 sur le relevé (`le_468_sur_le_releve`, PC4Q2-Q1) ; une reprise retient la trésorerie
+  (`reprises_retiennent_la_tresorerie`, A8B-Q3) ; le registre d'une facture reprise part de ce que sa pièce citée a reçu
+  (`recu_par_la_piece_citee`, A8Q5Q3-Q2 : appliquer, lever, déployer d'un trait) ; l'auteur d'une connexion de plateforme,
+  posé par la base, sans lequel la relève du client se refuse (`auteur_des_connexions_plateformes`, B4RS-Q1, puis
+  `plateforme-agreee` à déployer) ; l'arrivée et le départ d'un accès dans la trace (`arrivee_et_depart_des_acces`, à
+  coller, P1T-Q2) ; le cumul et la dispense d'un médecin (`cumul_et_dispense_du_medecin`, RET-Q2). Sans migration, derrière
+  les drapeaux des achats et des notes de frais : B8-Q1, B4RS-Q2, B4R-Q1 (« Lire la facture électronique » remplit,
+  n'écrit rien) → « PC4Q2-Q1, A8B-Q3 ET A8Q5Q3-Q2 », « B4RS-Q1, P1T-Q2 ET RET-Q2 », « B4R-Q1, B4RS-Q2 ET B8-Q1 ».
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
   levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la
@@ -516,7 +531,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `exercices_du_dossier`, préparée, à coller avec EXD3) → « LES EXERCICES DÉCALÉS : LA CONCEPTION (LIGNE 42) »,
   « EXD2 : LES EXERCICES DU DOSSIER, EN BASE ».
 - **FEC** (lignes 26.5 et 26.6, étape (e) ; MVP-D5) : les vingt-deux champs d'un BNC en trésorerie et les montants en
-  devise, CONÇUS le 31/10/2026 — quatre valeurs lues, jamais devinées, jamais un nom de patient ; six lots, FEC22a à
+  devise, CONÇUS le 31/10/2026 — quatre valeurs lues, jamais devinées, jamais un nom de patient, NatOp sous le
+  libellé imprimé de la ligne de la 2035 (`posteDuFormulaire`, 13/11/2026, FEC22F-Q2) ; six lots, FEC22a à
   FEC22f, dont une migration (FEC22b), préalable à toute validation d'un exercice en trésorerie ; six questions au
   cabinet, tranchées le 31/10/2026 — Q1 selon le logiciel de l'expert-comptable (FEC22-E2), ModeRglt « Banque » pour le
   relevé, NatOp la nature et le poste de la 2035 (« Dépense — Achats »), IdClient le SIREN d'une entreprise, sinon le
@@ -554,8 +570,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   de banque au 512 du compte du mouvement : les dix fonctions du relevé (`jambe_de_banque_par_compte`), la
   composition par `lib/banqueDuMouvement.ts` dans la fiche Banque, puis (seconde partie) dans Écritures, Virements,
   Cotisations, le lot des règles et les sept détecteurs (`banques`, paramètre obligatoire ; une banque inconnue ne se juge pas) ; MCB6, la carte « Comptes bancaires » (Informations) et la
-  preuve du relevé par compte ; MCB6-Q1 et Q2 (« Retirer ce compte », le 512 propre refusé depuis une année validée),
-  commités INACHEVÉS le 13/11/2026, à relire (`lib/ficheDesComptesBancaires.ts`) ; MCB7, « Ma banque » compte par compte (`lib/banqueClientParCompte.ts`, sans nouvelle fonction)
+  preuve du relevé par compte ; MCB6-Q1 et Q2 (« Retirer ce compte », une suppression directe que l'écran n'offre que là où la base l'accepte ; le 512
+  propre refusé depuis une année validée, par l'écran seul, MCB6Q2-Q1 posée), relus et finis le 13/11/2026
+  (`lib/ficheDesComptesBancaires.ts`) → « MCB6-Q1 ET MCB6-Q2 : RETIRER UN COMPTE » ; MCB7, « Ma banque » compte par compte (`lib/banqueClientParCompte.ts`, sans nouvelle fonction)
   → « « MA BANQUE » ET « MA SIMULATION » POUR PLUSIEURS COMPTES BANCAIRES (MCB7) », « LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES DIX FONCTIONS DU RELEVÉ (MCB5) », « LA JAMBE DE BANQUE PAR COMPTE
   BANCAIRE : LES GESTES HORS DE BANQUE ET LES DÉTECTEURS (MCB5, SECONDE PARTIE) », « LES ÉCRANS
   DU CABINET POUR PLUSIEURS COMPTES BANCAIRES (MCB6) », « LA SUITE DES SOLDES, LE 31
@@ -768,9 +785,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   quel ordre avec MCB5g (INV2 `operations_d_inventaire`, LIA2 `stocks_de_cloture`) ; INV3-Q1 et INV3-Q2 (A) dans INV2 et
   INV3 le 13/11/2026 : l'empreinte en forme 2 scelle l'inventaire sans changer le texte d'un exercice qui n'en porte pas
   (la garde de fin le rejoue), la régularisation reprise d'une balance confrontée au solde repris (INV3Q2-Q1 posée) ;
-  INV6, INACHEVÉ, derrière `INVENTAIRE_EXPORTE` baissé (`lib/inventaireDesControles.ts` : le bilan, la Vue d'ensemble et la
-  révision lisent la déclaration de l'inventaire ; restent la carte de la Clôture, le dossier permanent, leurs tests ;
-  INV6-Q1) → « INV6 : L'INVENTAIRE DANS LE BILAN, LA VUE D'ENSEMBLE ET LA RÉVISION »,
+  INV6, fini le 13/11/2026 derrière `INVENTAIRE_EXPORTE` baissé (`lib/inventaireDesControles.ts` : le bilan, la Vue
+  d'ensemble, la révision, la carte de la Clôture et les contrats du dossier permanent lisent la déclaration de
+  l'inventaire ; l'onglet ne propose rien tant qu'INV-Q12 n'est pas tranchée ; INV6-Q1) → « INV6 : L'INVENTAIRE DANS LE BILAN, LA VUE D'ENSEMBLE ET LA RÉVISION »,
   « LES ÉCRITURES D'INVENTAIRE : LA CONCEPTION », « INV2 ET LIA2 : DEUX MIGRATIONS QUI SE COLLENT DANS LES DEUX
   ORDRES (LIGNES 35 ET 36) », « INV3-Q1 ET INV3-Q2 : L'EMPREINTE SCELLE L'INVENTAIRE, LA RÉGULARISATION REPRISE »,
   « LA LIASSE 2033, LES STOCKS ET L'IMPÔT SUR LES SOCIÉTÉS : LA CONCEPTION », « L'AFFECTATION DU RÉSULTAT ET
