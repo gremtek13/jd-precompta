@@ -52605,3 +52605,23 @@ suppression comprise : seuls la mise à jour et le déplacement changent ; chaqu
 préparé d'INAL1 refusait déjà (sa garde de fin attendait la suppression du seau des ventes d'avant A8D2A-Q1) : il admet
 ses deux états, et les packs avant et après SECU3-Q1. Deux scanners sur un lecteur commun des policies,
 `stockageSansMiseAJour.test.ts` et `policiesDeMiseAJour.test.ts`, leurs exceptions nommées et comptées (2 et 1).
+
+### 13/11/2026 — DES ESSAIS DE LA BASE REMIS AU SCHÉMA
+
+**Pourquoi** : rejoués sur la mère remontée (218 migrations), huit essais avaient un contrôle du catalogue en faute — le
+schéma avait bougé après eux (C3, P5b, LM1, LM7, P1T-E2) —, le banc complet rendait 2 (`gardesDeLaValidation` sans le rôle
+`super`), et tout contrôle qui compte les policies d'une table serait tombé le jour où `deux_facteurs_exiges` sera collée.
+**Fait** : (A) `etatFactureElectronique` 22 et 26 (la clé `ereporting` et les siennes, la racine d'hier toujours fermée, que
+`etatFactureElectronique.test.ts` relit), `mentionsFigees` 0a (l'acompte d'un devis), `notesInternes` 6 (`facturer_honoraires`),
+`droitsAcces` 83 et `adresseDesAccesRetires` 31 (le déclencheur `memberships_dossier_du_cabinet`, présent avec sa fonction ; 83
+ignorait aussi celui de l'adresse d'un accès retiré), `declarationsEreporting` 86 et `regimesEreporting` 156
+(`etat_facture_electronique`, qui lit leurs tables) — chaque liste reste fermée, l'élément neuf nommé avec sa raison ;
+`traceDesDroits` 39 laissé à son agent. (B) `regles.json` : `gardesDeLaValidation` en `super` (25 cas particuliers). (C) le
+filtre du bloc DP : LM7, HF7, HD7, FL6 de `rls.sql` en « autres / en tout » et quatre mutations (M-…b, une restrictive d'un autre
+nom) ; 35 essais de production, chaque lecture de `pg_policies` / `pg_policy` par une sous-requête qui écarte la seule restrictive
+`deux_facteurs`, sous le même alias ; trois essais de réplique, dont le « (et d'autres) » que `noter` jugeait au préfixe et qui ne
+mettait jamais en faute (honorairesFactures 56, depotDesHonoraires 63).
+**Vérifié** (copie de la mère 17 ; talon de GoTrue) : chaque essai A à 0 en faute, et une mutation plantée (une clé, une colonne,
+une fonction, un déclencheur de trop) le remet en faute ; `rls.sql` 240/0/143 sans la préparée, 244/0/150 avec (avant : 4 en
+faute) ; les 38 essais de C à 0 en faute dans les deux états, et une restrictive `zzz_restrictive` posée sur chaque table les met
+en faute sur les mêmes contrôles que la vraie avant le lot ; banc du leurre SÛR sur les essais changés.
