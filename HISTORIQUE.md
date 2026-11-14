@@ -52730,3 +52730,20 @@ lit : les empreintes d'`agentComptableAuPlan.test.ts` (tous les scénarios d'ava
 `agentComptableInventaire.test.ts` (copie confrontée à src/lib sur une batterie, sept dérives plantées, l'assistant levé en HTTP
 dans les deux modes, une ligne incroyable, une panne), deux scénarios du contrat drapeau baissé, le scanner VF9C-Q1 (l'outil connu,
 l'objet jamais lu) ; 10 mutations sur 10 tuées. **Reste** : INV8 (déployer l'assistant levé après les trois migrations et la levée).
+
+### 14/11/2026 — LA RELECTURE ADVERSE DE SIX MIGRATIONS PRÉPARÉES (B4RS-Q1, P1T-Q2, RET-Q2, PC4Q2-Q1, A8B-Q3, A8Q5Q3-Q2)
+
+(Agent architecte ; rien en production ; une copie de la mère 17.) Chaque règle éprouvée par impersonation, profil par profil,
+en écriture directe comme par ses fonctions, les courses à deux sessions, les retours, et la chaîne des autres préparées avant
+puis après les six (248 migrations, une même signature, `rls.sql` 310 lignes, 0 en faute, 195 sur 195 ; 138 essais identiques
+hors des EN ATTENTE qui se lèvent). **Deux règles corrigées** : la VERSION d'une connexion à une plateforme est celle de la
+base — une écriture de sa configuration ou de sa version en reçoit une neuve, plus tardive que la précédente —, et
+l'attestation du cabinet ne vise que l'écriture que la base lui a rendue (B4RS-Q1, l'étape 13b d'`auteurDesConnexions.sql`) ;
+ce qu'une pièce a reçu ne lit que les paiements de SON dossier, comme la 2035 et `regler_piece_par_la_caisse` (A8Q5Q3-Q2,
+l'étape 1b de `recuParLaPieceCitee.sql`, le test du module). Chaque contrôle neuf tombe en faute sur l'ancien texte ; banc du
+leurre SÛR ; les retours rendent la mère. **Tenu** : les six gardes de tête refusent une seconde application ; citation et
+encaissement d'une facture reprise se suivent, import et passage en engagement aussi ; ni l'auteur ni la trace ne s'écrivent
+en direct. **Questions** : la relève du client tant que la fonction ne lit pas l'auteur (B4RS1-Q3) ; qui a ouvert un accès
+(P1TQ2-Q1) ; la pièce d'un mouvement tenue dans son dossier (A8Q5-Q4) ; la pièce réglée sous le seuil sans réalignement
+(A8Q5Q3Q2-Q3) ; l'année du début avant l'affiliation à la CARMF (RET2-Q3) ; le compte du dirigeant sous d'autres zéros
+(PC4Q2Q1-Q2).
