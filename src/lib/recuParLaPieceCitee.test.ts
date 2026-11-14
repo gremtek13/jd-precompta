@@ -94,12 +94,17 @@ describe('A8Q5Q3-Q2 — la migration, son retour et le module', () => {
     expect(CLES_DE_LA_REPRISE_AVEC_SA_PIECE).toEqual([...CLES_DE_LA_REPRISE, CLE_DU_RECU].sort())
   })
 
-  it('recu_par_la_piece : les trois sources de paiement de la 2035, exécutable par aucun rôle de session', () => {
+  it('recu_par_la_piece : les trois sources de paiement de la 2035, de son dossier, exécutable par aucun rôle de session', () => {
     const sql = fonction(MIGRATION, 'recu_par_la_piece')
-    expect(sql).toContain("where l.piece_id = p_piece_id and l.statut = 'rapprochee'")
-    expect(sql).toContain("where g.piece_id = p_piece_id and l.statut = 'rapprochee' and l.reglement_groupe")
-    expect(sql).toContain("where o.piece_id = p_piece_id and o.genre = 'paiement' and o.retire_le is null")
+    // Les paiements du dossier de la pièce seulement (relecture du 14/11/2026), comme la 2035 et `regler_piece_par_la_caisse`.
+    expect(sql).toContain('from public.pieces p')
+    expect(sql).toContain('where p.id = p_piece_id')
+    expect(sql).toContain("where l.piece_id = p.id and l.dossier_id = p.dossier_id and l.statut = 'rapprochee'")
+    expect(sql).toContain("where g.piece_id = p.id and l.dossier_id = p.dossier_id and l.statut = 'rapprochee' and l.reglement_groupe")
+    expect(sql).toContain("where o.piece_id = p.id and o.dossier_id = p.dossier_id and o.genre = 'paiement' and o.retire_le is null")
     expect(MIGRATION).toContain('revoke all on function public.recu_par_la_piece(uuid) from public, anon, authenticated;')
+    // La garde de fin tient le corps posé à son empreinte.
+    expect(MIGRATION).toContain(`is distinct from '${md5(corps(sql))}'`)
   })
 
   it('la garde de fin, le retour et les empreintes se tiennent ; le retour rend les corps de la production', () => {

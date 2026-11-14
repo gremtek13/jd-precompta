@@ -8,8 +8,8 @@ import { REFUS_CITER, remplir, type RefusDeLaBase } from './pieceDUneFactureRepr
 // Une pièce de vente payée et comptée — en N, par ses paiements, dans la 2035 et la CA3 —, puis citée par une facture reprise
 // dont l'import déclare moins d'encaissé avant la reprise : le registre (A8b) partait du déclaré et acceptait d'encaisser de
 // nouveau la même somme. La migration PRÉPARÉE `recu_par_la_piece_citee` (supabase/preparees/20261113212000_recu_par_la_piece_citee.sql) :
-//   - `recu_par_la_piece` : ce qu'une pièce a reçu, la somme signée de ses paiements (un mouvement rapproché, la part d'un
-//     virement groupé, un paiement par la caisse non retiré), jamais négative, en centimes ;
+//   - `recu_par_la_piece` : ce qu'une pièce a reçu, la somme signée de ses paiements de son dossier (un mouvement rapproché,
+//     la part d'un virement groupé, un paiement par la caisse non retiré), jamais négative, en centimes ;
 //   - `enregistrer_encaissement` : l'encaissé avant la reprise est le plus grand du déclaré et de ce que la pièce citée a
 //     reçu ; d'une facture à plusieurs taux, un reçu qui dépasse le déclaré refuse l'encaissement (un refus neuf, à son rang) ;
 //   - `reprise_de_la_facture` : une septième clé, `recu_par_sa_piece_centimes`, que la fenêtre des encaissements lit pour

@@ -8,8 +8,8 @@
 --
 -- Ce qui se prouve ici, et ne se relit pas :
 --   1. CE QU'UNE PIÈCE A REÇU (`recu_par_la_piece`) : un mouvement rapproché d'elle, la part d'un virement groupé, un paiement
---      par la caisse non retiré — et non un mouvement à traiter qui la cite, ni une opération de caisse retirée ; et aucun
---      rôle de session ne l'exécute ;
+--      par la caisse non retiré — et non un mouvement à traiter qui la cite, ni une opération de caisse retirée, ni ce qu'un
+--      autre dossier dirait d'elle (1b) ; et aucun rôle de session ne l'exécute ;
 --   2. LE REGISTRE part du plus grand du déclaré et de ce reçu : à un taux, au total et à ce taux ; le déclaré plus grand
 --      l'emporte ; à plusieurs taux, un reçu qui dépasse le déclaré refuse l'encaissement, et un déclaré qui le couvre se
 --      juge taux par taux comme hier ; `reprise_de_la_facture` le rend (septième clé) ;
@@ -17,8 +17,8 @@
 --      porte, ou quand la facture a plusieurs taux ; acceptée quand ils tiennent, quand le déclaré couvre le reçu, et quand le
 --      registre est vide.
 --
--- Un dossier jetable du cabinet du dossier `test` (préfixe `a8520000-0000-4000-8000`) : DQ, basculé, en trésorerie,
--- redevable ; sa pièce de vente P (120 € TTC, datée du 20 novembre de N), déclarée vente hors des factures et validée ; la
+-- Deux dossiers jetables du cabinet du dossier `test` (préfixe `a8520000-0000-4000-8000`) : DR, nu, et DQ, basculé, en
+-- trésorerie, redevable ; sa pièce de vente P (120 € TTC, datée du 20 novembre de N), déclarée vente hors des factures et validée ; la
 -- facture de l'ancien logiciel R-Q2-1 dont P est l'original, importée à chaque étape sous la forme qu'elle demande — à un
 -- taux (100 € HT à 20 %, 120 € TTC), ou à deux (100 € HT à 20 % et 100 € HT à 10 %, 230 € TTC) —, et ce qu'elle déclare
 -- encaissé avant la reprise. N est l'année qui précède la date de reprise (le premier jour du mois de Paris) ; les
@@ -40,6 +40,12 @@ declare
   m3 constant text := 'a8520000-0000-4000-8000-0000000000e3';
   o1 constant text := 'a8520000-0000-4000-8000-0000000000f1';
   o2 constant text := 'a8520000-0000-4000-8000-0000000000f2';
+  -- Un second dossier jetable du même cabinet, ses mouvements et sa caisse : ce qu'une pièce de DQ a reçu ne lit pas ce
+  -- qu'un autre dossier dirait d'elle (étape 1b).
+  dr constant text := 'a8520000-0000-4000-8000-0000000000d2';
+  m4 constant text := 'a8520000-0000-4000-8000-0000000000e4';
+  m5 constant text := 'a8520000-0000-4000-8000-0000000000e5';
+  o3 constant text := 'a8520000-0000-4000-8000-0000000000f3';
   cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
   reprise constant date := date_trunc('month', now() at time zone 'Europe/Paris')::date;
   date_p constant date := make_date(extract(year from reprise)::integer - 1, 11, 20);
@@ -82,6 +88,8 @@ begin
                           adresse, forme_juridique, denomination_imprimee) values
       (dq::uuid, 'ESSAI A8Q5Q3Q2 DQ', cabinet, 'tresorerie', '455000', true, 'redevable', '12345678200010',
        'ESSAI A8Q5Q3Q2 ADRESSE', '5710', 'ESSAI A8Q5Q3Q2 SOCIÉTÉ');
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais) values
+      (dr::uuid, 'ESSAI A8Q5Q3Q2 DR', cabinet, 'tresorerie', '455000');
     insert into pieces (id, dossier_id, storage_path, nom_fichier, storage_hash, type_piece, statut, date_piece, montant_ht,
                         montant_tva, montant_ttc) values
       (p::uuid, dq::uuid, dq || '/essai-q2-p.pdf', 'essai-q2-p.pdf', repeat('b', 64), 'vente', 'a_valider', date_p, 100, 20, 120);
@@ -108,6 +116,17 @@ begin
            update operations_caisse set retire_le = now() where id = '{O2}';
            alter table reglements_groupes enable trigger user; alter table operations_caisse enable trigger user;$q$,
         null, $q$select recu_par_la_piece('{P}')::text$q$, 'postgres', 'OK', '17500'),
+      (1, '1b. … de son dossier seulement : un mouvement, la part d''un virement groupé et un paiement par la caisse d''un AUTRE dossier qui la citent n''y entrent pas',
+        $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, piece_id, reglement_groupe) values
+             ('{M1}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2 RAPPROCHE', 120, 'rapprochee', '{P}', false),
+             ('{M4}', '{DR}', '{DM}', 'ESSAI A8Q5Q3Q2 AUTRE DOSSIER', -120, 'rapprochee', '{P}', false),
+             ('{M5}', '{DR}', '{DM}', 'ESSAI A8Q5Q3Q2 AUTRE GROUPE', 75, 'rapprochee', null, true);
+           alter table reglements_groupes disable trigger user; alter table operations_caisse disable trigger user;
+           insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant) values ('{DR}', '{M5}', '{P}', 30);
+           insert into operations_caisse (id, dossier_id, genre, date, montant, piece_id, origine) values
+             ('{O3}', '{DR}', 'paiement', '{DM}', 25, '{P}', 'cabinet');
+           alter table reglements_groupes enable trigger user; alter table operations_caisse enable trigger user;$q$,
+        null, $q$select recu_par_la_piece('{P}')::text$q$, 'postgres', 'OK', '12000'),
       (2, '2. recu_par_la_piece n''est exécutable par aucun rôle de session',
         null, null, $q$select recu_par_la_piece('{P}')::text$q$, 'chef', '42501', 'permission denied for function recu_par_la_piece'),
       (3, '3. un taux, la pièce a reçu 120, l''import déclare 0 : le registre n''encaisse pas la même vente une seconde fois',
@@ -172,6 +191,7 @@ begin
           v_texte := replace(replace(replace(replace(v_f.texte, '{DQ}', dq), '{P}', p), '{M1}', m1), '{M2}', m2);
           v_texte := replace(replace(replace(replace(v_texte, '{M3}', m3), '{O1}', o1), '{O2}', o2), '{R}', reprise::text);
           v_texte := replace(replace(v_texte, '{DP}', date_p::text), '{DM}', date_m::text);
+          v_texte := replace(replace(replace(replace(v_texte, '{DR}', dr), '{M4}', m4), '{M5}', m5), '{O3}', o3);
           v_texte := replace(v_texte, '{R1}', '(select f.id from factures_emises f where f.dossier_id = ''' || dq || ''' and f.numero = ''R-Q2-1'')');
           if v_f.rang = 0 then v_super := v_texte; elsif v_f.rang = 1 then v_pose := v_texte; else v_req := v_texte; end if;
         end loop;
@@ -215,11 +235,11 @@ begin
     end if;
   end;
 
-  verdicts := verdicts || jsonb_build_object('rang', 99, 'etape', '99. rien n''est resté : ni le dossier jetable, ni sa pièce, ses paiements, ses factures, ses encaissements',
-    'ok', not exists (select 1 from dossiers where id = dq::uuid)
+  verdicts := verdicts || jsonb_build_object('rang', 99, 'etape', '99. rien n''est resté : ni les dossiers jetables, ni la pièce, ses paiements, ses factures, ses encaissements',
+    'ok', not exists (select 1 from dossiers where id in (dq::uuid, dr::uuid))
       and not exists (select 1 from pieces where id = p::uuid)
-      and not exists (select 1 from lignes_bancaires where id in (m1::uuid, m2::uuid, m3::uuid))
-      and not exists (select 1 from operations_caisse where id in (o1::uuid, o2::uuid))
+      and not exists (select 1 from lignes_bancaires where id in (m1::uuid, m2::uuid, m3::uuid, m4::uuid, m5::uuid))
+      and not exists (select 1 from operations_caisse where id in (o1::uuid, o2::uuid, o3::uuid))
       and not exists (select 1 from factures_emises where dossier_id = dq::uuid)
       and not exists (select 1 from encaissements_factures where dossier_id = dq::uuid),
     'observe', 'relu');

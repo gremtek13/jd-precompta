@@ -25,7 +25,8 @@
 --   1. `recu_par_la_piece(p_piece_id)`, neuve : ce qu'une pièce a reçu, en centimes, jamais négatif — la somme SIGNÉE de ses
 --      paiements, ceux que la 2035 compte (`paiementsDesPieces`, src/lib/rattachement.ts) et que `regler_piece_par_la_caisse`
 --      somme déjà (son 9 bis) : un mouvement rapproché d'elle, la part d'un virement groupé sur un mouvement rapproché et
---      réglé en groupe, ses paiements par la caisse non retirés. L'encaissement d'un virement mixte n'y entre pas : il ne paie
+--      réglé en groupe, ses paiements par la caisse non retirés — ceux de son dossier, comme l'un et l'autre les lisent
+--      (relecture du 14/11/2026). L'encaissement d'un virement mixte n'y entre pas : il ne paie
 --      que l'exemplaire d'une facture de l'application, et une pièce citée n'en est jamais un (la citation et la garde de la
 --      pièce le refusent). Exécutable par aucun rôle de session : les trois fonctions ci-dessous l'appellent.
 --   2. `enregistrer_encaissement` (empreinte 9f3fae7d…, A8b, en production) : d'une facture reprise dont la pièce citée (le
@@ -95,27 +96,33 @@ end
 $garde$;
 
 -- ══ 1. Ce qu'une pièce a reçu ══════════
+-- Les paiements de SON dossier seulement (relecture du 14/11/2026) : la 2035 ne lit que les mouvements et la caisse du
+-- dossier, et `regler_piece_par_la_caisse` (son 9 bis) les filtre de même — un mouvement d'un autre dossier qui citerait la
+-- pièce n'en change pas le plancher.
 create function public.recu_par_la_piece(p_piece_id uuid) returns bigint
 language sql
 stable
 set search_path = public
 as $$
   -- La somme signée de ses paiements, en centimes, jamais négative : un mouvement rapproché d'elle, la part d'un virement
-  -- groupé (sur un mouvement rapproché et réglé en groupe), ses paiements par la caisse non retirés.
+  -- groupé (sur un mouvement rapproché et réglé en groupe), ses paiements par la caisse non retirés — de son dossier.
   select greatest((coalesce(sum(x.montant), 0) * 100)::bigint, 0)
-    from (select l.montant from public.lignes_bancaires l
-           where l.piece_id = p_piece_id and l.statut = 'rapprochee'
+    from public.pieces p
+    cross join lateral (
+          select l.montant from public.lignes_bancaires l
+           where l.piece_id = p.id and l.dossier_id = p.dossier_id and l.statut = 'rapprochee'
           union all
           select g.montant from public.reglements_groupes g
             join public.lignes_bancaires l on l.id = g.ligne_bancaire_id
-           where g.piece_id = p_piece_id and l.statut = 'rapprochee' and l.reglement_groupe
+           where g.piece_id = p.id and l.dossier_id = p.dossier_id and l.statut = 'rapprochee' and l.reglement_groupe
           union all
           select o.montant from public.operations_caisse o
-           where o.piece_id = p_piece_id and o.genre = 'paiement' and o.retire_le is null) x
+           where o.piece_id = p.id and o.dossier_id = p.dossier_id and o.genre = 'paiement' and o.retire_le is null) x
+   where p.id = p_piece_id
 $$;
 
 comment on function public.recu_par_la_piece(uuid) is
-  'Ce qu''une pièce a reçu, en centimes, jamais négatif (A8Q5Q3-Q2) : la somme signée de ses paiements — un mouvement rapproché d''elle, la part d''un virement groupé, ses paiements par la caisse non retirés —, ceux que la 2035 compte. Le plancher du registre d''une facture reprise qui la cite (enregistrer_encaissement, citer_piece_de_facture_reprise, reprise_de_la_facture).';
+  'Ce qu''une pièce a reçu, en centimes, jamais négatif (A8Q5Q3-Q2) : la somme signée de ses paiements de son dossier — un mouvement rapproché d''elle, la part d''un virement groupé, ses paiements par la caisse non retirés —, ceux que la 2035 compte. Le plancher du registre d''une facture reprise qui la cite (enregistrer_encaissement, citer_piece_de_facture_reprise, reprise_de_la_facture).';
 
 revoke all on function public.recu_par_la_piece(uuid) from public, anon, authenticated;
 
@@ -648,7 +655,7 @@ begin
 end
 $$;
 
--- ══ 5. La garde de fin : les trois corps de cette migration, la fonction neuve hors de portée des rôles de session ══════════
+-- ══ 5. La garde de fin : les quatre corps de cette migration, la fonction neuve hors de portée des rôles de session ══════════
 do $fin$
 begin
   if (select string_agg(p.proname || '=' || md5(replace(p.prosrc, chr(13) || chr(10), chr(10))), ',' order by p.proname collate "C")
@@ -660,6 +667,10 @@ begin
                    || 'enregistrer_encaissement=4eac3326dfb077ade4ddade6c2efdbd1,'
                    || 'reprise_de_la_facture=1c42e6298ac68933a0b63aa34bb6e44f' then
     raise exception 'A8Q5Q3-Q2 : un corps remplacé n''est pas celui de cette migration : rien n''est appliqué.';
+  end if;
+  if (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_catalog.pg_proc p
+       where p.oid = to_regprocedure('public.recu_par_la_piece(uuid)')) is distinct from 'cfde7288618da220dbc1b76ac6630efd' then
+    raise exception 'A8Q5Q3-Q2 : recu_par_la_piece n''a pas le corps de cette migration (les paiements du dossier de la pièce) : rien n''est appliqué.';
   end if;
   if has_function_privilege('authenticated', 'public.recu_par_la_piece(uuid)', 'execute')
      or has_function_privilege('anon', 'public.recu_par_la_piece(uuid)', 'execute')
