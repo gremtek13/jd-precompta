@@ -3,7 +3,8 @@
 -- — dix tables de dossier, et deux sans `dossier_id` qui porteront des données réelles ; sur la réplique qui porte une
 -- migration préparée, ses tables aussi (la caisse hier, les devis, les factures reprises, la numérotation qui continue,
 -- la pièce d'une facture reprise, les documents du cabinet et leurs lectures, les modèles de lettre de mission, les
--- paquets d'archive téléchargés et les conservations), chacune sous `to_regclass`.
+-- paquets d'archive téléchargés et les conservations, l'inventaire, les provisions, les stocks et l'affectation du résultat),
+-- chacune sous `to_regclass`.
 \set ON_ERROR_STOP on
 begin;
 set local session_replication_role = replica;
@@ -141,7 +142,7 @@ end $piece_reprise$;
 -- nom de son fichier marqués — et sa lecture ; les demandes, leurs réponses et leurs relances, le remplisseur les garnit.
 do $documents$
 begin
-  if to_regclass('public.documents_cabinet') is not null then
+  if to_regclass('public.documents_cabinet') is not null and to_regclass('public.lectures_documents') is not null then
     execute $i$insert into public.documents_cabinet (id, dossier_id, titre, nature, exercice, chemin, nom_fichier, sha256, taille,
         type_mime, publie_par)
       select (pfx || '-0000-4000-8000-0000000009' || h || '1')::uuid, d, m || ' titre du document', '2035', 2025,
@@ -182,5 +183,62 @@ begin
              '2026-06-18 10:00:00+02', chef from lc$i$;
   end if;
 end $depart$;
+-- L'inventaire, les stocks et l'affectation (migrations `operations_d_inventaire` INV2, `stocks_de_cloture` LIA2,
+-- `affectation_du_resultat` AFF2, `provisions` INV4, `validation_de_l_inventaire` INV3, sur la réplique qui les porte, dans
+-- tout ordre) : le remplisseur ne compose ni un exercice (il écrit 7, que leurs CHECK bornent à 2000-2100), ni un compte à
+-- la racine que la nature ou le genre exige (il écrit 401000), ni les soldes lus d'une décision, ni la ligne d'une décision
+-- qu'il n'a pas pu écrire. Une ligne par leurre et par table, chaque texte libre marqué, chaque montant en centimes celui
+-- du leurre (735731…), selon les CHECK des tables : une charge constatée d'avance (nature `cca`, sans provision, que la
+-- contrainte d'INV4 accepte comme celle d'INV2), une provision pour risque au 151, un stock au 31, une décision en vigueur
+-- d'une société sans procès-verbal et sa répartition au bénéfice, une déclaration d'inventaire retirée (ses colonnes de
+-- retrait garnies aussi). Chaque table sous `to_regclass`, sa ligne seulement si le leurre n'en a pas (un remplisseur qui
+-- saurait demain la garnir ne la double pas).
+do $inventaire$
+begin
+  if to_regclass('public.operations_inventaire') is not null then
+    execute $i$insert into public.operations_inventaire (id, dossier_id, exercice, nature, compte_resultat, compte_regularisation,
+        montant_centimes, periode_debut, periode_fin, objet, piece_citee_id, cree_par)
+      select (pfx || '-0000-4000-8000-000000000d' || h || '1')::uuid, d, 2025, 'cca', '616000', '486000',
+             (montant * 100)::bigint, '2025-07-01', '2026-06-30', m || ' objet de la régularisation',
+             (pfx || '-0000-4000-8000-0000000001' || h || '1')::uuid, chef
+        from lc where not exists (select 1 from public.operations_inventaire o where o.dossier_id = lc.d)$i$;
+  end if;
+  if to_regclass('public.provisions') is not null then
+    execute $i$insert into public.provisions (id, dossier_id, genre, compte_provision, objet, piece_citee_id, ouverte_en,
+        reprise_centimes, cree_par)
+      select (pfx || '-0000-4000-8000-000000000d' || h || '2')::uuid, d, 'risque', '151000', m || ' objet de la provision',
+             (pfx || '-0000-4000-8000-0000000001' || h || '1')::uuid, 2025, (montant * 100)::bigint, chef
+        from lc where not exists (select 1 from public.provisions p where p.dossier_id = lc.d)$i$;
+  end if;
+  if to_regclass('public.stocks_de_cloture') is not null then
+    execute $i$insert into public.stocks_de_cloture (id, dossier_id, exercice, compte_stock, montant_centimes, methode, objet,
+        piece_citee_id, cree_par, modifie_par)
+      select (pfx || '-0000-4000-8000-000000000d' || h || '3')::uuid, d, 2025, '310000', (montant * 100)::bigint, 'cmup',
+             m || ' objet du stock', (pfx || '-0000-4000-8000-0000000001' || h || '1')::uuid, chef, chef
+        from lc where not exists (select 1 from public.stocks_de_cloture s where s.dossier_id = lc.d)$i$;
+  end if;
+  if to_regclass('public.affectations_du_resultat') is not null and to_regclass('public.lignes_d_affectation') is not null then
+    execute $i$insert into public.affectations_du_resultat (id, dossier_id, exercice_affecte, version, organe,
+        nombre_d_associes_declare, date_decision, comptes_approuves, reserves_statutaires_distribuables, resultat_centimes,
+        forme_juridique, capital_centimes, soldes_lus, cree_par)
+      select (pfx || '-0000-4000-8000-000000000d' || h || '4')::uuid, d, 2025, 1, 'assemblee', 'plusieurs', '2026-06-17', true,
+             false, (montant * 100)::bigint, '5499', (montant * 100)::bigint,
+             (select jsonb_object_agg(k, (montant * 100)::bigint)
+                from unnest(array['capitalAuxComptes', 'primes', 'ecartsDeReevaluation', 'reserveLegale', 'reservesIndisponibles',
+                                  'reservesStatutaires', 'reservesReglementees', 'autresReserves', 'reportCrediteur',
+                                  'pertesAnterieures', 'acomptesSurDividendes']) as k),
+             chef
+        from lc where not exists (select 1 from public.affectations_du_resultat a where a.dossier_id = lc.d)$i$;
+    execute $i$insert into public.lignes_d_affectation (affectation_id, dossier_id, rang, origine, destination, montant_centimes)
+      select (pfx || '-0000-4000-8000-000000000d' || h || '4')::uuid, d, 1, 'benefice', 'reserve_legale', (montant * 100)::bigint
+        from lc where not exists (select 1 from public.lignes_d_affectation l where l.dossier_id = lc.d)$i$;
+  end if;
+  if to_regclass('public.inventaires_declares') is not null then
+    execute $i$insert into public.inventaires_declares (id, dossier_id, exercice, declare_par, declare_le, retire_par, retire_le)
+      select (pfx || '-0000-4000-8000-000000000d' || h || '5')::uuid, d, 2025, chef, '2026-01-15 10:00:00+01', chef,
+             '2026-01-16 10:00:00+01'
+        from lc where not exists (select 1 from public.inventaires_declares i where i.dossier_id = lc.d)$i$;
+  end if;
+end $inventaire$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;

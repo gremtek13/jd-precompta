@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { blocsDo, sansCommentaires } from '../test/blocsSql'
+import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // CE QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION — ce que la suite en tient sans base (HISTORIQUE.md, « CE
 // QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION »). Les essais de supabase/essais se rejouent en production après
@@ -521,5 +523,72 @@ describe('les essais de la base, rejoués en production', () => {
     expect(fleches("  'observe', 'transmissions ' || n_avant || ' -> ' || (select count(*) from transmissions_factures),")).toBe(1)
     expect(fleches("  -- l'ancienne forme : avant || ' -> ' || apres")).toBe(0)
     expect(fleches("  'observe', 'écarts ' || to_char(apres - avant, 'FMSG9999999990'),")).toBe(0)
+  })
+})
+
+// ── 5. Le complément du leurre, sous condition ────────────────────────────────────────────────────────────────────────
+//
+// Le complément (outils/leurre/leurre_complement.sql) garnit à la main les tables que le remplisseur du banc ne sait pas
+// remplir ; une table qu'une migration PRÉPARÉE créera n'y est garnie que dans un bloc `do` qui la cherche d'abord
+// (`to_regclass('public.<table>')`) : sans lui, le leurre ne se monte plus sur la réplique d'aujourd'hui, et le banc ne
+// conclut sur rien. Ce que le texte ne dit pas — qu'une table préparée soit garnie du tout —, la couverture du banc le juge
+// sur la base qui la porte (toute table de dossier, une ligne de chacun des trois leurres garnis, sinon il s'arrête) : le
+// remplisseur en garnit la plupart, et seule la base sait lesquelles il refuse.
+
+const TABLE_CREEE = /\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?:"?public"?\.)?"?(\w+)"?\s*\(/gi
+const tablesCreees = (fichiers: { texte: string }[]): Set<string> =>
+  new Set(fichiers.flatMap((f) => [...sansCommentaires(f.texte).matchAll(TABLE_CREEE)].map((m) => m[1].toLowerCase())))
+
+/** Les insertions du complément dans une table que l'export ne crée pas, hors d'un bloc qui la cherche d'abord ; et celles
+ * dans une table que ni l'export ni une préparée ne créent (une préparée renommée ou retirée). */
+function insertionsSansCondition(texte: string, exportees: Set<string>, preparees: Set<string>): { fautes: string[]; conditionnees: number } {
+  const sql = sansCommentaires(texte)
+  const blocs = blocsDo(sql)
+  const fautes: string[] = []
+  let conditionnees = 0
+  // Les tables temporaires du complément lui-même (`lc`, les valeurs de chaque leurre).
+  const temporaires = new Set([...sql.matchAll(/\bcreate\s+temp(?:orary)?\s+table\s+(\w+)/gi)].map((m) => m[1].toLowerCase()))
+  for (const m of sql.matchAll(/\binsert\s+into\s+(?:public\.)?(\w+)/gi)) {
+    const table = m[1].toLowerCase()
+    if (exportees.has(table) || temporaires.has(table)) continue
+    if (!preparees.has(table)) {
+      fautes.push(`${table} : ni l’export ni une migration préparée ne la créent`)
+      continue
+    }
+    const bloc = blocs.find((b) => b.debut <= m.index && m.index < b.fin)
+    if (!bloc || !new RegExp(`to_regclass\\(\\s*'public\\.${table}'\\s*\\)`, 'i').test(bloc.corps)) {
+      fautes.push(`${table} : garnie hors d’un bloc qui la cherche par to_regclass`)
+      continue
+    }
+    conditionnees++
+  }
+  return { fautes, conditionnees }
+}
+
+describe('le complément du leurre', () => {
+  const exportees = tablesCreees(fichiersDuSchema())
+  const preparees = new Set([...tablesCreees(fichiersPrepares())].filter((t) => !exportees.has(t)))
+
+  it('garnit une table qu’une migration préparée créera sous la seule condition qu’elle existe', () => {
+    // Le plancher : l'export crée plus de cent tables, les préparées une quinzaine de plus.
+    expect(exportees.size).toBeGreaterThanOrEqual(100)
+    expect(preparees.size).toBeGreaterThanOrEqual(15)
+    const r = insertionsSansCondition(lire('outils/leurre/leurre_complement.sql'), exportees, preparees)
+    expect(r.fautes).toEqual([])
+    // Dix le 14/11/2026 : le document du cabinet et sa lecture (B2), le paquet d'archive et la conservation (INAL5), les
+    // régularisations, les provisions, les stocks, la décision d'affectation et sa ligne, la déclaration d'inventaire (INV2,
+    // INV4, LIA2, AFF2, INV3) — la répétition générale du 14/11/2026 a trouvé les six dernières absentes, et le banc arrêté.
+    expect(r.conditionnees).toBeGreaterThanOrEqual(10)
+  })
+
+  it('le relevé voit un défaut planté', () => {
+    const fautes = (texte: string) => insertionsSansCondition(texte, exportees, preparees).fautes.length
+    const garnir = 'insert into public.provisions (dossier_id) select d from lc;'
+    expect(fautes(garnir)).toBe(1)
+    expect(fautes(`do $p$ begin if to_regclass('public.stocks_de_cloture') is not null then execute $i$${garnir}$i$; end if; end $p$;`)).toBe(1)
+    expect(fautes(`do $p$ begin if to_regclass('public.provisions') is not null then execute $i$${garnir}$i$; end if; end $p$;`)).toBe(0)
+    // Une table de l'export se garnit sans condition ; une table que rien ne crée est une faute.
+    expect(fautes('insert into dossier_permanent (dossier_id) select d from lc;')).toBe(0)
+    expect(fautes('insert into public.table_que_rien_ne_cree (dossier_id) select d from lc;')).toBe(1)
   })
 })
