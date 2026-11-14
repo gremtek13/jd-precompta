@@ -52660,6 +52660,9 @@ dispense ne se lit que les deux premières années civiles d'affiliation, non di
 24/24, 54/54, 18/18, 33/33, 45/45 avec, EN ATTENTE sans ; 17 mutations mordent ; `rls.sql` identique (240, 0, 139/139) ;
 banc SÛR sur les deux modèles ; chaque retour rend la signature ; barrière : `tsc -b`, lint, `vitest --changed` (210
 fichiers, 7 270 tests) et les 214 fichiers qui lisent `supabase/` (7 147). Questions : B4RS1-Q1, B4RS1-Q2, RET2-Q1, RET2-Q2.
+**Le 14/11/2026** : le contrôle 83 de `droitsAcces.sql` et les rangs 5 et 15 de `troisCasesDeLAcces.sql` lisent P1T-Q2 en base ;
+la garde de tête de B4RS-Q1 (md5 1db1d102…) et l'étape 20 de `auteurDesConnexions.sql` n'admettent que la restrictive
+`deux_facteurs`. Cinq états, 2FA avant ou après : 0 en faute ; un déclencheur de trop : 83 en faute ; banc SÛR ; 4 707 tests.
 
 ### 13/11/2026 — PC4Q2-Q1, A8B-Q3 ET A8Q5Q3-Q2 : TROIS MIGRATIONS PRÉPARÉES (PAS APPLIQUÉES)
 

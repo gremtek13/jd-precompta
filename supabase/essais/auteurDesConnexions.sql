@@ -136,7 +136,8 @@ begin
         $q$select (select string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then ' not null' else '' end, ', ' order by a.attname)
   from pg_attribute a where a.attrelid = 'public.connexions_plateformes'::regclass and a.attname in ('ecrite_par', 'ecrite_le') and not a.attisdropped)
   || ' ; ' || (select pg_get_constraintdef(c.oid) from pg_constraint c where c.conrelid = 'public.connexions_plateformes'::regclass and c.conname = 'connexions_plateformes_auteur')
-  || ' ; policies ' || (select count(*) from pg_policy p where p.polrelid = 'public.connexions_plateformes'::regclass and p.polname <> 'deux_facteurs')$q$, null, 'OK',
+  || ' ; policies ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'connexions_plateformes'
+       and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE'))$q$, null, 'OK',
         'ecrite_le timestamp with time zone, ecrite_par uuid ; CHECK (((ecrite_par IS NULL) = (ecrite_le IS NULL))) ; policies 0 | -'),
       (21, 'proprietaire', '21. … la garde aux droits de l''appelant, l''attestation aux droits du propriétaire, leur chemin vide, leurs droits, leurs corps à leur empreinte', null,
         $q$select string_agg(p.proname || ' ' || p.prosecdef || ' ' || coalesce(array_to_string(p.proconfig, ','), '-') || ' '
