@@ -51,10 +51,15 @@ begin
     'DA', 'e55e0000-0000-4000-8000-0000000006a1', 'DB', 'e55e0000-0000-4000-8000-0000000006b1',
     'ACCES', 'e55e0000-0000-4000-8000-0000000006c1', 'INCONNUE', 'e55e0000-0000-4000-8000-0000000006d1');
 
-  select string_agg(n::text, '/') into avant from (values
-    ((select count(*) from dossiers)), ((select count(*) from memberships)), ((select count(*) from emails_envoyes)),
-    ((select count(*) from demandes_cabinet)), ((select count(*) from relances_demandes))
-  ) as t(n);
+  -- Les tables de B2 ne se comptent qu'avec la migration : sans B2, les nommer arrêterait l'essai avant sa ligne 0.
+  if en_base then
+    select string_agg(n::text, '/') into avant from (values
+      ((select count(*) from dossiers)), ((select count(*) from memberships)), ((select count(*) from emails_envoyes)),
+      ((select count(*) from demandes_cabinet)), ((select count(*) from relances_demandes))
+    ) as t(n);
+  else
+    avant := 'sans la migration';
+  end if;
 
   verdicts := verdicts || jsonb_build_object('controle', '0. la migration relance_des_demandes_par_email est en base (son témoin : la fonction)',
     'genre', case when en_base then 'controle' else 'attente' end,
@@ -229,13 +234,17 @@ begin
   end;
   reset role;
 
-  select string_agg(n::text, '/') into apres from (values
-    ((select count(*) from dossiers)), ((select count(*) from memberships)), ((select count(*) from emails_envoyes)),
-    ((select count(*) from demandes_cabinet)), ((select count(*) from relances_demandes))
-  ) as t(n);
+  if en_base then
+    select string_agg(n::text, '/') into apres from (values
+      ((select count(*) from dossiers)), ((select count(*) from memberships)), ((select count(*) from emails_envoyes)),
+      ((select count(*) from demandes_cabinet)), ((select count(*) from relances_demandes))
+    ) as t(n);
+  else
+    apres := 'sans la migration';
+  end if;
   -- L'écart seul, non les comptes de toute la base, qui diraient le volume d'un dossier réel.
   verdicts := verdicts || jsonb_build_object('controle', '99. l''essai s''est joué jusqu''au bout, et rien n''est resté en base', 'genre', 'controle',
-    'observe', coalesce(erreur || ' — ', '') || 'écarts ' || (select string_agg(to_char(ecart_.apres_::bigint - ecart_.avant_::bigint, 'FMSG9999999990'), '/' order by ecart_.rang_) from unnest(string_to_array(avant, '/'), string_to_array(apres, '/')) with ordinality as ecart_(avant_, apres_, rang_)), 'ok', erreur is null and avant = apres);
+    'observe', coalesce(erreur || ' — ', '') || case when en_base then 'écarts ' || (select string_agg(to_char(ecart_.apres_::bigint - ecart_.avant_::bigint, 'FMSG9999999990'), '/' order by ecart_.rang_) from unnest(string_to_array(avant, '/'), string_to_array(apres, '/')) with ordinality as ecart_(avant_, apres_, rang_)) else 'rien ne s''est joué' end, 'ok', erreur is null and avant = apres);
   perform set_config('essai.relance_des_demandes_par_email', verdicts::text, true);
 end
 $essai$;
