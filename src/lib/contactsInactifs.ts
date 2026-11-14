@@ -1,4 +1,4 @@
-import { estFicheLiee } from './fichesLiees'
+import { contactNomme, type ContactNomme } from './fichesLiees'
 import { dateAParis } from './format'
 import type { Contact } from './types'
 
@@ -25,7 +25,7 @@ export interface ActiviteDUnContact {
 }
 
 export interface ContactSansActivite {
-  contact: Contact
+  contact: ContactNomme
   /** La date d'où part le compte : la dernière facture ou le dernier devis, ou la création du contact. */
   depuis: string
   /** D'où elle vient. */
@@ -68,7 +68,7 @@ export function contactsSansActivite(
   const proposes: ContactSansActivite[] = []
   for (const contact of contacts) {
     // Une fiche liée au dossier d'un client (LM3) n'a pas de nom à proposer : son dossier est la source, pas ce fichier.
-    if (contact.efface_le != null || estFicheLiee(contact)) continue
+    if (contact.efface_le != null || !contactNomme(contact)) continue
     const activite = derniere.get(contact.id)
     const depuis = activite ?? dateAParis(contact.cree_le)
     const proposeLe = ajouterAnnees(depuis, ANNEES_SANS_ACTIVITE)

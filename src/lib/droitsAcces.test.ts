@@ -661,7 +661,10 @@ const COLONNES_DITES: Record<string, string> = {
   delai_paiement_jours: 'délai de paiement', observations: 'observations', cree_par: 'qui a créé', modifie_par: 'changé',
   retire_par: 'retiré', efface_par: 'effacé',
 }
-const COLONNES_SANS_MOT = ['id', 'dossier_id', 'genre', 'retire_le', 'efface_le', 'cree_le', 'modifie_le']
+// Les trois colonnes du lien de LM3 (`fiche_liee_au_dossier_du_client`) : nulles hors du dossier du cabinet, où seules les fiches
+// liées les portent (la garde de la migration) ; la phrase d'un accès client n'en dit rien.
+const COLONNES_SANS_MOT = ['id', 'dossier_id', 'genre', 'retire_le', 'efface_le', 'cree_le', 'modifie_le',
+  'dossier_client_id', 'delie_le', 'delie_par']
 
 describe('ce que disent les cases, les contacts ouverts (étape A4a)', () => {
   const ETATS_DES_AUTRES = [false, true].flatMap((banque) => [false, true].flatMap((articles) => [false, true]

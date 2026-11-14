@@ -4,7 +4,7 @@ import {
 } from './contacts'
 import { delaiAffiche } from './contactsVue'
 import {
-  choixDeFicheLiee, estFicheLiee, motsDuRefusDeLaFicheLiee, refusDeLaFicheLiee, saisieDeLaFicheLiee, type ChoixDeFicheLiee,
+  choixDeFicheLiee, motsDuRefusDeLaFicheLiee, refusDeLaFicheLiee, saisieDeLaFicheLiee, type ChoixDeFicheLiee,
   type DossierDuClient, type EtatDeLaFicheLiee, type FicheLiee, type IdentiteLue,
 } from './fichesLiees'
 import { FORME_ADRESSE_ELECTRONIQUE } from './mentionsFacture'
@@ -25,13 +25,13 @@ export interface DossierDuCabinetLu extends DossierDuClient {
 
 /** Les fiches liées d'une liste de contacts lue en entier, effacées exclues (l'effacement délie : elles n'ont plus de lien). */
 export function fichesLieesDuDossier(contacts: readonly Contact[]): FicheLiee[] {
-  return contacts
-    .filter((c) => estFicheLiee(c) && c.efface_le == null)
-    .map((c) => ({
-      id: c.id, dossier_client_id: c.dossier_client_id as string, adresse_electronique: c.adresse_electronique, email: c.email,
+  return contacts.flatMap((c) => (typeof c.dossier_client_id === 'string' && c.efface_le == null
+    ? [{
+      id: c.id, dossier_client_id: c.dossier_client_id, adresse_electronique: c.adresse_electronique, email: c.email,
       delai_paiement_jours: c.delai_paiement_jours, observations: c.observations, retire_le: c.retire_le, efface_le: c.efface_le,
       modifie_le: c.modifie_le,
-    }))
+    }]
+    : []))
 }
 
 const ordre = new Intl.Collator('fr', { sensitivity: 'base', numeric: true })

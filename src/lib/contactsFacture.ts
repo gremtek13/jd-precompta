@@ -1,4 +1,4 @@
-import { estFicheLiee } from './fichesLiees'
+import { contactNomme, type ContactNomme } from './fichesLiees'
 import { nomDansUnRefus, sansBlancsAuxBords } from './articles'
 import { enumeration } from './articlesFacture'
 import { REFUS_ENREGISTREMENT_CONTACT, regleDesSoins, saisieQuiPart, type RefusContact, type SaisieContact } from './contacts'
@@ -57,10 +57,10 @@ export function mentionsAvecLeClient(mentions: SaisieMentions, client: ClientEnS
 // ── Les contacts qu'on peut choisir ─────────────────────────────────────────────────────────────────────────────────────
 export interface ContactsAChoisir {
   // Ceux qu'on propose : en cours (jamais un retiré ni un effacé), que la règle des soins ne refuse pas, filtrés par la recherche.
-  offerts: Contact[]
+  offerts: ContactNomme[]
   // Les contacts EN COURS que la règle des soins refuse dans ce dossier (rangés avant son passage aux soins, A4-Q4) : ils ne se
   // proposent pas. Comptés sans la recherche, pour que la ligne qui le dit ne change pas à chaque lettre tapée.
-  ecartesParLesSoins: Contact[]
+  ecartesParLesSoins: ContactNomme[]
 }
 
 /**
@@ -80,7 +80,7 @@ export function contactsAChoisir(
 }
 
 /** Combien de contacts EN COURS le dossier range (soins compris) : « Choisir un client » ne s'offre que s'il y en a. */
-export function contactsEnCours(contacts: readonly Contact[]): Contact[] {
+export function contactsEnCours(contacts: readonly Contact[]): ContactNomme[] {
   return contactsAffiches(contacts, false)
 }
 
@@ -107,7 +107,7 @@ const UN_JOUR = /^\d{4}-\d{2}-\d{2}$/
  * (la base le tient) : ils repartent donc vides, et le formulaire, qui les cache, ne les envoie pas (`mentionsAEnregistrer`).
  * L'e-mail ne se recopie pas : la facture n'a pas de champ pour lui (A4B2-Q1).
  */
-export function choixDeContact(contact: Contact, dateEmission: string): ChoixDeContact {
+export function choixDeContact(contact: ContactNomme, dateEmission: string): ChoixDeContact {
   const delai = contact.delai_paiement_jours
   return {
     client: {
@@ -176,7 +176,7 @@ export interface SuiviDeLEcheance {
 }
 
 /** Le suivi que laisse un choix : nul quand le contact n'a pas de délai (l'échéance saisie reste, rien ne la suit). */
-export function suiviDeLEcheance(contact: Pick<Contact, 'nom'>, choix: ChoixDeContact, dateEmission: string): SuiviDeLEcheance | null {
+export function suiviDeLEcheance(contact: { nom: string }, choix: ChoixDeContact, dateEmission: string): SuiviDeLEcheance | null {
   return choix.echeance == null ? null : { nom: contact.nom, delai: choix.echeance.delai, emission: dateEmission }
 }
 
@@ -208,11 +208,11 @@ export function phraseDeLEcheanceARecalculer(r: EcheanceARecalculer): string {
 // Depuis l'étape A7b, elle part avec la facture (`contact_id`) et un brouillon rouvert garde la sienne ; drapeau baissé, une
 // facture rouverte n'en a aucune. C'est l'identifiant du contact, que la liste lue en entier retrouve — un contact retiré ou
 // effacé depuis ne se montre pas comme provenance (la facture, elle, le garde).
-export function contactDeLaProvenance(contactId: string | null, contacts: readonly Contact[] | null): Contact | null {
+export function contactDeLaProvenance(contactId: string | null, contacts: readonly Contact[] | null): ContactNomme | null {
   if (contactId == null || contacts == null) return null
   const contact = contacts.find((c) => c.id === contactId)
   // Une fiche liée (LM3) n'a pas de nom à dire : le formulaire de la facture la nomme par l'identité lue de son dossier.
-  return contact != null && contact.efface_le == null && !estFicheLiee(contact) ? contact : null
+  return contact != null && contact.efface_le == null && contactNomme(contact) ? contact : null
 }
 
 // ── « Enregistrer ce client » ───────────────────────────────────────────────────────────────────────────────────────────
@@ -316,7 +316,7 @@ export interface ConfirmationDuChoix {
 }
 
 /** La confirmation d'un remplacement : elle NOMME le contact choisi et ce qui part de la facture, et dit que la facture garde sa copie. */
-export function confirmationDuChoixDeContact(espace: EspaceVentes, contact: Pick<Contact, 'nom'>, remplace: readonly string[]): ConfirmationDuChoix {
+export function confirmationDuChoixDeContact(espace: EspaceVentes, contact: { nom: string }, remplace: readonly string[]): ConfirmationDuChoix {
   return {
     titre: 'Remplacer le client de la facture ?',
     phrase: `Choisir le client ${dit(contact.nom)} remplace ${enumeration(remplace)} de cette facture.`,

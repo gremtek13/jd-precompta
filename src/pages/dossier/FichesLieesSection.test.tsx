@@ -4,7 +4,7 @@ import FichesLieesSection from './FichesLieesSection'
 import { REFUS_ENREGISTREMENT_CONTACT } from '../../lib/contacts'
 import type { LectureDesFichesLiees } from '../../lib/fichesLieesLecture'
 import { PHRASE_DE_L_IDENTITE_ILLISIBLE, PHRASE_DU_DOSSIER_PARTI } from '../../lib/fichesLieesVue'
-import { contact } from '../../test/contacts'
+import { ficheLiee } from '../../test/contacts'
 import type { Contact } from '../../lib/types'
 
 // LES FICHES RELIÉES AUX DOSSIERS DES CLIENTS (LM3), la section de la vue « Clients » du dossier du cabinet, montée seule : la
@@ -27,9 +27,8 @@ const K = '1b300000-0000-4000-8000-0000000000a1'
 const C = '1b300000-0000-4000-8000-0000000000c1'
 const C2 = '1b300000-0000-4000-8000-0000000000c2'
 const C3 = '1b300000-0000-4000-8000-0000000000c3'
-const liee = (o: Partial<Contact> = {}) => contact({
-  id: 'f1', dossier_id: K, nom: null as unknown as string, type_client: null, adresse: null, siren: null, siret: null,
-  dossier_client_id: C, delai_paiement_jours: 30, ...o,
+const liee = (o: Partial<Contact> = {}) => ficheLiee({
+  id: 'f1', dossier_id: K, dossier_client_id: C, delai_paiement_jours: 30, ...o,
 })
 const LUE: LectureDesFichesLiees = {
   etat: 'lue', dossierDuCabinetId: K,

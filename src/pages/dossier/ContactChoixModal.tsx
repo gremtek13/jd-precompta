@@ -8,6 +8,7 @@ import type { EspaceVentes } from '../../lib/espaceVentes'
 import type { FicheLieeAChoisir } from '../../lib/fichesLieesVue'
 import { correspondALaRecherche } from '../../lib/recherche'
 import type { ArticleExoneration, Contact } from '../../lib/types'
+import type { ContactNomme } from '../../lib/fichesLiees'
 
 // « CHOISIR UN CLIENT » (espace client, étape A4b2) : la liste des clients EN COURS du dossier, avec la recherche de l'application
 // (nom, SIREN, SIRET), dans l'ordre de la vue « Clients ». Elle ne lit rien : le formulaire de facture la lui donne, LUE EN ENTIER,
@@ -23,7 +24,7 @@ interface Props {
   dateEmission: string
   // L'échéance est une notion de FACTURE : la facture la passe à vrai, le devis à faux (le délai, lui, se dit toujours).
   echeanceAffichee: boolean
-  onChoisir: (contact: Contact) => void
+  onChoisir: (contact: ContactNomme) => void
   // LM3 : les fiches liées aux dossiers des clients (le dossier du cabinet, sous `FICHES_LIEES_PREVUES`), chacune nommée par
   // l'identité LUE de son dossier, et la ligne qui dit celles qui ne se proposent pas ; nul ailleurs (le devis, un autre dossier).
   fichesLiees: { offertes: readonly FicheLieeAChoisir[]; onChoisir: (f: FicheLieeAChoisir) => void; ligne: string | null } | null

@@ -7,7 +7,8 @@ import {
   lignesAImporter, separateurPropose, tableauDuFichier, typesProposes, valeursDuType,
 } from './contactsImportFichier'
 import { LIBELLES_TYPE_CONTACT, saisieInitialeContact } from './contactsVue'
-import type { Contact, TypeClient } from './types'
+import type { ContactNomme } from './fichesLiees'
+import type { TypeClient } from './types'
 import { contact } from '../test/contacts'
 
 // LA FICHE D'UN CLIENT, EN UN FICHIER (espace client, étape A4b3c). Ce que ces cas gardent :
@@ -80,7 +81,7 @@ describe('le fichier d’une fiche', () => {
 // ── L'aller-retour ───────────────────────────────────────────────────────────────────────────────────────────────────────
 // La fiche passée par l'import tel que l'écran l'enchaîne : octets → texte (la marque lue) → séparateur proposé → cellules →
 // colonnes (l'en-tête ôté) → champs PROPOSÉS (aucun « à choisir ») → valeurs du type → lignes telles qu'elles partiraient.
-function allerRetour(c: Contact) {
+function allerRetour(c: ContactNomme) {
   const octets = new TextEncoder().encode(ficheDuContactCsv(c))
   const decode = decoderLeFichier(octets, 'cabinet')
   if ('refus' in decode) throw new Error(decode.refus)
@@ -104,8 +105,8 @@ function allerRetour(c: Contact) {
 }
 
 // Ce qu'une saisie à la main enverrait de CE contact, et le contact lui-même : deux références, que le module d'export ne produit pas.
-const cequeLaSaisieEnverrait = (c: Contact): ContactEnvoye => saisieQuiPart(saisieInitialeContact(c))
-const ceQueLeContactDit = (c: Contact): ContactEnvoye => ({
+const cequeLaSaisieEnverrait = (c: ContactNomme): ContactEnvoye => saisieQuiPart(saisieInitialeContact(c))
+const ceQueLeContactDit = (c: ContactNomme): ContactEnvoye => ({
   nom: c.nom, type_client: c.type_client, adresse: c.adresse as string, siren: c.siren, siret: c.siret,
   adresse_electronique: c.adresse_electronique, code_service: c.code_service, email: c.email,
   delai_paiement_jours: c.delai_paiement_jours, observations: c.observations,
@@ -115,7 +116,7 @@ const ceQueLeContactDit = (c: Contact): ContactEnvoye => ({
 // type n'ouvre pas — un SIREN pour un client établi hors de France, le code service d'une entreprise, etc. Les valeurs sont à
 // leur borne (nom 200, adresse 1 000, observations 1 000, e-mail 254, code service 100, délai 60) et portent ce qu'un CSV a de
 // plus traître : « ; », guillemets, CR, LF, CRLF, accents, ligature, caractère hors du plan de base.
-function rempli(type: TypeClient): Contact {
+function rempli(type: TypeClient): ContactNomme {
   const motif = 'Café « Œuf »; "Frères" & Cie — 3, rue de l’Été\r\nbât. B\n\rZ'
   // Exactement `longueur` CARACTÈRES (points de code : la base compte ainsi), sans blanc au bord que la saisie retirerait.
   const exactement = (texte: string, longueur: number) => {

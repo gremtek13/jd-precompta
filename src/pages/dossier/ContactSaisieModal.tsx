@@ -10,7 +10,8 @@ import {
   LIBELLES_TYPE_CONTACT, refusDeLaSaisieContact, saisieContactTouchee, saisieInitialeContact,
 } from '../../lib/contactsVue'
 import type { SaisieContact } from '../../lib/contacts'
-import type { ArticleExoneration, Contact, TypeClient } from '../../lib/types'
+import type { ContactNomme } from '../../lib/fichesLiees'
+import type { ArticleExoneration, TypeClient } from '../../lib/types'
 
 // LA SAISIE D'UN CONTACT (espace client, étape A4b1) : « Nouveau client » et « Modifier ». TOUS les champs partent ensemble par
 // `enregistrer_contact` (la saisie d'une modification part du contact LU, celle d'un contact neuf est vide, son type « à
@@ -34,7 +35,7 @@ interface Props {
   espace: EspaceVentes
   articleExoneration: ArticleExoneration | null
   // Le contact modifié, tel que la liste l'a lu ; nul pour un contact neuf.
-  contact: Contact | null
+  contact: ContactNomme | null
   // Une saisie de départ pour un contact NEUF (étape A4b2 : « Enregistrer ce client » la tire du client de la facture) ; sans elle,
   // le contact neuf part de la saisie vide. Elle compte comme le point de départ : rien n'est « touché » tant qu'on n'y change
   // rien, et le refus qu'elle porte déjà (l'adresse que la facture laisse facultative) se dit sans alerte.

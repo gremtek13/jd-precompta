@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { contact } from '../test/contacts'
+import { contact, ficheLiee } from '../test/contacts'
+import type { Contact } from './types'
 import { REFUS_ENREGISTREMENT_CONTACT } from './contacts'
 import { contactDeLaProvenance, contactsAChoisir } from './contactsFacture'
 import { contactsSansActivite } from './contactsInactifs'
 import { contactsAffichables, contactsAffiches } from './contactsVue'
-import { estFicheLiee, motsDuRefusDeLaFicheLiee, type EtatDeLaFicheLiee, type IdentiteLue } from './fichesLiees'
+import { ficheDuContactCsv, nomFichierDeLaFiche } from './contactsExport'
+import { contactNomme, estFicheLiee, motsDuRefusDeLaFicheLiee, type EtatDeLaFicheLiee, type IdentiteLue } from './fichesLiees'
 import {
   confirmationDeLaLiaison, dossiersARelier, fichesLieesAChoisir, fichesLieesDuDossier, ligneDesFichesTues, ligneDUneFicheLiee,
   refusDeLaSaisieDeFicheLiee, saisieInitialeDeFicheLiee, type DossierDuCabinetLu, type SaisieDeFicheLiee,
@@ -17,10 +19,9 @@ const C = '1b300000-0000-4000-8000-0000000000c1'
 const C2 = '1b300000-0000-4000-8000-0000000000c2'
 const C3 = '1b300000-0000-4000-8000-0000000000c3'
 
-// Une fiche liée telle que la base la rend : sans nom ni identité (le type dit `nom: string` jusqu'au collage).
-const liee = (o: Partial<ReturnType<typeof contact>> = {}) => contact({
-  id: 'f1', dossier_id: K, nom: null as unknown as string, type_client: null, adresse: null, siren: null, siret: null,
-  dossier_client_id: C, delai_paiement_jours: 30, email: 'compta@essai.invalid', ...o,
+// Une fiche liée telle que la base la rend : sans nom ni identité.
+const liee = (o: Partial<Contact> = {}) => ficheLiee({
+  id: 'f1', dossier_id: K, dossier_client_id: C, delai_paiement_jours: 30, email: 'compta@essai.invalid', ...o,
 })
 const ordinaire = contact({ id: 'c1', dossier_id: K, nom: 'Aubert SAS' })
 const lue = (i: Partial<IdentiteLue> = {}): IdentiteLue => ({
@@ -52,6 +53,20 @@ describe('les lecteurs d’hier écartent une fiche liée (LM3)', () => {
     expect(contactsSansActivite(tous, [], new Date('2031-01-01T10:00:00Z')).map((s) => s.contact.id)).toEqual(['c1'])
     expect(contactDeLaProvenance('f1', tous)).toBeNull()
     expect(contactDeLaProvenance('c1', tous)?.id).toBe('c1')
+  })
+
+  it('le nom d’un contact ne se lit que d’une ligne qui le porte : ni une fiche liée, ni un nom nul, jamais une chaîne vide', () => {
+    expect(contactNomme(ordinaire)).toBe(true)
+    expect(contactNomme(liee())).toBe(false)
+    // Une ligne sans lien et sans nom, que la base refuse (`contacts_nom_present`) : écartée, pas nommée « ».
+    expect(contactNomme(liee({ dossier_client_id: null }))).toBe(false)
+    expect(contactsAffiches([liee({ dossier_client_id: null }), ordinaire], true).map((c) => c.nom)).toEqual(['Aubert SAS'])
+  })
+
+  it('l’export d’une fiche ne part que de la liste affichée : jamais une fiche liée, et son nom de fichier porte un nom', () => {
+    const affiches = contactsAffiches([liee(), ordinaire], true)
+    expect(affiches.map((c) => nomFichierDeLaFiche(c.nom, '2026-11-14'))).toEqual(['fiche-client-aubert-sas-2026-11-14.csv'])
+    expect(affiches.map((c) => ficheDuContactCsv(c).split('\r\n')[1].split(';')[0])).toEqual(['Aubert SAS'])
   })
 })
 
