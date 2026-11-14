@@ -14,7 +14,9 @@ import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES, ROLES_COMPTABLES } from
 
 const contexte: Contexte = { entetesDuNavigateur: [] }
 const contrat = CONTRATS.find((c) => c.slug === 'agent-comptable')!
-const SCENARIOS = contrat.scenarios.map((s) => s.nom)
+// Les scénarios de l'inventaire (INV7) posent leur propre mode, que `bnc` et `societe` écraseraient : le contrat et
+// agentComptableInventaire.test.ts les jugent. Les autres rendent, le drapeau de l'inventaire baissé, ce qu'ils rendaient.
+const SCENARIOS = contrat.scenarios.map((s) => s.nom).filter((nom) => !nom.endsWith('(INV7)'))
 
 /** Le BNC en trésorerie : le dirigeant au compte de l'exploitant, exonéré. */
 function bnc(m: Monde) {

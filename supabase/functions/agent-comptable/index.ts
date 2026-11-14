@@ -3889,9 +3889,11 @@ async function lireLInventaireDuDossier(
       appelant.from("ecritures_brouillon").select("id, dossier_id, date, compte, sens, montant, operation_inventaire_id", { count: "exact" })
         .eq("dossier_id", dossierId).not("operation_inventaire_id", "is", null).order("id").range(debut, fin)),
   ])
-  for (const [quoi, r] of [["les régularisations", rOperations], ["les déclarations", rDeclarations], ["les provisions", rProvisions], ["les écritures d'inventaire", rLignes]] as const) {
-    if (!r.complete) return { etat: "illisible", motif: `${quoi} : ${r.motif ?? "lecture partielle"}` }
-  }
+  // Chaque lecture jugée l'une après l'autre : une lecture en partie rend l'inventaire illisible, et dit laquelle.
+  if (!rOperations.complete) return { etat: "illisible", motif: `les régularisations : ${rOperations.motif ?? "lecture partielle"}` }
+  if (!rDeclarations.complete) return { etat: "illisible", motif: `les déclarations : ${rDeclarations.motif ?? "lecture partielle"}` }
+  if (!rProvisions.complete) return { etat: "illisible", motif: `les provisions : ${rProvisions.motif ?? "lecture partielle"}` }
+  if (!rLignes.complete) return { etat: "illisible", motif: `les écritures d'inventaire : ${rLignes.motif ?? "lecture partielle"}` }
   const tous = [...rOperations.lignes, ...rDeclarations.lignes, ...rProvisions.lignes, ...rLignes.lignes]
   if (tous.some((l) => l.dossier_id !== dossierId)) return { etat: "illisible", motif: "une ligne rendue n'est pas de ce dossier" }
   const texte = (v: unknown): v is string => typeof v === "string"
