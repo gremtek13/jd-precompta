@@ -103,6 +103,13 @@ declare
   -- déclencheur, sur l'insertion, le retrait et le déplacement d'un accès, vient APRÈS celui de la trace et AVANT celui de
   -- l'adresse (l'ordre des noms) ; ce qu'il écrit se joue dans `traceDesDroits.sql`.
   avec_acces_trace boolean := to_regprocedure('public.tracer_les_acces()') is not null;
+  -- Le départ d'un client (INAL5, migration `depart_du_client`, préparée) : sa garde d'un dossier conservé, avant
+  -- l'insertion et le déplacement d'un accès, vient AVANT celle du dossier du cabinet (l'ordre des noms) ; ce qu'elle refuse
+  -- se joue dans `departDuClient.sql`. La porte d'accès (`acces_avant_les_gardes`, préparée) se pose sur memberships quand
+  -- cette garde y est, l'une ou l'autre migration la posant : la première de tous (le trait bas) ; `accesAvantLesGardes.sql`.
+  avec_inal5 boolean := to_regprocedure('public.garder_dossier_conserve()') is not null;
+  avec_porte boolean := to_regprocedure('public.acces_avant_les_gardes()') is not null
+                        and to_regprocedure('public.garder_dossier_conserve()') is not null;
   -- … et les cases que ce déclencheur nomme : celles de P1-trace, puis « Comptes » avec C4a (`situations_publiees`), puis
   -- « Achats », « Notes de frais » et « Documents » avec B1 (`trois_cases_de_l_acces`) — chacune le redéfinit ; l'état se
   -- lit à la colonne que chacune ajoute, comme `colonnes_tracees` de traceDesDroits.sql.
@@ -843,7 +850,7 @@ begin
   -- 83. Le catalogue : la garde, aux droits du propriétaire, chemin fixé, qu'aucun rôle de l'API n'exécute ; son déclencheur,
   -- APRÈS l'insertion et la mise à jour de `droit_ventes` ou de `dossier_id`, ligne par ligne, actif. La liste des
   -- déclencheurs de `memberships` reste FERMÉE : chacun y entre avec sa migration (c10, trace, avec_acces_trace,
-  -- avec_adresse_retiree, avec_lm1, en tête de l'essai), un déclencheur de plus la met en faute.
+  -- avec_adresse_retiree, avec_lm1, avec_inal5, avec_porte, en tête de l'essai), un déclencheur de plus la met en faute.
   select p.prosecdef || ' ' || p.provolatile::text || ' ' || coalesce(array_to_string(p.proconfig, ','), '') || ' ' || l.lanname
          || ' anon ' || has_function_privilege('anon', p.oid, 'execute')
          || ' authenticated ' || has_function_privilege('authenticated', p.oid, 'execute')
@@ -855,6 +862,8 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '83. la garde : security definer, chemin fixé, exécutée par aucun rôle de l''API ; son déclencheur, après l''insertion et la mise à jour de droit_ventes ou de dossier_id',
     'observe', coalesce(obs, 'garde absente'),
     'ok', coalesce(obs = 'true v search_path=public plpgsql anon false authenticated false public false | '
+      || case when avec_porte then 'CREATE TRIGGER _acces_avant_les_gardes BEFORE INSERT OR UPDATE ON public.memberships FOR EACH ROW EXECUTE FUNCTION acces_avant_les_gardes() O ; ' else '' end
+      || case when avec_inal5 then 'CREATE TRIGGER memberships_dossier_conserve BEFORE INSERT OR UPDATE OF dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_dossier_conserve(''aucun accès client ne s’y pose plus'') O ; ' else '' end
       || case when avec_lm1 then 'CREATE TRIGGER memberships_dossier_du_cabinet AFTER INSERT OR UPDATE OF dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_acces_au_dossier_du_cabinet() O ; ' else '' end
       || case when c10 then 'CREATE TRIGGER memberships_droit_caisse AFTER INSERT OR UPDATE OF droit_caisse, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_caisse() O ; ' else '' end
       || 'CREATE TRIGGER memberships_droit_ventes AFTER INSERT OR UPDATE OF droit_ventes, dossier_id ON public.memberships FOR EACH ROW EXECUTE FUNCTION garder_droit_ventes() O'
