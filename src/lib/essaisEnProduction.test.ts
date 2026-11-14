@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { blocsDo, sansCommentaires } from '../test/blocsSql'
+import { blocsDo } from '../test/blocsSql'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // CE QUE RENDENT LES ESSAIS DE LA BASE REJOUÉS EN PRODUCTION — ce que la suite en tient sans base (HISTORIQUE.md, « CE
