@@ -152,12 +152,28 @@ export function totauxPourAnnee(
   const debut = `${annee}-01-01`
   const fin = `${annee}-12-31`
   return {
-    ca: montantDansLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode, recettesFacturees)
-      + recettesAffecteesDansLaPeriode(partsDuReleve, debut, fin)
-      + recettesFactureesDesMois(recettesFacturees, debut, fin)
-      + recettesDeCaisseDeLaPeriode(recettesDeCaisse, debut, fin),
+    ca: chiffreDAffairesDeLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode, partsDuReleve, recettesFacturees, recettesDeCaisse),
     cotis: cotisationsDeLaPeriode(cotisations, debut, fin),
   }
+}
+
+/**
+ * LE CHIFFRE D'AFFAIRES D'UNE PÉRIODE, en euros : les pièces de vente à la date de leur encaissement, les recettes affectées
+ * du relevé, les ventes facturées et les recettes de caisse — LE calcul de l'estimation (`totauxPourAnnee`, `projectionAnnuelle`),
+ * sorti d'eux pour qu'un autre écran compte comme eux sans le recopier : l'alerte de hausse du chiffre d'affaires d'un trimestre
+ * (lib/hausseDuChiffreDAffaires.ts, docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md). Les quatre termes s'ajoutent
+ * dans l'ordre d'hier : un flottant ne bouge pas d'un caractère. Les ventes facturées se comptent au mois près
+ * (`recettesFactureesDesMois`) : une période qui ne commence pas un 1er et ne finit pas un dernier du mois les compte en entier.
+ * Sans valeur par défaut, comme ses deux appelants.
+ */
+export function chiffreDAffairesDeLaPeriode(
+  pieces: Piece[], paiements: PaiementsDesPieces, debut: string, fin: string, assujettiTva: boolean, mode: ModeComptable,
+  partsDuReleve: readonly PartDuReleve[], recettesFacturees: RecettesFacturees, recettesDeCaisse: RecettesDeCaissePourLEstimation,
+): number {
+  return montantDansLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode, recettesFacturees)
+    + recettesAffecteesDansLaPeriode(partsDuReleve, debut, fin)
+    + recettesFactureesDesMois(recettesFacturees, debut, fin)
+    + recettesDeCaisseDeLaPeriode(recettesDeCaisse, debut, fin)
 }
 
 export interface ProjectionAnnuelle {
@@ -201,10 +217,8 @@ export function projectionAnnuelle(
   // Du 1er janvier à aujourd'hui : la borne du jour fait un « à date », pour les recettes (à leur
   // encaissement) comme pour les échéances. La même règle de montant que le calcul des repères. Les
   // recettes facturées, au mois près : celui du jour compte en entier (voir `RecettesFacturees`).
-  const ca = montantDansLaPeriode(recettes, paiements, `${annee}-01-01`, dateDuJour, assujettiTva, mode, recettesFacturees)
-    + recettesAffecteesDansLaPeriode(partsDuReleve, `${annee}-01-01`, dateDuJour)
-    + recettesFactureesDesMois(recettesFacturees, `${annee}-01-01`, dateDuJour)
-    + recettesDeCaisseDeLaPeriode(recettesDeCaisse, `${annee}-01-01`, dateDuJour)
+  const ca = chiffreDAffairesDeLaPeriode(recettes, paiements, `${annee}-01-01`, dateDuJour, assujettiTva, mode, partsDuReleve,
+    recettesFacturees, recettesDeCaisse)
   const cotis = cotisationsDeLaPeriode(cotisations, `${annee}-01-01`, dateDuJour)
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
   const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)

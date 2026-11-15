@@ -323,10 +323,13 @@ describe('les essais de la base, rejoués en production', () => {
     // `compte_propre_hors_des_exercices_valides`) : il crée des dossiers et des exercices validés fictifs, suspend un déclencheur
     // de `dossiers` le temps d'une sous-transaction et mute la fonction du filet. Son catalogue se relit partout (signature.sql,
     // familles des fonctions et des déclencheurs) ; il ne touche à aucune policy.
+    // Le trente-quatrième, hausseDuChiffreDAffairesSuppression, le 15/11/2026 (l'alerte de hausse du chiffre d'affaires,
+    // migration `hausse_du_chiffre_d_affaires`) : il retire une marque, un seuil et un dossier jetable, sous la garde
+    // ESSAI_HORS_REPLIQUE ; son compagnon, hausseDuChiffreDAffaires.sql, se joue en production (aucune suppression).
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'exercicesDuDossier (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
-      'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
+      'frontiereDesEncaissements (son en-tête)', 'hausseDuChiffreDAffairesSuppression (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'provisions (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
@@ -457,7 +460,9 @@ describe('les essais de la base, rejoués en production', () => {
     // production) ; SÛRS au banc, sur une copie de la réplique au niveau de la production (226 migrations).
     // Vingt-cinq le même jour : `previsionsPubliees` (C8-Q2, `previsions_publiees`) entré dans la famille « apres », après sa
     // migration préparée ; SÛR au banc, sur une copie de la réplique au niveau de la production (226 migrations).
-    expect(cas.length).toBe(25)
+    // Vingt-six le 15/11/2026 : `hausseDuChiffreDAffaires` (l'alerte de hausse du chiffre d'affaires, `hausse_du_chiffre_d_affaires`)
+    // entré dans la famille « apres », après sa migration préparée ; SÛR au banc, sur une copie de la réplique à 228.
+    expect(cas.length).toBe(26)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

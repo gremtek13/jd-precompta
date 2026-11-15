@@ -53019,3 +53019,24 @@ cite le même mouvement, que PostgreSQL rompt (40P01, rien d'écrit) ; dit dans 
 « Caisse » : A8Q5Q3Q2Q2-Q1. **Rien trouvé** : RET2-Q2, C8-Q2 (hors de la restauration, qui écrit telle quelle :
 C8Q2-Q5), MCB6Q2-Q1 (la course dans les deux ordres), INV3 (le corps de production à 228, seulement augmenté ; ses essais
 justes).
+
+### 15/11/2026 — L'ALERTE DE HAUSSE DU CHIFFRE D'AFFAIRES (MVP) : CONÇUE, PRÉPARÉE EN BASE, ET SES ÉCRANS DERRIÈRE LEUR DRAPEAU
+
+(Agent architecte ; rien en production ; une copie de la réplique à 227, portée à 228 par P1T-Q2, puis supprimée.) La demande
+du cabinet du 15/11/2026, et sa précision du même jour (l'alerte SIGNALE ; ce que l'expert-comptable en dit au client, il le
+décide) : `docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md`. Le chiffre est celui de l'estimation,
+`chiffreDAffairesDeLaPeriode`, sorti de `totauxPourAnnee` et `projectionAnnuelle` sans changer leur calcul ; le trimestre clos
+et le cumul se comparent à l'année d'avant, l'un ou l'autre au seuil du dossier, en entiers ; muet sans seuil, sur une lecture
+partielle, sur un mois absent du relevé ou un crédit à traiter, sans année de comparaison. La migration préparée
+`hausse_du_chiffre_d_affaires` (deux tables, deux fonctions, deux gardes aux droits de l'appelant, aucune branche client),
+appliquée sous le propriétaire : l'essai neuf, 43 verdicts justes ; dix mutations sur dix mordent, et deux de plus sur son
+compagnon de réplique (les retraits) ; `rls.sql` 254/0, 148 sur 148 ; le banc du leurre SÛR (le complément du leurre garnit
+la table des marques, que le remplisseur ne sait pas remplir) ; le retour rend la signature d'avant, se refuse sur une ligne
+vivante ; l'essai de restauration reçoit le bloc des deux tables (IDENTIQUE, 98 tables, le seuil et la marque compris). La
+migration : `1b797dca…`, par l'outil ; le retour : `0b0ca1a7…`, à coller. **Relevé en éprouvant** : le chef d'essai est aussi le super-administrateur, donc la porte de la restauration (garder
+l'auteur écrit) se juge par lui, et l'auteur posé par la base par un « chef simple » annulé à chaque étape ; une sous-requête
+ne voit pas l'écriture d'une fonction appelée dans la même instruction. Écrans : la carte du seuil (Informations), un point
+d'attention au-dessus des tuiles de la Vue d'ensemble (hors des anomalies, de la validation et des cycles de la révision), et
+une ligne sur le tableau de bord pour les dossiers réglés que le compte suit, au plus dix calculés par ouverture. La suite
+entière : 22 525 tests, les onze rouges trois attendus à suivre (l'essai de restauration, le classement des essais, le plan
+filtré), corrigés et rejoués. Questions : CA-Q1 à CA-Q5 et CA-migration.

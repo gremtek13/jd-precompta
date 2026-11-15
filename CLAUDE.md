@@ -477,6 +477,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   une fonction vérifie l'empreinte du corps qu'elle remplace (`remplacementsDesPreparees.test.ts`, REPET-Q2 : la garde
   d'INV3 le faisait déjà) → « A8Q5Q3Q2-Q2 : LA GARDE DES RÈGLEMENTS », « RET2-Q2 : L'EXONÉRATION DE 2025 », chercher
   « C8-Q2 », « REPET-Q2 » au 15/11/2026.
+- **L'alerte de hausse du chiffre d'affaires** (ligne 29.6, MVP, demande du cabinet du 15/11/2026) : conçue
+  (`docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md`), préparée derrière `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`
+  baissé — le chiffre de l'estimation (`chiffreDAffairesDeLaPeriode`), le trimestre clos et le cumul contre l'année d'avant,
+  l'un ou l'autre au seuil du dossier, en entiers ; des mots neutres, jamais un conseil (le cabinet décide de ce qu'il dit au
+  client) ; muette sur une lecture partielle, un mois absent du relevé, un crédit à traiter ; `hausse_du_chiffre_d_affaires`
+  (par l'outil, aucune branche client) ; la carte du seuil (Informations), un avis de la Vue d'ensemble hors des anomalies et de
+  la validation, une ligne du tableau de bord (au plus dix dossiers calculés) ; CA-Q1 à Q5 et CA-migration → « L'ALERTE DE
+  HAUSSE DU CHIFFRE D'AFFAIRES (MVP) ».
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
   levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la
