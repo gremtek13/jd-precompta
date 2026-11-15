@@ -244,7 +244,7 @@ export const CE_QUE_DIT_L_ADRESSE_RETENUE =
 /** Le libellé de l'accès lui-même dans la colonne des cases (P1T-Q2). */
 export const LIBELLE_DE_L_ACCES = 'L’accès à l’espace client'
 
-/** Ce que l'onglet dit de la trace, l'accès lui-même tracé (P1T-Q2, sous `ACCES_DANS_LA_TRACE_PREVU`). */
+/** Ce que l'onglet dit de la trace, l'accès lui-même tracé (P1T-Q2, sous `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE`). */
 export const CE_QUE_DIT_LA_TRACE_DES_ACCES =
   'Chaque accès ouvert ou retiré, même sans case cochée, et chaque case cochée ou décochée sur un accès du dossier, à l’heure '
   + 'de Paris, et qui l’a fait : le cabinet, le client lui-même, ou « sans session » quand aucun compte n’était connecté. Seul le '

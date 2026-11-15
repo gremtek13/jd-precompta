@@ -14,11 +14,21 @@
 // fait échouer toute sauvegarde.
 export const TRACE_DES_DROITS_PREVUE = true
 
-// L'ACCÈS LUI-MÊME DANS LA TRACE (P1T-Q2, tranchée par le cabinet le 07/11/2026 : « Oui, plus tard avec l'écran ») : la
-// migration PRÉPARÉE `arrivee_et_depart_des_acces` (supabase/preparees/20261113202000) fait écrire une ligne au mot
-// « acces » quand un accès arrive dans un dossier (cochée, « creation ») ou en part (décochée, « retrait »), qu'il porte ou
-// non des cases. Levé, l'écran nomme ce mot (lib/traceDesDroitsVue.ts) ; baissé — l'état d'aujourd'hui —, une ligne
-// « acces » serait un mot inconnu et rendrait la lecture partielle. Il se lève AVANT la migration (il ne change rien tant
-// que la base n'écrit pas le mot), qui se colle ensuite.
-export const ACCES_DANS_LA_TRACE_PREVU: boolean = false
+// L'ACCÈS LUI-MÊME DANS LA TRACE (P1T-Q2, tranchée par le cabinet le 07/11/2026 : « Oui, plus tard avec l'écran » ; sa
+// migration, le 15/11/2026 : « La coller, le drapeau levé d'abord ») : la migration PRÉPARÉE `arrivee_et_depart_des_acces`
+// (supabase/preparees/20261113202000) fait écrire une ligne au mot « acces » quand un accès arrive dans un dossier (cochée,
+// « creation ») ou en part (décochée, « retrait »), qu'il porte ou non des cases.
+//
+// DEUX CONSTANTES, parce que l'écran fait deux choses de ce mot :
+//  - `ACCES_DANS_LA_TRACE_PREVU`, LEVÉ le 15/11/2026, AVANT le collage : l'écran LIT le mot (lib/traceDesDroitsVue.ts) —
+//    baissé, une ligne « acces » serait un mot inconnu et rendrait la lecture partielle. Sans effet tant que la base ne
+//    l'écrit pas : la contrainte `trace_des_droits_droit` de l'export n'admet que les sept cases, aucune ligne ne le porte
+//    (traceDesDroitsVue.test.ts le relit dans l'export).
+//  - `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE`, BAISSÉ jusqu'au collage : la carte « Droits changés » DIT qu'elle trace chaque
+//    accès ouvert ou retiré, même sans case — une affirmation sur la base, qui attend la base ; levée avant, elle serait
+//    fausse pour tout accès ouvert ou retiré sans case entre le déploiement et le collage. Elle se lève le jour où la
+//    migration entre dans l'export (traceDesDroitsVue.test.ts l'y lie), et se baisse AVANT tout retour.
+export const ACCES_DANS_LA_TRACE_PREVU: boolean = true
+
+export const ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE: boolean = false
 

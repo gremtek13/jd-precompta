@@ -7,7 +7,7 @@ import {
   groupesDeLaTrace, ligneDeTrace, nombreDeChangements, ordreDeLaTrace, phraseDeLaTrace, quandADitLaTrace, traceDeLaLecture,
   type LigneDeTrace,
 } from './traceDesDroitsVue'
-import { ACCES_DANS_LA_TRACE_PREVU } from './traceDesDroits'
+import { ACCES_DANS_LA_TRACE_PREVU, ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE } from './traceDesDroits'
 import { DOMAINES, definitionDe, type Domaine } from './droitsAcces'
 import type { TraceDesDroits } from './types'
 import { fichiersDuSchema } from '../test/schema'
@@ -213,18 +213,46 @@ describe('la trace rangée par accès', () => {
 })
 
 // L'ACCÈS LUI-MÊME DANS LA TRACE (P1T-Q2, migration préparée `arrivee_et_depart_des_acces`) : le huitième mot, connu de
-// l'écran sous `ACCES_DANS_LA_TRACE_PREVU` seulement, et sous ses deux formes seulement.
+// l'écran sous `ACCES_DANS_LA_TRACE_PREVU` seulement (levé le 15/11/2026, avant le collage), et sous ses deux formes
+// seulement ; ce que la carte en DIT, sous `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE`, qui suit l'export.
 describe('l’accès lui-même dans la trace (P1T-Q2)', () => {
   const PREPAREE = readFileSync(join(__dirname, '../../supabase/preparees/20261113202000_arrivee_et_depart_des_acces.sql'), 'utf8')
   const arrivee = brute({ id: 'a1', droit: 'acces', geste: 'creation', coche: true })
   const depart = brute({ id: 'a2', droit: 'acces', geste: 'retrait', coche: false, fait_le: '2026-11-09T09:12:00Z' })
 
-  it('le drapeau est baissé tant que la migration n’est pas en base ; la valeur par défaut le suit', () => {
-    expect(ACCES_DANS_LA_TRACE_PREVU).toBe(false)
-    expect(ligneDeTrace(arrivee)).toBeNull()
-    const jugee = traceDeLaLecture({ lignes: [brute(), arrivee], complete: true, motif: null })
+  it('le drapeau de la lecture est levé avant le collage, et la valeur par défaut le suit', () => {
+    expect(ACCES_DANS_LA_TRACE_PREVU).toBe(true)
+    expect(ligneDeTrace(arrivee)).toMatchObject({ droit: ACCES, geste: 'creation', coche: true })
+    expect(traceDeLaLecture({ lignes: [brute(), arrivee], complete: true, motif: null }).motif).toBeNull()
+  })
+
+  it('levé avant la migration, il ne change rien : la base n’écrit pas le mot, et une trace de ses sept cases se lit de même', () => {
+    // La contrainte de l'export, la dernière définition de `trace_des_droits_droit` : les sept cases, jamais « acces ».
+    const definitions = fichiersDuSchema().flatMap((f) => [...f.texte.matchAll(/constraint trace_des_droits_droit\s+check \(droit in \(([^)]*)\)\)/gi)]
+      .map((m) => m[1].split(',').map((x) => x.trim().replace(/'/g, ''))))
+    expect(definitions.length).toBeGreaterThan(0)
+    expect(definitions[definitions.length - 1]).toEqual(['ventes', 'banque', 'caisse', 'comptes', 'achats', 'frais', 'documents'])
+    // Toute ligne que la base peut écrire se juge de même, le mot connu ou non.
+    for (const droit of definitions[definitions.length - 1]) {
+      for (const geste of GESTES) {
+        for (const coche of [true, false]) {
+          const b = brute({ droit, geste, coche })
+          expect(ligneDeTrace(b, true), `${droit} ${geste} ${coche}`).toEqual(ligneDeTrace(b, false))
+        }
+      }
+    }
+  })
+
+  it('baissé (l’état d’avant) : une ligne « acces » est un mot inconnu, et rend la lecture partielle', () => {
+    expect(ligneDeTrace(arrivee, false)).toBeNull()
+    const jugee = traceDeLaLecture({ lignes: [brute(), arrivee], complete: true, motif: null }, false)
     expect(jugee.lignes.map((l) => l.id)).toEqual(['t1'])
     expect(jugee.motif).toContain('1 ligne(s) portent un droit, un geste ou une date que cet écran ne connaît pas')
+  })
+
+  it('ce que la carte dit de la trace suit l’export : baissé tant que la migration n’y est pas', () => {
+    expect(ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE)
+      .toBe(fichiersDuSchema().some((f) => /\d{14}_arrivee_et_depart_des_acces\.sql$/.test(f.chemin)))
   })
 
   it('levé : l’arrivée et le départ se lisent, ouvert et retiré, à leur libellé', () => {
