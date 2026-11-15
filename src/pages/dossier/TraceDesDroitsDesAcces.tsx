@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { ADRESSES_DES_ACCES_RETIRES_PREVUES } from '../../lib/adressesDesAccesRetires'
 import type { AccesDuDossier } from '../../lib/auteursVentes'
-import { ACCES_DANS_LA_TRACE_PREVU, TRACE_DES_DROITS_PREVUE } from '../../lib/traceDesDroits'
+import { ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE, TRACE_DES_DROITS_PREVUE } from '../../lib/traceDesDroits'
 import {
   lireLaTraceDuDossier, lireLesAdressesDesAccesRetires, type LectureDeLaTrace, type LectureDesAdresses,
 } from '../../lib/traceDesDroitsLecture'
@@ -59,7 +59,8 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
   return (
     <div className="card" style={{ marginTop: 20 }}>
       <h3 style={{ marginTop: 0 }}>Droits changés</h3>
-      <p className="muted" style={{ marginTop: -8 }}>{ACCES_DANS_LA_TRACE_PREVU ? CE_QUE_DIT_LA_TRACE_DES_ACCES : CE_QUE_DIT_LA_TRACE}</p>
+      {/* Ce que la carte dit de la base suit la base : l'accès lui-même tracé, sous la migration de P1T-Q2 seulement. */}
+      <p className="muted" style={{ marginTop: -8 }}>{ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE ? CE_QUE_DIT_LA_TRACE_DES_ACCES : CE_QUE_DIT_LA_TRACE}</p>
       {ADRESSES_DES_ACCES_RETIRES_PREVUES && <p className="muted">{CE_QUE_DIT_L_ADRESSE_RETENUE}</p>}
       {lue === null ? (
         <p className="muted">Chargement de la trace des droits…</p>

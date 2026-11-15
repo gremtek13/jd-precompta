@@ -7,7 +7,9 @@ import TraceDesDroitsDesAcces from './TraceDesDroitsDesAcces'
 // levé depuis le 11/11/2026 : TraceDesDroitsDesAcces.adresses.test.tsx joue l'état réel, ce fichier garde l'état d'avant
 // éprouvé tant que son code existe.
 const lectures = vi.hoisted(() => ({ adresses: 0 }))
-vi.mock('../../lib/traceDesDroits', () => ({ TRACE_DES_DROITS_PREVUE: true, ACCES_DANS_LA_TRACE_PREVU: false }))
+vi.mock('../../lib/traceDesDroits', () => ({
+  TRACE_DES_DROITS_PREVUE: true, ACCES_DANS_LA_TRACE_PREVU: false, ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE: false,
+}))
 vi.mock('../../lib/adressesDesAccesRetires', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/adressesDesAccesRetires')>()), ADRESSES_DES_ACCES_RETIRES_PREVUES: false,
 }))
