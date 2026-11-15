@@ -151,17 +151,23 @@ describe('la migration stockage_sans_mise_a_jour, son retour et ce qui la redit'
     for (const chemin of [MIGRATION, RETOUR]) expect(lire(chemin), chemin).not.toMatch(/[\r\\]/)
   })
 
-  it('le retour d’INAL1 admet la surface de suppression avant et après elle, au même prédicat des packs', () => {
-    const fin = lire(RETOUR_INAL1).slice(lire(RETOUR_INAL1).indexOf('do $fin$'))
-    const admises = [...fin.matchAll(/'(cabinet_logos_suppression_chef:d:[^']+)'/g)].map((m) => m[1])
-    expect(admises).toHaveLength(4)
-    const empreinte = /packs_storage_all:\*:([0-9a-f]{32})/.exec(admises[0])![1]
-    expect(admises.filter((a) => a.includes(`packs_storage_all:*:${empreinte}`))).toHaveLength(2)
-    expect(admises.filter((a) => a.includes(`packs_storage_suppression:d:${empreinte}`))).toHaveLength(2)
-    // Chaque état d'après est un état d'avant où seule la suppression des packs a changé de nom et de commande.
-    for (const a of admises.filter((x) => x.includes('packs_storage_suppression'))) {
-      expect(admises).toContain(a.replace(`packs_storage_suppression:d:${empreinte}`, `packs_storage_all:*:${empreinte}`))
+  // INAL1R-Q1 (15/11/2026) : le retour d'INAL1 ne lit, à sa fin comme à sa tête, que ce qu'il défait — la policy de
+  // suppression du seau des pièces, `fichier_fige` et ses index. Il s'applique donc avant comme après cette migration,
+  // qui change les packs et les logos, et avant comme après B2, qui pose la suppression du seau des documents du cabinet.
+  it('le retour d’INAL1 ne lit que le rangement des pièces : ni les packs, ni les logos, ni les autres seaux', () => {
+    const texte = lire(RETOUR_INAL1)
+    for (const bloc of ['$garde$', '$fin$']) {
+      const corps = texte.slice(texte.indexOf(`do ${bloc}`), texte.indexOf(`${bloc};`, texte.indexOf(`do ${bloc}`)))
+      expect(corps.length, bloc).toBeGreaterThan(200)
+      expect([...corps.matchAll(/polname\s*=\s*'(\w+)'/g)].map((m) => m[1]), bloc).toEqual(['pieces_storage_delete'])
+      expect(corps, bloc).not.toMatch(/polcmd\s+in\b|string_agg\(\s*p\.polname/)
+      for (const nom of ['packs_storage', 'cabinet_logos', 'ventes_', 'documents_cabinet']) expect(corps, `${bloc} : ${nom}`).not.toContain(nom)
     }
+    // Aucune migration préparée ne change la policy qu'il rend, sauf INV3, qui remplace `fichier_fige` qu'elle appelle :
+    // son retour se joue d'abord (l'en-tête du retour d'INAL1 le dit).
+    const changent = fichiersPrepares().filter((f) => /\bpieces_storage_delete\b/.test(f.texte.replace(/--[^\n]*/g, '').replace(/'(?:[^']|'')*'/g, "''")))
+    expect(changent.map((f) => f.chemin)).toEqual([])
+    expect(texte).toContain('Il refuse après INV3 (`validation_de_l_inventaire`), qui remplace `fichier_fige` : le retour d\'INV3 d\'abord.')
   })
 
   it('le bloc SM de rls.sql attend les prédicats que la migration pose', () => {
