@@ -190,14 +190,22 @@ begin
            set constraints all immediate;
            set constraints all deferred;
            update lignes_bancaires set statut = 'rapprochee', reglement_groupe = true where id = '{M2}';$q$, recu, '23514', deja_encaissee),
-      (20, '12. ce qui fait baisser le reçu passe toujours : la pièce a reçu 50 € par-dessus 100 € encaissés (posés par le propriétaire, la garde coupée), puis un rejet de 10 € se rapproche d''elle',
+      (20, '11b. … une part qui monte, posée à la main sur un mouvement déjà réglé en groupe (20 € et 25 €, jugés) : 21 € pour la pièce, refusé',
+        null, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100')
+          || $q$ insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{M2}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 GROUPE', 45, 'non_rapprochee');
+           select regler_pieces_par_mouvement('{M2}', '[{"piece_id": "{P}", "montant": 20}, {"piece_id": "{Q}", "montant": 25}]'::jsonb);$q$,
+        $q$set constraints all immediate;
+           set constraints all deferred;$q$,
+        $q$update reglements_groupes set montant = 21 where ligne_bancaire_id = '{M2}' and piece_id = '{P}';
+           update reglements_groupes set montant = 24 where ligne_bancaire_id = '{M2}' and piece_id = '{Q}';$q$, recu, '23514', deja_encaissee),
+      (21, '12. ce qui fait baisser le reçu passe toujours : la pièce a reçu 50 € par-dessus 100 € encaissés (posés par le propriétaire, la garde coupée), puis un rejet de 10 € se rapproche d''elle',
         mouvement_fautif, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), fautif,
         replace(replace(replace(rapprocher, '{M}', '{M3}'), '{X}', '-10'), '{PIECE}', '{P}'), recu, 'OK', '4000'),
-      (21, '12b. … et sur cet état fautif, un mouvement d''un autre dossier qui la cite passe aussi (A8Q5-Q4 ne s''aggrave pas)',
+      (22, '12b. … et sur cet état fautif, un mouvement d''un autre dossier qui la cite passe aussi (A8Q5-Q4 ne s''aggrave pas)',
         mouvement_fautif, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), fautif,
         $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{M4}', '{DR}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 AUTRE DOSSIER', 21, 'non_rapprochee');
            update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M4}';$q$, recu, 'OK', '5000'),
-      (22, '12c. … et une part d''un virement groupé qui baisse, sur un état fautif (la part de 40 € posée la garde coupée) : passe',
+      (23, '12c. … et une part d''un virement groupé qui baisse, sur un état fautif (la part de 40 € posée la garde coupée) : passe',
         $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{M2}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 GROUPE', 45, 'non_rapprochee');$q$,
         replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'),
         $q$alter table lignes_bancaires disable trigger lignes_bancaires_recu_d_une_piece_citee;
@@ -207,17 +215,17 @@ begin
            alter table lignes_bancaires enable trigger lignes_bancaires_recu_d_une_piece_citee;
            alter table reglements_groupes enable trigger reglements_groupes_recu_d_une_piece_citee;$q$,
         $q$update reglements_groupes set montant = 35 where ligne_bancaire_id = '{M2}' and piece_id = '{P}';$q$, recu, 'OK', '3500'),
-      (23, '13. le lien retiré (la pièce n''est plus l''original) : 21 € passent',
+      (24, '13. le lien retiré (la pièce n''est plus l''original) : 21 € passent',
         null, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100') || $q$ select retirer_piece_de_facture_reprise('{DQ}', {R1});$q$, null,
         replace(replace(replace(rapprocher, '{M}', '{M1}'), '{X}', '21'), '{PIECE}', '{P}'), recu, 'OK', '2100'),
-      (24, '14. la garde des règlements garde son rang et ses mots : un paiement du jour de la reprise se refuse à l''écriture, par elle',
+      (25, '14. la garde des règlements garde son rang et ses mots : un paiement du jour de la reprise se refuse à l''écriture, par elle',
         null, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), null,
         $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{M1}', '{DQ}', '{R}', 'ESSAI A8Q5Q3Q2Q2 PAIEMENT', 21, 'non_rapprochee');
            update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M1}';$q$, recu, '23514', date_de_la_garde),
-      (25, '15. une autre pièce, jamais citée : 120 € rapprochés passent',
+      (26, '15. une autre pièce, jamais citée : 120 € rapprochés passent',
         null, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), null,
         replace(replace(replace(rapprocher, '{M}', '{M1}'), '{X}', '120'), '{PIECE}', '{Q}'), $q$recu_par_la_piece('{Q}')::text$q$, 'OK', '12000'),
-      (26, '16. un mouvement d''un autre dossier qui cite la pièce (A8Q5-Q4, ouverte) : il ne compte pas dans ce qu''elle a reçu, et la garde ne le juge pas',
+      (27, '16. un mouvement d''un autre dossier qui cite la pièce (A8Q5-Q4, ouverte) : il ne compte pas dans ce qu''elle a reçu, et la garde ne le juge pas',
         null, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), null,
         $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{M4}', '{DR}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 AUTRE DOSSIER', 21, 'non_rapprochee');
            update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M4}';$q$, recu, 'OK', '0')
