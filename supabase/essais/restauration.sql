@@ -626,6 +626,26 @@ begin
   end if;
 end $$;
 
+-- ══ La prévision de trésorerie publiée (espace client, C8-Q2) ══ Au plan du code quand `PREVISIONS_PUBLIEES_PREVUES` est
+-- levé — c'est-à-dire quand sa migration est en base : le script met sa table dès qu'elle existe, juste après
+-- `previsionnels_bancaires` (ORDRE_RESTAURATION_PREVU : une place qu'aucun voisin ne fixe) ; les tables qui suivent reculent
+-- d'un rang — le geste des articles ; son chemin ; sa vague (`remplace_id` : une publication en remplace une, un retrait en
+-- retire une). Joué juste après le bloc des situations : sa vague suit la leur, comme dans la liste du code. Absente de la
+-- base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.previsions_publiees') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'previsionnels_bancaires';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'previsions_publiees');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('previsions_publiees','direct',null,null);
+    insert into essai_restauration._vagues (table_nom, colonne) values ('previsions_publiees','remplace_id');
+  end if;
+end $$;
+
 -- ══ Les saisies de la 2035 (étapes 2035S3 à S5) ══ Au plan du code quand `SAISIES_2035_EXPORTEES` est levé — c'est-à-dire
 -- quand la migration `saisies_2035` est en base : le script met sa table juste après `designations_des_pieces`, donc juste
 -- avant `exercices_valides` (leur gel refuserait une saisie réinsérée après eux), qui recule d'un rang ; son chemin ; aucune

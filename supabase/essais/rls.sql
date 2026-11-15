@@ -182,6 +182,9 @@
 --      `texte_ocr_coherent_a_la_mise_a_jour`, SECU3-Q2, en production depuis le 15/11/2026) : la mise à jour relit la cible comme l'insertion — une
 --      réécriture vers la pièce ou le document d'un autre dossier, ou vers un autre dossier, se refuse (42501) ; la
 --      réécriture de l'application passe. Deux mutations ; avant la migration, une ligne « EN ATTENTE ».
+--  14. La prévision de trésorerie publiée (bloc PP, après celui des situations ; migration `previsions_publiees`, C8-Q2,
+--      préparée) : le client « Banque » ne lit que la prévision EN COURS de son dossier, ni celle qu'elle remplace ni sans
+--      la case ; il ne l'écrit pas en direct ; le catalogue. Deux mutations ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -802,6 +805,13 @@
 -- dossier seule), l'insertion de restauration du super-administrateur — et la case `memberships.droit_comptes`. Le bloc SP
 -- (SP1 à SP3, M-SP1, M-SP2) ; EN ATTENTE sans la migration ; la boucle des invariants y voit la table de plus. Ce qu'il
 -- rend : HISTORIQUE.md, « LES SITUATIONS PUBLIÉES, EN BASE (C4A) (PRÉPARÉE, PAS APPLIQUÉE) ».
+--
+-- 15/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (C8-Q2 : migration `previsions_publiees`, PRÉPARÉE, pas appliquée), qui
+-- crée `previsions_publiees` — la lecture du cabinet du dossier, celle d'un accès « Banque » (la prévision EN COURS de son
+-- dossier seule), l'insertion de restauration du super-administrateur. Le bloc PP (PP1 à PP3, M-PP1, M-PP2) ; la section P7
+-- la compte parmi les tables de la banque (3bis, 3bis+ sur ses prévisions en cours, 4bis, M3bis-b qui lui ôte aussi
+-- `prevision_publiee_en_cours`) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 15/11/2026 — C8-Q2 : LA
+-- PRÉVISION DE TRÉSORERIE PUBLIÉE AU CLIENT ».
 --
 -- 07/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (B1 : migration `trois_cases_de_l_acces`, PRÉPARÉE, pas appliquée, après
 -- P1-trace et C4a), qui pose trois cases de l'accès client — « Achats », « Notes de frais », « Documents » — qu'aucune
@@ -1575,12 +1585,16 @@ end $$;
 -- 3ter. Aucune suppression.
 --
 --   3bis   sans la case « Banque » — et AVEC la case « Ventes », qui n'ouvre rien ici —, le client ne voit aucune ligne ;
---   3bis+  avec la case « Banque », il voit TOUTES les lignes de ses dossiers, table par table (le contrôle positif) ;
+--   3bis+  avec la case « Banque », il voit TOUTES les lignes de ses dossiers, table par table (le contrôle positif) — de la
+--          prévision de trésorerie publiée (C8-Q2, dès sa migration), toutes celles EN COURS, la seule que sa policy ouvre
+--          (une publication qu'aucune ligne ne cite : ni un retrait, ni une version remplacée) ;
 --   4bis   avec la case, il n'écrit directement dans aucune des six (sept avec les comptes bancaires d'un dossier, MCB1, dès
---          leur migration) : l'insertion refusée en 42501, la mise à jour sans ligne touchée ;
+--          leur migration ; huit avec la prévision publiée, C8-Q2, dès la sienne) : l'insertion refusée en 42501, la mise à
+--          jour sans ligne touchée ;
 --   M3bis-a  le contrôle positif joué SANS la case : il doit tomber ;
 --   M3bis-b  le prédicat de chaque policy de la banque où « banque » devient « membre » (la mutation de la conception,
---            §3.7) : 3bis doit voir des lignes ;
+--            §3.7) : 3bis doit voir des lignes — celle de la prévision publiée perdant aussi `prevision_publiee_en_cours`,
+--            qui garde la case une seconde fois (le bit refermé de C4a) et suffirait à fermer la lecture ;
 --   M4bis  les écritures de 4bis tentées par le chef : elles doivent passer — sinon le refus de 4bis ne dirait rien du
 --          client, seulement de lignes que personne ne pourrait écrire.
 do $$
@@ -1593,8 +1607,15 @@ declare
   -- les lit tous (MCB-Q8), dès que la migration est en base — avant, la table n'existe pas et rien ne l'attend.
   banque_attendues text[] := array['controles_releves_bancaires', 'justificatifs_proposes', 'lignes_bancaires',
                                    'precisions_mouvements', 'reglements_groupes', 'ventilations_bancaires']
-    || case when to_regclass('public.comptes_bancaires') is not null then array['comptes_bancaires'] else '{}'::text[] end;
+    || case when to_regclass('public.comptes_bancaires') is not null then array['comptes_bancaires'] else '{}'::text[] end
+    -- La prévision de trésorerie publiée (C8-Q2 ; migration `previsions_publiees`, PRÉPARÉE) : le client « Banque » lit celle
+    -- EN COURS de son dossier, dès que la migration est en base.
+    || case when to_regclass('public.previsions_publiees') is not null then array['previsions_publiees'] else '{}'::text[] end;
   banque_lues text[];
+  -- Ce que « toutes les lignes de ses dossiers » compte d'une table de la banque : toutes, sauf pour la prévision publiée,
+  -- dont la policy n'ouvre que les publications EN COURS (`prevision_publiee_en_cours`).
+  en_cours_seules constant text := ' and x.geste = ''publication'' and not exists '
+    || '(select 1 from public.previsions_publiees r where r.remplace_id = x.id)';
   mvt_client uuid; mvt_client_2 uuid; mvt_autre uuid; piece_client uuid; piece_autre uuid;
   t record; p record; n bigint; ses bigint; hors bigint; touchees int; motif text;
   verdicts jsonb := '[]'::jsonb;  -- {controle, cible, observe, ok}
@@ -1645,6 +1666,16 @@ begin
       (dossier_du_client, mvt_client, piece_client, client, 'client'), (autre_dossier, mvt_autre, piece_autre, chef, 'cabinet');
     insert into precisions_mouvements (dossier_id, ligne_bancaire_id, auteur_id, origine, texte) values
       (dossier_du_client, mvt_client, client, 'client', 'essai rls banque'), (autre_dossier, mvt_autre, chef, 'cabinet', 'essai rls banque');
+    -- La prévision publiée (C8-Q2), dès sa migration : une publication EN COURS dans chaque dossier, posée par le
+    -- propriétaire sous le réglage de sa fonction (sa garde n'admet qu'elle et la restauration) ; son contenu n'importe pas ici.
+    if to_regclass('public.previsions_publiees') is not null then
+      for p in select d.id as dossier, gen_random_uuid() as ligne from unnest(array[dossier_du_client, autre_dossier]) as d(id) loop
+        perform set_config('jd.previsions_publiees', p.ligne::text, true);
+        execute format('insert into public.previsions_publiees (id, dossier_id, geste, contenu, auteur) values (%L, %L, %L, %L, %L)',
+          p.ligne, p.dossier, 'publication', '{"version": 1}', chef);
+      end loop;
+      perform set_config('jd.previsions_publiees', '', true);
+    end if;
 
     -- « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : les dossiers du
     -- client basculent, le jeu posé, par le propriétaire sans session, le temps de la sous-transaction.
@@ -1666,8 +1697,8 @@ begin
     -- ── 3bis+ : avec la case « Banque », toutes les lignes de ses dossiers ──
     update memberships set droit_banque = true where user_id = client;
     for t in select unnest(banque_lues) as nom loop
-      execute format('select count(*) from public.%I x where x.dossier_id in (select m.dossier_id from memberships m where m.user_id = %L)',
-        t.nom, client) into ses;
+      execute format('select count(*) from public.%I x where x.dossier_id in (select m.dossier_id from memberships m where m.user_id = %L)'
+        || case when t.nom = 'previsions_publiees' then en_cours_seules else '' end, t.nom, client) into ses;
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
       begin execute format('select count(*) from public.%I', t.nom) into n; exception when others then n := -1; end;
@@ -1689,6 +1720,11 @@ begin
     if to_regclass('public.comptes_bancaires') is not null then
       ecritures := ecritures || format('insert into comptes_bancaires (dossier_id, libelle, compte, compte_propre_depuis) values (%L, %L, %L, %L)',
         dossier_du_client, 'essai 4bis', '512901', '2026-01-01');
+    end if;
+    -- La prévision publiée (C8-Q2), dès sa migration : une publication insérée en direct.
+    if to_regclass('public.previsions_publiees') is not null then
+      ecritures := ecritures || format('insert into previsions_publiees (dossier_id, geste, contenu, auteur) values (%L, %L, %L, %L)',
+        dossier_du_client, 'publication', '{"version": 1}', client);
     end if;
     for t in select e as sql, split_part(split_part(e, 'insert into ', 2), ' ', 1) as nom from unnest(ecritures) e loop
       motif := null;
@@ -1721,8 +1757,8 @@ begin
     update memberships set droit_banque = false where user_id = client;
     en_faute := 0;
     for t in select unnest(banque_lues) as nom loop
-      execute format('select count(*) from public.%I x where x.dossier_id in (select m.dossier_id from memberships m where m.user_id = %L)',
-        t.nom, client) into ses;
+      execute format('select count(*) from public.%I x where x.dossier_id in (select m.dossier_id from memberships m where m.user_id = %L)'
+        || case when t.nom = 'previsions_publiees' then en_cours_seules else '' end, t.nom, client) into ses;
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
       begin execute format('select count(*) from public.%I', t.nom) into n; exception when others then n := -1; end;
@@ -1737,8 +1773,8 @@ begin
               where p2.schemaname = 'public' and p2.tablename = any (banque_lues) and p2.cmd in ('SELECT', 'ALL')
                 and (p2.qual like '%client_du_dossier(dossier_id, ''banque''%' or p2.qual like '%gere_la_banque(dossier_id)%') loop
       execute format('alter policy %I on public.%I using (%s)', p.policyname, p.tablename,
-        replace(replace(p.qual, '''banque''', '''membre'''), 'gere_la_banque(dossier_id)',
-                '(admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, ''membre''))'));
+        replace(replace(replace(p.qual, ' AND prevision_publiee_en_cours(id)', ''), '''banque''', '''membre'''),
+                'gere_la_banque(dossier_id)', '(admin_du_dossier(dossier_id) or client_du_dossier(dossier_id, ''membre''))'));
     end loop;
     en_faute := 0;
     for t in select unnest(banque_lues) as nom loop
@@ -6384,6 +6420,151 @@ begin
                        and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 3
       and (select c.relrowsecurity from pg_class c where c.oid = 'public.situations_publiees'::regclass));
   verdicts := verdicts || jsonb_build_object('controle', 'SP. le jeu d''essai des situations s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $$;
+
+-- ══ PP. La prévision de trésorerie publiée (espace client, C8-Q2 ; migration `previsions_publiees`, PRÉPARÉE) ═══════════
+-- Une table que le client LIT sous sa case « Banque » — la prévision EN COURS de son dossier, rien d'autre —, que le cabinet
+-- du dossier lit entière, et que personne n'écrit en direct : ses deux fonctions, ou la restauration. La section P7 la
+-- compte parmi les tables de la banque (3bis, 3bis+, 4bis, M3bis) ; ce bloc juge ce qui lui est propre.
+--   PP1. Une prévision publiée puis remplacée dans le dossier du client : le client « Banque » ne lit que la remplaçante (le
+--        contrôle POSITIF), jamais celle qu'elle remplace ; la case décochée, il n'en lit rien ; l'anonyme non plus.
+--   PP2. Le client ne l'écrit pas en direct (42501, la garde, sous ses mots).
+--   PP3. Le catalogue : la RLS active, trois policies à authenticated seul, hors la restrictive `deux_facteurs` (C7).
+-- Deux mutations, qui doivent mordre : M-PP1 (la lecture du client sans `prevision_publiee_en_cours` : il lit aussi la
+-- prévision remplacée), M-PP2 (la lecture du client fermée : la case cochée, il ne lit plus). Avant la migration, une ligne
+-- dit que le bloc attend.
+do $$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  premiere uuid := gen_random_uuid(); remplacante uuid := gen_random_uuid();
+  acces uuid; avec_case text; sans_case bigint; de_l_anon text; ecrite text; elargie bigint; fermee bigint;
+  n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.previsions_publiees') is null then
+    insert into rls_verdict values ('PP. la prévision de trésorerie publiée : EN ATTENTE de la migration previsions_publiees',
+      'previsions_publiees', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : une prévision publiée, puis remplacée, posées par le propriétaire sous le réglage de sa fonction (sa garde
+    -- n'admet qu'elle et la restauration) ; la case « Banque » cochée sur l'accès du client ──
+    perform set_config('request.jwt.claims', '', true);
+    select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
+    perform set_config('jd.previsions_publiees', premiere::text, true);
+    execute format('insert into public.previsions_publiees (id, dossier_id, geste, contenu, auteur) values (%L, %L, %L, %L, %L)',
+      premiere, dossier_du_client, 'publication', '{"version": 1}', chef);
+    perform set_config('jd.previsions_publiees', remplacante::text, true);
+    execute format('insert into public.previsions_publiees (id, dossier_id, geste, contenu, remplace_id, auteur) values (%L, %L, %L, %L, %L, %L)',
+      remplacante, dossier_du_client, 'publication', '{"version": 1}', premiere, chef);
+    perform set_config('jd.previsions_publiees', '', true);
+    update memberships set droit_banque = true where id = acces;
+    construit := true;
+
+    -- PP1 : le client avec la case (la remplaçante seule), sans elle ; l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*)::text || ' ' || coalesce(bool_and(s.id = remplacante)::text, '?') into avec_case
+      from previsions_publiees s where s.dossier_id = dossier_du_client;
+    reset role;
+    update memberships set droit_banque = false where id = acces;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into sans_case from previsions_publiees where dossier_id = dossier_du_client;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from previsions_publiees;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'PP1. le client « Banque » ne lit que la prévision en cours de son dossier (le contrôle positif), jamais celle qu''elle remplace ; sans la case, rien ; l''anonyme rien',
+      'cible', 'previsions_publiees',
+      'observe', 'avec la case : ' || coalesce(avec_case, '?') || ' | sans : ' || sans_case || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', avec_case = '1 true' and sans_case = 0 and de_l_anon = '0');
+
+    -- PP2 : le client n'écrit pas en direct, même « Banque ».
+    update memberships set droit_banque = true where id = acces;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into previsions_publiees (dossier_id, geste, contenu, auteur) values (dossier_du_client, 'publication', '{"version": 1}', client);
+      ecrite := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if ecrite is null then ecrite := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'PP2. le client n''écrit pas de prévision en direct (42501, la garde)',
+      'cible', 'previsions_publiees', 'observe', coalesce(ecrite, '?'),
+      'ok', ecrite = '42501 Une prévision ne s''écrit que par sa publication ou son retrait.');
+
+    -- M-PP1 : la lecture du client sans la fonction de la prévision en cours — il lit aussi celle qu'une autre remplace.
+    begin
+      alter policy previsions_publiees_lecture_banque on public.previsions_publiees
+        using (client_du_dossier(dossier_id, 'banque') and geste = 'publication');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from previsions_publiees where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PP1 — la lecture des prévisions sans la prévision en cours',
+      'attendu', 'le client lit la prévision remplacée', 'observe', coalesce(elargie::text, '?') || ' lue(s)', 'mord', coalesce(elargie >= 2, false));
+
+    -- M-PP2 : la lecture du client fermée — la case cochée, il ne lit plus.
+    begin
+      alter policy previsions_publiees_lecture_banque on public.previsions_publiees using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from previsions_publiees where dossier_id = dossier_du_client;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PP2 — la lecture des prévisions du client fermée',
+      'attendu', 'le client « Banque » ne lit plus la prévision', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- PP3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'previsions_publiees' and p.roles = array['authenticated']::name[]
+     and ((p.policyname = 'previsions_publiees_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'previsions_publiees_lecture_banque' and p.cmd = 'SELECT' and p.with_check is null
+           and p.qual = '(client_du_dossier(dossier_id, ''banque''::text) AND (geste = ''publication''::text) AND prevision_publiee_en_cours(id))')
+       or (p.policyname = 'previsions_publiees_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'PP3. la RLS active ; trois policies à authenticated seul : la lecture du cabinet, celle d''un accès « Banque », l''insertion du super-administrateur (lecture du catalogue)',
+    'cible', 'previsions_publiees',
+    'observe', n || ' sur 3, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'previsions_publiees'
+                                     and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.previsions_publiees'::regclass),
+    'ok', n = 3 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'previsions_publiees'
+                       and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 3
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.previsions_publiees'::regclass));
+  verdicts := verdicts || jsonb_build_object('controle', 'PP. le jeu d''essai de la prévision publiée s''est construit', 'cible', 'le dossier du client',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null);
 
