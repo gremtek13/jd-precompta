@@ -46,7 +46,12 @@
 -- puis le lien relu. Un encaissement, une citation et ce règlement se suivent, et le dernier voit les autres : la citation
 -- verrouille la pièce (FOR UPDATE) avant de poser son lien, donc tant que ce règlement tient la pièce, le lien n'existe pas
 -- encore et la garde ne demande pas la facture ; deux règlements de la même pièce se suivent sur la facture. Aucun
--- ordre inverse : la garde ne tient jamais la facture avant la pièce.
+-- ordre inverse : la garde ne tient jamais la facture avant la pièce. Éprouvé par cinq courses à deux sessions sur une copie
+-- de la réplique (HISTORIQUE.md) : sans le verrou de la facture, ou sans celui de la pièce, la vente compte deux fois.
+--
+-- LE RELEVÉ. La garde ne juge que ce qui monte : un double compte venu d'avant elle passerait inaperçu. La garde de tête
+-- refuse donc de s'appliquer tant qu'une pièce citée compte déjà, avec le registre de sa facture, la même vente deux fois
+-- (relevé de zéro ligne fautive, comme CFCS-Q1) : un tel état se relève et se corrige d'abord.
 --
 -- CE QUE LE CLIENT EN LIT. Le client « Caisse » règle une pièce par la caisse (`regler_piece_par_la_caisse`,
 -- `remplacer_paiement_par_la_caisse`) : les deux refus ne portent ni nom de fichier, ni montant, ni numéro de facture, et
