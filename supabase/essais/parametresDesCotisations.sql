@@ -19,7 +19,13 @@
 --   - la migration `cumul_et_dispense_du_medecin` (RET-Q2, en production depuis le 15/11/2026) en base, les deux cases d'un médecin : écrites et
 --     relues sous la forme à cinq clés, comparées aux valeurs lues, refusées en texte ou sous deux formes mêlées, laissées
 --     telles quelles par la forme à trois clés d'hier, gelées avec 2025, fermées au client (étapes 8a à 8h ; sans elle, une
---     ligne dit qu'elles attendent).
+--     ligne dit qu'elles attendent) ;
+--   - la migration préparée `exoneration_en_zone_prioritaire` (RET2-Q2) en base, l'exonération de 2025 d'un médecin en cumul
+--     exerçant en zone d'intervention prioritaire, dans un second dossier jetable : écrite et relue sous la forme à six
+--     clés avec le cumul, comparée aux valeurs lues, refusée en texte ou sous deux formes mêlées, laissée telle quelle par la
+--     forme à cinq clés, refusée pour un autre exercice que 2025 et sans le cumul — par la fonction, à ses mots, et en direct,
+--     par ses deux contraintes —, retirée avec le cumul d'un même geste, gelée avec 2025, fermée au client (étapes 9a à 9p ;
+--     sans elle, une ligne dit qu'elle attend).
 -- Un retrait direct des paramètres d'un exercice validé suit la même branche du gel ; il ne se joue pas ici (aucune
 -- suppression dans un essai de la production) : l'écran n'en fait aucun, une valeur s'efface par null.
 -- Tout se joue dans un dossier jetable, et tout s'annule à la fin. Sans la migration, une ligne le dit, et rien ne s'écrit.
@@ -37,6 +43,10 @@ declare
   -- Les deux cases d'un médecin (RET-Q2, migration `cumul_et_dispense_du_medecin`, en production depuis le 15/11/2026) : les étapes 8a à 8h.
   cases_en_base constant boolean := exists (select 1 from pg_attribute a where a.attrelid = to_regclass('public.parametres_des_cotisations')
     and a.attname = 'cumul_emploi_retraite' and not a.attisdropped);
+  -- L'exonération de 2025 en zone d'intervention prioritaire (RET2-Q2, migration préparée `exoneration_en_zone_prioritaire`) :
+  -- les étapes 9a à 9p.
+  exoneration_en_base constant boolean := exists (select 1 from pg_attribute a where a.attrelid = to_regclass('public.parametres_des_cotisations')
+    and a.attname = 'exoneration_zone_prioritaire' and not a.attisdropped);
 begin
   if to_regclass('public.parametres_des_cotisations') is null then
     perform set_config('essai.parametresDesCotisations', jsonb_build_array(jsonb_build_object('rang', 1,
@@ -47,7 +57,8 @@ begin
 
   begin
     insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais) values
-      ('c0715000-0000-4000-8107-000000000001', 'ESSAI PARAMETRES DES COTISATIONS', cabinet, 'tresorerie', '455000');
+      ('c0715000-0000-4000-8107-000000000001', 'ESSAI PARAMETRES DES COTISATIONS', cabinet, 'tresorerie', '455000'),
+      ('c0715000-0000-4000-8107-000000000002', 'ESSAI PARAMETRES DES COTISATIONS (EXONERATION)', cabinet, 'tresorerie', '455000');
 
     for e in select * from (values
       (1, 'proprietaire', '1. le catalogue du début d''activité : cinq colonnes, la date seule nulle', $q$select string_agg(a.attname || ':'
@@ -58,10 +69,11 @@ begin
   || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull, ',' order by a.attnum)
   from pg_attribute a where a.attrelid = 'public.parametres_des_cotisations'::regclass and a.attnum > 0 and not a.attisdropped$q$,
         'OK', 'id:uuid:true,dossier_id:uuid:true,annee:integer:true,acre:boolean:false,taux_dentiste:numeric:false,created_at:timestamp with time zone:true,updated_at:timestamp with time zone:true'
-          || case when cases_en_base then ',cumul_emploi_retraite:boolean:false,dispense_complementaire:boolean:false' else '' end),
+          || case when cases_en_base then ',cumul_emploi_retraite:boolean:false,dispense_complementaire:boolean:false' else '' end
+          || case when exoneration_en_base then ',exoneration_zone_prioritaire:boolean:false' else '' end),
       (3, 'proprietaire', '1c. … leurs contraintes, au texte près (les clés, le dossier en cascade, trois CHECK, deux unicités TOTALES)', $q$select count(*) || ' ' || md5(string_agg(c.conrelid::regclass::text || ' ' || c.conname || ' ' || pg_get_constraintdef(c.oid), ' ; ' order by c.conrelid::regclass::text collate "C", c.conname collate "C"))
   from pg_constraint c where c.conrelid in ('public.debuts_d_activite'::regclass, 'public.parametres_des_cotisations'::regclass)$q$,
-        'OK', '9 3f6aaebe26f1e3ee69417f31ec4e4783'),
+        'OK', case when exoneration_en_base then '11 d3b781f0a01cb035cff12d3c3e9c76f0' else '9 3f6aaebe26f1e3ee69417f31ec4e4783' end),
       (4, 'proprietaire', '1d. … la RLS active et une seule policy chacune, le cabinet du dossier, à authenticated', $q$select string_agg(c.relname || ':' || c.relrowsecurity, ',' order by c.relname) || ' ' || (select string_agg(p.tablename || '.' || p.policyname || ':' || p.cmd || ':'
   || p.roles::text || ':' || coalesce(p.qual, '-') || ':' || coalesce(p.with_check, '-'), ' ; ' order by p.tablename, p.policyname)
   from pg_policies p where p.schemaname = 'public' and p.tablename in ('debuts_d_activite', 'parametres_des_cotisations') and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE'))
@@ -176,8 +188,62 @@ begin
       (44, 'chef', '8g. l''exercice 2025, validé, ne reçoit pas de case (23514)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2025,
   '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null}', '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null}')$q$, '23514', ''),
       (45, 'client', '8h. le client d''essai n''écrit pas les cases (42501)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2026,
-  '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true}', '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": true}')$q$, '42501', '')
-    ) as t(rang, profil, etape, requete, code, attendu) where t.rang <= 36 or cases_en_base order by rang loop
+  '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true}', '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": true}')$q$, '42501', ''),
+      -- L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE (RET2-Q2, migration préparée `exoneration_en_zone_prioritaire`),
+      -- dans le second dossier jetable : sans elle, une ligne dit qu'elle attend.
+      (46, 'chef', '9a. sous la forme à six clés, le cumul et l''exonération de 2025 s''écrivent d''un même geste', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null, "exoneration_zone_prioritaire": null}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null, "exoneration_zone_prioritaire": true}')$q$,
+        'OK', '1'),
+      (47, 'chef', '9b. … relus', $q$select (select coalesce(cumul_emploi_retraite::text, '-') || ':' || coalesce(dispense_complementaire::text, '-') || ':' || coalesce(exoneration_zone_prioritaire::text, '-')
+  from parametres_des_cotisations where dossier_id = 'c0715000-0000-4000-8107-000000000002' and annee = 2025)$q$,
+        'OK', 'true:-:true'),
+      (48, 'chef', '9c. une exonération lue fausse refuse le tout (40001)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null, "exoneration_zone_prioritaire": null}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null, "exoneration_zone_prioritaire": false}')$q$,
+        '40001', 'Les paramètres des cotisations de l''exercice 2025 ont changé%'),
+      (49, 'chef', '9d. l''exonération en texte se refuse (22023)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null, "exoneration_zone_prioritaire": true}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null, "exoneration_zone_prioritaire": "oui"}')$q$,
+        '22023', 'Les paramètres des cotisations partent mal formés%'),
+      (50, 'chef', '9e. les valeurs lues à cinq clés et les saisies à six se refusent (22023)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null, "exoneration_zone_prioritaire": true}')$q$,
+        '22023', 'Les paramètres des cotisations partent mal formés%'),
+      (51, 'chef', '9f. la forme à cinq clés n''écrit pas l''exonération : la dispense de 2025 change, l''exonération reste', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": true}')$q$,
+        'OK', '1'),
+      (52, 'chef', '9f2. … relus : la dispense changée, l''exonération telle quelle', $q$select (select coalesce(cumul_emploi_retraite::text, '-') || ':' || coalesce(dispense_complementaire::text, '-') || ':' || coalesce(exoneration_zone_prioritaire::text, '-')
+  from parametres_des_cotisations where dossier_id = 'c0715000-0000-4000-8107-000000000002' and annee = 2025)$q$,
+        'OK', 'true:true:true'),
+      (53, 'chef', '9g. l''exonération ne se dit que pour les revenus de 2025 : l''exercice 2026 se refuse, à ses mots (23514)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2026,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null, "exoneration_zone_prioritaire": null}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null, "exoneration_zone_prioritaire": false}')$q$,
+        '23514', 'L''exonération des cotisations de retraite d''un médecin en cumul exerçant en zone d''intervention prioritaire ne vaut que pour les revenus de 2025 : elle ne se dit pas pour l''exercice 2026.'),
+      (54, 'chef', '9h. … ni en direct (sa contrainte)', $q$insert into parametres_des_cotisations (dossier_id, annee, cumul_emploi_retraite, exoneration_zone_prioritaire)
+  values ('c0715000-0000-4000-8107-000000000002', 2026, true, false)$q$,
+        '23514', '%parametres_des_cotisations_exoneration_de_2025%'),
+      (55, 'chef', '9i. l''exonération sans le cumul se refuse, à ses mots (23514) : la forme à six clés qui retire le cumul', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": true, "exoneration_zone_prioritaire": true}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true, "exoneration_zone_prioritaire": true}')$q$,
+        '23514', 'L''exonération de 2025 en zone d''intervention prioritaire ne vaut qu''en cumul emploi-retraite intégral : dis d''abord le cumul, ou retire l''exonération.'),
+      (56, 'chef', '9j. … la forme à cinq clés qui retire le cumul aussi : l''exonération qu''elle garde le demande', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": true}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": true}')$q$,
+        '23514', 'L''exonération de 2025 en zone d''intervention prioritaire ne vaut qu''en cumul emploi-retraite intégral : dis d''abord le cumul, ou retire l''exonération.'),
+      (57, 'chef', '9k. … et en direct, sa contrainte', $q$update parametres_des_cotisations set cumul_emploi_retraite = false
+  where dossier_id = 'c0715000-0000-4000-8107-000000000002' and annee = 2025$q$,
+        '23514', '%parametres_des_cotisations_exoneration_en_cumul%'),
+      (58, 'chef', '9l. retirer le cumul et l''exonération d''un même geste passe', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": true, "exoneration_zone_prioritaire": true}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true, "exoneration_zone_prioritaire": null}')$q$,
+        'OK', '1'),
+      (59, 'chef', '9m. … relus', $q$select (select coalesce(cumul_emploi_retraite::text, '-') || ':' || coalesce(dispense_complementaire::text, '-') || ':' || coalesce(exoneration_zone_prioritaire::text, '-')
+  from parametres_des_cotisations where dossier_id = 'c0715000-0000-4000-8107-000000000002' and annee = 2025)$q$,
+        'OK', 'false:true:-'),
+      (60, 'chef', '9n. ce qui ne change pas ne s''écrit pas (six clés)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true, "exoneration_zone_prioritaire": null}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true, "exoneration_zone_prioritaire": null}')$q$,
+        'OK', '0'),
+      (61, 'client', '9o. le client d''essai n''écrit pas l''exonération (42501)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
+  '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true, "exoneration_zone_prioritaire": null}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": true, "exoneration_zone_prioritaire": true}')$q$,
+        '42501', ''),
+      (62, 'chef', '9p. l''exercice 2025, validé, du premier dossier ne reçoit pas l''exonération (23514)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2025,
+  '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null, "exoneration_zone_prioritaire": null}', '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null, "exoneration_zone_prioritaire": true}')$q$,
+        '23514', 'L''exercice 2025 est validé : ses paramètres des cotisations ne changent plus.')
+    ) as t(rang, profil, etape, requete, code, attendu)
+     where (t.rang <= 36 or cases_en_base) and (t.rang <= 45 or exoneration_en_base) order by rang loop
       v_obs := null;
       v_code := 'OK';
       v_msg := '';
@@ -214,6 +280,10 @@ begin
   if not cases_en_base then
     verdicts := verdicts || jsonb_build_object('rang', 37, 'etape', '8. EN ATTENTE de la migration cumul_et_dispense_du_medecin (RET-Q2) : les étapes 8a à 8h',
       'ok', true, 'observe', 'les deux cases absentes : rien ne s''écrit');
+  end if;
+  if not exoneration_en_base then
+    verdicts := verdicts || jsonb_build_object('rang', 46, 'etape', '9. EN ATTENTE de la migration exoneration_en_zone_prioritaire (RET2-Q2) : les étapes 9a à 9p',
+      'ok', true, 'observe', 'l''exonération absente : rien ne s''écrit');
   end if;
   perform set_config('essai.parametresDesCotisations', verdicts::text, true);
 end
