@@ -36,6 +36,7 @@ import NotesDeFraisDuClient from './dossier/NotesDeFraisDuClient'
 import DocumentsMisADisposition from './dossier/DocumentsMisADisposition'
 import DemandesAuClient from './dossier/DemandesAuClient'
 import SituationsPubliees from './dossier/SituationsPubliees'
+import PrevisionsPubliees from './dossier/PrevisionsPubliees'
 import ClientEcheancier from './ClientEcheancier'
 import ClientAnalyse from './ClientAnalyse'
 import ClientTresorerie from './ClientTresorerie'
@@ -313,6 +314,13 @@ const ECRANS: Ecran[] = [
       dossierId="d1" arreteeAu="2025-06-30" assujettiTva={false}
       calculer={(debut, fin) => ({ periodeDebut: debut, periodeFin: fin, totauxParPoste: [], ventesFactureesEcartees: [],
         fraisSansPoste: [], recettesDeCaisseSansPoste: [] })}
+    />
+  ) },
+  // Publier la prévision de trésorerie (C8-Q2), sous le plan de trésorerie : les prévisions du dossier, lues en entier.
+  { nom: 'PrevisionsPubliees', fichier: 'pages/dossier/PrevisionsPubliees.tsx', rendre: () => (
+    <PrevisionsPubliees
+      dossierId="d1" moisAffiches={[]} lectureDuPlan={null}
+      entree={{ lignesBanque: [], ouverture: null, lignesDuRythme: [], nbMoisHistorique: 6, nbMoisProjection: 6, avecEspeces: false }}
     />
   ) },
   // « Mes documents » et « Mes demandes » (ligne 51.5, étape B3a) : la case « Documents » relue à la base avec les documents ;

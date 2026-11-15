@@ -52888,3 +52888,20 @@ sur 7 (dont le super-administrateur exempté, le verrou ôté, la fonction en de
 base ; leurs essais, `rls.sql` (246/0/145) et validationExercice identiques avec et sans elle ; le retour rend la mère, et la
 migration se réapplique ; banc SÛR (six essais) ; une batterie (`ficheDesComptesBancaires.test.ts`) éprouve que l'écran et le
 filet refusent les mêmes saisies. `COMPTES_BANCAIRES_PREVUS` ne se lève qu'avec elle dans l'export.
+
+### 15/11/2026 — C8-Q2 : LA PRÉVISION DE TRÉSORERIE PUBLIÉE AU CLIENT « BANQUE » (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, sur la réponse « (C) Maintenant » du cabinet ; rien en production.) **Ce que le plan calcule** (onglet Financement) : la
+moyenne mensuelle des écritures du compte de banque — sans déblocages, biens immobilisés, bilan ni remboursement de TVA, avec les recettes de
+la caisse — sur 1 à 24 mois complets, projetée du mois qui suit depuis le solde des écritures du jour ; la fin du mois en cours n'y est pas
+comptée (C8Q2-Q3), et ce solde n'est pas celui du relevé. **La migration** `previsions_publiees` (20261115100000, `eeefd0b3…`, par l'outil ;
+retour 100100, `902c6743…`, à coller) : une ligne par geste, figée ; un contenu de VALEURS que `refus_de_la_prevision` vérifie (le jour de
+Paris, le départ et sa date, le rythme, des mois qui s'enchaînent, les espèces) — ni libellé, ni tiers, ni emprunt, ni échéance ;
+`publier_prevision` et `retirer_prevision` au cabinet seul ; le client « Banque » ne lit que la prévision en cours (`prevision_publiee_en_cours`,
+fausse hors du cabinet et de cet accès) ; une garde security invoker, donc pas de porte ; la restrictive `deux_facteurs` sous condition ;
+aucune fonction d'hier réécrite. **Les écrans**, derrière `PREVISIONS_PUBLIEES_PREVUES` baissé : « Publier au client » sous le plan, au jour de
+Paris (`calculerPlanTresorerieAu`) ; dans « Ma trésorerie », une carte à part sous le mot « prévision », après ce qui n'est pas compté, jamais
+ajoutée au solde attendu ni au point bas ; la phrase de « Banque » dans l'onglet Accès ; la table au plan de sauvegarde. **Réplique** (mère 17
+et les huit du matin, 226) : essai 48/48, EN ATTENTE sans ; 12 mutations sur 12 ; `rls.sql` 250/0 et 147 sur 147 (247/0, 145 sans), la table
+dans la section P7 de la banque ; trois ordres avec B1 et la double authentification, une même signature ; le retour rend la signature
+d'avant ; restauration IDENTIQUE (la chaîne en trois vagues) ; banc du leurre SÛR. Questions : C8Q2-migration, C8Q2-Q1 à Q4.
