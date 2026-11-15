@@ -53001,3 +53001,21 @@ production à 228 : colonnes 1199, contraintes 934, déclencheurs 174, droits_fo
 367, index 318, policies 203, rls 105. Question au cabinet (ESSAIS-Q1) : créer ce membre d'essai en production, ou le
 faire créer par chaque essai dans sa transaction annulée. Réponse du cabinet relevée le même jour : PC4Q2Q1-Q2, (B) ne
 rien changer.
+
+### 15/11/2026 — LA RELECTURE ADVERSE DE CINQ MIGRATIONS PRÉPARÉES (A8Q5Q3Q2-Q2, RET2-Q2, C8-Q2, MCB6Q2-Q1, INV3)
+
+(Agent architecte ; rien en production ; une copie de la réplique à 227, portée à 228 par P1T-Q2.) Chaque règle éprouvée par
+un geste réel, profil par profil, en écriture directe comme par ses fonctions, deux courses à deux sessions, les retours.
+**Un défaut corrigé** (`reglements_de_la_piece_citee`, `3f2e1093…` → `d02d3d44…` ; retour `ca1b273e…` → `c48bc859…`) : la garde
+ne jugeait que la pièce que la ligne cite après le geste. Ce qu'une pièce a reçu monte aussi quand une ligne qui le DÉFAISAIT
+cesse de le défaire — un rejet rapproché d'elle dont le rapprochement s'annule (le geste de l'onglet Banque), qui s'ignore, se
+supprime ou passe à une autre pièce ; une part négative qui monte, part ou cesse de compter : la vente comptait deux fois, sans
+refus. Deux déclencheurs de l'image d'avant (`…_depart_…`, la mise à jour et la suppression), la garde juge la pièce quittée ;
+l'essai, huit étapes de plus (17 à 18c), en faute sur l'ancien texte ; quatre mutations sur cinq mordent, la cinquième (la part
+d'un mouvement supprimé) éprouvée hors de l'essai, qui ne supprime rien. Dossier supprimé, retour, seconde application, charge
+(2 000 rapprochements annulés : quelques millisecondes) ; `rls.sql` 254/0, 148 sur 148 ; 105 essais du banc SÛRS, leurs
+verdicts égaux à ceux de la base hors de l'essai changé. **Relevé** : un interblocage entre ce geste et un encaissement qui
+cite le même mouvement, que PostgreSQL rompt (40P01, rien d'écrit) ; dit dans l'en-tête. Ce que le refus dit au client
+« Caisse » : A8Q5Q3Q2Q2-Q1. **Rien trouvé** : RET2-Q2, C8-Q2 (hors de la restauration, qui écrit telle quelle :
+C8Q2-Q5), MCB6Q2-Q1 (la course dans les deux ordres), INV3 (le corps de production à 228, seulement augmenté ; ses essais
+justes).
