@@ -2000,8 +2000,8 @@ describe('ce que dit « Banque » de la prévision de trésorerie publiée (C8-Q
       expect(MIGRATION_PP).toContain(`create policy previsions_publiees_lecture_banque on public.${t}`)
     }
     // Aucun geste au client : les deux fonctions au cabinet du dossier, la restauration au super-administrateur.
-    expect(MIGRATION_PP.match(/create policy previsions_publiees_\w+ on public\.previsions_publiees\s+for (\w+)/g)?.length).toBe(3)
-    expect(MIGRATION_PP).not.toMatch(/create policy previsions_publiees_\w+ on public\.previsions_publiees\s+for (update|delete|all)/)
+    expect(MIGRATION_PP.match(/create policy previsions_publiees_\w+ on public\.previsions_publiees\s+for (\w+)/gi)?.length).toBe(3)
+    expect(MIGRATION_PP).not.toMatch(/create policy previsions_publiees_\w+ on public\.previsions_publiees\s+for (update|delete|all)/i)
   })
 })
 
