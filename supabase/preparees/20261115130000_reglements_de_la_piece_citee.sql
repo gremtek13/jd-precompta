@@ -107,6 +107,30 @@ begin
                 and t.tgname like '%recu_d_une_piece_citee') then
     raise exception 'A8Q5Q3Q2-Q2 : un déclencheur de ce nom existe déjà sur une table des paiements.';
   end if;
+  -- Aucune pièce citée n'est déjà dans l'état que la garde refuse (le relevé de zéro ligne fautive, comme CFCS-Q1) : la
+  -- garde ne juge que ce qui monte, et un tel état, venu d'avant elle, se relève et se corrige d'abord.
+  if exists (
+       select 1
+         from public.pieces_des_factures_reprises r
+         cross join lateral (
+           select public.recu_par_la_piece(r.piece_id) as recu,
+                  (select coalesce(sum(fi.encaisse_avant_reprise), 0) from public.factures_importees fi
+                    where fi.facture_id = r.facture_id) as avant,
+                  (select coalesce(sum(e.montant), 0) from public.encaissements_factures e
+                    where e.facture_id = r.facture_id and e.retire_le is null) as deja,
+                  (select (f.montant_ttc * 100)::bigint
+                          - coalesce((select sum(m.ttc_centimes) from public.factures_emises a
+                                       cross join lateral public.montants_par_taux_facture(a.id) m
+                                       where a.facture_origine_id = r.facture_id and a.type = 'avoir' and a.statut = 'validee'), 0)::bigint
+                          - coalesce((select sum(-a.montant_ttc) * 100 from public.factures_importees ai
+                                       join public.factures_emises a on a.id = ai.facture_id
+                                       where ai.origine_id = r.facture_id and a.type = 'avoir' and a.statut = 'importee'), 0)::bigint
+                     from public.factures_emises f where f.id = r.facture_id) as net,
+                  (select count(*) from public.montants_par_taux_du_document(r.facture_id)) as taux) x
+        where r.retire_le is null and x.recu > x.avant * 100 and x.deja <> 0
+          and (x.taux > 1 or x.deja * 100 + x.recu > x.net)) then
+    raise exception 'A8Q5Q3Q2-Q2 : une pièce citée par une facture reprise compte déjà, avec le registre de sa facture, la même vente deux fois : la relever et la corriger avant d''appliquer cette migration.';
+  end if;
 end
 $garde$;
 
