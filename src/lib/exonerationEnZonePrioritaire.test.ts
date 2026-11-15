@@ -79,7 +79,7 @@ describe('RET2-Q2 — la migration, son retour et le module', () => {
     const rangCumul = apres.indexOf(REFUS_EXONERATION_SANS_LE_CUMUL)
     expect(apres[rangExercice - 1]).toBe('Le début d\'activité n\'est pas une date du calendrier.')
     expect(apres[rangCumul - 1]).toMatch(/^Les paramètres des cotisations de l'exercice % ont changé depuis leur lecture/)
-    expect(apres.filter((m, i) => i !== rangExercice && i !== rangCumul)).toEqual(avant)
+    expect(apres.filter((_m, i) => i !== rangExercice && i !== rangCumul)).toEqual(avant)
     expect(codesSql(neuve)[rangExercice]).toBe('23514')
     expect(codesSql(neuve)[rangCumul]).toBe('23514')
     expect(neuve.indexOf(REFUS_EXONERATION_HORS_DE_2025.replace(/'/g, "''"))).toBeLessThan(neuve.indexOf('perform pg_advisory_xact_lock('))

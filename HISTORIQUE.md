@@ -52906,3 +52906,36 @@ et les huit du matin, 226) : essai 48/48, EN ATTENTE sans ; 12 mutations sur 12 
 dans la section P7 de la banque ; trois ordres avec B1 et la double authentification, une même signature ; le retour rend la signature
 d'avant ; restauration IDENTIQUE (la chaîne en trois vagues) ; banc du leurre SÛR ; le contrôle 141 de `validationExercice.sql` compte sa
 garde (70 avec la table, 69 sans). Questions : C8Q2-migration, C8Q2-Q1 à Q4.
+
+### 15/11/2026 — A8Q5Q3Q2-Q2 : LA GARDE DES RÈGLEMENTS JUGE CE QUE LA PIÈCE CITÉE A REÇU (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production ; une copie de la réplique à 227.) Sur « Le refuser dans la garde » :
+`reglements_de_la_piece_citee` (20261115130000, additive, PAR L'OUTIL) pose `garder_recu_d_une_piece_citee`, la garde sœur
+de celle des règlements, et trois déclencheurs de contrainte DIFFÉRÉS sur `lignes_bancaires`, `reglements_groupes` et
+`operations_caisse` : un geste qui fait monter ce que la pièce citée a reçu (`recu_par_la_piece`), le registre de sa facture
+reprise ayant déjà des encaissements, se refuse comme la citation (son 4 bis) — plusieurs taux, ou registre et reçu au-delà
+de la facture nette de ses avoirs (23514, ni nom de fichier ni montant : le client « Caisse » y arrive). Ce qui fait baisser
+le reçu passe toujours. **Choix** : différée, non à l'écriture de chaque ligne — la correction d'un paiement en espèces écrit
+le nouveau avant de retirer l'ancien (39 € de passage pour 19 € justes), le virement groupé marque son mouvement avant ses
+parts ; la garde d'A8-Q5 n'est pas remplacée (sa date, ses mots, son rang). **Verrous** : la pièce puis la facture, jamais
+l'inverse ; cinq courses à deux sessions sans double compte ni interblocage ; sans le verrou de la facture (C1, C1b) ou de la
+pièce (C4), la vente compte deux fois. La garde de tête relève zéro pièce déjà fautive (refusée sur un état fautif posé sans
+elle). **Preuves** : `reglementsDeLaPieceCitee.sql` 28 justes, EN ATTENTE sans elle ; 13 mutations sur 15, les deux lectures
+du lien masquées l'une par l'autre, leur paire mord ; 144 essais identiques avant et après hors des attendus (quatre bruits
+de tirage, mesurés sur la base d'avant) ; `rls.sql` 253/0, 148 sur 148 ; le retour, à coller, rend la signature ; banc SÛR.
+
+### 15/11/2026 — RET2-Q2 : L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE, UNE CASE DE PLUS (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) Sur « (B) Une case de plus ». **Source relue** : loi n° 2025-199, art. 6 (Légifrance)
+— base, complémentaire et PCV (CSS, L. 642-1, L. 644-1, L. 645-2, L. 645-3) « dues sur les revenus perçus en 2025 », cumul
+intégral (L. 643-6), zone d'intervention prioritaire (CSP, L. 1434-4), pensions liquidées avant le 1er mars 2025 ; décret
+n° 2025-810 : 70 000 € ; guide du cumul de la CARMF, juin 2026, p. 5 : retraite au plus tard le 1er janvier 2025,
+régularisation en 2026 et 2027 ; 2025 seulement. `exoneration_en_zone_prioritaire` (20261115131000, PAR L'OUTIL) : la colonne
+`exoneration_zone_prioritaire`, deux contraintes (2025 seulement ; « oui » avec le cumul), `enregistrer_parametres_des_cotisations`
+à trois, cinq ou six clés, deux refus neufs (l'exercice avant le verrou ; le cumul après la lecture, sous toutes les formes).
+Derrière `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` baissé : la lecture (une ligne hors de 2025 ou sans cumul illisible), la
+saisie et ses refus avant le clic, la carte (2025, cumul « oui », remise à « non dite » quand le cumul cesse), l'estimation
+(`ExonerationEnZonePrioritaire`, obligatoire : non dite elle se tait ; dite, base, complémentaire et PCV à zéro, et dit). Le
+revenu n'est pas confronté au plafond (RET2Q2-Q1). **Preuves** : `parametresDesCotisations.sql` 62 justes, sans elle celui
+d'hier plus une ligne EN ATTENTE ; 11 mutations sur 11 ; avec A, les deux ordres ont une même signature, les retours rendent
+celle d'avant ; banc SÛR ; côté application 11 mutations sur 12 (la profession, gardée deux fois, est équivalente).
