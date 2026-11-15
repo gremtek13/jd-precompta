@@ -13,19 +13,14 @@ const COLONNES = 'id, dossier_id, geste, contenu, remplace_id, publiee_le'
 
 /** Une lecture dont une ligne n'est pas du dossier demandé ne se croit pas. */
 function duDossier<T extends { dossier_id: string }>(lecture: LectureComplete<T>, dossierId: string): LectureComplete<T> {
-  if (!lecture.complete || lecture.lignes.every((l) => l.dossier_id === dossierId)) return lecture
+  if (lecture.lignes.every((l) => l.dossier_id === dossierId)) return lecture
   return { lignes: [], complete: false, motif: lecture.motif ?? 'une ligne rendue n’est pas de ce dossier' }
-}
-
-function lireLesLignes(dossierId: string): Promise<LectureComplete<PrevisionPubliee>> {
-  return lireTout<PrevisionPubliee>((debut, fin) =>
-    supabase.from('previsions_publiees').select(COLONNES, { count: 'exact' })
-      .eq('dossier_id', dossierId).order('publiee_le').order('id').range(debut, fin))
 }
 
 // ── Côté cabinet ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // Toutes les lignes du dossier — publications et retraits (`previsions_publiees_lecture`, le cabinet du dossier) : la
-// prévision en cours s'en déduit, et une publication cite celle qu'elle remplace.
+// prévision en cours s'en déduit, et une publication cite celle qu'elle remplace. Lue en partie, elle se rend telle quelle,
+// son motif avec elle : l'écran n'offre alors aucun geste.
 export interface LectureDuCabinet {
   dossierId: string
   previsions: LectureComplete<PrevisionPubliee>
@@ -33,7 +28,10 @@ export interface LectureDuCabinet {
 
 export async function lireLesPrevisionsDuCabinet(dossierId: string): Promise<LectureDuCabinet> {
   try {
-    return { dossierId, previsions: duDossier(await lireLesLignes(dossierId), dossierId) }
+    const previsions = await lireTout<PrevisionPubliee>((debut, fin) =>
+      supabase.from('previsions_publiees').select(COLONNES, { count: 'exact' })
+        .eq('dossier_id', dossierId).order('publiee_le').order('id').range(debut, fin))
+    return { dossierId, previsions: previsions.complete ? duDossier(previsions, dossierId) : previsions }
   } catch (erreur) {
     return { dossierId, previsions: { lignes: [], complete: false, motif: messageErreur(erreur, 'lecture refusée') } }
   }
@@ -53,7 +51,9 @@ export async function lireLaPrevisionDuClient(dossierId: string): Promise<Lectur
   try {
     const [droits, previsions] = await Promise.all([
       supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId }),
-      lireLesLignes(dossierId),
+      lireTout<PrevisionPubliee>((debut, fin) =>
+        supabase.from('previsions_publiees').select(COLONNES, { count: 'exact' })
+          .eq('dossier_id', dossierId).order('publiee_le').order('id').range(debut, fin)),
     ])
     if (droits.error) return { dossierId, etat: 'echec', motif: `ton accès à ta banque n’a pas pu être vérifié (${messageErreur(droits.error, 'droits illisibles')})` }
     const data: unknown = droits.data
@@ -61,7 +61,7 @@ export async function lireLaPrevisionDuClient(dossierId: string): Promise<Lectur
       return { dossierId, etat: 'echec', motif: 'ton accès à ta banque n’a pas pu être vérifié (droits illisibles)' }
     }
     if ((data as Record<string, unknown>).banque !== true) return { dossierId, etat: 'sans_banque' }
-    return { dossierId, etat: 'lue', previsions: duDossier(previsions, dossierId) }
+    return { dossierId, etat: 'lue', previsions: previsions.complete ? duDossier(previsions, dossierId) : previsions }
   } catch (erreur) {
     return { dossierId, etat: 'echec', motif: messageErreur(erreur, 'la prévision de ton cabinet n’a pas pu être lue') }
   }
