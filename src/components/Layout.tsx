@@ -23,7 +23,7 @@ import { NOTES_DE_FRAIS_PREVUES } from '../lib/notesDeFrais'
 import { mesNotesDeFraisOuvertes } from '../lib/notesDeFraisVue'
 import {
   IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconChecklist, IconComptesMaster, IconDocuments, IconDossiers, IconEcheancier,
-  IconEcritures, IconEquipe, IconEstimation, IconFactures, IconFinancement, IconStatistiques,
+  IconEcritures, IconEquipe, IconEstimation, IconFactures, IconStatistiques, IconTresorerie,
   IconInformations, IconCadenas, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
   IconRecherche, IconSun, IconVirements,
 } from './icons'
@@ -422,7 +422,7 @@ function Coque() {
                   390 px ; la tuile de l'accueil y mène (ClientHome). Sur ordinateur, l'entrée reste dans la barre latérale. */}
               {maTresorerie && (
                 <NavLink to="/ma-tresorerie" title="Ma trésorerie" className={({ isActive }) => `nav-hors-barre-du-bas${isActive ? ' active' : ''}`}>
-                  <IconFinancement width={18} height={18} />
+                  <IconTresorerie width={18} height={18} />
                   <span className="nav-label-full">Ma trésorerie</span>
                   <span className="nav-label-court">Trésorerie</span>
                 </NavLink>

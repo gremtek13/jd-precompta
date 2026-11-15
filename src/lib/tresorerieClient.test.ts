@@ -508,6 +508,13 @@ describe('les échéances de l’échéancier', () => {
   })
 })
 
+describe('l’accord de la phrase des factures en retard', () => {
+  it('dit « son » au singulier et « leur » au pluriel', () => {
+    expect(module.nonCompteEnRetard(1)).toBe('Une facture en retard : son encaissement n’a plus de date sûre.')
+    expect(module.nonCompteEnRetard(2)).toBe('2 factures en retard : leur encaissement n’a plus de date sûre.')
+  })
+})
+
 describe('les mots', () => {
   it('tutoient et ne nomment aucun onglet', () => {
     const textes = Object.entries(module)

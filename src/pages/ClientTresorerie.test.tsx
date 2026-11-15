@@ -151,7 +151,7 @@ describe('« Ma trésorerie à 90 jours »', () => {
     expect(screen.getByRole('alert').textContent).toBe('Ton compte passerait à découvert le 5 décembre 2026 : parles-en à ton cabinet.')
     expect(screen.getByText(TRESORERIE_PREVISION)).toBeTruthy()
     // La facture en retard se dit à part, avec sa somme : jamais comptée.
-    expect(nonComptes()[0]).toBe(`Une facture en retard : leur encaissement n’a plus de date sûre. (${formatMoney(300)})`)
+    expect(nonComptes()[0]).toBe(`Une facture en retard : son encaissement n’a plus de date sûre. (${formatMoney(300)})`)
     expect(nonComptes()).toContain(NON_COMPTE_ACHATS)
     // Drapeau de B4 baissé : ni les achats ni leurs paiements ne se lisent, et la case « Achats » n'est pas même relue.
     expect(faux.demandes).not.toContain('pieces')
