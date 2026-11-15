@@ -48,11 +48,21 @@ describe('les lignes lues', () => {
   })
 
   it('les paramètres d’un exercice : le taux en nombre ou en texte, entre 0 et 1, au centième', () => {
-    expect(lireParametresDUnExercice({ annee: 2025, acre: false, taux_dentiste: 0.35 })).toEqual({ annee: 2025, acre: false, tauxDentiste: 0.35 })
-    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: '0.40' })).toEqual({ annee: 2025, acre: null, tauxDentiste: 0.4 })
-    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: 1.5 })).toBeNull()
-    expect(lireParametresDUnExercice({ annee: 2025, acre: 'oui', taux_dentiste: null })).toBeNull()
-    expect(lireParametresDUnExercice({ annee: '2025', acre: null, taux_dentiste: null })).toBeNull()
+    // Les deux cases d'un médecin en base (RET-Q2, `CASES_DU_MEDECIN_PREVUES` levé) : la ligne les porte, nulles tant que le
+    // cabinet ne les a pas dites.
+    const cases = { cumul_emploi_retraite: null, dispense_complementaire: null }
+    const medecin = { medecin: { cumulEmploiRetraite: null, dispenseComplementaire: null } }
+    expect(lireParametresDUnExercice({ annee: 2025, acre: false, taux_dentiste: 0.35, ...cases })).toEqual({ annee: 2025, acre: false, tauxDentiste: 0.35, ...medecin })
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: '0.40', ...cases })).toEqual({ annee: 2025, acre: null, tauxDentiste: 0.4, ...medecin })
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: 1.5, ...cases })).toBeNull()
+    expect(lireParametresDUnExercice({ annee: 2025, acre: 'oui', taux_dentiste: null, ...cases })).toBeNull()
+    expect(lireParametresDUnExercice({ annee: '2025', acre: null, taux_dentiste: null, ...cases })).toBeNull()
+    // L'état d'avant RET-Q2 (le drapeau baissé) : les trois colonnes d'hier.
+    expect(lireParametresDUnExercice({ annee: 2025, acre: false, taux_dentiste: 0.35 }, false)).toEqual({ annee: 2025, acre: false, tauxDentiste: 0.35 })
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: '0.40' }, false)).toEqual({ annee: 2025, acre: null, tauxDentiste: 0.4 })
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: 1.5 }, false)).toBeNull()
+    expect(lireParametresDUnExercice({ annee: 2025, acre: 'oui', taux_dentiste: null }, false)).toBeNull()
+    expect(lireParametresDUnExercice({ annee: '2025', acre: null, taux_dentiste: null }, false)).toBeNull()
   })
 })
 
@@ -72,16 +82,22 @@ describe('la saisie, et les refus de la base redits avant le clic', () => {
   })
 
   it('le taux se tape à la virgule ou au point ; l’ACRE en trois états', () => {
-    expect(valeursSaisies({ debutActivite: '', acre: 'oui', tauxDentiste: '0,35', cumul: '', dispense: '' }).valeurs).toEqual({ debut_activite: null, acre: true, taux_dentiste: 0.35 })
-    expect(valeursSaisies({ debutActivite: '', acre: 'non', tauxDentiste: '1', cumul: '', dispense: '' }).valeurs).toEqual({ debut_activite: null, acre: false, taux_dentiste: 1 })
+    const cases = { cumul_emploi_retraite: null, dispense_complementaire: null }
+    expect(valeursSaisies({ debutActivite: '', acre: 'oui', tauxDentiste: '0,35', cumul: '', dispense: '' }).valeurs).toEqual({ debut_activite: null, acre: true, taux_dentiste: 0.35, ...cases })
+    expect(valeursSaisies({ debutActivite: '', acre: 'non', tauxDentiste: '1', cumul: '', dispense: '' }).valeurs).toEqual({ debut_activite: null, acre: false, taux_dentiste: 1, ...cases })
+    // L'état d'avant RET-Q2 (le drapeau baissé) : les trois clés d'hier.
+    expect(valeursSaisies({ debutActivite: '', acre: 'oui', tauxDentiste: '0,35', cumul: '', dispense: '' }, false).valeurs).toEqual({ debut_activite: null, acre: true, taux_dentiste: 0.35 })
     for (const t of ['1,5', '-0,1', '0,355', '1e-1', 'abc']) {
       expect(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: t, cumul: '', dispense: '' }).refus, t).toMatch(/entre 0 et 1, au centième/)
     }
   })
 
   it('l’aller et retour de la saisie, et l’égalité qui retient l’enregistrement', () => {
-    const v = { debut_activite: '2025-07-01', acre: false, taux_dentiste: 0.35 }
+    const v = { debut_activite: '2025-07-01', acre: false, taux_dentiste: 0.35, cumul_emploi_retraite: true, dispense_complementaire: null }
     expect(valeursSaisies(saisieDe(v)).valeurs).toEqual(v)
+    // L'état d'avant RET-Q2 (le drapeau baissé) : les trois clés d'hier.
+    const hier = { debut_activite: '2025-07-01', acre: false, taux_dentiste: 0.35 }
+    expect(valeursSaisies(saisieDe(hier), false).valeurs).toEqual(hier)
     expect(memesValeurs(v, { ...v })).toBe(true)
     expect(memesValeurs(v, { ...v, acre: null })).toBe(false)
   })
@@ -97,21 +113,28 @@ describe('la saisie, et les refus de la base redits avant le clic', () => {
   })
 })
 
-// LES DEUX CASES D'UN MÉDECIN (RET-Q2, migration PRÉPARÉE `cumul_et_dispense_du_medecin`) : la forme à cinq clés, sous
-// `CASES_DU_MEDECIN_PREVUES` seulement, confrontée au texte de la migration.
+// LES DEUX CASES D'UN MÉDECIN (RET-Q2, migration `cumul_et_dispense_du_medecin`, en production depuis le 15/11/2026) : la
+// forme à cinq clés, sous `CASES_DU_MEDECIN_PREVUES` (levé) seulement, confrontée au texte de la migration ; la forme d'hier,
+// le drapeau baissé, jouée tant que son code existe.
 describe('les deux cases d’un médecin (RET-Q2)', () => {
-  const PREPAREE = readFileSync(new URL('../../supabase/preparees/20261113203000_cumul_et_dispense_du_medecin.sql', import.meta.url), 'utf8')
+  const PREPAREE = readFileSync(new URL('../../supabase/schema/20261115074806_cumul_et_dispense_du_medecin.sql', import.meta.url), 'utf8')
   const lecture = (cases?: { cumulEmploiRetraite: boolean | null; dispenseComplementaire: boolean | null }) => ({
     dossierId: 'd', etat: 'lus' as const, debutActivite: '2024-11-15',
     parExercice: new Map([[2025, { acre: false, tauxDentiste: null, ...(cases ? { medecin: cases } : {}) }]]),
   })
 
-  it('le drapeau est baissé : les valeurs d’hier, trois clés, par défaut', () => {
-    expect(CASES_DU_MEDECIN_PREVUES).toBe(false)
-    expect(Object.keys(valeursLues(lecture(), 2025)).sort()).toEqual(['acre', 'debut_activite', 'taux_dentiste'])
-    expect(Object.keys(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: '', cumul: 'oui', dispense: 'non' }).valeurs!).sort())
+  it('le drapeau est levé, la migration en base : par défaut, les cinq clés et la ligne lue avec ses deux cases', () => {
+    expect(CASES_DU_MEDECIN_PREVUES).toBe(true)
+    expect(Object.keys(valeursLues(lecture({ cumulEmploiRetraite: null, dispenseComplementaire: null }), 2025)).sort())
+      .toEqual(['acre', 'cumul_emploi_retraite', 'debut_activite', 'dispense_complementaire', 'taux_dentiste'])
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: null })).toBeNull()
+  })
+
+  it('baissé (l’état d’avant) : les valeurs d’hier, trois clés', () => {
+    expect(Object.keys(valeursLues(lecture(), 2025, false)).sort()).toEqual(['acre', 'debut_activite', 'taux_dentiste'])
+    expect(Object.keys(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: '', cumul: 'oui', dispense: 'non' }, false).valeurs!).sort())
       .toEqual(['acre', 'debut_activite', 'taux_dentiste'])
-    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: null })).toEqual({ annee: 2025, acre: null, tauxDentiste: null })
+    expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: null }, false)).toEqual({ annee: 2025, acre: null, tauxDentiste: null })
   })
 
   it('levé : cinq clés des deux côtés, celles que la fonction attend, dans l’ordre de son tableau', () => {

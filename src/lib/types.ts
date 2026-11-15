@@ -775,10 +775,10 @@ export interface ParametresDesCotisations {
   taux_dentiste: number | null
   created_at: string
   updated_at: string
-  // Les deux cases d'un médecin (RET-Q2, migration `cumul_et_dispense_du_medecin`, PRÉPARÉE) : facultatives tant qu'elle
-  // n'est pas en base — une lecture d'aujourd'hui ne les porte pas ; nulles tant que le cabinet ne les a pas dites.
-  cumul_emploi_retraite?: boolean | null
-  dispense_complementaire?: boolean | null
+  // Les deux cases d'un médecin (RET-Q2, migration `cumul_et_dispense_du_medecin`, en production depuis le 15/11/2026) :
+  // nulles tant que le cabinet ne les a pas dites.
+  cumul_emploi_retraite: boolean | null
+  dispense_complementaire: boolean | null
 }
 
 // Détail par poste (Achats, Loyer, Assurance...) d'un repère annuel — complète le CA et les

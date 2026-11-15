@@ -16,7 +16,7 @@
 --   - les droits : le client d'essai, qui n'a pas ce dossier, n'écrit ni ne lit rien ; l'anonyme n'exécute pas la fonction ;
 --   - le gel : l'exercice 2025 validé ne change plus ses paramètres (la fonction, une mise à jour directe), une mise à jour
 --     qui ne change rien passe, le début d'activité se corrige encore (une donnée du dossier), 2026 s'écrit encore ;
---   - la migration `cumul_et_dispense_du_medecin` (RET-Q2, préparée) en base, les deux cases d'un médecin : écrites et
+--   - la migration `cumul_et_dispense_du_medecin` (RET-Q2, en production depuis le 15/11/2026) en base, les deux cases d'un médecin : écrites et
 --     relues sous la forme à cinq clés, comparées aux valeurs lues, refusées en texte ou sous deux formes mêlées, laissées
 --     telles quelles par la forme à trois clés d'hier, gelées avec 2025, fermées au client (étapes 8a à 8h ; sans elle, une
 --     ligne dit qu'elles attendent).
@@ -34,7 +34,7 @@ declare
   v_obs text;
   v_code text;
   v_msg text;
-  -- Les deux cases d'un médecin (RET-Q2, migration `cumul_et_dispense_du_medecin`, préparée) : les étapes 8a à 8h.
+  -- Les deux cases d'un médecin (RET-Q2, migration `cumul_et_dispense_du_medecin`, en production depuis le 15/11/2026) : les étapes 8a à 8h.
   cases_en_base constant boolean := exists (select 1 from pg_attribute a where a.attrelid = to_regclass('public.parametres_des_cotisations')
     and a.attname = 'cumul_emploi_retraite' and not a.attisdropped);
 begin
@@ -156,7 +156,7 @@ begin
       (36, 'chef', '7g. … et 2025 est restée telle qu''elle a été validée', $q$select (select date_debut::text from debuts_d_activite where dossier_id = 'c0715000-0000-4000-8107-000000000001')
   || ' ' || (select string_agg(annee || ':' || coalesce(acre::text, '-') || ':' || coalesce(taux_dentiste::text, '-'), ',' order by annee)
   from parametres_des_cotisations where dossier_id = 'c0715000-0000-4000-8107-000000000001')$q$, 'OK', '2025-06-15 2025:true:-,2026:true:-'),
-      -- LES DEUX CASES D'UN MÉDECIN (RET-Q2, migration `cumul_et_dispense_du_medecin`, préparée) : sans elle, une ligne dit
+      -- LES DEUX CASES D'UN MÉDECIN (RET-Q2, migration `cumul_et_dispense_du_medecin`, en production depuis le 15/11/2026) : sans elle, une ligne dit
       -- qu'elles attendent.
       (37, 'chef', '8a. sous la forme à cinq clés, le cumul et la dispense de 2026 s''écrivent, rien d''autre ne bouge', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2026,
   '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null}', '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true}')$q$, 'OK', '1'),

@@ -1,4 +1,5 @@
--- RETOUR DE cumul_et_dispense_du_medecin (20261113203000, RET-Q2) : les deux cases retirées, et
+-- RETOUR DE cumul_et_dispense_du_medecin (supabase/schema/20261115074806_cumul_et_dispense_du_medecin.sql — en production
+-- depuis le 15/11/2026, version 20261115074806 —, RET-Q2) : les deux cases retirées, et
 -- `enregistrer_parametres_des_cotisations` rendue telle que la production la porte avant la migration, au caractère près
 -- (supabase/schema/20261107165534_parametres_des_cotisations.sql : son corps rend l'empreinte 30d980ad…). CE QU'IL DÉTRUIT :
 -- le cumul emploi-retraite et la dispense du complémentaire que le cabinet a dits, exercice par exercice (les colonnes

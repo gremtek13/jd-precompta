@@ -1,5 +1,6 @@
 -- UN DOSSIER QUI PORTE DES FACTURES REPRISES NE PASSE PAS EN COMPTABILITÉ D'ENGAGEMENT (ligne 51.5, A8B-Q3 ; la migration
--- préparée `reprises_retiennent_la_tresorerie`, supabase/preparees/20261113211000_reprises_retiennent_la_tresorerie.sql). Le
+-- `reprises_retiennent_la_tresorerie`, en production depuis le 15/11/2026,
+-- supabase/schema/20261115074926_reprises_retiennent_la_tresorerie.sql). Le
 -- récit : HISTORIQUE.md, « 13/11/2026 — PC4Q2-Q1, A8B-Q3 ET A8Q5Q3-Q2 : TROIS MIGRATIONS PRÉPARÉES ». À rejouer après
 -- toute migration qui touche `verrouiller_modele_comptable`, `importer_factures`, `retirer_import` ou le modèle comptable
 -- d'un dossier.

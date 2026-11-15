@@ -91,8 +91,10 @@ describe('la carte des paramètres des cotisations', () => {
       nom: 'enregistrer_parametres_des_cotisations',
       parametres: {
         p_dossier_id: 'd', p_annee: 2025,
-        p_lus: { debut_activite: null, acre: null, taux_dentiste: null },
-        p_saisis: { debut_activite: '2025-07-01', acre: true, taux_dentiste: null },
+        // Les deux cases d'un médecin en base (RET-Q2, `CASES_DU_MEDECIN_PREVUES` levé le 15/11/2026) : la forme à cinq clés,
+        // nulles pour une autre profession — ParametresDesCotisationsCard.medecin.test.tsx joue celles d'un médecin.
+        p_lus: { debut_activite: null, acre: null, taux_dentiste: null, cumul_emploi_retraite: null, dispense_complementaire: null },
+        p_saisis: { debut_activite: '2025-07-01', acre: true, taux_dentiste: null, cumul_emploi_retraite: null, dispense_complementaire: null },
       },
     })
     const question = vi.mocked(window.confirm).mock.calls[0][0] as string
@@ -114,7 +116,7 @@ describe('la carte des paramètres des cotisations', () => {
     fireEvent.change(screen.getByLabelText('Taux dentiste 2025 (relevé SNIR)'), { target: { value: '0,35' } })
     await act(async () => { fireEvent.click(bouton() as HTMLElement) })
     expect(faux.appels.map((a) => (a.parametres as { p_saisis: unknown }).p_saisis))
-      .toEqual([{ debut_activite: '2015-01-01', acre: null, taux_dentiste: 0.35 }])
+      .toEqual([{ debut_activite: '2015-01-01', acre: null, taux_dentiste: 0.35, cumul_emploi_retraite: null, dispense_complementaire: null }])
   })
 
   it('le taux dentiste ne se demande qu’à un chirurgien-dentiste', () => {
@@ -145,7 +147,7 @@ describe('la carte des paramètres des cotisations', () => {
     fireEvent.change(screen.getByLabelText('Début d’activité'), { target: { value: '2025-06-15' } })
     await act(async () => { fireEvent.click(bouton() as HTMLElement) })
     expect(faux.appels.map((a) => (a.parametres as { p_saisis: unknown }).p_saisis))
-      .toEqual([{ debut_activite: '2025-06-15', acre: true, taux_dentiste: null }])
+      .toEqual([{ debut_activite: '2025-06-15', acre: true, taux_dentiste: null, cumul_emploi_retraite: null, dispense_complementaire: null }])
   })
 })
 

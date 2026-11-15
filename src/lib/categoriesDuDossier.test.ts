@@ -229,7 +229,7 @@ describe('PC7-Q2 : la classe du compte d’une catégorie du dossier, en base', 
   })
 })
 
-// ── PC7Q2-Q1 : LA CLASSE DU COMPTE D'UNE COMMUNE, EN BASE (la migration PRÉPARÉE `classes_des_categories_communes`) ─────────
+// ── PC7Q2-Q1 : LA CLASSE DU COMPTE D'UNE COMMUNE, EN BASE (la migration `classes_des_categories_communes`, en production) ────
 // Elle remplace le corps de PC7-Q2 (`classes_des_categories`) par le même, plus le refus (f), et s'applique APRÈS lui.
 const RETOUR_DES_COMMUNES = join(PREPAREES, 'retour/20261113110100_retour_classes_des_categories_communes.sql')
 const versionDe = (nom: string) => {
@@ -330,7 +330,8 @@ describe('PC7Q2-Q1 : la classe du compte d’une catégorie commune, en base', (
     expect(essai).toContain(refusDeLaClasseCommune('512000').replace(/'/g, "''"))
   })
 
-  it('le drapeau suit la migration : baissé tant qu’elle n’est que préparée, levé quand elle entre dans l’export', () => {
+  it('le drapeau suit la migration : levé depuis qu’elle est entrée dans l’export (15/11/2026)', () => {
+    expect(versionExportee('classes_des_categories_communes')).toBe('20261115075300_classes_des_categories_communes.sql')
     expect(CLASSES_DES_CATEGORIES_COMMUNES_PREVUES).toBe(versionExportee('classes_des_categories_communes') !== undefined)
   })
 })

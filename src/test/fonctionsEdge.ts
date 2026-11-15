@@ -92,17 +92,18 @@ export function acomptesBaisses(source: string): string {
   return muter(source, [[ACOMPTES_LEVES, ACOMPTES_BAISSES]])
 }
 
-/** La constante de plateforme-agreee qui lit l'auteur d'une connexion (B4RS-Q1), telle qu'elle est servie : baissée. */
+/** La constante de plateforme-agreee qui lit l'auteur d'une connexion (B4RS-Q1), baissée : la source d'avant sa migration. */
 export const AUTEUR_DES_CONNEXIONS_BAISSE = 'const AUTEUR_DES_CONNEXIONS_EN_BASE = false'
-/** La même, levée : la source du jour où la migration `auteur_des_connexions_plateformes` sera en base. */
+/** La même, levée, telle qu'elle est servie depuis la migration `auteur_des_connexions_plateformes` (en production le 15/11/2026). */
 export const AUTEUR_DES_CONNEXIONS_LEVE = 'const AUTEUR_DES_CONNEXIONS_EN_BASE = true'
 
 /**
- * La source de plateforme-agreee telle qu'elle se servira APRÈS la migration `auteur_des_connexions_plateformes` : la
- * constante levée, en mémoire, rien d'autre de changé. Une occurrence exactement de la constante baissée, sinon `muter` lève.
+ * La source de plateforme-agreee telle qu'elle se servait AVANT la migration `auteur_des_connexions_plateformes` : la
+ * constante baissée, en mémoire, rien d'autre de changé — son état d'avant reste éprouvé tant que son code existe. Une
+ * occurrence exactement de la constante levée, sinon `muter` lève.
  */
-export function auteurDesConnexionsLeve(source: string): string {
-  return muter(source, [[AUTEUR_DES_CONNEXIONS_BAISSE, AUTEUR_DES_CONNEXIONS_LEVE]])
+export function auteurDesConnexionsBaissee(source: string): string {
+  return muter(source, [[AUTEUR_DES_CONNEXIONS_LEVE, AUTEUR_DES_CONNEXIONS_BAISSE]])
 }
 
 /** La constante de send-email qui admet la relance d'une facture (étape C5), baissée : la source d'avant sa migration. */
@@ -490,7 +491,7 @@ const RANG_DU_GENRE: Readonly<Record<string, number>> = { facture: 0, avoir: 1, 
 // `ErreurPostgrest` pour un refus de la base (un droit d'exécution qui manque), rendu en `{ error }` comme le vrai.
 const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Record<string, unknown>) => unknown> = {
   admin_du_dossier: (monde, { utilisateur }, args) => adminDuDossier(monde, utilisateur, args.p_dossier_id),
-  // `attester_connexion_plateforme(p_dossier_id, p_version)` (migration PRÉPARÉE `auteur_des_connexions_plateformes`,
+  // `attester_connexion_plateforme(p_dossier_id, p_version)` (migration `auteur_des_connexions_plateformes`, en production,
   // B4RS-Q1) : exécutable par authenticated, jamais par l'anonyme ; le cabinet du dossier seul (`admin_du_dossier`, sous la
   // session), sinon 42501 avant toute lecture ; la connexion à CETTE version (`updated_at`), sinon 22023 ; elle pose
   // l'auteur (le compte de la session, jamais un paramètre) et rend l'instant.

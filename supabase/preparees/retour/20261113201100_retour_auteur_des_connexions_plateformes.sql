@@ -1,4 +1,5 @@
--- RETOUR D'auteur_des_connexions_plateformes (20261113201000, B4RS-Q1) : la garde, son déclencheur, l'attestation et les
+-- RETOUR D'auteur_des_connexions_plateformes (supabase/schema/20261115074709_auteur_des_connexions_plateformes.sql — en
+-- production depuis le 15/11/2026, version 20261115074709 —, B4RS-Q1) : la garde, son déclencheur, l'attestation et les
 -- deux colonnes retirés. CE QU'IL DÉTRUIT : qui, au cabinet, a écrit la configuration de chaque connexion, et quand (les
 -- colonnes `ecrite_par` et `ecrite_le`) ; rien d'autre — les connexions, leurs secrets et leurs points de reprise restent.
 -- Après lui, la base ne sait plus qui a écrit une connexion : l'Edge Function `plateforme-agreee` doit d'abord être

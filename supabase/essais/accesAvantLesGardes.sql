@@ -1,5 +1,5 @@
--- ESSAI DE LA PORTE D'ACCÈS DEVANT LES GARDES (ligne 43, vu en passant par PC7Q2-Q1 ; la migration PRÉPARÉE
--- supabase/preparees/20261113120000_acces_avant_les_gardes.sql). À rejouer après toute migration qui pose ou change un
+-- ESSAI DE LA PORTE D'ACCÈS DEVANT LES GARDES (ligne 43, vu en passant par PC7Q2-Q1 ; la migration
+-- supabase/schema/20261115075431_acces_avant_les_gardes.sql, en production depuis le 15/11/2026, GARDES-Q1). À rejouer après toute migration qui pose ou change un
 -- déclencheur BEFORE d'une table de public, une policy d'écriture d'une table de la porte, `row_security_active`, ou les
 -- droits de `pg_policy`. Les tables de la porte : ses 32, plus celles des dix tables d'INAL5, INV2, LIA2, INV4, AFF2,
 -- INV3 et EXD2 que leur migration a créées ou gardées (chacune pose la porte si elle la trouve en base, et la porte les couvre si

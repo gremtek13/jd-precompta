@@ -1,5 +1,6 @@
 -- RETOUR de la migration `classes_des_categories_communes` (PC7Q2-Q1, ligne 43 ;
--- supabase/preparees/20261113110000_classes_des_categories_communes.sql). Rend à `garder_categorie_du_dossier` le corps de
+-- supabase/schema/20261115075300_classes_des_categories_communes.sql — en production depuis le 15/11/2026, version
+-- 20261115075300). Rend à `garder_categorie_du_dossier` le corps de
 -- `classes_des_categories` (PC7-Q2), à l'octet près (empreinte dadd05a400c277832ce0261c8eb15544) : une catégorie commune
 -- hors des classes 6 et 7 repasse, comme avant ; celle d'un dossier reste refusée par (e). Aucune donnée n'est touchée : les
 -- communes posées sous le refus restent telles quelles. Baisser `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES` D'ABORD

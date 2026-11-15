@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { definitionsSql } from '../test/schema'
 import {
   CLES_DE_LA_REPRISE, DRAPEAU_DES_REPRISES_AU_CLIENT, FONCTION_DE_LA_REPRISE, FONCTION_DES_PIECES_CITEES,
@@ -10,6 +10,7 @@ import {
   refusEnregistrementVente, resteAEncaisserDeLaReprise, type ContexteFacture, type FacturePourEncaissement,
   type LigneDeFacture, type SaisieEncaissement,
 } from './encaissementsFactures'
+import { DRAPEAU_DE_LA_PIECE_RECUE, recuParLaPieceCiteePrevu } from './recuParLaPieceCitee'
 
 // LES FACTURES REPRISES, AU CLIENT (A8C-Q1, A8Q5-Q2) : le module lit ce que les deux fonctions de la migration
 // `reprises_au_client` rendent — préparée le 11/11/2026, dans l'export depuis son application le même soir — ; il en redit les clés,
@@ -57,15 +58,22 @@ const FACTURE = {
   source_de_la_vente: true,
 } as unknown as FacturePourEncaissement
 
-/** La valeur que l'essai attend de `reprise_de_la_facture` pour R-SERV-1, telle qu'il l'écrit (la date de reprise posée). */
+/**
+ * La valeur que l'essai attend de `reprise_de_la_facture` pour R-SERV-1, telle qu'il l'écrit (la date de reprise posée) ;
+ * sous A8Q5Q3-Q2 (`recu_par_la_piece_citee`, son drapeau levé), avec la septième clé que l'essai lui ajoute
+ * (`serv_attendue` : zéro, le lien de la pièce retiré).
+ */
 function valeurDeLEssai(repriseLe: string): unknown {
   const m = /serv constant text := '([\s\S]*?)';\n/.exec(ESSAI)
   expect(m, 'la valeur de R-SERV-1 dans l’essai').not.toBeNull()
-  return JSON.parse((m as RegExpExecArray)[1].replace('{R}', repriseLe))
+  expect(ESSAI).toContain(`serv_attendue constant text := case when q2 then rtrim(serv, '}') || ', "recu_par_sa_piece_centimes": 0}' else serv end;`)
+  const valeur = JSON.parse((m as RegExpExecArray)[1].replace('{R}', repriseLe)) as Record<string, unknown>
+  return recuParLaPieceCiteePrevu() ? { ...valeur, recu_par_sa_piece_centimes: 0 } : valeur
 }
 
 afterEach(() => {
   DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
+  DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = true
 })
 
 describe('le drapeau', () => {
@@ -158,26 +166,38 @@ describe('la migration, confrontée au module', () => {
   })
 })
 
+// Les sept clés depuis A8Q5Q3-Q2 (`recu_par_la_piece_citee`, en production depuis le 15/11/2026, son drapeau levé) ; les six
+// d'hier, le drapeau baissé, se lisent encore (l'état d'avant, tant que son code existe).
 describe('ce que `reprise_de_la_facture` rend', () => {
-  const VALEUR = {
+  const SIX = {
     reprise_le: '2026-11-01', nature_operation: 'services', encaisse_avant_reprise_centimes: 30001,
     encaisse_par_taux: [{ taux: 20, encaisse_centimes: 30001 }, { taux: 10, encaisse_centimes: 0 }],
     credite_par_les_repris_centimes: 11000, credite_par_les_repris_par_taux: [{ taux: 10, ttc_centimes: 11000 }],
   }
+  const VALEUR = { ...SIX, recu_par_sa_piece_centimes: 2500 }
+  const LUE_SANS_SA_PIECE = {
+    factureId: F, repriseLe: '2026-11-01', natureOperation: 'services', encaisseAvantRepriseCentimes: 30001,
+    encaisseParTaux: [{ taux: 20, encaisseCentimes: 30001 }, { taux: 10, encaisseCentimes: 0 }],
+    crediteParLesReprisCentimes: 11000, crediteParLesReprisParTaux: [{ taux: 10, ttcCentimes: 11000 }],
+  }
 
   it('se lit en centimes, pour la facture demandée', () => {
-    expect(repriseDeLaFactureRendue(VALEUR, F)).toEqual({
-      factureId: F, repriseLe: '2026-11-01', natureOperation: 'services', encaisseAvantRepriseCentimes: 30001,
-      encaisseParTaux: [{ taux: 20, encaisseCentimes: 30001 }, { taux: 10, encaisseCentimes: 0 }],
-      crediteParLesReprisCentimes: 11000, crediteParLesReprisParTaux: [{ taux: 10, ttcCentimes: 11000 }],
-    })
+    expect(repriseDeLaFactureRendue(VALEUR, F)).toEqual({ ...LUE_SANS_SA_PIECE, recuParSaPieceCentimes: 2500 })
     expect(repriseDeLaFactureRendue({ ...VALEUR, reprise_le: null, nature_operation: null }, F))
       .toMatchObject({ repriseLe: null, natureOperation: null })
   })
 
+  describe('le drapeau de la pièce reçue baissé (l’état d’avant le 15/11/2026)', () => {
+    beforeEach(() => { DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = false })
+    it('six clés se lisent, sans le reçu ; sept se refusent', () => {
+      expect(repriseDeLaFactureRendue(SIX, F)).toEqual(LUE_SANS_SA_PIECE)
+      expect(repriseDeLaFactureRendue(VALEUR, F)).toBeNull()
+    })
+  })
+
   it('toute autre forme se refuse : jamais un plafond deviné', () => {
     const illisibles: unknown[] = [
-      null, [], 'texte', {}, { ...VALEUR, de_plus: 1 },
+      null, [], 'texte', {}, { ...VALEUR, de_plus: 1 }, SIX,
       Object.fromEntries(Object.entries(VALEUR).filter(([k]) => k !== 'reprise_le')),
       { ...VALEUR, reprise_le: '2026-02-30' }, { ...VALEUR, reprise_le: '01/11/2026' }, { ...VALEUR, nature_operation: 3 },
       { ...VALEUR, encaisse_avant_reprise_centimes: -1 }, { ...VALEUR, encaisse_avant_reprise_centimes: 300.01 },

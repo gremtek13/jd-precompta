@@ -565,9 +565,10 @@ export const REFUS_ENREGISTREMENT = [
 export const REFUS_ENREGISTREMENT_DES_REPRISES: readonly { cle: string; modele: string }[] =
   refusAvecLesNeufs(REFUS_ENREGISTREMENT, REFUS_ENCAISSEMENT_D_UNE_REPRISE)
 
-// LE REFUS DE LA PIÈCE CITÉE (A8Q5Q3-Q2 ; la migration `recu_par_la_piece_citee`, préparée) : d'une facture reprise à
-// plusieurs taux dont la pièce citée a reçu plus que le déclaré, juste avant le plafond d'une reprise. Le drapeau
-// `RECU_PAR_LA_PIECE_CITEE_PREVU` baissé, il ne se dit pas, et la liste en vigueur reste celle d'hier.
+// LE REFUS DE LA PIÈCE CITÉE (A8Q5Q3-Q2 ; la migration `recu_par_la_piece_citee`, en production depuis le 15/11/2026) :
+// d'une facture reprise à plusieurs taux dont la pièce citée a reçu plus que le déclaré, juste avant le plafond d'une
+// reprise. Le drapeau `RECU_PAR_LA_PIECE_CITEE_PREVU` levé, il se dit ; baissé (l'état d'avant), il ne se dit pas, et la
+// liste en vigueur reste celle d'hier.
 export const REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE: readonly { cle: string; modele: string }[] =
   refusAvecLesNeufs(REFUS_ENREGISTREMENT_DES_REPRISES, REFUS_ENCAISSEMENT_DE_LA_PIECE_CITEE)
 

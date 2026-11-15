@@ -1,5 +1,5 @@
 -- CE QUE LA PIÈCE CITÉE D'UNE FACTURE REPRISE A DÉJÀ REÇU, PLANCHER DE SON REGISTRE (ligne 51.5, A8Q5Q3-Q2 ; la migration
--- préparée `recu_par_la_piece_citee`, supabase/preparees/20261113212000_recu_par_la_piece_citee.sql). Le récit :
+-- `recu_par_la_piece_citee`, en production depuis le 15/11/2026, supabase/schema/20261115075201_recu_par_la_piece_citee.sql). Le récit :
 -- HISTORIQUE.md, « 13/11/2026 — PC4Q2-Q1, A8B-Q3 ET A8Q5Q3-Q2 : TROIS MIGRATIONS PRÉPARÉES ». À rejouer après toute
 -- migration qui touche `recu_par_la_piece`, `enregistrer_encaissement`, `reprise_de_la_facture`,
 -- `citer_piece_de_facture_reprise`, `importer_factures` ou les tables des paiements d'une pièce. SANS LA MIGRATION (sa

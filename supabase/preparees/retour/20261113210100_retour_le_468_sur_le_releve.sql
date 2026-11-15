@@ -1,5 +1,6 @@
 -- RETOUR de la migration `le_468_sur_le_releve` (PC4Q2-Q1, ligne 43 ;
--- supabase/preparees/20261113210000_le_468_sur_le_releve.sql). Rend à `refus_compte_de_bilan` le corps de la migration
+-- supabase/schema/20261115074848_le_468_sur_le_releve.sql — en production depuis le 15/11/2026, version 20261115074848).
+-- Rend à `refus_compte_de_bilan` le corps de la migration
 -- `caisse_retrait_et_versement`, à l'octet près (empreinte b578ff1dd54cc8fad50323caea4d5ba1) : le 468 se refuse de nouveau
 -- comme « compte de régularisation », sous la phrase du plan de 2019. Aucune donnée n'est touchée : un mouvement écrit au
 -- 468 sous la migration reste écrit — la fonction ne juge que le geste suivant, et « Remettre à traiter » le défait comme

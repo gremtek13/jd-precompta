@@ -3,16 +3,19 @@ import { readFileSync } from 'node:fs'
 import { blocsDo, espaces, nomsDesListes, sansCommentaires } from '../test/blocsSql'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
-// LA PORTE D'ACCÈS DEVANT LES GARDES (ligne 43, `acces_avant_les_gardes`), RÈGLE DES MIGRATIONS PRÉPARÉES.
+// LA PORTE D'ACCÈS DEVANT LES GARDES (ligne 43, `acces_avant_les_gardes`, en production depuis le 15/11/2026, GARDES-Q1),
+// RÈGLE DES MIGRATIONS.
 //
 // Un déclencheur BEFORE tire avant l'expression WITH CHECK de la policy : une garde `security definer` qui lit la base et
 // lève répondrait à un appelant que la policy refuse. La porte, `_acces_avant_les_gardes`, première des déclencheurs BEFORE
-// INSERT OR UPDATE d'une table, juge l'appelant par les policies d'abord. La règle : toute migration préparée qui pose une
-// garde `security definer` (BEFORE, sur l'insertion ou la mise à jour) sur une table que la porte ne couvre pas d'office
-// (ses 32 tables, et `dossiers`, écartée pour sa raison) y pose AUSSI la porte, sous la condition que sa fonction soit en
-// base — pour s'appliquer avant ou après elle ; et tant que la porte est elle-même préparée, sa liste des tables qu'elle
-// couvre si leur garde est déjà là (`c_preparees`, le bloc `$preparees$`, et son retour) nomme cette table. La base, elle, se juge
-// par l'étape 32 de supabase/essais/accesAvantLesGardes.sql, sur une réplique.
+// INSERT OR UPDATE d'une table, juge l'appelant par les policies d'abord. La règle : toute migration qui pose une garde
+// `security definer` (BEFORE, sur l'insertion ou la mise à jour) sur une table que la porte ne couvre pas d'office (ses 32
+// tables, et `dossiers`, écartée pour sa raison) y pose AUSSI la porte. LA PORTE EN BASE (l'état d'aujourd'hui) : posée
+// directement (`create trigger _acces_avant_les_gardes …`), ou sous la condition que sa fonction soit en base — la forme des
+// sept migrations préparées avant elle, qui s'appliquent ainsi avant ou après elle. LA PORTE PRÉPARÉE (l'état d'avant le
+// 15/11/2026, que les défauts plantés jouent encore) : sous la condition seulement, et la liste des tables que la porte
+// couvre si leur garde est déjà là (`c_preparees`, le bloc `$preparees$`, et son retour) nomme cette table. La base, elle, se
+// juge par l'étape 32 de supabase/essais/accesAvantLesGardes.sql, sur une réplique.
 //
 // Le relevé part de TOUT (l'export et les préparées), lit chaque fonction de déclencheur et chaque déclencheur ; une
 // garde de l'export sur une table hors de la porte est une faute aussi. Le plancher : il retrouve dans l'export les 32
@@ -61,6 +64,13 @@ export function tablesCouvertesSousCondition(texte: string): Set<string> {
   return couvertes
 }
 
+/** Les tables qu'un fichier couvre de la porte directement : `create trigger _acces_avant_les_gardes … on public.<table>`, qui
+ *  suppose sa fonction en base (la porte en base). */
+export function tablesCouvertesDirectement(texte: string): Set<string> {
+  const motif = /create\s+trigger\s+_acces_avant_les_gardes\s+before\s+insert\s+or\s+update\s+on\s+(?:public\.)?(\w+)\s+for\s+each\s+row\s+execute\s+function\s+public\.acces_avant_les_gardes\s*\(\s*\)/gi
+  return new Set([...sansCommentaires(texte).matchAll(motif)].map((m) => m[1].toLowerCase()))
+}
+
 /** Les listes de la porte : ses 32 tables (`c_tables`), et les tables couvertes si leur garde est là (`c_preparees`, `$preparees$`). */
 export function listesDeLaPorte(porte: string): { tables: string[]; preparees: string[]; blocPreparees: string[] } {
   const liste = (re: RegExp) => [...(porte.match(re)?.[1] ?? '').matchAll(/'(\w+)'/g)].map((l) => l[1]).sort()
@@ -71,7 +81,10 @@ export function listesDeLaPorte(porte: string): { tables: string[]; preparees: s
   }
 }
 
-/** Les fautes : une garde hors de la porte sans la porte posée sous condition, ou absente des listes de la porte préparée. */
+/**
+ * Les fautes : une garde hors de la porte sans la porte — sous condition, ou directement quand la porte est en base —, ou
+ * absente des listes de la porte préparée.
+ */
 export function fautesDeLaPorte(fichiers: Fichier[], porte: { texte: string; preparee: boolean }): string[] {
   const sd = gardesSecurityDefiner(fichiers)
   const { tables, preparees } = listesDeLaPorte(porte.texte)
@@ -79,9 +92,13 @@ export function fautesDeLaPorte(fichiers: Fichier[], porte: { texte: string; pre
   for (const f of fichiers) {
     if (/_acces_avant_les_gardes\.sql$/.test(f.chemin)) continue
     const couvertes = tablesCouvertesSousCondition(f.texte)
+    // La porte en base : sa pose directe vaut la pose sous condition. Préparée, elle échouerait (la fonction n'existe pas).
+    if (!porte.preparee) for (const t of tablesCouvertesDirectement(f.texte)) couvertes.add(t)
     for (const t of tablesGardees(f.texte, sd)) {
       if (t === 'dossiers' || tables.includes(t)) continue
-      if (!couvertes.has(t)) fautes.push(`${f.chemin} : la garde security definer de ${t} sans la porte posée sous condition`)
+      if (!couvertes.has(t)) {
+        fautes.push(`${f.chemin} : la garde security definer de ${t} sans la porte posée ${porte.preparee ? 'sous condition' : '(directement ou sous condition)'}`)
+      }
       if (porte.preparee && !preparees.includes(t)) fautes.push(`${f.chemin} : ${t} absente des tables que la porte préparée couvre (c_preparees)`)
     }
   }
@@ -95,8 +112,10 @@ const PORTE = TOUS.find((f) => /\d{14}_acces_avant_les_gardes\.sql$/.test(f.chem
 const RETOUR_DE_LA_PORTE = readFileSync(new URL('../../supabase/preparees/retour/20261113120100_retour_acces_avant_les_gardes.sql', import.meta.url), 'utf8')
 
 describe('la porte d’accès devant les gardes — la règle des migrations préparées (ligne 43)', () => {
-  it('la porte se trouve, préparée ou exportée, avec ses 32 tables', () => {
+  it('la porte se trouve, dans l’export depuis le 15/11/2026, avec ses 32 tables', () => {
     expect(PORTE, 'la migration acces_avant_les_gardes').toBeDefined()
+    expect(PORTE!.chemin).toBe('supabase/schema/20261115075431_acces_avant_les_gardes.sql')
+    expect(PREPAREES.some((f) => /\d{14}_acces_avant_les_gardes\.sql$/.test(f.chemin))).toBe(false)
     expect(listesDeLaPorte(PORTE!.texte).tables).toHaveLength(32)
   })
 
@@ -110,7 +129,7 @@ describe('la porte d’accès devant les gardes — la règle des migrations pr�
     expect(fautesDeLaPorte(TOUS, { texte: PORTE!.texte, preparee: PORTE!.chemin.startsWith('supabase/preparees/') })).toEqual([])
   })
 
-  it('les trois listes de la porte préparée disent les mêmes tables : la garde de tête, la pose, et le retour', () => {
+  it('les trois listes de la porte disent les mêmes tables que les préparées d’avant elle couvrent : la garde de tête, la pose, et le retour', () => {
     const { preparees, blocPreparees } = listesDeLaPorte(PORTE!.texte)
     expect(preparees.length).toBeGreaterThanOrEqual(10)
     expect(blocPreparees).toEqual(preparees)
@@ -141,9 +160,25 @@ end
 $porte$;`
     const juger = (preparee: string, porte = PORTE_PLANTEE) =>
       fautesDeLaPorte([{ chemin: 'supabase/preparees/x.sql', texte: preparee }], { texte: porte, preparee: true })
+    // La porte en base (l'état d'aujourd'hui) : sa pose directe, comme la sienne, sur la table de la garde.
+    const jugerEnBase = (preparee: string, porte = PORTE_PLANTEE) =>
+      fautesDeLaPorte([{ chemin: 'supabase/preparees/x.sql', texte: preparee }], { texte: porte, preparee: false })
+    const DIRECTE = (table: string) =>
+      `create trigger _acces_avant_les_gardes before insert or update on public.${table} for each row execute function public.acces_avant_les_gardes();`
 
-    it('la garde et la porte sous condition : aucune faute (le contrôle positif)', () => {
+    it('la garde et la porte sous condition : aucune faute (le contrôle positif), la porte préparée comme en base', () => {
       expect(juger(GARDE + '\n' + BLOC("'neuve'"))).toEqual([])
+      expect(jugerEnBase(GARDE + '\n' + BLOC("'neuve'"))).toEqual([])
+    })
+    it('la porte en base : la garde et la porte posée directement, aucune faute ; sans la porte, ou sur une autre table, une faute', () => {
+      expect(jugerEnBase(GARDE + '\n' + DIRECTE('neuve'))).toEqual([])
+      expect(jugerEnBase(GARDE)).toEqual(['supabase/preparees/x.sql : la garde security definer de neuve sans la porte posée (directement ou sous condition)'])
+      expect(jugerEnBase(GARDE + '\n' + DIRECTE('autre'))).toHaveLength(1)
+      // Une pose commentée n'est pas une pose.
+      expect(jugerEnBase(GARDE + '\n-- ' + DIRECTE('neuve'))).toHaveLength(1)
+    })
+    it('la porte préparée : sa pose directe ne vaut rien (la fonction n’existe pas encore) — une faute', () => {
+      expect(juger(GARDE + '\n' + DIRECTE('neuve'))).toEqual(['supabase/preparees/x.sql : la garde security definer de neuve sans la porte posée sous condition'])
     })
     it('la garde sans la porte : une faute', () => {
       expect(juger(GARDE)).toEqual(['supabase/preparees/x.sql : la garde security definer de neuve sans la porte posée sous condition'])

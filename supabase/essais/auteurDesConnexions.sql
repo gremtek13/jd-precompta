@@ -1,5 +1,5 @@
--- QUI A ÉCRIT LA CONNEXION À LA PLATEFORME DU CLIENT (B4RS-Q1 ; la migration `auteur_des_connexions_plateformes`, PRÉPARÉE,
--- supabase/preparees/20261113201000_auteur_des_connexions_plateformes.sql). Le récit : HISTORIQUE.md, « 13/11/2026 —
+-- QUI A ÉCRIT LA CONNEXION À LA PLATEFORME DU CLIENT (B4RS-Q1 ; la migration `auteur_des_connexions_plateformes`, en
+-- production depuis le 15/11/2026, supabase/schema/20261115074709_auteur_des_connexions_plateformes.sql). Le récit : HISTORIQUE.md, « 13/11/2026 —
 -- B4RS-Q1, P1T-Q2 ET RET-Q2 ». À rejouer après toute migration qui touche `connexions_plateformes`, sa garde,
 -- `attester_connexion_plateforme` ou `admin_du_dossier`.
 --
