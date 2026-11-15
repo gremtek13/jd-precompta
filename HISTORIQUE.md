@@ -52972,3 +52972,12 @@ instructions, `d02e468d124c948803d3e9b831092ca3` ; l'inventaire, 3 140 objets (d
 déclencheur), `9fee2c12d8f7b9b5470eacd49b34a7f9`. Non rejoués en production : `traceDesDroits.sql` (ses étapes 41 à 52
 ne sont plus EN ATTENTE) et `rls.sql` ; `signature.sql` non plus. Son retour se refuse dès que la trace porte une ligne
 « acces », et le drapeau se baisse avant lui.
+
+### 15/11/2026 — LE CONTENU CENTRAL S'ÉLARGIT JUSQU'À 1 600 PX SUR GRAND ÉCRAN
+
+(La session ; demande du cabinet, sur une capture d'un grand écran.) `.main-contenu` plafonnait le contenu à 1 200 px : sur
+un écran de 1 920 px et plus, deux marges vides. Le plafond passe à 1 600 px (pas de suppression : au-delà, les lignes de
+texte s'allongent et les cartes s'étirent à vide). Jusqu'à 1 440 px rien ne change, le contenu n'atteignait pas l'ancien
+plafond. `debordements.mjs` (lancé avec `BANC_DRAPEAUX=SAISIES_2035_EXPORTEES`, qu'une de ses visites attend, et
+`CHROMIUM=/opt/pw-browsers/chromium`) : 0 débordement à 1 920 et à 2 560 px, volet de droite ouvert et fermé, et à 1 440 px
+ouvert ; 0 bouton de fenêtre recouvert. À 1 920 px, le contenu mesure 1 578 px.
