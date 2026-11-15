@@ -52981,3 +52981,23 @@ texte s'allongent et les cartes s'étirent à vide). Jusqu'à 1 440 px rien ne c
 plafond. `debordements.mjs` (lancé avec `BANC_DRAPEAUX=SAISIES_2035_EXPORTEES`, qu'une de ses visites attend, et
 `CHROMIUM=/opt/pw-browsers/chromium`) : 0 débordement à 1 920 et à 2 560 px, volet de droite ouvert et fermé, et à 1 440 px
 ouvert ; 0 bouton de fenêtre recouvert. À 1 920 px, le contenu mesure 1 578 px.
+
+### 15/11/2026 — LES ESSAIS DES DIX MIGRATIONS DU JOUR REJOUÉS EN PRODUCTION ; UN MEMBRE D'ESSAI QUI N'Y EXISTE PAS
+
+(Agent architecte, par `execute_sql` ; 228 migrations ; rien n'est resté en base, aucune requête retenue.) Conformes à
+l'attendu : auteurDesConnexions 25, parametresDesCotisations 45 (une ligne EN ATTENTE, RET2-Q2 préparée), compteBilan 68,
+recuParLaPieceCitee 19, pieceDejaCompteeDUneReprise 6, reprisesAuClient 30, categoriesDuDossier 44, traceDesDroits 54
+(ses étapes 41 à 52 jouées, plus EN ATTENTE). `rls.sql`, trop long pour un seul appel (860 Ko), joué par blocs, les
+textes reçus égaux aux copies : invariants 1 à 5bis, stockage et leurs mutations (23 lignes, 0 en faute, 16 mutations
+sur 16, 105 tables dont 93 à `dossier_id`) ; la trace des droits et les paramètres des cotisations (8 lignes, 0 en
+faute, 5 sur 5) ; SECU3 : les contrôles du catalogue justes et une mutation qui mord, le reste NON JOUÉ. La cause, une
+seule, hors des migrations : le membre d'équipe d'essai des répliques n'existe pas en production (ni compte, ni
+rattachement au cabinet), et tout essai qui l'assigne à un dossier s'arrête sur la clé étrangère de l'assignation —
+`repriseEtModeleComptable` (7 sur 8, les deux autres profils justes), `accesAvantLesGardes` (arrêté à sa garde de jeu :
+la porte devant les gardes n'est pas éprouvée en production), deux blocs de `rls.sql`, et, de même, `saisies2035e`,
+`lettresDuClient`, `provisions` et neuf blocs de `rls.sql`. Les autres blocs de `rls.sql` n'ont pas été rejoués : le
+cumul de la réplique à 227 (253 invariants, 148 mutations) n'est pas redémontré en production. Signature de la
+production à 228 : colonnes 1199, contraintes 934, déclencheurs 174, droits_fonctions 367, droits_tables 105, fonctions
+367, index 318, policies 203, rls 105. Question au cabinet (ESSAIS-Q1) : créer ce membre d'essai en production, ou le
+faire créer par chaque essai dans sa transaction annulée. Réponse du cabinet relevée le même jour : PC4Q2Q1-Q2, (B) ne
+rien changer.
