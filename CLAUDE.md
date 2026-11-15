@@ -453,7 +453,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Proposition de catégorie** : à éprouver par un premier clic réel du cabinet.
 - **La répétition générale des migrations préparées** (14/11/2026, sur une copie de la réplique) : 30 des 31 s'appliquent sur
   la production du jour, dans tous les ordres éprouvés, leurs retours rendant la base d'avant ; e7a refuse (son texte
-  d'`enregistrer_facture` est dépassé : REPET-Q1) ; la garde d'INV3 ne vérifie pas le corps qu'elle remplace (REPET-Q2) ;
+  d'`enregistrer_facture` est dépassé : REPET-Q1) ;
   l'ordre de collage recommandé est dans le récit ; deux préparées du 13/11 ont été corrigées par une relecture adverse
   (la version d'une connexion posée par la base ; ce qu'une pièce a reçu lu dans son seul dossier)
   → « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES », « LA RELECTURE ADVERSE DE SIX MIGRATIONS PRÉPARÉES ».
@@ -465,6 +465,17 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `arrivee_et_depart_des_acces` (P1T-Q2) — la lecture du mot levée (`ACCES_DANS_LA_TRACE_PREVU`), la phrase de la carte
   sous `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE`, à lever avec le fichier dans l'export. Sans migration, derrière les drapeaux
   des achats et des notes de frais : B8-Q1, B4RS-Q2, B4R-Q1 → « B4R-Q1, B4RS-Q2 ET B8-Q1 ».
+- **Préparées le 15/11/2026, par l'outil, derrière leurs drapeaux baissés** : la garde de ce que reçoit la pièce citée
+  d'une facture reprise, différée à la fin de la transaction sur les trois sources du reçu, qui refuse ce que la citation
+  refuserait (`reglements_de_la_piece_citee`, A8Q5Q3Q2-Q2, `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS`) ; l'exonération de
+  retraite 2025 d'un médecin en cumul en zone d'intervention prioritaire, une case de 2025 seulement, avec le cumul
+  (`exoneration_en_zone_prioritaire`, RET2-Q2, `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` ; RET2Q2-Q1 ouverte) ; la
+  prévision de trésorerie publiée au client « Banque » (`previsions_publiees`, C8-Q2, `PREVISIONS_PUBLIEES_PREVUES` ;
+  C8Q2-Q1 à Q4) ; le 512 propre refusé depuis une année validée, en base (`compte_propre_hors_des_exercices_valides`,
+  MCB6Q2-Q1) ; INV3Q2-Q1 (A) dans INV2, INV3 et INV4 ; le retour d'INAL1 récrit (INAL1R-Q1). Toute préparée qui remplace
+  une fonction vérifie l'empreinte du corps qu'elle remplace (`remplacementsDesPreparees.test.ts`, REPET-Q2 : la garde
+  d'INV3 le faisait déjà) → « A8Q5Q3Q2-Q2 : LA GARDE DES RÈGLEMENTS », « RET2-Q2 : L'EXONÉRATION DE 2025 », chercher
+  « C8-Q2 », « REPET-Q2 » au 15/11/2026.
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
   levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la
