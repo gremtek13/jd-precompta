@@ -94,9 +94,10 @@ describe('la migration et son retour', () => {
     const exportee = MIGRATION.chemin.includes('/supabase/schema/')
     expect(COMPTES_BANCAIRES_EN_BASE).toBe(exportee)
     // « MCB5G : l'appliquer après MCB1, avec ses écrans » : levés, les écrans ouvriraient un second compte dont l'ouverture ne
-    // s'éclaterait pas, et liraient la colonne de l'ouverture éclatée — ses deux migrations doivent être dans l'export.
+    // s'éclaterait pas, et liraient la colonne de l'ouverture éclatée — ses deux migrations doivent être dans l'export ; et le
+    // filet des exercices validés (MCB6Q2-Q1 (A) : « collé avec MCB5g, avant la levée du drapeau »).
     const schema = readdirSync(new URL('../../supabase/schema/', import.meta.url))
-    const ouverture = ['ouverture_eclatee_par_compte', 'ouverture_eclatee_a_la_validation']
+    const ouverture = ['ouverture_eclatee_par_compte', 'ouverture_eclatee_a_la_validation', 'compte_propre_hors_des_exercices_valides']
       .every((nom) => schema.some((f) => new RegExp(`^\\d{14}_${nom}\\.sql$`).test(f)))
     expect(COMPTES_BANCAIRES_PREVUS).toBe(exportee && ouverture)
   })

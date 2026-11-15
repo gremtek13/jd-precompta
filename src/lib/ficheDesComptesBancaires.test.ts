@@ -6,6 +6,7 @@ import {
   REFUS_ANNEE_VALIDEE, REFUS_EXERCICES_ILLISIBLES, REFUS_FIN_D_IDENTIFIANT, REFUS_OUVERTURE_A_LA_CREATION, REFUS_OUVERTURE_EFFACEE,
   retraitDuCompte, saisieDuCompte, saisieNeuve, usageDesComptes, type ExercicesValidesLus, type SaisieDeLaFiche, type UsageDUnCompte,
 } from './ficheDesComptesBancaires'
+import { formuler, REFUS_DES_EXERCICES_VALIDES, refusDesExercicesValides } from './comptesBancaires'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, fichiersPrepares, relationsDuSchema } from '../test/schema'
 import type { CompteDuReleve } from './importParCompte'
@@ -154,12 +155,45 @@ describe('MCB6-Q2 : le compte propre ne part ni d’un exercice validé ni d’a
     expect(jugerLaCreation(saisie({ libelle: 'Compte principal', ouvertLe: '2024-06-01' }), [], ROLES, illisibles).refus).toBeNull()
   })
 
-  it('la base ne le refuse pas elle-même : aucune garde des comptes ne lit les exercices validés (la règle est de l’application)', () => {
-    // Le jour où une garde le refuserait (un filet en base, MCB6Q2-Q1), ce test tombe : le module redira alors SES mots.
+  it('la production ne le refuse pas : aucune garde des comptes de l’export ne lit les exercices validés ; le filet préparé, si', () => {
     for (const nom of ['garder_comptes_bancaires', 'garder_compte_principal_present']) {
       expect(derniereDefinitionSql(nom), nom).not.toMatch(/exercices_valides/i)
       expect(definitionsSql(nom, fichiersPrepares()), nom).toEqual([])
     }
+    // MCB6Q2-Q1 (A) : le filet, une fonction à part, préparée jusqu'à son collage, puis dans l'export — une seule définition.
+    const filet = definitionsSql('garder_compte_propre_hors_des_exercices_valides', [...fichiersDuSchema(), ...fichiersPrepares()])
+    expect(filet).toHaveLength(1)
+    expect(filet[0].definition).toMatch(/from public\.exercices_valides v where v\.dossier_id = new\.dossier_id/)
+  })
+
+  // L'écran refuse avant le clic ce que le filet de la base refuserait, aux mêmes mots, et n'envoie rien qu'il refuserait :
+  // chaque saisie d'un compte propre (créé, ou corrigé d'une date d'avant), pour chaque ensemble d'exercices validés de 2024 à
+  // 2029, lu en entier. Hors du domaine de l'écran (une année d'avant 2026, MCB-Q7), l'écran refuse pour sa propre raison.
+  it('l’écran et le filet de la base refusent les mêmes saisies, aux mêmes mots (MCB6Q2-Q1)', () => {
+    const annees = [2024, 2025, 2026, 2027, 2028, 2029]
+    let compares = 0
+    let refusesEnsemble = 0
+    for (let masque = 0; masque < 1 << annees.length; masque++) {
+      const validees = annees.filter((_, i) => masque & (1 << i))
+      const exercices: ExercicesValidesLus = { etat: 'lus', annees: validees }
+      for (const depuis of ['2024', '2025', '2026', '2027', '2028', '2029', '2030']) {
+        for (const avantDepuis of [null, '2026-01-01', '2028-01-01', '2030-01-01']) {
+          const avant = avantDepuis === null ? null : { ...SECOND, compte_propre_depuis: avantDepuis }
+          const j = avant === null
+            ? jugerLaCreation(saisie({ depuis }), [PRINCIPAL], ROLES, exercices)
+            : jugerLaModification(avant, { ...saisieDuCompte(avant), depuis }, [PRINCIPAL, avant], ROLES, VIDE, exercices)
+          const base = refusDesExercicesValides({ principal: false, compte_propre_depuis: `${depuis}-01-01` }, avant, validees)
+          if (j.refus === REFUS_ANNEE_DU_COMPTE_PROPRE) continue
+          compares++
+          if (j.refus === null) expect(base, `${depuis} ${avantDepuis} ${validees}`).toBeNull()
+          else if (base !== null) { expect(j.refus).toBe(base.message); refusesEnsemble++ }
+          else expect(j.refus, `${depuis} ${avantDepuis} ${validees}`).not.toMatch(/est validé/)
+        }
+      }
+    }
+    expect(compares).toBeGreaterThan(1000)
+    expect(refusesEnsemble).toBeGreaterThan(300)
+    expect(REFUS_ANNEE_VALIDEE(2026, 2027)).toBe(formuler(REFUS_DES_EXERCICES_VALIDES, '2026', '2027').message)
   })
 
   it('une correction : la date neuve se juge ; la date déjà posée se garde, même sur un exercice validé depuis', () => {
