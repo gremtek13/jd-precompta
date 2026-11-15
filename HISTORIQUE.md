@@ -52939,3 +52939,22 @@ saisie et ses refus avant le clic, la carte (2025, cumul « oui », remise à «
 revenu n'est pas confronté au plafond (RET2Q2-Q1). **Preuves** : `parametresDesCotisations.sql` 62 justes, sans elle celui
 d'hier plus une ligne EN ATTENTE ; 11 mutations sur 11 ; avec A, les deux ordres ont une même signature, les retours rendent
 celle d'avant ; banc SÛR ; côté application 11 mutations sur 12 (la profession, gardée deux fois, est équivalente).
+
+### 15/11/2026 — TRENTE ET UNE RÉPONSES DU CABINET, ET PLATEFORME-AGREEE DÉPLOYÉE (V14)
+
+(La session ; page des arbitrages relue le 15/11/2026.) Tranchées : 48S-Q3 (A) ; les fiches « -migration » d'A8B-Q3,
+A8Q5Q3-Q2, B4RS-Q1, PC4Q2-Q1, RET-Q2, SECU3-Q2 et PC7Q2Q1 (appliquer, par l'outil), SECU3-Q1 (collée), GARDES-Q1 (A),
+P1T-Q2 (la coller, le drapeau levé d'abord) ; A8Q5Q3Q2-Q1 (l'accepter) et Q2 (le refuser dans la garde) ; B4RQ1-Q1,
+B4RS1-Q1, B4RS1-Q2 et B4RSQ2-Q1 (A) ; C8-Q1 (A), C8-Q2 (C, maintenant), C8-Q3 (A) ; INAL1R-Q1 (récrire maintenant) ;
+INV3Q2-Q1 (A) ; MCB6Q2-Q1 (A) ; MVPD9-Q1 (A), puis « on verra plus tard » pour la fusion du réglage du garde-fou, gardé
+hors du dépôt ; PC4Q2Q1-Q1 (plus tard) ; REPET-Q1 (B), REPET-Q2 (A), REPET-Q3 (B : tout ce qui s'applique, sauf la double
+authentification, les exercices décalés, PC6 et SECU3 — l'ordre de la séance au retour, chaque migration gardant sa
+fiche) ; RET2-Q2 (B, une case de plus) ; SECU3-Q1 et Q2 (oui).
+
+`plateforme-agreee` déployée le 15/11/2026 (v14, `verify_jwt` vrai, par la ligne d'import au commit `41dab245…` de
+`main`) : le fichier servi à ce commit a l'empreinte du dépôt (md5 `b8cf94a9…`), sa constante
+`AUTEUR_DES_CONNEXIONS_EN_BASE` levée ; la version d'avant importait `d5b8ceaf…`. La réception par « Achats » qu'elle
+porte reste fermée tant que B1 n'est pas en base (la case n'existe pas : 404).
+
+Non rejoués EN PRODUCTION après les neuf migrations du matin : leurs essais et `rls.sql`. Ils l'ont été sur la copie de
+la réplique à 227, dont la signature égale celle de la production sur ses neuf familles.
