@@ -63,9 +63,9 @@
 --   - la garde : une écriture hors des deux fonctions et de la restauration (42501) ; une mise à jour, une suppression hors
 --     de celle du dossier (23514) ; une ligne qui cite autre chose qu'une publication du même dossier (23514).
 --
--- CE QU'ELLE NE CHANGE PAS : aucune fonction d'hier n'est remplacée (`client_du_dossier`, `admin_du_dossier`,
--- `is_super_admin`, `droits_sur_le_dossier` sont appelées, jamais réécrites) ; ni `memberships`, ni ses cases. Elle se colle
--- donc avant ou après `trois_cases_de_l_acces` (B1, qui réécrit `client_du_dossier` : la garde de tête n'exige de lui que
+-- CE QU'ELLE NE CHANGE PAS : aucune fonction d'hier n'est remplacée (`client_du_dossier`, `admin_du_dossier` et
+-- `is_super_admin` sont appelées, jamais réécrites ; `droits_sur_le_dossier`, que l'écran relit, n'est pas touchée) ; ni
+-- `memberships`, ni ses cases. Elle se colle donc avant ou après `trois_cases_de_l_acces` (B1, qui réécrit `client_du_dossier` : la garde de tête n'exige de lui que
 -- de lire « banque » sur `droit_banque`, ce que ses deux corps font) et `deux_facteurs_exiges`. Aucune ligne écrite d'avance.
 --
 -- VERSION PROVISOIRE, HORS DE L'EXPORT : le fichier entre dans `supabase/schema/` le jour de son application, sous la
