@@ -15,6 +15,7 @@ import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE } from './pieceDUneFactureReprise'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
+import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { ORIGINAUX_RETENUS_PREVUS } from './originauxRetenus'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
@@ -44,6 +45,7 @@ import {
   auPlanDesAdressesDesAccesRetires,
   auPlanDesFacturesImportees,
   auPlanDesSituationsPubliees,
+  auPlanDesPrevisionsPubliees,
   auPlanDesSaisies2035,
   auPlanDesParametresDesCotisations,
   auPlanDesComptesBancaires,
@@ -112,7 +114,8 @@ describe('le filtre du plan', () => {
     // (sauvegardeAdressesDesAccesRetires.test.ts) ; depuis LM7, celui des factures d'honoraires
     // (sauvegardeHonorairesFactures.test.ts) ; depuis INAL5, celui du départ d'un client (sauvegardeDepartDuClient.test.ts) ;
     // depuis B2, celui des documents et des demandes du cabinet (sauvegardeDocumentsEtDemandes.test.ts) ; depuis B4, celui
-    // des achats du client (sauvegardeAchatsDuClient.test.ts).
+    // des achats du client (sauvegardeAchatsDuClient.test.ts) ; depuis C8-Q2, celui des prévisions publiées
+    // (sauvegardePrevisionsPubliees.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -121,6 +124,7 @@ describe('le filtre du plan', () => {
         && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
         && auPlanDesAdressesDesAccesRetires(table, ADRESSES_DES_ACCES_RETIRES_PREVUES)
         && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES) && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
+        && auPlanDesPrevisionsPubliees(table, PREVISIONS_PUBLIEES_PREVUES)
         && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
         && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
         && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
