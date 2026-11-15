@@ -52808,3 +52808,21 @@ prochaine entrée. Banc (visite `client/ma-tresorerie` ajoutée, avant celles du
 en retard reste hors de la projection, dite à part avec sa somme. Remarqués, non corrigés : « Une facture en retard : leur
 encaissement… » (l'accord du singulier) ; l'icône de « Ma trésorerie » est presque celle de « Ma banque » ; le banc cherche
 Chromium sous `chrome-linux/`, l'environnement l'a sous `chrome-linux64/` (`CHROMIUM=` le contourne).
+
+### 15/11/2026 — NEUF MIGRATIONS EN PRODUCTION (B4RS-Q1, RET-Q2, PC4Q2-Q1, A8B-Q3, A8Q5Q3-Q2, PC7Q2-Q1, SECU3-Q2, LA PORTE, SECU3-Q1)
+
+(Agent architecte ; rien déployé.) De 218 à 227 migrations : huit appliquées par l'outil sur l'accord du cabinet (leurs fiches de
+migration, GARDES-Q1 (A)), puis SECU3-Q1 collée par lui ; chacune à l'empreinte de son fichier préparé (vérifié par la session), passé
+à l'export sous sa version, texte inchangé ; les retours restent préparés, leur en-tête au nouveau chemin. **Levés** :
+`AUTEUR_DES_CONNEXIONS_PREVU` et la constante de `plateforme-agreee` (à déployer ; le contrat : le chef atteste, `admisDuChef`, le
+client non), `CASES_DU_MEDECIN_PREVUES` (`types.ts` : les deux cases non facultatives), `LE_468_SUR_LE_RELEVE_PREVU`,
+`REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES`, `RECU_PAR_LA_PIECE_CITEE_PREVU`, `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES` ; l'état
+d'avant reste éprouvé (la fonction baissée en mémoire, `SCENARIOS_AUTEUR_NON_LU` ; les objets de drapeau ; l'export sans la migration
+dans les scanners de SECU3, sans exception aujourd'hui ; la porte en base, sa pose directe admise). **P1T-Q2** :
+`ACCES_DANS_LA_TRACE_PREVU` levé avant le collage, sans effet (la contrainte de l'export n'admet pas le mot) — sauf la phrase de la
+carte « Droits changés », qui aurait affirmé la trace des accès : elle attend `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE`, baissée jusqu'au
+collage. **Contrôles** (copie de la mère à 227) : dérive `96c4f6d3…`, des deux côtés ; socle 83 `d02e468d…` ; inventaire 3 138
+`4a5a1967…` ; `signature.sql` celle de 226 (SECU3-Q1 ne touche que le stockage : 13 policies, `26b2324c…`) ; l'export rejoué dans une
+grappe neuve : la même base. **Essais** (143, sur bases fraîches, 218 contre 227) : les EN ATTENTE des neuf se lèvent, justes ; neuf
+essais disent le refus de la RLS là où la garde parlait, justes ; `rls.sql` 253/0, 148 mutations sur 148, TO et SM levés ;
+`restauration.sql` IDENTIQUE (96 tables) ; banc du leurre SÛR (14). Laissée : `/home/user/repliques/replique_227`.
