@@ -462,7 +462,7 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
 }
-.main-contenu { max-width: 1200px; margin: 0 auto; }
+.main-contenu { max-width: 1600px; margin: 0 auto; }
 
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
 .topbar h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.025em; line-height: 1.15; }
