@@ -15,6 +15,7 @@ import {
 import {
   casesSansEffetSelon, ceQueDitLaCaseAchats, ceQueDitLaCaseDocuments, ceQueDitLaCaseSansEffet,
   CE_QUE_DONNE_UN_ACCES, DOMAINES, ceQueDisentLesCasesDuDossier, ceQueDitLaCaseCaisse, ceQueDitLaCaseComptes, changementApplique,
+  ceQueDitLaBanqueDeLaPrevision,
   confirmationDeLaCaseCaisse, demandeDeChangement, droitsDeLaLigne, enumeration, gesteDeLaCase, libelleDeLaCase, messageDuRefus,
   refusDeLaCase, type Domaine,
 } from '../../lib/droitsAcces'
@@ -35,6 +36,7 @@ import type { Membership } from '../../lib/types'
 import { accesDeLaLecture } from '../../lib/auteursVentes'
 import TraceDesDroitsDesAcces from './TraceDesDroitsDesAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from '../../lib/situationsPubliees'
+import { PREVISIONS_PUBLIEES_PREVUES } from '../../lib/previsionsPubliees'
 import { DOCUMENTS_ET_DEMANDES_PREVUS } from '../../lib/documentsEtDemandes'
 import { ACHATS_DU_CLIENT_PREVUS } from '../../lib/achatsClient'
 import { TROIS_CASES_EXPORTEES } from '../../lib/troisCasesDeLAcces'
@@ -524,6 +526,11 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       <h3>Accès actuels</h3>
       {reglage !== null && (
         <p className="muted" id="ce-que-disent-les-cases" style={{ marginTop: -8 }}>{ceQueDisentLesCasesDuDossier(reglage)}</p>
+      )}
+      {/* « Banque », avec la prévision de trésorerie publiée (C8-Q2), sa migration en base seulement : ce que la base lui ouvre
+          de plus. */}
+      {PREVISIONS_PUBLIEES_PREVUES && reglage !== null && (
+        <p className="muted" id="ce-que-dit-la-banque-de-la-prevision">{ceQueDitLaBanqueDeLaPrevision()}</p>
       )}
       {/* La troisième case (étape C11) : ce que la base ouvre au client qui la porte, et ce qu'elle devient sur CE dossier. */}
       {caisse !== null && (

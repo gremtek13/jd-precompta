@@ -42,6 +42,7 @@ import { COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES
 import { DOSSIER_DU_CABINET_PREVU } from './dossierDuCabinet'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
+import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -195,6 +196,21 @@ export const TABLES_DES_SITUATIONS_PUBLIEES: readonly string[] = ['situations_pu
 /** Une table au plan, côté situations publiées : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
 export function auPlanDesSituationsPubliees(table: string, exportees: boolean): boolean {
   return exportees || !TABLES_DES_SITUATIONS_PUBLIEES.includes(table)
+}
+
+// LA PRÉVISION DE TRÉSORERIE PUBLIÉE (espace client, C8-Q2 ; migration `previsions_publiees`, PRÉPARÉE le 15/11/2026,
+// supabase/preparees/20261115100000_previsions_publiees.sql) : ce que le cabinet a publié de son plan de trésorerie au
+// client « Banque », publications et retraits. Sous le drapeau de la migration (`PREVISIONS_PUBLIEES_PREVUES`,
+// src/lib/previsionsPubliees.ts), baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde. Sa
+// relation au dossier (cascade) et à elle-même (`remplace_id`, une chaîne : par vagues), son rang (après le prévisionnel
+// bancaire, une place qu'aucun voisin ne fixe), son chemin ; sa clé est la commune, `id`. La restauration la réinsère par la
+// porte que sa garde et sa policy ouvrent au super-administrateur, l'historique tel qu'il a été publié.
+// sauvegardePrevisionsPubliees.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DES_PREVISIONS_PUBLIEES: readonly string[] = ['previsions_publiees']
+
+/** Une table au plan, côté prévisions publiées : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDesPrevisionsPubliees(table: string, prevues: boolean): boolean {
+  return prevues || !TABLES_DES_PREVISIONS_PUBLIEES.includes(table)
 }
 
 // LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, en production depuis le 07/11/2026,
@@ -568,6 +584,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
     && auPlanDesAdressesDesAccesRetires(table, ADRESSES_DES_ACCES_RETIRES_PREVUES)
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
+    && auPlanDesPrevisionsPubliees(table, PREVISIONS_PUBLIEES_PREVUES)
     && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
     && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
@@ -772,6 +789,9 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'adresses_des_acces_retires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'situations_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  // La prévision de trésorerie publiée (C8-Q2, préparée) : son dossier, et la chaîne de ses remplacements et retraits.
+  { enfant: 'previsions_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'previsions_publiees', parent: 'previsions_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'saisies_2035', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'saisies_2035e', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'exercices', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -1175,6 +1195,9 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'natures_immobilisation',
   'packs',
   'previsionnels_bancaires',
+  // La prévision de trésorerie publiée (C8-Q2, préparée) : après le dossier, et elle-même par vagues ; une place qu'aucun
+  // voisin ne fixe — l'essai de restauration la met après `previsionnels_bancaires`.
+  'previsions_publiees',
   'references_annuelles',
   'references_postes_annuels',
   'regles_bancaires_ignorees',
@@ -1348,6 +1371,9 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES: readonly { table: strin
   // Les situations publiées (espace client, étape C4a) : une publication en remplace une autre, un retrait en retire une
   // (`remplace_id`) ; jamais modifiées, elles ne partent pas à NULL, et leur garde lit la ligne citée.
   { table: 'situations_publiees', colonne: 'remplace_id' },
+  // La prévision de trésorerie publiée (C8-Q2, préparée) : de même, une publication en remplace une autre, un retrait en
+  // retire une (`remplace_id`) ; jamais modifiées, elles ne partent pas à NULL, et leur garde lit la ligne citée.
+  { table: 'previsions_publiees', colonne: 'remplace_id' },
   // Les lettres de mission (ligne 47, LM4) : un modèle, une lettre en remplacent un autre, une autre de leur dossier
   // (`remplace_id`) ; jamais réécrits, ils ne partent pas à NULL, et leur garde lit la version remplacée.
   { table: 'modeles_lettre_de_mission', colonne: 'remplace_id' },
@@ -1758,6 +1784,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   trace_des_droits: { acces: 'direct' },
   adresses_des_acces_retires: { acces: 'direct' },
   situations_publiees: { acces: 'direct' },
+  previsions_publiees: { acces: 'direct' },
   saisies_2035: { acces: 'direct' },
   saisies_2035e: { acces: 'direct' },
   stocks_de_cloture: { acces: 'direct' },

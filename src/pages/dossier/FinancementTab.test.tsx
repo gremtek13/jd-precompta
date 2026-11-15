@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FinancementTab from './FinancementTab'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
@@ -37,6 +37,15 @@ vi.mock('../../lib/situationsPubliees', async (original) => {
   return { ...vrai, get SITUATIONS_PUBLIEES_EXPORTEES() { return situationsDuTest.exportees } }
 })
 afterEach(() => { situationsDuTest.exportees = true })
+
+// LA PRÉVISION PUBLIÉE AU CLIENT (C8-Q2) : le drapeau `PREVISIONS_PUBLIEES_PREVUES`, baissé tant que sa migration est
+// préparée, joué dans ses deux états par un accesseur ; baissé par défaut, comme en production.
+const previsionsDuTest = vi.hoisted(() => ({ prevues: false }))
+vi.mock('../../lib/previsionsPubliees', async (original) => {
+  const vrai = await original<typeof import('../../lib/previsionsPubliees')>()
+  return { ...vrai, get PREVISIONS_PUBLIEES_PREVUES() { return previsionsDuTest.prevues } }
+})
+afterEach(() => { previsionsDuTest.prevues = false })
 
 const faux = vi.hoisted(() => ({
   pieces: [] as unknown[],
@@ -370,6 +379,56 @@ describe('FinancementTab — « Publier au client », drapeau par drapeau', () =
     const modale = await ouvrirLaSituation('2026-06-30')
     expect(await within(modale).findByRole('heading', { name: 'Publier au client' })).toBeTruthy()
     await waitFor(() => expect(faux.lues).toContain('situations_publiees'))
+  })
+})
+
+// LA PRÉVISION PUBLIÉE AU CLIENT, SOUS LE PLAN DE TRÉSORERIE (C8-Q2) : le câblage — le bloc et sa lecture suivent le
+// drapeau, la prévision porte les mois que le plan affiche, et une lecture partielle du dossier n'en publie rien. Le jour est
+// figé au 15 novembre 2026, midi à Paris : le plan affiché et la prévision portent sur les mêmes mois sous les quatre fuseaux.
+describe('FinancementTab — « Publier au client » sous le plan de trésorerie (C8-Q2), drapeau par drapeau', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-15T11:00:00Z'))
+    faux.ecritures = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']
+      .map((mois) => ({ date: `${mois}-15`, sens: 'debit', montant: 600 }))
+  })
+  afterEach(() => { faux.ecritures = [] })
+
+  async function ouvrirLePlanDeTresorerie() {
+    render(<FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={false} dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    const titre = await screen.findByRole('heading', { name: 'Plan de trésorerie', level: 3 })
+    await cliquerGenerer(titre)
+    return screen.getByRole('heading', { name: 'Plan de trésorerie', level: 2 }).closest('.card') as HTMLElement
+  }
+
+  it('baissé : le bloc absent, et rien lu des prévisions', async () => {
+    const modale = await ouvrirLePlanDeTresorerie()
+    expect(within(modale).getAllByRole('row').length).toBeGreaterThan(1)
+    expect(within(modale).queryByRole('heading', { name: 'Publier au client' })).toBeNull()
+    expect(faux.lues).not.toContain('previsions_publiees')
+  })
+
+  it('levé : le bloc présent, sa lecture partie, et la prévision porte les mois du plan affiché', async () => {
+    previsionsDuTest.prevues = true
+    const modale = await ouvrirLePlanDeTresorerie()
+    expect(await within(modale).findByRole('heading', { name: 'Publier au client' })).toBeTruthy()
+    expect(faux.lues).toContain('previsions_publiees')
+    const premierMois = within(modale).getAllByRole('row')[1].querySelector('td')?.textContent
+    expect(premierMois).toBe('2026-12')
+    const bouton = await within(modale).findByRole('button', { name: 'Publier cette prévision' }) as HTMLButtonElement
+    await waitFor(() => expect(bouton.disabled).toBe(false))
+    fireEvent.click(bouton)
+    const fenetre = screen.getByRole('alertdialog')
+    expect(fenetre.textContent).toContain('de décembre 2026 à mai 2027')
+    expect(fenetre.textContent).toContain('de mai 2026 à octobre 2026 (6 mois, des mouvements sur 6)')
+  })
+
+  it('levé, les écritures du compte de banque lues en partie : rien ne se publie', async () => {
+    previsionsDuTest.prevues = true
+    faux.muet = { ecritures_brouillon: 2 }
+    const modale = await ouvrirLePlanDeTresorerie()
+    expect(await within(modale).findByText(/Le plan ne repose pas sur des lectures entières/)).toBeTruthy()
+    expect((within(modale).getByRole('button', { name: 'Publier cette prévision' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
 

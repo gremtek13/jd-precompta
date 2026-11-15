@@ -21,6 +21,7 @@ import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_RE
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
+import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { SAISIES_2035E_PREVUES, TABLES_DES_SAISIES_2035E } from './saisies2035E'
 import { STOCKS_PREVUS, TABLES_DES_STOCKS } from './stocks'
@@ -46,6 +47,7 @@ import {
   TABLES_DES_FACTURES_IMPORTEES,
   TABLES_DE_LA_NUMEROTATION_CONTINUE,
   TABLES_DES_SITUATIONS_PUBLIEES,
+  TABLES_DES_PREVISIONS_PUBLIEES,
   TABLES_DES_SAISIES_2035,
   TABLES_DES_PARAMETRES_DES_COTISATIONS,
   TABLES_DES_ADRESSES_RECEPTION,
@@ -435,6 +437,32 @@ function blocDesSituations(texte: string): BlocDeLaCaisse {
 
 /** Le plan que le script joue quand la table des situations existe : la sienne après sa table d'ancrage, et sa vague. */
 const avecLesSituations = avecLaCaisse
+
+// LA PRÉVISION DE TRÉSORERIE PUBLIÉE (espace client, C8-Q2) : un bloc à part met sa table au plan quand elle existe, juste
+// après `previsionnels_bancaires`, les rangs qui suivent reculant d'un, avec son chemin et sa vague (`remplace_id`) — le
+// geste de la caisse. Joué juste après le bloc des situations : sa vague suit la leur, comme dans la liste du code.
+const MARQUE_DES_PREVISIONS_PUBLIEES = '-- ══ La prévision de trésorerie publiée (espace client, C8-Q2) ══'
+
+function blocDesPrevisionsPubliees(texte: string): BlocDeLaCaisse {
+  const debut = texte.indexOf(MARQUE_DES_PREVISIONS_PUBLIEES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const vagues = /insert into essai_restauration\._vagues \(table_nom, colonne\) values\s*([^;]*);/.exec(corps)?.[1] ?? ''
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    vagues: [...vagues.matchAll(/\('(\w+)','(\w+)'\)/g)].map((m) => ({ table: m[1], colonne: m[2] })),
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.previsions_publiees') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des prévisions existe : la sienne après sa table d'ancrage, et sa vague. */
+const avecLesPrevisionsPubliees = avecLaCaisse
 
 // LES SAISIES DE LA 2035 (étapes 2035S3 à S5) : un bloc à part met leur table au plan quand elle existe, juste après la table
 // qu'il nomme (`designations_des_pieces`, donc juste avant les exercices validés), avec son chemin ; aucune vague.
@@ -993,9 +1021,9 @@ const avecLesAchatsDuClient = avecLesArticles
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
 const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesExercices(avecLInventaire(avecLInventaire(avecLInventaire(avecLesStocks(avecLAffectation(avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesCopiesDesFichiers(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
-  avecLesSituations(avecLesDevis(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
+  avecLesPrevisionsPubliees(avecLesSituations(avecLesDevis(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
-  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesSaisies2035(texte)),
+  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesPrevisionsPubliees(texte)), blocDesSaisies2035(texte)),
   blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesCopiesDesFichiers(texte)), blocDesOriginauxLiberes(texte)), blocDuModeleDuCabinet(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDesHonorairesDeposes(texte)), blocDuDepart(texte)), blocDesNotesDeFrais(texte)), blocDesAchatsDuClient(texte)), blocDesDocumentsEtDemandes(texte)), blocDesSaisies2035E(texte)), blocDeLAffectation(texte)), blocDesStocks(texte)), blocDeLInventaire(texte)), blocDesProvisions(texte)), blocDesDeclarations(texte)), blocDesExercices(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
@@ -1074,8 +1102,11 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const situations = blocDesSituations(texteDeLEssai)
   const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLesAdressesRetireesDuJour, devis) : avecLesAdressesRetireesDuJour
   const avecLesSituationsDuJour = SITUATIONS_PUBLIEES_EXPORTEES ? avecLesSituations(avecLesDevisDuJour, situations) : avecLesDevisDuJour
+  const previsionsPubliees = blocDesPrevisionsPubliees(texteDeLEssai)
+  const avecLesPrevisionsDuJour = PREVISIONS_PUBLIEES_PREVUES
+    ? avecLesPrevisionsPubliees(avecLesSituationsDuJour, previsionsPubliees) : avecLesSituationsDuJour
   const saisies2035 = blocDesSaisies2035(texteDeLEssai)
-  const avecLesSaisies2035DuJour = SAISIES_2035_EN_BASE ? avecLesSaisies2035(avecLesSituationsDuJour, saisies2035) : avecLesSituationsDuJour
+  const avecLesSaisies2035DuJour = SAISIES_2035_EN_BASE ? avecLesSaisies2035(avecLesPrevisionsDuJour, saisies2035) : avecLesPrevisionsDuJour
   const parametresDesCotisations = blocDesParametresDesCotisations(texteDeLEssai)
   const avecLesCotisationsDuJour = PARAMETRES_DES_COTISATIONS_EXPORTES
     ? avecLesParametresDesCotisations(avecLesSaisies2035DuJour, parametresDesCotisations) : avecLesSaisies2035DuJour
@@ -1255,6 +1286,17 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     })
     expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(TABLES_DES_HONORAIRES_FACTURES[0]) - 1]).toBe('lettres_de_mission')
     expect(texteDeLEssai.indexOf(MARQUE_DES_HONORAIRES_FACTURES)).toBeGreaterThan(texteDeLEssai.indexOf('-- ══ Les lettres de mission (ligne 47, LM4) ══'))
+  })
+
+  it('le bloc de la prévision publiée : sa table, après `previsionnels_bancaires`, conditionnée, son chemin, sa vague, juste après les situations (C8-Q2)', () => {
+    expect(previsionsPubliees).toEqual({
+      ancre: 'previsionnels_bancaires', tables: ['previsions_publiees'], recule: true, conditionne: true,
+      chemins: { previsions_publiees: { acces: 'direct', parent: null, colonne: null } },
+      vagues: [{ table: 'previsions_publiees', colonne: 'remplace_id' }],
+    })
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf('previsions_publiees') - 1]).toBe('previsionnels_bancaires')
+    expect(texteDeLEssai.indexOf(MARQUE_DES_PREVISIONS_PUBLIEES)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_SITUATIONS))
+    expect(texteDeLEssai.indexOf(MARQUE_DES_PREVISIONS_PUBLIEES)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_LETTRES_DE_MISSION))
   })
 
   it('le bloc des lettres de mission : leurs deux tables, après `precisions_mouvements`, conditionné, leurs chemins et leurs vagues (LM4)', () => {
@@ -1479,6 +1521,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DES_ADRESSES_RECEPTION.includes(t) && !TABLES_DES_CONTACTS.includes(t)
       && !TABLES_DES_PARAMETRES_FACTURATION.includes(t) && !TABLES_DU_JOURNAL_DES_DESIGNATIONS.includes(t)
       && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t) && !TABLES_DES_SITUATIONS_PUBLIEES.includes(t)
+      && !TABLES_DES_PREVISIONS_PUBLIEES.includes(t)
       && !TABLES_DES_ADRESSES_DES_ACCES_RETIRES.includes(t)
       && !TABLES_DES_SAISIES_2035.includes(t) && !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(t)
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t) && !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(t)

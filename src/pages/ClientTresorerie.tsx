@@ -10,6 +10,14 @@ import {
   dernierJourDeLHorizon, echeancesDeLEcheancier, enLettres, phraseDuDecouvert, soldesDeLaBanque, type Depart, type NonCompte, type Tresorerie,
 } from '../lib/tresorerieClient'
 import { useTresorerieDuClient, type LectureDeLaTresorerie } from '../lib/tresorerieClientLecture'
+import { moisEnLettres } from '../lib/echeancierClient'
+import {
+  moisLePlusBas, nonComptesSelonLaPrevision, periodeNonComptee, phraseDeLaPublication, phraseDesMoisPasses, phraseDuDepart,
+  phraseDuMoisLePlusBas, phraseDUnePrevisionPassee, phraseDuNonCompte, phraseDuRythme, PREVISION_AUCUNE, PREVISION_CONTENU_ILLISIBLE,
+  PREVISION_ESPECES, PREVISION_ILLISIBLE, PREVISION_MOT, PREVISION_PAS_UN_ENGAGEMENT, PREVISION_SANS_BANQUE, PREVISION_TITRE,
+  previsionAMontrer, PREVISIONS_PUBLIEES_PREVUES,
+} from '../lib/previsionsPubliees'
+import { usePrevisionDuClient, type LectureDuClient } from '../lib/previsionsPublieesLecture'
 
 // « MA TRÉSORERIE À 90 JOURS » (ligne 51.5, partie C, étape C8) : le solde lu, plus ce que tes clients te doivent à
 // l'échéance de leurs factures, moins tes impôts et tes cotisations au montant connu, jour après jour, jusqu'au 89e jour qui
@@ -20,11 +28,18 @@ import { useTresorerieDuClient, type LectureDeLaTresorerie } from '../lib/tresor
 //
 // Le vide est une affirmation : rien ne se dit avant le retour des lectures (« Chargement… ») ; une source lue en partie rend
 // la projection muette, avec son motif en infobulle, jamais « 0 ». Ce qui n'est pas compté se dit, ligne par ligne.
+//
+// LA PRÉVISION DE TON CABINET (C8-Q2, derrière `PREVISIONS_PUBLIEES_PREVUES`) : ce que le cabinet a publié de son plan de
+// trésorerie, lu à part (lib/previsionsPublieesLecture.ts, la case « Banque » relue à la base), montré dans sa propre carte,
+// sous le mot « prévision », après ce qui n'est pas compté — jamais ajouté au solde attendu ni au point le plus bas des
+// montants connus, qui ne lisent rien d'elle. Lue en partie ou illisible, elle se tait sur son motif ; la projection, elle,
+// n'en dépend pas.
 export default function ClientTresorerie() {
   const { dossierActifId, droitsParDossier } = useAuth()
   // `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
   const ventes = mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes)
   const lecture = useTresorerieDuClient(dossierActifId, ventes)
+  const prevision = usePrevisionDuClient(dossierActifId, PREVISIONS_PUBLIEES_PREVUES)
 
   if (!dossierActifId) {
     return <p className="muted">Aucun dossier ne t'est encore rattaché — contacte ton cabinet comptable.</p>
@@ -44,7 +59,10 @@ export default function ClientTresorerie() {
       ) : lecture.etat === 'banque_fermee' ? (
         <div className="card"><p className="muted">{TRESORERIE_BANQUE_FERMEE}</p></div>
       ) : (
-        <Projection tresorerie={composer(lecture, aujourdHui)} aujourdHui={aujourdHui} />
+        <>
+          <Projection tresorerie={composer(lecture, aujourdHui)} aujourdHui={aujourdHui} />
+          {PREVISIONS_PUBLIEES_PREVUES && <PrevisionDuCabinet lecture={prevision} aujourdHui={aujourdHui} />}
+        </>
       )}
     </>
   )
@@ -136,7 +154,7 @@ function Projection({ tresorerie: t, aujourdHui }: { tresorerie: Tresorerie; auj
         )}
       </div>
 
-      <NonComptes lignes={t.nonComptes} />
+      <NonComptes lignes={nonComptesSelonLaPrevision(t.nonComptes, PREVISIONS_PUBLIEES_PREVUES)} />
     </>
   )
 }
@@ -150,6 +168,65 @@ function NonComptes({ lignes }: { lignes: readonly NonCompte[] }) {
           <li key={l.cle}>{l.phrase}{l.centimes !== null && <> ({euros(l.centimes)})</>}</li>
         ))}
       </ul>
+    </section>
+  )
+}
+
+function PrevisionDuCabinet({ lecture, aujourdHui }: { lecture: LectureDuClient | null; aujourdHui: string }) {
+  const titre = (
+    <h2 style={{ marginTop: 0 }}>
+      {PREVISION_TITRE} <span className="badge badge-warning" style={{ marginLeft: 6, verticalAlign: 'middle' }}>{PREVISION_MOT}</span>
+    </h2>
+  )
+  if (lecture === null) {
+    return <section className="card" aria-label={PREVISION_TITRE}>{titre}<p className="muted" aria-busy="true">Chargement…</p></section>
+  }
+  if (lecture.etat === 'echec' || (lecture.etat === 'lue' && !lecture.previsions.complete)) {
+    const motif = lecture.etat === 'echec' ? lecture.motif : lecture.previsions.motif ?? undefined
+    return <section className="card" aria-label={PREVISION_TITRE}>{titre}<p className="error-text" title={motif}>{PREVISION_ILLISIBLE}</p></section>
+  }
+  if (lecture.etat === 'sans_banque') {
+    return <section className="card" aria-label={PREVISION_TITRE}>{titre}<p className="muted">{PREVISION_SANS_BANQUE}</p></section>
+  }
+  const a = previsionAMontrer(lecture.previsions.lignes, aujourdHui)
+  if (a.etat !== 'montree') {
+    return (
+      <section className="card" aria-label={PREVISION_TITRE}>
+        {titre}
+        <p className={a.etat === 'illisible' ? 'error-text' : 'muted'}>
+          {a.etat === 'aucune' ? PREVISION_AUCUNE : a.etat === 'illisible' ? PREVISION_CONTENU_ILLISIBLE : phraseDUnePrevisionPassee(a.etablieLe)}
+        </p>
+      </section>
+    )
+  }
+  const c = a.contenu
+  const trou = periodeNonComptee(c)
+  return (
+    <section className="card" aria-label={PREVISION_TITRE}>
+      {titre}
+      <p className="muted" style={{ marginTop: 0 }}>{PREVISION_PAS_UN_ENGAGEMENT}</p>
+      <p style={{ margin: '0 0 4px' }}>{phraseDeLaPublication(c.etablie_le)}</p>
+      {a.moisPasses > 0 && <p className="muted" style={{ fontSize: '0.85rem', margin: '0 0 4px' }}>{phraseDesMoisPasses(c.etablie_le)}</p>}
+      <p style={{ margin: '0 0 4px' }}>{phraseDuDepart(c.depart)}</p>
+      <p style={{ margin: '0 0 4px' }}>{phraseDuRythme(c.rythme)}{c.avec_especes && <> {PREVISION_ESPECES}</>}</p>
+      {trou && <p className="muted" style={{ fontSize: '0.85rem', margin: '0 0 8px' }}>{phraseDuNonCompte(trou)}</p>}
+      <div className="table-scroll tableau-adaptable">
+        <table className="table-empilable-etroite" aria-label="La prévision de ton cabinet, mois par mois">
+          <thead><tr><th>Mois</th><th>Solde au début</th><th>Entrées</th><th>Sorties</th><th>Solde à la fin</th></tr></thead>
+          <tbody>
+            {c.mois.map((m) => (
+              <tr key={m.mois}>
+                <td data-libelle="Mois">{moisEnLettres(m.mois)}</td>
+                <td data-libelle="Solde au début">{euros(m.solde_debut)}</td>
+                <td data-libelle="Entrées">{euros(m.encaissements)}</td>
+                <td data-libelle="Sorties">{euros(m.decaissements)}</td>
+                <td data-libelle="Solde à la fin" className={m.solde_fin < 0 ? 'error-text' : undefined}>{euros(m.solde_fin)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className={moisLePlusBas(c).solde_fin < 0 ? 'error-text' : 'muted'} style={{ marginBottom: 0 }}>{phraseDuMoisLePlusBas(moisLePlusBas(c))}</p>
     </section>
   )
 }

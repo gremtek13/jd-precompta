@@ -16,6 +16,7 @@ import {
   CE_QUE_COMPTENT_SES_FACTURES, PHRASE_DES_VENTES_DE_LA_SIMULATION, gesteDeLaCase, phraseDuReglage, raisonDuDossierNonBascule,
   raisonDuReglageIllisible, refusDeLaCase, reglageDuDossier, REFUS_VENTES_DOSSIER_NON_BASCULE, ceQueMontreMaCaisseSelon,
   CE_QUE_LA_CASE_COMPTES_OUVRE, TABLES_LUES_AVEC_COMPTES, ceQueDitLaCaseComptes, CE_QUE_LA_CASE_DOCUMENTS_OUVRE,
+  CE_QUE_LA_BANQUE_OUVRE_DE_LA_PREVISION, TABLES_LUES_AVEC_BANQUE_DE_LA_PREVISION, ceQueDitLaBanqueDeLaPrevision,
   TABLES_LUES_AVEC_DOCUMENTS, ceQueDitLaCaseDocuments, ceQueDitLaCaseDocumentsSelon, CE_QUE_MONTRE_MES_LETTRES, CE_QUE_LA_CASE_ACHATS_OUVRE, TABLES_LUES_AVEC_ACHATS, ceQueDitLaCaseAchats, demandeDeChangementSelon, domainesSelon, phraseDesRelancesSelon, type Domaine,
 } from './droitsAcces'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
@@ -1973,6 +1974,28 @@ describe('la case « Comptes » (étape C4b), derrière sa migration', () => {
     // La policy du client « Comptes » : les publications en cours seulement.
     expect(MIGRATION_SP).toContain("using (client_du_dossier(dossier_id, 'comptes') and geste = 'publication' and situation_publiee_en_cours(id))")
     for (const t of TABLES_LUES_AVEC_COMPTES) expect(MIGRATION_SP).toContain(`create policy situations_publiees_lecture_comptes on public.${t}`)
+  })
+})
+
+// « BANQUE », AVEC LA PRÉVISION DE TRÉSORERIE PUBLIÉE (C8-Q2) : la phrase de l'onglet Accès dit ce que la migration
+// `previsions_publiees` (préparée) ouvre de plus au client « Banque » — la prévision en cours, aucun geste —, et nomme la page.
+describe('ce que dit « Banque » de la prévision de trésorerie publiée (C8-Q2)', () => {
+  const preparees = resolve(process.cwd(), 'supabase/preparees')
+  const MIGRATION_PP = readFileSync(resolve(preparees, readdirSync(preparees).find((n) => /^\d{14}_previsions_publiees\.sql$/.test(n))!), 'utf8')
+
+  it('la phrase dit la prévision en cours, figée, sans geste, et nomme « Ma trésorerie » ; la policy du client est celle-là', () => {
+    const phrase = ceQueDitLaBanqueDeLaPrevision()
+    expect(phrase).toContain('« Banque »')
+    expect(phrase).toContain(CE_QUE_LA_BANQUE_OUVRE_DE_LA_PREVISION)
+    expect(phrase).toContain('« Ma trésorerie »')
+    expect(phrase).toContain('« prévision »')
+    expect(MIGRATION_PP).toContain("using (client_du_dossier(dossier_id, 'banque') and geste = 'publication' and prevision_publiee_en_cours(id))")
+    for (const t of TABLES_LUES_AVEC_BANQUE_DE_LA_PREVISION) {
+      expect(MIGRATION_PP).toContain(`create policy previsions_publiees_lecture_banque on public.${t}`)
+    }
+    // Aucun geste au client : les deux fonctions au cabinet du dossier, la restauration au super-administrateur.
+    expect(MIGRATION_PP.match(/create policy previsions_publiees_\w+ on public\.previsions_publiees\s+for (\w+)/g)?.length).toBe(3)
+    expect(MIGRATION_PP).not.toMatch(/create policy previsions_publiees_\w+ on public\.previsions_publiees\s+for (update|delete|all)/)
   })
 })
 
