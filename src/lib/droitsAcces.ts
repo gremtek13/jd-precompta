@@ -912,6 +912,32 @@ export function ceQueDitLaCaseComptes(): string {
 
 export const TABLES_LUES_AVEC_COMPTES = ['situations_publiees'] as const
 
+// ── La prévision de trésorerie publiée, sous la case « Banque » (C8-Q2) ──────────────────────────────────────────────────
+// CE QU'ELLE OUVRE DE PLUS À LA SESSION DU CLIENT « BANQUE », PAR LA BASE, dès que la migration `previsions_publiees`
+// (PRÉPARÉE) est en base : la policy `previsions_publiees_lecture_banque`, et elle seule — la prévision EN COURS de son
+// dossier, figée au jour de sa publication ; ni un retrait, ni une version remplacée (`prevision_publiee_en_cours`). Aucun
+// geste : `publier_prevision` et `retirer_prevision` sont au cabinet seul. Le contenu ne porte que des valeurs — des
+// centimes, des dates, des mois et un booléen —, aucun texte. L'onglet la dit sous la phrase des cases, derrière le drapeau
+// de sa migration (`PREVISIONS_PUBLIEES_PREVUES`, lib/previsionsPubliees.ts) ; droitsAcces.test.ts confronte ces termes à
+// la migration.
+export const CE_QUE_LA_BANQUE_OUVRE_DE_LA_PREVISION = 'il y lit la prévision de trésorerie que tu lui publies, la dernière '
+  + 'seulement — figée au jour de sa publication : le solde de départ et sa date, le rythme moyen des mois observés, chaque '
+  + 'mois projeté, et si ses recettes en espèces y entrent —, jamais une prévision retirée ni celle qu’une autre a remplacée.'
+
+/** Ce que l'espace du client en montre (« Ma trésorerie »), et d'où le cabinet publie. */
+export const CE_QUE_MONTRE_MA_TRESORERIE_DE_LA_PREVISION = 'Son espace la lui montre dans « Ma trésorerie », sous le mot '
+  + '« prévision », à part de ce qui est connu ; tu la publies, la remplaces ou la retires depuis le plan de trésorerie de '
+  + 'l’onglet Financement.'
+
+/** Ce que dit la case « Banque » de la prévision publiée, sous la phrase des cases : ce que la base ouvre de plus. */
+export function ceQueDitLaBanqueDeLaPrevision(): string {
+  const { libelle } = definitionDe('banque')
+  return `« ${libelle} », avec la prévision de trésorerie : une case cochée ouvre aussi au client, par la base, la prévision `
+    + `que tu publies — ${CE_QUE_LA_BANQUE_OUVRE_DE_LA_PREVISION} ${CE_QUE_MONTRE_MA_TRESORERIE_DE_LA_PREVISION}`
+}
+
+export const TABLES_LUES_AVEC_BANQUE_DE_LA_PREVISION = ['previsions_publiees'] as const
+
 // ── Les trois cases de B1 (espace client, ligne 51.5, étape B1) ──────────────────────────────────────────────────────────
 // CE QU'ELLES OUVRENT À LA SESSION DU CLIENT, PAR LA BASE : RIEN. Aucune policy ni aucune autre fonction ne les lit
 // (supabase/essais/troisCasesDeLAcces.sql, rangs 12 et 13 ; le bloc TC de rls.sql) ; chacune se coche, se lit sur la ligne

@@ -40,10 +40,19 @@ export interface PlanTresorerie {
 export function calculerPlanTresorerie(
   lignesBanque: LigneBanquePourPlan[], soldeActuel: number, nbMoisHistorique: number, nbMoisProjection: number,
 ): PlanTresorerie {
+  return calculerPlanTresorerieAu(lignesBanque, soldeActuel, nbMoisHistorique, nbMoisProjection, premierJourDuMoisCourant())
+}
+
+// LE MÊME PLAN, AU MOIS QU'ON LUI DONNE (C8-Q2) : `premierJourMoisCourant` (AAAA-MM-01) remplace le mois du jour lu sur
+// l'horloge locale. La prévision publiée au client se compose au jour de PARIS, celui que la base vérifie
+// (lib/previsionsPubliees.ts) ; l'écran du cabinet garde `calculerPlanTresorerie`, au jour local, comme hier.
+export function calculerPlanTresorerieAu(
+  lignesBanque: readonly LigneBanquePourPlan[], soldeActuel: number, nbMoisHistorique: number, nbMoisProjection: number,
+  premierJourMoisCourant: string,
+): PlanTresorerie {
   // Bornes comparées en chaînes AAAA-MM-JJ plutôt qu'en objets Date : `l.date` est une date SQL nue,
   // et la convertir en Date la place à minuit UTC, décalée par rapport à un minuit local — de quoi
   // faire basculer d'un jour les lignes situées pile sur une borne.
-  const premierJourMoisCourant = premierJourDuMoisCourant()
   const debutHistorique = ajouterMois(premierJourMoisCourant, -nbMoisHistorique)
 
   const dansHistorique = lignesBanque.filter(
@@ -116,7 +125,7 @@ export interface OuvertureBanque {
 //
 // En centimes entiers : une somme de flottants dérive, et ce chiffre-là part à une banque.
 export function soldeBanqueADate(
-  lignesBanque: LigneBanquePourPlan[], ouverture: OuvertureBanque | null, date: string,
+  lignesBanque: readonly LigneBanquePourPlan[], ouverture: OuvertureBanque | null, date: string,
 ): number {
   const depart = ouverture && date >= ouverture.date ? ouverture : null
   const centimes = lignesBanque
@@ -137,7 +146,7 @@ export function soldeBanqueADate(
 // Des à-nouveaux changent la réponse : à partir de leur date, le solde de départ est CONNU, même sans
 // aucune écriture — une banque soldée à la reprise est un zéro vrai. Avant elle, on n'en connaît aucun.
 export function reserveSurSolde(
-  lignesBanque: LigneBanquePourPlan[], ouverture: OuvertureBanque | null, date: string,
+  lignesBanque: readonly LigneBanquePourPlan[], ouverture: OuvertureBanque | null, date: string,
 ): string | null {
   if (ouverture && date >= ouverture.date) return null
   if (ouverture) {

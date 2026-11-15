@@ -9,6 +9,8 @@ import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from 
 import { calculerSituationIntermediaire, moisEcoulesDeLAnnee } from '../../lib/situationIntermediaire'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from '../../lib/situationsPubliees'
 import SituationsPubliees from './SituationsPubliees'
+import { PREVISIONS_PUBLIEES_PREVUES } from '../../lib/previsionsPubliees'
+import PrevisionsPubliees from './PrevisionsPubliees'
 import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
 import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, soldeBanqueADate, type EcheanceConnue, type OuvertureBanque } from '../../lib/planTresorerie'
 import { ouvertureBanque } from '../../lib/aNouveaux'
@@ -582,6 +584,9 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
 
       {tresorerieOuverte && recettesDeCaisse && (
         <PlanTresorerieModal
+          dossierId={dossierId}
+          // La publication au client (C8-Q2) ne part que d'un plan lu en entier : ses écritures, ses mouvements, ses à-nouveaux.
+          lectureDuPlan={lectureIncomplete ?? ouvertureIncomplete}
           lignesBanque={lignesBanque}
           lignesDuRythme={lignesDuRythmeEtDeLaCaisse}
           recettesEnEspeces={lignesDeLaCaisse.length}
@@ -754,7 +759,8 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
 }
 
 // `recettesEnEspeces` : le nombre de recettes de la caisse que le rythme compte (étape C3a), pour que la phrase le dise.
-function PlanTresorerieModal({ lignesBanque, lignesDuRythme, recettesEnEspeces, deblocagesEcartes, acquisitionsEcartees, mouvementsDeBilanEcartes, remboursementsTvaEcartes, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
+function PlanTresorerieModal({ dossierId, lectureDuPlan, lignesBanque, lignesDuRythme, recettesEnEspeces, deblocagesEcartes, acquisitionsEcartees, mouvementsDeBilanEcartes, remboursementsTvaEcartes, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
+  dossierId: string; lectureDuPlan: string | null
   lignesBanque: LigneBanque[]; lignesDuRythme: LigneBanque[]; recettesEnEspeces: number; deblocagesEcartes: number; acquisitionsEcartees: number; mouvementsDeBilanEcartes: number
   remboursementsTvaEcartes: number
   ouverture: OuvertureBanque | null; soldeActuel: number
@@ -856,6 +862,17 @@ function PlanTresorerieModal({ lignesBanque, lignesDuRythme, recettesEnEspeces, 
             </table>
           )}
         </div>
+
+        {/* La prévision publiée au client « Banque » (C8-Q2), derrière le drapeau de sa migration : le même plan, au jour de
+            Paris, sans les échéances ni le nom d'un emprunt. */}
+        {PREVISIONS_PUBLIEES_PREVUES && (
+          <PrevisionsPubliees
+            dossierId={dossierId}
+            moisAffiches={plan.lignes.map((l) => l.mois)}
+            lectureDuPlan={lectureDuPlan}
+            entree={{ lignesBanque, ouverture, lignesDuRythme, nbMoisHistorique, nbMoisProjection, avecEspeces: recettesEnEspeces > 0 }}
+          />
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>

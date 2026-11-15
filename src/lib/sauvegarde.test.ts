@@ -39,6 +39,7 @@ import { TABLES_DES_NOTES_DE_FRAIS } from './notesDeFrais'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { CAISSE_EXPORTEE } from './caisse'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
+import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { derniereDefinitionSql } from '../test/schema'
@@ -147,6 +148,8 @@ describe('ordre de restauration', () => {
       ...(PARAMETRES_FACTURATION_EXPORTES ? ['parametres_facturation.remplace_id'] : []),
       ...(CAISSE_EXPORTEE ? ['operations_caisse.remplace_id'] : []),
       ...(SITUATIONS_PUBLIEES_EXPORTEES ? ['situations_publiees.remplace_id'] : []),
+      // La prévision de trésorerie publiée (C8-Q2, préparée) : le jour où sa migration est en base.
+      ...(PREVISIONS_PUBLIEES_PREVUES ? ['previsions_publiees.remplace_id'] : []),
       ...(LETTRES_DE_MISSION_PREVUES ? ['modeles_lettre_de_mission.remplace_id', 'lettres_de_mission.remplace_id'] : []),
     ])
   })
