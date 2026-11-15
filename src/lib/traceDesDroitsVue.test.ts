@@ -216,7 +216,7 @@ describe('la trace rangée par accès', () => {
 // l'écran sous `ACCES_DANS_LA_TRACE_PREVU` seulement (levé le 15/11/2026, avant le collage), et sous ses deux formes
 // seulement ; ce que la carte en DIT, sous `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE`, qui suit l'export.
 describe('l’accès lui-même dans la trace (P1T-Q2)', () => {
-  const PREPAREE = readFileSync(join(__dirname, '../../supabase/preparees/20261113202000_arrivee_et_depart_des_acces.sql'), 'utf8')
+  const PREPAREE = readFileSync(join(__dirname, '../../supabase/schema/20261115130614_arrivee_et_depart_des_acces.sql'), 'utf8')
   const arrivee = brute({ id: 'a1', droit: 'acces', geste: 'creation', coche: true })
   const depart = brute({ id: 'a2', droit: 'acces', geste: 'retrait', coche: false, fait_le: '2026-11-09T09:12:00Z' })
 
@@ -226,14 +226,14 @@ describe('l’accès lui-même dans la trace (P1T-Q2)', () => {
     expect(traceDeLaLecture({ lignes: [brute(), arrivee], complete: true, motif: null }).motif).toBeNull()
   })
 
-  it('levé avant la migration, il ne change rien : la base n’écrit pas le mot, et une trace de ses sept cases se lit de même', () => {
-    // La contrainte de l'export, la dernière définition de `trace_des_droits_droit` : les sept cases, jamais « acces ».
+  it('la migration en base (15/11/2026) : l’export admet le huitième mot, et une trace des sept cases se lit de même, le mot connu ou non', () => {
+    // La contrainte de l'export, la dernière définition de `trace_des_droits_droit` : les sept cases, puis « acces ».
     const definitions = fichiersDuSchema().flatMap((f) => [...f.texte.matchAll(/constraint trace_des_droits_droit\s+check \(droit in \(([^)]*)\)\)/gi)]
       .map((m) => m[1].split(',').map((x) => x.trim().replace(/'/g, ''))))
     expect(definitions.length).toBeGreaterThan(0)
-    expect(definitions[definitions.length - 1]).toEqual(['ventes', 'banque', 'caisse', 'comptes', 'achats', 'frais', 'documents'])
-    // Toute ligne que la base peut écrire se juge de même, le mot connu ou non.
-    for (const droit of definitions[definitions.length - 1]) {
+    expect(definitions[definitions.length - 1]).toEqual(['ventes', 'banque', 'caisse', 'comptes', 'achats', 'frais', 'documents', 'acces'])
+    // Toute ligne d'une CASE se juge de même, le mot connu ou non.
+    for (const droit of definitions[definitions.length - 1].filter((d) => d !== 'acces')) {
       for (const geste of GESTES) {
         for (const coche of [true, false]) {
           const b = brute({ droit, geste, coche })
@@ -250,7 +250,7 @@ describe('l’accès lui-même dans la trace (P1T-Q2)', () => {
     expect(jugee.motif).toContain('1 ligne(s) portent un droit, un geste ou une date que cet écran ne connaît pas')
   })
 
-  it('ce que la carte dit de la trace suit l’export : baissé tant que la migration n’y est pas', () => {
+  it('ce que la carte dit de la trace suit l’export : levé dès que la migration y est', () => {
     expect(ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE)
       .toBe(fichiersDuSchema().some((f) => /\d{14}_arrivee_et_depart_des_acces\.sql$/.test(f.chemin)))
   })

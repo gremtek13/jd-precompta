@@ -461,9 +461,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   reprise retient la trésorerie (A8B-Q3), le registre d'une facture reprise part de ce que sa pièce citée a reçu
   (A8Q5Q3-Q2), l'auteur d'une connexion de plateforme (B4RS-Q1 ; `plateforme-agreee` déployée, v14), le
   cumul et la dispense d'un médecin (RET-Q2), la classe d'une catégorie commune (PC7Q2-Q1), SECU3-Q1 et Q2, la porte
-  devant les gardes (GARDES-Q1) → « NEUF MIGRATIONS EN PRODUCTION ». Reste préparée, à coller :
-  `arrivee_et_depart_des_acces` (P1T-Q2) — la lecture du mot levée (`ACCES_DANS_LA_TRACE_PREVU`), la phrase de la carte
-  sous `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE`, à lever avec le fichier dans l'export. Sans migration, derrière les drapeaux
+  devant les gardes (GARDES-Q1) → « NEUF MIGRATIONS EN PRODUCTION ». Puis, collée le même jour (228) :
+  `arrivee_et_depart_des_acces` (P1T-Q2), la trace nomme l'accès ouvert ou retiré même sans case
+  (`ACCES_DANS_LA_TRACE_PREVU` et `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE` levés) → « P1T-Q2 EN PRODUCTION ». Sans migration, derrière les drapeaux
   des achats et des notes de frais : B8-Q1, B4RS-Q2, B4R-Q1 → « B4R-Q1, B4RS-Q2 ET B8-Q1 ».
 - **Préparées le 15/11/2026, par l'outil, derrière leurs drapeaux baissés** : la garde de ce que reçoit la pièce citée
   d'une facture reprise, différée à la fin de la transaction sur les trois sources du reçu, qui refuse ce que la citation

@@ -52958,3 +52958,17 @@ porte reste fermée tant que B1 n'est pas en base (la case n'existe pas : 404).
 
 Non rejoués EN PRODUCTION après les neuf migrations du matin : leurs essais et `rls.sql`. Ils l'ont été sur la copie de
 la réplique à 227, dont la signature égale celle de la production sur ses neuf familles.
+
+### 15/11/2026 — P1T-Q2 EN PRODUCTION : L'ARRIVÉE ET LE DÉPART D'UN ACCÈS DANS LA TRACE
+
+(La session ; la migration collée par le cabinet.) `arrivee_et_depart_des_acces`, collée dans l'éditeur SQL avec sa ligne
+d'historique (le `drop constraint` retient l'outil), le drapeau de la lecture en ligne avant elle : version
+`20261115130614`, empreinte de l'historique `ecbb65ad10beba9cb376f66cb7b6602f`, celle du fichier. Le fichier passe de
+`supabase/preparees/` à l'export sous cette version, texte inchangé ; `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE` levé (la
+carte « Droits changés » dit qu'elle trace chaque accès ouvert ou retiré), `traceDesDroitsVue.test.ts` relit dans
+l'export les huit mots de la contrainte, `AccesTab.trace.test.tsx` attend la phrase neuve. Les trois contrôles, égaux
+des deux côtés : la dérive, 228 fichiers et 228 migrations, `69635eb4f474ae3c798a94f6293ede22` ; le socle, 83
+instructions, `d02e468d124c948803d3e9b831092ca3` ; l'inventaire, 3 140 objets (deux de plus : la fonction et le
+déclencheur), `9fee2c12d8f7b9b5470eacd49b34a7f9`. Non rejoués en production : `traceDesDroits.sql` (ses étapes 41 à 52
+ne sont plus EN ATTENTE) et `rls.sql` ; `signature.sql` non plus. Son retour se refuse dès que la trace porte une ligne
+« acces », et le drapeau se baisse avant lui.
