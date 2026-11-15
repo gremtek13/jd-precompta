@@ -17,6 +17,8 @@ const drapeau = vi.hoisted(() => ({
   // premiers cas jouent tant que son code existe ; levées — l'état servi depuis la migration — dans leurs propres cas, avec
   // les paramètres lus que ces cas posent.
   cases: false,
+  // L'exonération de 2025 en zone d'intervention prioritaire (RET2-Q2) : baissée — l'état servi —, levée dans ses propres cas.
+  exoneration: false,
   debutActivite: '2010-01-01',
   parExercice: new Map<number, unknown>(),
 }))
@@ -26,7 +28,10 @@ vi.mock('../../lib/voletSocialPamc', async (importer) => {
 })
 vi.mock('../../lib/parametresDesCotisations', async (importer) => {
   const reel = await importer<typeof import('../../lib/parametresDesCotisations')>()
-  return { ...reel, PARAMETRES_DES_COTISATIONS_EXPORTES: true, get CASES_DU_MEDECIN_PREVUES() { return drapeau.cases } }
+  return {
+    ...reel, PARAMETRES_DES_COTISATIONS_EXPORTES: true, get CASES_DU_MEDECIN_PREVUES() { return drapeau.cases },
+    get EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE() { return drapeau.exoneration },
+  }
 })
 vi.mock('../../lib/parametresDesCotisationsLecture', () => ({
   lireLesParametresDesCotisations: (dossierId: string) =>
@@ -62,7 +67,7 @@ function attendue(profession: 'auxiliaire_medical' | 'medecin_secteur_1', cumul:
   const r = estimerRetraite({
     annee: 2025, profession, remplacant: false, revenuBrutSocial: 60_000, revenuProfessionnelPositif: true, recettesBrutes: 80_000,
     honorairesConventionnes: 80_000, depassements: null, parametres: { tenus: true, debutActivite: '2010-01-01', acre: null, tauxDentiste: null },
-    cumulEmploiRetraite: cumul, dispenseDesDebuts: { tenue: false },
+    cumulEmploiRetraite: cumul, dispenseDesDebuts: { tenue: false }, exonerationEnZonePrioritaire: { tenue: false },
   })
   if (!r.disponible) throw new Error(r.motif)
   return r.estimation
@@ -176,7 +181,7 @@ describe('la retraite dans le volet social', () => {
 // LES DEUX CASES D'UN MÉDECIN EN BASE (RET-Q2, `CASES_DU_MEDECIN_PREVUES` levé par l'accesseur) : le choix local du cumul
 // disparaît, l'estimation lit le cumul et la dispense de l'exercice, que la carte des paramètres offre.
 describe('la retraite d’un médecin, ses deux cases en base', () => {
-  async function avecLesCases(debutActivite: string, cases: { cumulEmploiRetraite: boolean | null; dispenseComplementaire: boolean | null }) {
+  async function avecLesCases(debutActivite: string, cases: { cumulEmploiRetraite: boolean | null; dispenseComplementaire: boolean | null; exonerationZonePrioritaire?: boolean | null }) {
     drapeau.cases = true
     drapeau.debutActivite = debutActivite
     drapeau.parExercice = new Map([[2025, { acre: false, tauxDentiste: null, medecin: cases }]])
@@ -185,7 +190,7 @@ describe('la retraite d’un médecin, ses deux cases en base', () => {
     saisir(/Honoraires conventionnés/, '80000')
     return rendu
   }
-  const remettre = () => { drapeau.cases = false; drapeau.debutActivite = '2010-01-01'; drapeau.parExercice = new Map() }
+  const remettre = () => { drapeau.cases = false; drapeau.exoneration = false; drapeau.debutActivite = '2010-01-01'; drapeau.parExercice = new Map() }
 
   it('plus de choix local : le cumul de l’exercice, lu, retire l’invalidité-décès', async () => {
     try {
@@ -218,3 +223,41 @@ describe('la retraite d’un médecin, ses deux cases en base', () => {
   })
 })
 
+// L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE EN BASE (RET2-Q2, `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` levé par
+// l'accesseur, l'état d'après sa migration préparée) : un médecin en cumul, en 2025, ne voit sa retraite qu'une fois
+// l'exonération dite ; dite, rien n'est dû, et l'écran dit pourquoi.
+describe('la retraite d’un médecin en cumul en 2025, l’exonération en base', () => {
+  async function exonere(exonerationZonePrioritaire: boolean | null) {
+    drapeau.cases = true
+    drapeau.exoneration = true
+    drapeau.parExercice = new Map([[2025, { acre: false, tauxDentiste: null,
+      medecin: { cumulEmploiRetraite: true, dispenseComplementaire: null, exonerationZonePrioritaire } }]])
+    await afficher()
+    saisir(/Profession/, 'medecin_secteur_1')
+    saisir(/Honoraires conventionnés/, '80000')
+  }
+  const remettre = () => { drapeau.cases = false; drapeau.exoneration = false; drapeau.parExercice = new Map() }
+
+  it('non dite, la retraite se tait et dit pourquoi ; la carte des paramètres offre la case', async () => {
+    try {
+      await exonere(null)
+      expect(retraite().getByText(/^Dites si le médecin est exonéré de ses cotisations de retraite 2025/)).toBeTruthy()
+      expect(retraite().queryByRole('table')).toBeNull()
+      expect(screen.getByLabelText('Exonération de la retraite 2025 (zone d’intervention prioritaire)')).toBeTruthy()
+    } finally {
+      remettre()
+    }
+  })
+
+  it('dite, rien n’est dû, et l’hypothèse dit l’exonération et ses conditions', async () => {
+    try {
+      await exonere(true)
+      expect(ligneDe(/^Régime de base \(CNAVPL\)$/)).toBe(enEuros(0))
+      expect(ligneDe(/^Régime complémentaire$/)).toBe(enEuros(0))
+      expect(ligneDe(/^Total de la retraite à la charge du praticien$/)).toBe(enEuros(0))
+      expect(retraite().getByText(/^CARMF : ni le régime de base, ni le complémentaire, ni les PCV ne sont comptés/)).toBeTruthy()
+    } finally {
+      remettre()
+    }
+  })
+})

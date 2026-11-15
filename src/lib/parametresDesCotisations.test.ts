@@ -75,7 +75,7 @@ describe('la saisie, et les refus de la base redits avant le clic', () => {
 
   it('les bornes de la date sont celles de la contrainte, et une date hors du calendrier se refuse', () => {
     expect(MIGRATION).toContain("date_debut >= date '1900-01-01' and date_debut <= date '2100-12-31'")
-    const date = (debutActivite: string) => valeursSaisies({ debutActivite, acre: '', tauxDentiste: '', cumul: '', dispense: '' })
+    const date = (debutActivite: string) => valeursSaisies({ debutActivite, acre: '', tauxDentiste: '', cumul: '', dispense: '', exoneration: '' })
     expect(date('2025-07-01').valeurs?.debut_activite).toBe('2025-07-01')
     expect(date('').valeurs?.debut_activite).toBeNull()
     for (const d of ['2025-02-30', '1899-12-31', '2101-01-01', '01/07/2025']) expect(date(d).refus, d).toMatch(/date du calendrier/)
@@ -83,12 +83,12 @@ describe('la saisie, et les refus de la base redits avant le clic', () => {
 
   it('le taux se tape à la virgule ou au point ; l’ACRE en trois états', () => {
     const cases = { cumul_emploi_retraite: null, dispense_complementaire: null }
-    expect(valeursSaisies({ debutActivite: '', acre: 'oui', tauxDentiste: '0,35', cumul: '', dispense: '' }).valeurs).toEqual({ debut_activite: null, acre: true, taux_dentiste: 0.35, ...cases })
-    expect(valeursSaisies({ debutActivite: '', acre: 'non', tauxDentiste: '1', cumul: '', dispense: '' }).valeurs).toEqual({ debut_activite: null, acre: false, taux_dentiste: 1, ...cases })
+    expect(valeursSaisies({ debutActivite: '', acre: 'oui', tauxDentiste: '0,35', cumul: '', dispense: '', exoneration: '' }).valeurs).toEqual({ debut_activite: null, acre: true, taux_dentiste: 0.35, ...cases })
+    expect(valeursSaisies({ debutActivite: '', acre: 'non', tauxDentiste: '1', cumul: '', dispense: '', exoneration: '' }).valeurs).toEqual({ debut_activite: null, acre: false, taux_dentiste: 1, ...cases })
     // L'état d'avant RET-Q2 (le drapeau baissé) : les trois clés d'hier.
-    expect(valeursSaisies({ debutActivite: '', acre: 'oui', tauxDentiste: '0,35', cumul: '', dispense: '' }, false).valeurs).toEqual({ debut_activite: null, acre: true, taux_dentiste: 0.35 })
+    expect(valeursSaisies({ debutActivite: '', acre: 'oui', tauxDentiste: '0,35', cumul: '', dispense: '', exoneration: '' }, false).valeurs).toEqual({ debut_activite: null, acre: true, taux_dentiste: 0.35 })
     for (const t of ['1,5', '-0,1', '0,355', '1e-1', 'abc']) {
-      expect(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: t, cumul: '', dispense: '' }).refus, t).toMatch(/entre 0 et 1, au centième/)
+      expect(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: t, cumul: '', dispense: '', exoneration: '' }).refus, t).toMatch(/entre 0 et 1, au centième/)
     }
   })
 
@@ -132,7 +132,7 @@ describe('les deux cases d’un médecin (RET-Q2)', () => {
 
   it('baissé (l’état d’avant) : les valeurs d’hier, trois clés', () => {
     expect(Object.keys(valeursLues(lecture(), 2025, false)).sort()).toEqual(['acre', 'debut_activite', 'taux_dentiste'])
-    expect(Object.keys(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: '', cumul: 'oui', dispense: 'non' }, false).valeurs!).sort())
+    expect(Object.keys(valeursSaisies({ debutActivite: '', acre: '', tauxDentiste: '', cumul: 'oui', dispense: 'non', exoneration: '' }, false).valeurs!).sort())
       .toEqual(['acre', 'debut_activite', 'taux_dentiste'])
     expect(lireParametresDUnExercice({ annee: 2025, acre: null, taux_dentiste: null }, false)).toEqual({ annee: 2025, acre: null, tauxDentiste: null })
   })

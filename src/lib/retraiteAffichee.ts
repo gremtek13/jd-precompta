@@ -4,7 +4,9 @@
 //
 // LE CUMUL ET LA DISPENSE DES DÉBUTS D'UN MÉDECIN (RET-Q2). Leurs cases sont en base depuis le 15/11/2026 (migration
 // `cumul_et_dispense_du_medecin`, `CASES_DU_MEDECIN_PREVUES` levé) : l'un et l'autre viennent des paramètres de l'exercice,
-// que la carte des paramètres offre (`CasesDeLaRetraite`). Baissé — l'état d'avant, que les tests jouent encore —, l'écran
+// que la carte des paramètres offre (`CasesDeLaRetraite`). L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE
+// (RET2-Q2) suit les deux cases : tenue quand sa migration est en base (`EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE`, baissé
+// jusqu'à son application), lue de l'exercice, passée au module pour un médecin seulement. Baissé — l'état d'avant, que les tests jouent encore —, l'écran
 // demande le cumul par un choix LOCAL, non enregistré, SANS valeur par défaut, et la dispense n'est pas tenue (le
 // complémentaire compté dû, et dit). « Non
 // renseigné » est un état à part, jamais « non » : tant qu'un médecin ne l'a pas dit, le module refuse et dit pourquoi, et
@@ -18,7 +20,8 @@
 import type { ProfessionLiberale } from './types'
 import {
   CAISSE_DE_LA_PROFESSION, estimerRetraite,
-  type CaisseDeRetraite, type EntreeRetraite, type EstimationRetraite, type HypotheseRetraite, type ResultatRetraite,
+  type CaisseDeRetraite, type EntreeRetraite, type EstimationRetraite, type ExonerationEnZonePrioritaire, type HypotheseRetraite,
+  type ResultatRetraite,
 } from './retraiteDesLiberaux'
 import type { EntreeEstimation, ResultatEstimation } from './voletSocialPamc'
 
@@ -78,11 +81,12 @@ export function cumulDeLEntree(profession: ProfessionLiberale | null, choix: Cum
 
 /**
  * Ce que l'écran sait d'un médecin (RET-Q2) : sans les cases en base, le cumul choisi localement, la dispense non tenue ; les
- * cases en base, l'une et l'autre lues de l'exercice, nulles tant que le cabinet ne les a pas dites.
+ * cases en base, l'une et l'autre lues de l'exercice, nulles tant que le cabinet ne les a pas dites — et l'exonération de 2025
+ * en zone d'intervention prioritaire (RET2-Q2), tenue ou non selon que sa migration est en base.
  */
 export type CasesDeLaRetraite =
   | { tenues: false; cumulChoisi: CumulChoisi }
-  | { tenues: true; cumul: boolean | null; dispense: boolean | null }
+  | { tenues: true; cumul: boolean | null; dispense: boolean | null; exoneration: ExonerationEnZonePrioritaire }
 
 /** Le cumul que le module reçoit, et que les hypothèses disent : nul hors d'un médecin. */
 export function cumulDesCases(profession: ProfessionLiberale | null, cases: CasesDeLaRetraite): boolean | null {
@@ -98,6 +102,8 @@ export function estimerLaRetraiteAffichee(entree: EntreeEstimation, cases: Cases
     dispenseDesDebuts: cases.tenues
       ? { tenue: true, dispense: demandeLeCumul(entree.profession) ? cases.dispense : null }
       : { tenue: false },
+    // L'exonération d'un médecin seulement : un choix resté d'un médecin n'est jamais passé à une autre profession.
+    exonerationEnZonePrioritaire: cases.tenues && demandeLeCumul(entree.profession) ? cases.exoneration : { tenue: false },
   }
   return estimerRetraite(e)
 }
@@ -149,6 +155,8 @@ const TEXTE_DE_L_HYPOTHESE: Readonly<Record<HypotheseRetraite, string>> = {
     'CARMF : un médecin installé avant quarante ans est dispensé du complémentaire ses deux premières années ; l’application ne connaît pas l’âge, et l’estimation compte le complémentaire dû.',
   'carmf-complementaire-dispense':
     'CARMF : le complémentaire n’est pas compté — le cabinet a dit le médecin dispensé cet exercice (ses deux premières années d’affiliation, son activité commencée avant quarante ans).',
+  'carmf-exoneration-en-zone-prioritaire':
+    'CARMF : ni le régime de base, ni le complémentaire, ni les PCV ne sont comptés — le cabinet a dit le médecin exonéré de ses cotisations de retraite 2025 (cumul intégral, retraite liquidée au plus tard le 1er janvier 2025, zone d’intervention prioritaire, revenus 2025 sous 70 000 € : au-delà, elles restent dues). La CARMF régularise en 2026 et en 2027 ce qu’elle a appelé, et ces périodes n’ouvrent aucun droit nouveau au régime de base.',
   'cipav-invalidite-deces-avant-68-ans-supposee':
     'CIPAV : à partir de l’année de ses 68 ans, l’affilié n’a plus d’invalidité-décès (sauf s’il choisit de cotiser) ; l’application ne connaît pas l’âge, et l’estimation la compte due.',
 }

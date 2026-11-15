@@ -143,13 +143,35 @@ describe('la retraite de la CIPAV affichée (RET-Q1)', () => {
 // seulement, jamais passé à une autre profession.
 describe('les cases d’un médecin, tenues (RET-Q2)', () => {
   it('le cumul et la dispense de l’exercice : un médecin ; ignorés ailleurs', () => {
-    expect(cumulDesCases('medecin_secteur_1', { tenues: true, cumul: true, dispense: null })).toBe(true)
-    expect(cumulDesCases('auxiliaire_medical', { tenues: true, cumul: true, dispense: null })).toBeNull()
+    expect(cumulDesCases('medecin_secteur_1', { tenues: true, cumul: true, dispense: null, exoneration: { tenue: false } })).toBe(true)
+    expect(cumulDesCases('auxiliaire_medical', { tenues: true, cumul: true, dispense: null, exoneration: { tenue: false } })).toBeNull()
     expect(cumulDesCases('medecin_secteur_2', { tenues: false, cumulChoisi: 'non' })).toBe(false)
-    const r = estimerLaRetraiteAffichee(entree('medecin_secteur_1'), { tenues: true, cumul: null, dispense: null })
+    const r = estimerLaRetraiteAffichee(entree('medecin_secteur_1'), { tenues: true, cumul: null, dispense: null, exoneration: { tenue: false } })
     expect(r.disponible).toBe(false)
-    expect(estimerLaRetraiteAffichee(entree('medecin_secteur_1'), { tenues: true, cumul: false, dispense: null }).disponible).toBe(true)
-    expect(estimerLaRetraiteAffichee(entree('auxiliaire_medical'), { tenues: true, cumul: null, dispense: null }).disponible).toBe(true)
+    expect(estimerLaRetraiteAffichee(entree('medecin_secteur_1'), { tenues: true, cumul: false, dispense: null, exoneration: { tenue: false } }).disponible).toBe(true)
+    expect(estimerLaRetraiteAffichee(entree('auxiliaire_medical'), { tenues: true, cumul: null, dispense: null, exoneration: { tenue: false } }).disponible).toBe(true)
+  })
+})
+
+// L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE (RET2-Q2) : passée au module pour un médecin seulement, et dite
+// dans les hypothèses quand elle retire les cotisations.
+describe('l’exonération de 2025 en zone d’intervention prioritaire, tenue (RET2-Q2)', () => {
+  const en2025 = (profession: ProfessionLiberale) => entree(profession, { annee: 2025 })
+  it('un médecin en cumul, en 2025 : non dite, l’estimation se tait ; dite, rien n’est dû, et l’hypothèse le dit', () => {
+    const tait = estimerLaRetraiteAffichee(en2025('medecin_secteur_1'), { tenues: true, cumul: true, dispense: null, exoneration: { tenue: true, exoneration: null } })
+    expect(tait.disponible).toBe(false)
+    const oui = estimerLaRetraiteAffichee(en2025('medecin_secteur_1'), { tenues: true, cumul: true, dispense: null, exoneration: { tenue: true, exoneration: true } })
+    if (!oui.disponible) throw new Error(oui.motif)
+    expect(oui.estimation.total).toBe(0)
+    const textes = hypothesesDeLaRetraite(oui.estimation, true)
+    expect(textes[0]).toMatch(/^CARMF : ni le régime de base, ni le complémentaire, ni les PCV ne sont comptés/)
+    expect(textes[0]).toContain('70 000 €')
+    expect(textes).toContain('Cumul emploi-retraite : la CARMF n’appelle plus d’invalidité-décès.')
+  })
+  it('une autre profession ne reçoit jamais l’exonération d’un médecin', () => {
+    const r = estimerLaRetraiteAffichee(en2025('auxiliaire_medical'), { tenues: true, cumul: null, dispense: null, exoneration: { tenue: true, exoneration: true } })
+    if (!r.disponible) throw new Error(r.motif)
+    expect(r.estimation.total).toBeGreaterThan(0)
   })
 })
 
