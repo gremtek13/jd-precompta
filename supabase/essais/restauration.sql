@@ -1114,6 +1114,26 @@ begin
   end if;
 end $$;
 
+-- ══ L'alerte de hausse du chiffre d'affaires (15/11/2026) ══ Au plan du code quand `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` est
+-- levé — c'est-à-dire quand sa migration est en base : le script met ses deux tables juste après `references_postes_annuels`
+-- (ORDRE_RESTAURATION_PREVU : une place qu'aucun voisin ne fixe, après une table que toute base porte), le seuil puis les
+-- marques ; les tables qui suivent reculent de deux rangs — le geste des factures reprises ; leurs chemins. Aucune vague.
+-- Absentes de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du
+-- code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.seuils_du_chiffre_d_affaires') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'references_postes_annuels';
+    update essai_restauration._ordre set rang = -(rang + 2) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'seuils_du_chiffre_d_affaires');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 2, 'hausses_vues_avec_le_client');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('seuils_du_chiffre_d_affaires','direct',null,null),('hausses_vues_avec_le_client','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

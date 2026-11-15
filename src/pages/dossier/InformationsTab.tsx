@@ -15,6 +15,7 @@ import BalanceCard from './BalanceCard'
 import CategoriesDuDossierCard from './CategoriesDuDossierCard'
 import SourceDesVentesCard, { type ReglageRendu } from './SourceDesVentesCard'
 import NumerotationDesFacturesCard from './NumerotationDesFacturesCard'
+import HausseDuChiffreDAffairesCard from './HausseDuChiffreDAffairesCard'
 import ComptesBancairesCard from './ComptesBancairesCard'
 import DossierDuCabinetCard from './DossierDuCabinetCard'
 import LettresDeMissionCard from './LettresDeMissionCard'
@@ -458,6 +459,11 @@ export default function InformationsTab({
         `CARTE_DE_LA_NUMEROTATION_OFFERTE`, levé le 11/11/2026 sur la décision du cabinet (A9B-Q0 ; la migration d'A9a est en
         base depuis le 10/11/2026). La carte lit et écrit seule. */}
     <NumerotationDesFacturesCard dossierId={dossierId} />
+
+    {/* L'alerte de hausse du chiffre d'affaires (la demande du cabinet du 15/11/2026) : le seuil du dossier, que le cabinet décide
+        dossier par dossier, et les trimestres vus avec le client ; derrière `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`, baissé : la
+        carte ne rend rien. Elle lit et écrit seule (HausseDuChiffreDAffairesCard.tsx). */}
+    <HausseDuChiffreDAffairesCard dossierId={dossierId} />
 
     {/* Les comptes bancaires du dossier (ligne 26.6, MCB6), derrière `COMPTES_BANCAIRES_PREVUS` : baissé, la carte ne rend rien.
         Elle lit et écrit seule (ComptesBancairesCard.tsx). */}

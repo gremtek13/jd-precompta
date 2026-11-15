@@ -43,6 +43,7 @@ import { DOSSIER_DU_CABINET_PREVU } from './dossierDuCabinet'
 import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './originauxRetenus'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
+import { HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE } from './hausseDuChiffreDAffaires'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -211,6 +212,21 @@ export const TABLES_DES_PREVISIONS_PUBLIEES: readonly string[] = ['previsions_pu
 /** Une table au plan, côté prévisions publiées : toutes, sauf la sienne tant que sa migration n'est pas en base. */
 export function auPlanDesPrevisionsPubliees(table: string, prevues: boolean): boolean {
   return prevues || !TABLES_DES_PREVISIONS_PUBLIEES.includes(table)
+}
+
+// L'ALERTE DE HAUSSE DU CHIFFRE D'AFFAIRES (la demande du cabinet du 15/11/2026, au MVP ; migration
+// `hausse_du_chiffre_d_affaires`, PRÉPARÉE le 15/11/2026, supabase/preparees/20261115140000_hausse_du_chiffre_d_affaires.sql) :
+// le seuil de chaque dossier et ses marques « vue avec le client ». Sous le drapeau de la migration
+// (`HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`, src/lib/hausseDuChiffreDAffaires.ts), baissé : la production n'a pas les tables, et
+// les lire ferait échouer toute sauvegarde. Leur relation au dossier (cascade), leur rang (après `references_postes_annuels`,
+// une place qu'aucun voisin ne fixe), leur chemin ; aucune vague ; leur clé est la commune, `id`. La restauration les réinsère par la
+// porte que leurs gardes et leurs policies ouvrent au super-administrateur : l'auteur et l'instant tels qu'ils ont été
+// écrits. sauvegardeHausseDuChiffreDAffaires.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DE_LA_HAUSSE_DU_CHIFFRE_D_AFFAIRES: readonly string[] = ['seuils_du_chiffre_d_affaires', 'hausses_vues_avec_le_client']
+
+/** Une table au plan, côté alerte de hausse : toutes, sauf les siennes tant que sa migration n'est pas en base. */
+export function auPlanDeLaHausseDuChiffreDAffaires(table: string, prevue: boolean): boolean {
+  return prevue || !TABLES_DE_LA_HAUSSE_DU_CHIFFRE_D_AFFAIRES.includes(table)
 }
 
 // LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, en production depuis le 07/11/2026,
@@ -585,6 +601,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesAdressesDesAccesRetires(table, ADRESSES_DES_ACCES_RETIRES_PREVUES)
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
     && auPlanDesPrevisionsPubliees(table, PREVISIONS_PUBLIEES_PREVUES)
+    && auPlanDeLaHausseDuChiffreDAffaires(table, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE)
     && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
     && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
@@ -792,6 +809,9 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   // La prévision de trésorerie publiée (C8-Q2, préparée) : son dossier, et la chaîne de ses remplacements et retraits.
   { enfant: 'previsions_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'previsions_publiees', parent: 'previsions_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
+  // L'alerte de hausse du chiffre d'affaires (préparée) : le seuil et les marques de son dossier.
+  { enfant: 'seuils_du_chiffre_d_affaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'hausses_vues_avec_le_client', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'saisies_2035', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'saisies_2035e', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'exercices', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -1200,6 +1220,10 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'previsions_publiees',
   'references_annuelles',
   'references_postes_annuels',
+  // L'alerte de hausse du chiffre d'affaires (préparée) : après le dossier ; une place qu'aucun voisin ne fixe, juste après une
+  // table que toute base porte — l'essai de restauration l'y ancre.
+  'seuils_du_chiffre_d_affaires',
+  'hausses_vues_avec_le_client',
   'regles_bancaires_ignorees',
   'soldes_reportes',
   'sous_dossiers',
@@ -1785,6 +1809,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   adresses_des_acces_retires: { acces: 'direct' },
   situations_publiees: { acces: 'direct' },
   previsions_publiees: { acces: 'direct' },
+  seuils_du_chiffre_d_affaires: { acces: 'direct' },
+  hausses_vues_avec_le_client: { acces: 'direct' },
   saisies_2035: { acces: 'direct' },
   saisies_2035e: { acces: 'direct' },
   stocks_de_cloture: { acces: 'direct' },

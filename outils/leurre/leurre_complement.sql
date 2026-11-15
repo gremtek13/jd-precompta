@@ -240,5 +240,16 @@ begin
         from lc where not exists (select 1 from public.inventaires_declares i where i.dossier_id = lc.d)$i$;
   end if;
 end $inventaire$;
+-- L'alerte de hausse du chiffre d'affaires (migration `hausse_du_chiffre_d_affaires`, sur la réplique qui la porte) : la
+-- marque « vue avec le client » d'un trimestre clos, par leurre, selon ses CHECK (l'année, le rang) ; sans texte libre (la
+-- table n'en a pas), son trimestre est le marqueur. Son seuil, le remplisseur sait le composer.
+do $hausse$
+begin
+  if to_regclass('public.hausses_vues_avec_le_client') is not null then
+    execute $i$insert into public.hausses_vues_avec_le_client (dossier_id, annee, trimestre, vue_par, vue_le)
+      select d, 2025, 3, chef, '2025-10-15 10:00:00+02' from lc
+        where not exists (select 1 from public.hausses_vues_avec_le_client v where v.dossier_id = lc.d)$i$;
+  end if;
+end $hausse$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;

@@ -16,6 +16,7 @@ import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
+import { HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE } from './hausseDuChiffreDAffaires'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { ORIGINAUX_RETENUS_PREVUS } from './originauxRetenus'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
@@ -46,6 +47,7 @@ import {
   auPlanDesFacturesImportees,
   auPlanDesSituationsPubliees,
   auPlanDesPrevisionsPubliees,
+  auPlanDeLaHausseDuChiffreDAffaires,
   auPlanDesSaisies2035,
   auPlanDesParametresDesCotisations,
   auPlanDesComptesBancaires,
@@ -115,7 +117,8 @@ describe('le filtre du plan', () => {
     // (sauvegardeHonorairesFactures.test.ts) ; depuis INAL5, celui du départ d'un client (sauvegardeDepartDuClient.test.ts) ;
     // depuis B2, celui des documents et des demandes du cabinet (sauvegardeDocumentsEtDemandes.test.ts) ; depuis B4, celui
     // des achats du client (sauvegardeAchatsDuClient.test.ts) ; depuis C8-Q2, celui des prévisions publiées
-    // (sauvegardePrevisionsPubliees.test.ts).
+    // (sauvegardePrevisionsPubliees.test.ts) ; depuis le 15/11/2026, celui de l'alerte de hausse du chiffre d'affaires
+    // (sauvegardeHausseDuChiffreDAffaires.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -125,6 +128,7 @@ describe('le filtre du plan', () => {
         && auPlanDesAdressesDesAccesRetires(table, ADRESSES_DES_ACCES_RETIRES_PREVUES)
         && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES) && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
         && auPlanDesPrevisionsPubliees(table, PREVISIONS_PUBLIEES_PREVUES)
+        && auPlanDeLaHausseDuChiffreDAffaires(table, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE)
         && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
         && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
         && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)
