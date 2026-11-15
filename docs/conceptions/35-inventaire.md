@@ -640,5 +640,12 @@ relevé des provisions 2033-D et la réintégration fiscale (ligne 37).
   486, le 487, le 408 (hors du 4084), le 418, le 44586 et le 44587. Un compte repris qu'aucune régularisation reprise
   n'extourne retient donc la validation, sous les mots de la base (`reprise-non-extournee`) : la balance qui porte une
   CCA de l'ancien logiciel ne s'ouvre qu'avec son extourne.
-- Hors de la reprise, posée au cabinet (INV3Q2-Q1) : les charges à payer et produits à recevoir d'une balance (4282, 4286,
-  4382, 4386, 44812, 1688, 518, 4482, 439), que l'inventaire range aussi.
+- INV3Q2-Q1 (A), tranchée le 15/11/2026 (« Oui, vérifiée seulement là où une régularisation reprise existe ») : les charges
+  à payer et produits à recevoir d'une balance (4282, 4286, 4382, 4386, 44812, 1688 ou 518 ; 4482, 439) se reprennent aussi
+  en régularisation reprise, dont seule l'extourne s'écrit au 1er janvier — toute nature qu'une régularisation extourne, le
+  compte pris dans la balance sous les racines de sa nature (`racinesDeLaReprise`). La validation du premier exercice ne
+  confronte, sous ces racines, QUE les comptes qu'une régularisation reprise touche : ces comptes portent aussi autre chose
+  (des notes de frais dues au personnel, au 4286), et exiger soldé au 1er janvier tout compte repris de ces familles (l'option
+  (B), écartée) bloquerait une validation à tort. Un compte touché se confronte comme les autres : ses extournes le soldent
+  exactement, sinon `reprise-non-extournee` (`RACINES_CONFRONTEES_LA_OU_UNE_REPRISE_LES_TOUCHE`,
+  src/lib/inventaireDeLaValidation.ts ; INV2 et INV3, préparées).

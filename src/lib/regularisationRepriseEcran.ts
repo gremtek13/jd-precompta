@@ -19,16 +19,22 @@ import type { ANouveau, OperationInventaire } from './types'
 // true`, l'exercice que la balance clôt, la seule extourne), ce que la confirmation NOMME, et ce que la validation du premier
 // exercice retiendra (`comptesReprisNonExtournes`, lib/inventaireDeLaValidation.ts).
 //
-// UNE BALANCE REPRISE AU 1er JANVIER qui porte d'anciennes CCA, PCA, FNP ou FAE (486, 487, 408, 418) : leur constatation est
-// dans la balance, l'exercice qu'elle clôt (N−1) n'est pas tenu ici ; seule l'EXTOURNE au 1er janvier de N s'écrit, sous la
-// pièce « Inventaire N−1 ». Le compte de régularisation se CHOISIT parmi les comptes de la balance sous la racine de sa nature
-// (le 4084 excepté) : jamais tapé, jamais pris au plan — un sous-compte repris que le plan ne porte pas ne bloque rien.
+// UNE BALANCE REPRISE AU 1er JANVIER qui porte d'anciennes CCA, PCA, FNP ou FAE (486, 487, 408, 418) — ou d'anciennes
+// charges à payer et d'anciens produits à recevoir (4282, 4286, 4382, 4386, 44812, 1688, 518 ; 4482, 439 : INV3Q2-Q1 (A)) :
+// leur constatation est dans la balance, l'exercice qu'elle clôt (N−1) n'est pas tenu ici ; seule l'EXTOURNE au 1er janvier de
+// N s'écrit, sous la pièce « Inventaire N−1 ». Le compte de régularisation se CHOISIT parmi les comptes de la balance sous les
+// racines de sa nature (le 4084 excepté) : jamais tapé, jamais pris au plan — un sous-compte repris que le plan ne porte pas ne
+// bloque rien. La validation ne confronte une charge à payer ou un produit à recevoir repris qu'au compte qu'une reprise touche.
 
 /** Une ligne de la balance reprise, telle que la section la lit (lib/balanceRepriseDeLInventaireLecture.ts). */
 export type LigneDeLaBalanceReprise = Pick<ANouveau, 'date' | 'compte' | 'sens' | 'montant'>
 
 /** Les natures qu'une régularisation reprise peut avoir, dans l'ordre du document, et leurs libellés. */
-export const NATURES_DE_LA_REPRISE: readonly NatureReprise[] = ['cca', 'pca', 'fnp', 'fae']
+export const NATURES_DE_LA_REPRISE: readonly NatureReprise[] = ['cca', 'pca', 'fnp', 'fae', 'charge_a_payer', 'produit_a_recevoir']
+
+/** Le côté de la régularisation : une CCA, une FNP et une charge à payer reprennent une charge (classe 6), les autres un produit. */
+export const repriseDuCoteDesCharges = (nature: NatureReprise): boolean =>
+  nature === 'cca' || nature === 'fnp' || nature === 'charge_a_payer'
 
 /** La date des premiers à-nouveaux (AAAA-MM-JJ), lue sur la balance entière ; nulle : aucune balance reprise. */
 export function ouvertureDeLaBalance(lignes: readonly Pick<LigneDeLaBalanceReprise, 'date'>[]): string | null {

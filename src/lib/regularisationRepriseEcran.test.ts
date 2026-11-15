@@ -4,8 +4,8 @@ import { confirmationDuRetrait, regularisationsDeLExercice, type ContexteDeLInve
 import { MOTS_DES_JUSTIFICATIFS, type JustificatifsDuDossier } from './justificatifsDeLInventaire'
 import {
   ceQueLaValidationRetiendra, comptesDeLaBalancePourLaNature, exerciceDeLaRepriseALEcran, formulaireDeLaRepriseLue, formulaireDeRepriseVide,
-  ouvertureDeLaBalance, pieceDeLaReprise, repriseOuverteSur, reprisesDeLExercice, soldeDit, verdictDeLaReprise,
-  type FormulaireDeLaReprise, type LigneDeLaBalanceReprise,
+  NATURES_DE_LA_REPRISE, ouvertureDeLaBalance, pieceDeLaReprise, repriseDuCoteDesCharges, repriseOuverteSur, reprisesDeLExercice, soldeDit,
+  verdictDeLaReprise, type FormulaireDeLaReprise, type LigneDeLaBalanceReprise,
 } from './regularisationRepriseEcran'
 import type { OperationInventaire } from './types'
 
@@ -129,6 +129,55 @@ describe('le verdict, sur la saisie telle qu’elle part', () => {
     // Un exonéré : la TVA ne s'offre pas, rien ne part en TVA.
     const v = verdictDeLaReprise(saisie({ nature: 'fnp', compteRegularisation: '408200', compteResultat: '622600', tva: '20' }), ctx({ assujettiTva: false }), DONNEES, '2025-01-01', null, null)
     expect(v.etat === 'permis' && v.appel.operation.tva_centimes).toBe(0)
+  })
+})
+
+// INV3Q2-Q1 (A) : les charges à payer et produits à recevoir d'une balance reprise se reprennent aussi, et la validation ne
+// confronte que le compte qu'une reprise touche — le 4286 de notes de frais dues, que rien ne reprend, ne se dit jamais.
+describe('les charges à payer et produits à recevoir repris (INV3Q2-Q1 (A))', () => {
+  const BALANCE_C: LigneDeLaBalanceReprise[] = [
+    { date: '2025-01-01', compte: '512000', sens: 'debit', montant: 1000 },
+    { date: '2025-01-01', compte: '428200', sens: 'credit', montant: 300 },
+    { date: '2025-01-01', compte: '428600', sens: 'credit', montant: 50 },
+    { date: '2025-01-01', compte: '448200', sens: 'debit', montant: 80 },
+    { date: '2025-01-01', compte: '467000', sens: 'credit', montant: 20 },
+  ]
+
+  it('les six natures s’offrent, dans l’ordre du document ; le côté des charges pour une charge à payer', () => {
+    expect(NATURES_DE_LA_REPRISE).toEqual(['cca', 'pca', 'fnp', 'fae', 'charge_a_payer', 'produit_a_recevoir'])
+    expect(NATURES_DE_LA_REPRISE.filter(repriseDuCoteDesCharges)).toEqual(['cca', 'fnp', 'charge_a_payer'])
+  })
+
+  it('les comptes proposés : ceux de la balance sous les racines de la nature, jamais le 467', () => {
+    expect(comptesDeLaBalancePourLaNature(BALANCE_C, 'charge_a_payer')).toEqual([
+      { compte: '428200', soldeCentimes: -30000 }, { compte: '428600', soldeCentimes: -5000 },
+    ])
+    expect(comptesDeLaBalancePourLaNature(BALANCE_C, 'produit_a_recevoir')).toEqual([{ compte: '448200', soldeCentimes: 8000 }])
+  })
+
+  it('une charge à payer reprise : sa seule extourne, le 4282 au débit ; ce que la validation retiendra, le compte touché seul', () => {
+    const f = saisie({ nature: 'charge_a_payer', compteRegularisation: '428200', compteResultat: '641200', montant: '250', objet: 'Congés repris' })
+    const v = verdictDeLaReprise(f, ctx(), DONNEES, '2025-01-01', null, null)
+    if (v.etat !== 'permis') throw new Error(JSON.stringify(v))
+    expect(v.extourne.lignes).toEqual([{ compte: '641200', sens: 'credit', centimes: 25000 }, { compte: '428200', sens: 'debit', centimes: 25000 }])
+    expect(v.appel.operation).toMatchObject({ nature: 'charge_a_payer', reprise: true, exercice: 2024 })
+    // Rien de repris : rien ne se retient (ni le 4282, ni le 4286, ni le 4482).
+    expect(ceQueLaValidationRetiendra(BALANCE_C, { operations: [], lignes: [] }, 2025)).toEqual([])
+    // Les 250 € enregistrés : le 4282 touché, en écart ; le 4286 jamais.
+    const r = operation({ id: 'c1', nature: 'charge_a_payer', compte_resultat: '641200', compte_regularisation: '428200', montant_centimes: 25000, objet: 'Congés repris' })
+    const lignes = v.extourne.lignes.map((l) => ({ date: v.extourne.date, compte: l.compte, sens: l.sens, montant: l.centimes / 100, operation_inventaire_id: 'c1' }))
+    expect(ceQueLaValidationRetiendra(BALANCE_C, { operations: [r], lignes }, 2025)).toEqual([{ compte: '428200', reprisCentimes: -30000, resteCentimes: -5000 }])
+  })
+
+  it('refusée avant le clic : un produit pour une charge, le 467 hors des racines', () => {
+    const refus = (f: FormulaireDeLaReprise) => {
+      const v = verdictDeLaReprise(f, ctx(), DONNEES, '2025-01-01', null, null)
+      return v.etat === 'refuse' ? v.refus : []
+    }
+    expect(refus(saisie({ nature: 'charge_a_payer', compteRegularisation: '467000', compteResultat: '641200', objet: 'Congés repris' })))
+      .toEqual([MOTS_DES_REFUS.compteDeLaReprise])
+    expect(refus(saisie({ nature: 'charge_a_payer', compteRegularisation: '428200', compteResultat: '706000', objet: 'Congés repris' })))
+      .toEqual([MOTS_DES_REFUS.compteDeCharge])
   })
 })
 

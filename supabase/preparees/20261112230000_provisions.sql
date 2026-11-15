@@ -78,7 +78,8 @@ begin
   end if;
   -- Les fonctions qu'elle appelle, ou dont elle attend la conduite, à l'empreinte de leur corps (les retours chariot écartés) :
   -- celles de la production, relevées le 12/11/2026 ; celles d'INV2, telles que sa migration préparée les pose depuis la
-  -- régularisation reprise (INV3-Q2 (A), 13/11/2026).
+  -- régularisation reprise (INV3-Q2 (A), 13/11/2026), étendue aux charges à payer et aux produits à recevoir (INV3Q2-Q1 (A),
+  -- 15/11/2026).
   for v_f in select x.f from (values
       ('admin_du_dossier(uuid)', '30e9b7246cb939741fe58f4ffc27adf4'),
       ('is_super_admin()', 'a9159138778422a43ba8d8c21240c9bb'),
@@ -90,7 +91,7 @@ begin
       ('inventaire_rogne(text)', 'd41e3956c932aa58c874f941a6c3d501'),
       ('garder_operations_inventaire()', '7c27098f1e1d57539aed192ec28bcb31'),
       ('garder_ecriture_d_inventaire()', 'c7791b98f0840428f26bafb31efd4590'),
-      ('enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)', '13dd1361e5470e35f9e7bc06dacd83af'),
+      ('enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)', '7576f58dd358a44bbdeb085eb1658d2e'),
       ('retirer_operation_inventaire(uuid, integer)', '9588e1104ce918565702d6db5ec137db')) as x(f, empreinte)
     where (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p where p.oid = to_regprocedure('public.' || x.f))
           is distinct from x.empreinte

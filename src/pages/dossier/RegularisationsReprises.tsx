@@ -8,7 +8,7 @@ import {
 } from '../../lib/inventaireEcran'
 import {
   ceQueLaValidationRetiendra, comptesDeLaBalancePourLaNature, formulaireDeLaRepriseLue, formulaireDeRepriseVide, NATURES_DE_LA_REPRISE,
-  ouvertureDeLaBalance, pieceDeLaReprise, racinesDites, repriseOuverteSur, reprisesDeLExercice, soldeDit, verdictDeLaReprise,
+  ouvertureDeLaBalance, pieceDeLaReprise, racinesDites, repriseDuCoteDesCharges, repriseOuverteSur, reprisesDeLExercice, soldeDit, verdictDeLaReprise,
   type FormulaireDeLaReprise, type LigneDeLaBalanceReprise, type VerdictDeLaReprise,
 } from '../../lib/regularisationRepriseEcran'
 import { optionCitee, optionsDeCitation, piecesCitablesParUneRegularisation, type Citation, type JustificatifsDuDossier } from '../../lib/justificatifsDeLInventaire'
@@ -17,11 +17,12 @@ import ChoixDuJustificatif from './ChoixDuJustificatif'
 
 // LES RÉGULARISATIONS REPRISES D'UNE BALANCE, DANS L'ONGLET INVENTAIRE (ligne 35, INV3-Q2 (A) ; docs/conceptions/35-inventaire.md,
 // § 11). Montée par l'onglet sur le PREMIER exercice du dossier seulement, celui qu'ouvre sa balance reprise. Une balance reprise au
-// 1er janvier qui porte d'anciennes charges ou d'anciens produits constatés d'avance, factures non parvenues ou à établir reçoit
-// ici, une par régularisation de l'ancien logiciel, une régularisation REPRISE : sa constatation est dans la balance, seule son
-// extourne au 1er janvier s'écrit, sous la pièce « Inventaire N−1 ». Le compte se choisit parmi ceux de la balance, sous la racine
-// de la nature. La section dit avant le clic ce que la validation retiendra (`reprise-non-extournee`) : chaque compte repris que
-// les extournes enregistrées ne soldent pas.
+// 1er janvier qui porte d'anciennes charges ou d'anciens produits constatés d'avance, factures non parvenues ou à établir — ou,
+// depuis INV3Q2-Q1 (A), d'anciennes charges à payer et d'anciens produits à recevoir — reçoit ici, une par régularisation de
+// l'ancien logiciel, une régularisation REPRISE : sa constatation est dans la balance, seule son extourne au 1er janvier s'écrit,
+// sous la pièce « Inventaire N−1 ». Le compte se choisit parmi ceux de la balance, sous les racines de la nature. La section dit
+// avant le clic ce que la validation retiendra (`reprise-non-extournee`) : chaque compte repris que les extournes enregistrées ne
+// soldent pas — une charge à payer ou un produit à recevoir, seulement quand une reprise le touche.
 //
 // RIEN DE LA LOGIQUE N'EST ICI (lib/regularisationRepriseEcran.ts) et RIEN NE S'ÉCRIT D'ICI : les gestes remontent à l'onglet, qui
 // les passe sous SON verrou (`agir`) par `enregistrer_operation_inventaire` et `retirer_operation_inventaire`, puis relit tout.
@@ -96,7 +97,7 @@ export default function RegularisationsReprises(p: Props) {
   const avecTva = natureAvecTvaDAttente(saisie.nature, ctx.assujettiTva)
   const options = justificatifs === null ? [] : optionsDeCitation({ pieces: piecesCitablesParUneRegularisation(justificatifs), factures: [] })
   const citee: Citation | null = saisie.pieceCitee === null ? null : { genre: 'piece', id: saisie.pieceCitee }
-  const charge = saisie.nature === 'cca' || saisie.nature === 'fnp'
+  const charge = repriseDuCoteDesCharges(saisie.nature)
 
   const champ = <K extends keyof FormulaireDeLaReprise>(cle: K, valeur: FormulaireDeLaReprise[K]) => setSaisie((f) => ({ ...f, [cle]: valeur }))
   const remettre = () => { setSaisie((f) => formulaireDeRepriseVide(f.nature)); setRemplace(null) }
@@ -106,9 +107,11 @@ export default function RegularisationsReprises(p: Props) {
       {entete}
       <p className="muted" style={{ margin: '6px 0 8px' }}>
         La balance reprise ouvre l’exercice {exercice} au 1er janvier. Une charge ou un produit constaté d’avance, une facture non
-        parvenue ou à établir de l’ancien logiciel qu’elle porte se reprend ici, une ligne par régularisation : sa constatation est
-        dans la balance, <strong>seule l’extourne au 1er janvier {exercice} s’écrit</strong>, au journal des opérations diverses, sous
-        la pièce « {pieceDeLaReprise(exercice)} ». Le compte se choisit parmi ceux de la balance.
+        parvenue ou à établir, une charge à payer ou un produit à recevoir de l’ancien logiciel qu’elle porte se reprend ici, une
+        ligne par régularisation : sa constatation est dans la balance, <strong>seule l’extourne au 1er janvier {exercice} s’écrit</strong>,
+        au journal des opérations diverses, sous la pièce « {pieceDeLaReprise(exercice)} ». Le compte se choisit parmi ceux de la
+        balance. Un compte de charges à payer ou de produits à recevoir qu’aucune reprise ne touche reste tel que la balance le reprend :
+        la validation ne le confronte pas.
       </p>
 
       <div aria-label="Ce que la validation retiendra" role="group" style={{ marginBottom: 12 }}>

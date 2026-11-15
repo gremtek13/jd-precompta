@@ -19,7 +19,7 @@ begin
     raise exception 'retour_validation_de_l_inventaire : des déclarations d''inventaire existent ; les relever, et décider avec le cabinet, d''abord.';
   end if;
   if (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p
-       where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure) is distinct from '03732b43c1897163eaae83e23058e354'
+       where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure) is distinct from '6ead429ff05ee505cd963ae6ab479abf'
      or (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p
           where p.oid = 'public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure)
         is distinct from 'cb18f6063974972974a1aa92eb5b3e92'

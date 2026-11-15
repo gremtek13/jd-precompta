@@ -153,15 +153,15 @@ export const MOTS_DES_REFUS = {
   periode: 'La période couverte se lit en deux dates civiles, son début au plus tard à sa fin.',
   periodeAvantLaCloture: 'La période couverte finit au plus tard le 31 décembre : rien n’est constaté d’avance.',
   ventilation: 'Les provisions ventilées doivent faire exactement le solde repris du compte.',
-  // La régularisation reprise d'une balance (INV3-Q2 (A)). Le premier, la base seule le dit : ici, la reprise est un booléen.
+  // La régularisation reprise d'une balance (INV3-Q2 (A), INV3Q2-Q1 (A)). Le premier, la base seule le dit : ici, la reprise est
+  // un booléen. Toute nature qu'une régularisation extourne se reprend : aucun refus de nature propre à la reprise.
   repriseIllisible: 'Une régularisation est reprise d’une balance, ou ne l’est pas : vrai ou faux.',
   repriseHorsDeLOuverture: 'Une régularisation reprise appartient à l’exercice que clôt la balance reprise : l’année qui précède '
     + 'l’ouverture du dossier au 1er janvier.',
-  natureReprise: 'Une régularisation reprise est une charge ou un produit constaté d’avance, une facture non parvenue ou à '
-    + 'établir : les comptes 486, 487, 408 et 418 de la balance reprise.',
   compteDeLaReprise: 'Une régularisation reprise s’écrit sur le compte de la balance qu’elle extourne : sous le 486 pour une charge '
     + 'constatée d’avance, le 487 pour un produit constaté d’avance, le 408 (hors du 4084) pour une facture non parvenue, le 418 '
-    + 'pour une facture à établir.',
+    + 'pour une facture à établir ; sous le 4282, le 4286, le 4382, le 4386, le 44812, le 1688 ou le 518 pour une charge à payer, '
+    + 'le 4482 ou le 439 pour un produit à recevoir.',
 } as const
 
 /** Le refus d'un plan qui ne porte pas, ou porte mal, un compte de rôle d'inventaire. */
@@ -318,13 +318,15 @@ function rolesRequis(nature: NatureAExtourner, avecTva: boolean, reprise: boolea
 
 // ── La régularisation reprise d'une balance (INV3-Q2 (A)) ─────────────────────────────────────────────────────────────
 
-/** Les natures d'une régularisation reprise : celles des comptes 486, 487, 408 et 418 qu'une balance reprise porte. Les
- *  charges à payer et produits à recevoir repris n'en ont pas (INV3Q2-Q1, posée au cabinet). */
-export const NATURES_REPRISES = ['cca', 'pca', 'fnp', 'fae'] as const
-export type NatureReprise = (typeof NATURES_REPRISES)[number]
+/** Les natures d'une régularisation reprise : toutes celles qu'une régularisation extourne — les comptes 486, 487, 408 et 418
+ *  qu'une balance reprise porte (INV3-Q2 (A)), et ses charges à payer et produits à recevoir (4282, 4286, 4382, 4386, 44812,
+ *  1688, 518 ; 4482, 439 : INV3Q2-Q1 (A), tranchée le 15/11/2026). La provision a sa ventilation (INV-Q11). */
+export const NATURES_REPRISES = NATURES_A_EXTOURNER
+export type NatureReprise = NatureAExtourner
 
-/** La racine sous laquelle le compte d'une régularisation reprise se prend dans la balance, par nature, lue au catalogue. */
-const ROLE_DE_LA_REPRISE: Record<NatureReprise, RoleDInventaire> = {
+/** Le rôle sous la racine duquel le compte d'une régularisation reprise se prend dans la balance, pour les natures qui ont le
+ *  leur ; les charges à payer et produits à recevoir se prennent sous leurs racines du PCG. */
+const ROLE_DE_LA_REPRISE: Partial<Record<NatureReprise, RoleDInventaire>> = {
   cca: 'charges_constatees_avance', pca: 'produits_constates_avance', fnp: 'factures_non_parvenues', fae: 'factures_a_etablir',
 }
 
@@ -332,19 +334,20 @@ const ROLE_DE_LA_REPRISE: Record<NatureReprise, RoleDInventaire> = {
  *  contrepartie est une immobilisation (INV1-Q1). Ni une régularisation reprise ni la confrontation au solde repris. */
 export const RACINES_HORS_DE_L_INVENTAIRE = ['4084'] as const
 
-const estReprise = (n: NatureDInventaire): n is NatureReprise => (NATURES_REPRISES as readonly string[]).includes(n)
-
-/** Le compte d'une régularisation reprise est-il à sa place : celui de la balance qu'elle extourne, sous la racine de sa
- *  nature, hors du 4084 ? La validation du premier exercice le confronte au solde repris. */
-export function compteDeLaRepriseAdmis(nature: NatureReprise, compte: string): boolean {
-  return FORME_D_UN_COMPTE.test(compte) && sousLaRacine(compte, racinesDuRole(ROLE_DE_LA_REPRISE[nature]))
-    && !sousLaRacine(compte, RACINES_HORS_DE_L_INVENTAIRE)
+/** Les racines sous lesquelles le compte d'une régularisation reprise de cette nature se prend dans la balance : 486, 487,
+ *  408, 418, lues au catalogue des rôles ; celles des charges à payer et des produits à recevoir. L'écran de la reprise
+ *  n'offre que les comptes repris qui s'y tiennent. */
+export function racinesDeLaReprise(nature: NatureReprise): readonly string[] {
+  if (nature === 'charge_a_payer') return RACINES_DES_CHARGES_A_PAYER
+  if (nature === 'produit_a_recevoir') return RACINES_DES_PRODUITS_A_RECEVOIR
+  return racinesDuRole(ROLE_DE_LA_REPRISE[nature]!)
 }
 
-/** Les racines sous lesquelles le compte d'une régularisation reprise de cette nature se prend dans la balance (486, 487,
- *  408, 418), lues au catalogue des rôles : l'écran de la reprise n'offre que les comptes repris qui s'y tiennent. */
-export function racinesDeLaReprise(nature: NatureReprise): readonly string[] {
-  return racinesDuRole(ROLE_DE_LA_REPRISE[nature])
+/** Le compte d'une régularisation reprise est-il à sa place : celui de la balance qu'elle extourne, sous les racines de sa
+ *  nature, hors du 4084 ? La validation du premier exercice le confronte au solde repris. */
+export function compteDeLaRepriseAdmis(nature: NatureReprise, compte: string): boolean {
+  return FORME_D_UN_COMPTE.test(compte) && sousLaRacine(compte, racinesDeLaReprise(nature))
+    && !sousLaRacine(compte, RACINES_HORS_DE_L_INVENTAIRE)
 }
 
 // Les refus communs aux deux saisies, dans l'ordre de la base : le plan, le compte de résultat, le compte de régularisation,
@@ -362,7 +365,7 @@ function refusDesComptesEtDesMontants(
     liste.push(refus('compteResultat', charge ? MOTS_DES_REFUS.compteDeCharge : MOTS_DES_REFUS.compteDeProduit))
   }
   if (reprise) {
-    if (!estReprise(nature) || !compteDeLaRepriseAdmis(nature, saisie.compteRegularisation)) {
+    if (!compteDeLaRepriseAdmis(nature, saisie.compteRegularisation)) {
       liste.push(refus('compteRegularisation', MOTS_DES_REFUS.compteDeLaReprise))
     }
   } else if (!regularisationAdmise(nature, saisie.compteRegularisation, contexte.comptes)) {
@@ -474,10 +477,10 @@ export function repriseALaPlace(e: Pick<ExerciceDeLaReprise, 'exercice' | 'ouver
 }
 
 /**
- * Les refus d'une régularisation reprise d'une balance (INV3-Q2 (A)), dans l'ordre des contrôles de
+ * Les refus d'une régularisation reprise d'une balance (INV3-Q2 (A), INV3Q2-Q1 (A)), dans l'ordre des contrôles de
  * `enregistrer_operation_inventaire` (migration `operations_d_inventaire`) : le mode du dossier, l'exercice (lisible, pas
- * figé, commencé, puis celui que la balance clôt), la nature (celle d'un compte 486, 487, 408 ou 418), le plan (la seule
- * TVA d'attente), les comptes (celui de la balance, sous la racine de sa nature), les montants, l'objet.
+ * figé, commencé, puis celui que la balance clôt), la nature (toute nature qu'une régularisation extourne), le plan (la seule
+ * TVA d'attente), les comptes (celui de la balance, sous les racines de sa nature), les montants, l'objet.
  */
 export function refusDeLaRegularisationReprise(saisie: SaisieDeRegularisation, contexte: ContexteDeLaReprise): RefusDInventaire[] {
   if (contexte.modeComptable !== 'engagement') return [refus('tresorerie', MOTS_DES_REFUS.tresorerie)]
@@ -486,16 +489,17 @@ export function refusDeLaRegularisationReprise(saisie: SaisieDeRegularisation, c
   if (!repriseALaPlace(contexte.exercice)) return [refus('repriseHorsDeLOuverture', MOTS_DES_REFUS.repriseHorsDeLOuverture)]
   if (saisie.nature === 'provision') return [refus('provisionParSonEvaluation', MOTS_DES_REFUS.provisionParSonEvaluation)]
   if (!estANextourner(saisie.nature)) return [refus('nature', MOTS_DES_REFUS.nature)]
-  if (!estReprise(saisie.nature)) return [refus('natureReprise', MOTS_DES_REFUS.natureReprise)]
   return refusDesComptesEtDesMontants(saisie, saisie.nature, contexte, true)
 }
 
 /**
  * LA RÉGULARISATION REPRISE D'UNE BALANCE (INV3-Q2 (A)) : une ancienne charge ou un ancien produit constaté d'avance, une
- * facture non parvenue ou à établir que la balance reprise au 1er janvier porte. Sa constatation est dans la balance : seule
- * son EXTOURNE s'écrit, au 1er janvier, au journal OD — la contre-passation de la constatation que la régularisation
- * aurait écrite au 31 décembre de l'exercice que la balance clôt (les mêmes lignes en sens inverse, « Extourne — » devant le
- * même libellé composé). La validation du premier exercice la confronte au solde repris (lib/inventaireDeLaValidation.ts).
+ * facture non parvenue ou à établir que la balance reprise au 1er janvier porte — ou, depuis INV3Q2-Q1 (A), une ancienne
+ * charge à payer ou un ancien produit à recevoir. Sa constatation est dans la balance : seule son EXTOURNE s'écrit, au 1er
+ * janvier, au journal OD — la contre-passation de la constatation que la régularisation aurait écrite au 31 décembre de
+ * l'exercice que la balance clôt (les mêmes lignes en sens inverse, « Extourne — » devant le même libellé composé). La
+ * validation du premier exercice la confronte au solde repris (lib/inventaireDeLaValidation.ts) : pour une charge à payer ou
+ * un produit à recevoir, sur les seuls comptes qu'une reprise touche.
  */
 export function composerRegularisationReprise(
   saisie: SaisieDeRegularisation, contexte: ContexteDeLaReprise,
