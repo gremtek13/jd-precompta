@@ -166,6 +166,8 @@ describe('relire une prévision : la forme, et une suite qui s’enchaîne', () 
     expect(contenuLu(avec(['rythme', 'fin'], '2026-11'))).toBeNull()
     expect(contenuLu(avec(['rythme', 'encaissements'], -1))).toBeNull()
     expect(contenuLu(avec(['mois', 0, 'mois'], '2026-11'))).toBeNull()
+    // Le dernier mois : aucun suivant ne relirait son solde de fin à sa place.
+    expect(contenuLu(avec(['mois', c.mois.length - 1, 'solde_fin'], c.mois[c.mois.length - 1].solde_fin + 1))).toBeNull()
     expect(contenuLu(avec(['mois', 2, 'solde_fin'], c.mois[2].solde_fin + 1))).toBeNull()
     expect(contenuLu(avec(['mois', 1, 'encaissements'], c.rythme.encaissements + 1))).toBeNull()
     expect(contenuLu(avec(['mois'], []))).toBeNull()
