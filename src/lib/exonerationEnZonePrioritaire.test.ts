@@ -125,7 +125,7 @@ describe('RET2-Q2 — la migration, son retour et le module', () => {
     expect(md5(corps(fonction(RETOUR, 'retour')))).toBe(production)
     expect(MIGRATION).not.toMatch(/\b(drop|truncate)\b|delete from/i)
     expect(MIGRATION).not.toContain('\\')
-    expect(RETOUR.split('\n').filter((l) => /^\s*drop /.test(l))).toEqual([
+    expect(RETOUR.split('\n').filter((l) => /^\s*drop /i.test(l))).toEqual([
       '  drop constraint parametres_des_cotisations_exoneration_en_cumul,',
       '  drop constraint parametres_des_cotisations_exoneration_de_2025,',
       '  drop column exoneration_zone_prioritaire;',

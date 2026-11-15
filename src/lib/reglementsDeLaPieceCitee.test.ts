@@ -69,7 +69,7 @@ describe('A8Q5Q3Q2-Q2 — la migration, son retour et le module', () => {
   })
 
   it('trois déclencheurs de contrainte, différés jusqu’à la fin de la transaction, sur les trois sources du reçu', () => {
-    const declencheurs = [...MIGRATION.matchAll(/create constraint trigger (\w+)\n {2}after ([^\n]+) on public\.(\w+)\n {2}deferrable initially deferred\n {2}for each row when \(([^\n]+)\)\n {2}execute function public\.garder_recu_d_une_piece_citee\(\);/g)]
+    const declencheurs = [...MIGRATION.matchAll(/create constraint trigger (\w+)\n {2}after ([^\n]+) on public\.(\w+)\n {2}deferrable initially deferred\n {2}for each row when \(([^\n]+)\)\n {2}execute function public\.garder_recu_d_une_piece_citee\(\);/gi)]
       .map((m) => ({ nom: m[1], evenements: m[2], table: m[3], quand: m[4] }))
     expect(declencheurs).toEqual([
       { nom: 'lignes_bancaires_recu_d_une_piece_citee', evenements: 'insert or update of piece_id, statut, montant, reglement_groupe, dossier_id',
