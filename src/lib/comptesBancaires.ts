@@ -25,7 +25,8 @@
  *  Écritures, l'assistant et la sauvegarde liraient `ecritures_brouillon.ouverture_compte_bancaire_id`, absente. Baissé,
  *  aucune lecture des écrans ne nomme la table ni `compte_bancaire_id` : un mouvement ou un relevé arrivé sans compte reçoit
  *  le seul du dossier, le principal, que la base crée au premier. Il se lève avec MCB5g, quand ses deux migrations entrent
- *  dans l'export (comptesBancaires.test.ts l'exige). */
+ *  dans l'export, et avec le filet des exercices validés (MCB6Q2-Q1, `compte_propre_hors_des_exercices_valides`, collé avec
+ *  elles) : comptesBancaires.test.ts l'exige. */
 export const COMPTES_BANCAIRES_PREVUS = false
 
 /** La table au PLAN DE SAUVEGARDE, avec les clés des mouvements et des contrôles vers elle : LEVÉ depuis le 12/11/2026, la
@@ -94,6 +95,34 @@ export const REFUS_DE_LA_GARDE: readonly RefusDeLaBase[] = [
     modele: "Le compte % est celui du rôle « % » du plan comptable du dossier : un compte bancaire tient un compte qui n'est qu'à lui." },
   { cle: 'compte_d_un_autre', code: '23505', modele: 'Le compte % tient déjà un autre compte bancaire du dossier.' },
 ]
+
+/** Le refus du filet des exercices validés (`garder_compte_propre_hors_des_exercices_valides`, MCB6Q2-Q1 ; la migration
+ *  `compte_propre_hors_des_exercices_valides`, PRÉPARÉE le 15/11/2026, pas appliquée, à coller avec l'ouverture éclatée,
+ *  MCB5g) : un compte autre que le principal ne tient pas son propre 512 depuis un exercice validé du dossier, ni depuis une
+ *  année antérieure. Le premier `%` : le plus petit exercice validé qui la retient ; le second : l'année qui suit le dernier
+ *  exercice validé. Ce sont aussi les mots que la fiche dit avant le clic (`REFUS_ANNEE_VALIDEE`, lib/ficheDesComptesBancaires.ts). */
+export const REFUS_DES_EXERCICES_VALIDES: RefusDeLaBase = {
+  cle: 'exercice_valide', code: '23514',
+  modele: 'L’exercice % du dossier est validé : un compte bancaire tient son propre compte du plan depuis le 1er janvier d’un '
+    + 'exercice qui ne l’est pas, % au plus tôt — son ouverture par compte suppose que cette année n’est pas figée.',
+}
+
+/** Le refus que le filet des exercices validés opposerait (MCB6Q2-Q1), nul s'il passe : un principal (sans date à lui) et une
+ *  date inchangée — déjà posée, même sur un exercice validé depuis — ne se jugent pas ; une date posée ou changée se refuse
+ *  quand un exercice validé du dossier tombe sur son année ou après elle. `anneesValidees` : les années des exercices validés
+ *  du dossier, lues EN ENTIER. */
+export function refusDesExercicesValides(
+  saisie: Pick<SaisieDUnCompte, 'principal' | 'compte_propre_depuis'>,
+  avant: Pick<CompteBancaire, 'compte_propre_depuis'> | null,
+  anneesValidees: readonly number[],
+): RefusDit | null {
+  if (saisie.principal || saisie.compte_propre_depuis === null) return null
+  if (avant !== null && avant.compte_propre_depuis === saisie.compte_propre_depuis) return null
+  const annee = Number(saisie.compte_propre_depuis.slice(0, 4))
+  const retenues = anneesValidees.filter((a) => a >= annee)
+  if (retenues.length === 0) return null
+  return formuler(REFUS_DES_EXERCICES_VALIDES, String(Math.min(...retenues)), String(Math.max(...anneesValidees) + 1))
+}
 
 /** Le refus de `garder_compte_principal_present`, jugé à la fin de la transaction. */
 export const REFUS_PRINCIPAL_ABSENT: RefusDeLaBase = {

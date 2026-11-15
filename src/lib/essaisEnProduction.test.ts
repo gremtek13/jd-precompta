@@ -319,8 +319,12 @@ describe('les essais de la base, rejoués en production', () => {
     // Le trente-deuxième, validationDeLInventaire, le 12/11/2026 (ligne 35, INV3, migration `validation_de_l_inventaire`) : il
     // crée des dossiers, des régularisations, des déclarations et des exercices validés, falsifie des écritures et mute des
     // fonctions. Son catalogue et ses profils se rejouent partout : le bloc ID de rls.sql.
+    // Le trente-troisième, comptePropreHorsDesExercicesValides, le 15/11/2026 (ligne 26.6, MCB6Q2-Q1, migration
+    // `compte_propre_hors_des_exercices_valides`) : il crée des dossiers et des exercices validés fictifs, suspend un déclencheur
+    // de `dossiers` le temps d'une sous-transaction et mute la fonction du filet. Son catalogue se relit partout (signature.sql,
+    // familles des fonctions et des déclencheurs) ; il ne touche à aucune policy.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
+      'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'exercicesDuDossier (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',

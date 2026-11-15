@@ -1,4 +1,4 @@
-import { dateDite, formuler, refusDuCompteBancaire, REFUS_DE_LA_GARDE, REFUS_PRINCIPAL_ABSENT, type CompteBancaire, type CompteDUnRole, type ContexteDUnCompte, type SaisieDUnCompte } from './comptesBancaires'
+import { dateDite, formuler, refusDuCompteBancaire, REFUS_DE_LA_GARDE, REFUS_DES_EXERCICES_VALIDES, REFUS_PRINCIPAL_ABSENT, type CompteBancaire, type CompteDUnRole, type ContexteDUnCompte, type SaisieDUnCompte } from './comptesBancaires'
 import type { CompteDuReleve } from './importParCompte'
 import { ROLES_COMPTABLES, type PlanComptable } from './planComptable'
 
@@ -26,9 +26,11 @@ import { ROLES_COMPTABLES, type PlanComptable } from './planComptable'
 //     qui le nomme (`retraitDuCompte`) ;
 //   - MCB6-Q2 : la date depuis laquelle un compte tient son propre 512 ne se pose ni sur un exercice validé ni avant lui —
 //     l'ouverture par compte suppose que l'année de départ ne l'est pas, et un exercice validé est figé. Les exercices validés
-//     lus en partie retiennent ce geste, du côté fermé. La base ne le refuse pas elle-même (aucune garde des comptes ne lit
-//     `exercices_valides`, ce que ficheDesComptesBancaires.test.ts vérifie sur la dernière définition) : la règle est de
-//     l'application, et un filet en base attend la réponse du cabinet (MCB6Q2-Q1).
+//     lus en partie retiennent ce geste, du côté fermé. La base de la production ne le refuse pas elle-même (aucune garde des
+//     comptes de l'export ne lit `exercices_valides`) ; le filet que le cabinet a choisi (MCB6Q2-Q1 (A), 15/11/2026) est
+//     PRÉPARÉ — `compte_propre_hors_des_exercices_valides`, à coller avec l'ouverture éclatée — et refuse aux mêmes mots :
+//     `REFUS_ANNEE_VALIDEE` les tire de `REFUS_DES_EXERCICES_VALIDES` (lib/comptesBancaires.ts, confronté au texte de la
+//     migration), et ficheDesComptesBancaires.test.ts éprouve que l'écran et le filet refusent les mêmes saisies.
 // Le retrait ne passe par aucune fonction : une suppression directe sous la policy du cabinet, que jugent la garde, les clés
 // étrangères vers le compte (toutes sans cascade : les mouvements, les contrôles, l'ouverture éclatée — un scanner du test
 // en tient la liste) et la contrainte différée du principal.
@@ -158,10 +160,9 @@ export const REFUS_DATE = (quoi: string) => `La date ${quoi} n’est pas une dat
 export const REFUS_ANNEE_DU_COMPTE_PROPRE =
   `Un compte bancaire tient son propre compte du plan depuis le 1er janvier ${PREMIERE_ANNEE_DU_COMPTE_PROPRE} au plus tôt : `
   + `l’exercice ${PREMIERE_ANNEE_DU_COMPTE_PROPRE - 1} se valide avec un seul compte de banque, celui du compte principal.`
-/** MCB6-Q2 : l'année du compte propre tombe sur un exercice validé, ou avant lui. */
+/** MCB6-Q2 : l'année du compte propre tombe sur un exercice validé, ou avant lui — aux mots du filet de la base (MCB6Q2-Q1). */
 export const REFUS_ANNEE_VALIDEE = (validee: number, ouverte: number) =>
-  `L’exercice ${validee} du dossier est validé : un compte bancaire tient son propre compte du plan depuis le 1er janvier d’un `
-  + `exercice qui ne l’est pas, ${ouverte} au plus tôt — son ouverture par compte suppose que cette année n’est pas figée.`
+  formuler(REFUS_DES_EXERCICES_VALIDES, String(validee), String(ouverte)).message
 /** MCB6-Q2, du côté fermé : sans les exercices validés lus en entier, la date ne se pose pas. */
 export const REFUS_EXERCICES_ILLISIBLES = (motif: string) =>
   `Les exercices validés du dossier n’ont pas pu être lus en entier (${motif}) : la date depuis laquelle un compte tient son `
