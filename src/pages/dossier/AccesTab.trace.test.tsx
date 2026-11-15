@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
 import { libelleDeLaCase } from '../../lib/droitsAcces'
-import { AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE } from '../../lib/traceDesDroitsVue'
+import { AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE_DES_ACCES } from '../../lib/traceDesDroitsVue'
 
 // « DROITS CHANGÉS » DANS L'ONGLET ACCÈS (étape P1-trace, ligne 51.5) : la trace lue en entier, puis lue en partie, refusée,
 // rompue ; qui l'a fait, sans jamais un identifiant ; rien d'affirmé avant le retour ; la relecture avec la liste des accès.
@@ -145,7 +145,7 @@ describe('« Droits changés » — la trace lue en entier', () => {
     expect(screen.queryByText(/aucun changement/i)).toBeNull()
     expect(screen.queryByText(/pas pu être lue/)).toBeNull()
     expect(screen.queryByText(/Droits changés — /)).toBeNull()
-    expect(screen.getByText(CE_QUE_DIT_LA_TRACE)).toBeTruthy()
+    expect(screen.getByText(CE_QUE_DIT_LA_TRACE_DES_ACCES)).toBeTruthy()
     await act(async () => { liberer() })
 
     const m1 = volet('client@exemple.fr')
