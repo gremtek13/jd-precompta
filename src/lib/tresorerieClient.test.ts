@@ -81,11 +81,11 @@ describe('l’horizon', () => {
 })
 
 describe('qui voit la page', () => {
-  it('son drapeau ET « Ma banque » ; baissé, personne', () => {
+  it('son drapeau ET « Ma banque » ; baissé, personne ; levé le 15/11/2026 (C8-Q1)', () => {
     expect(maTresorerieOuverte(true, true)).toBe(true)
     expect(maTresorerieOuverte(true, false)).toBe(false)
     expect(maTresorerieOuverte(false, true)).toBe(false)
-    expect(TRESORERIE_A_90_JOURS_OFFERTE).toBe(false)
+    expect(TRESORERIE_A_90_JOURS_OFFERTE).toBe(true)
   })
 })
 
