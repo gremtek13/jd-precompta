@@ -18,7 +18,8 @@
 --   VI-P. les provisions : l'évaluation à jour, sans extourne ; la ventilation du solde repris au premier exercice ;
 --   VI-G. le gel : la déclaration d'un exercice validé ne se retire ni ne s'écrit plus ; l'ordre des refus ;
 --   VI-R. les régularisations reprises d'une balance (INV3-Q2 (A)) : à jour, à leur place, confrontées au solde repris (le 4084
---         excepté), avant que le premier exercice se valide ;
+--         excepté), avant que le premier exercice se valide ; les charges à payer et produits à recevoir repris (INV3Q2-Q1 (A)),
+--         confrontés là seulement où une reprise les touche ;
 --   VI-S. l'empreinte qui scelle l'inventaire (INV3-Q1 (A)) : la régularisation, sa pièce et sa provision dans l'empreinte, par
 --         une formule écrite ici ; un exercice sans régularisation au texte d'hier ; le fichier d'une pièce scellée, figé dans
 --         la base et dans le stockage (`fichier_fige`) ; le reste de la pièce libre.
@@ -212,6 +213,8 @@ declare
   dr uuid := 'a1300000-0000-4000-8000-0000000000e4';   -- engagement, repris au 1er janvier 2025 (un 151 et un 491)
   dp uuid := 'a1300000-0000-4000-8000-0000000000e5';   -- engagement, une provision évaluée en 2024
   dq uuid := 'a1300000-0000-4000-8000-0000000000e6';   -- engagement, repris au 1er janvier 2025 (486, 408, 44586, et un 4084)
+  dc uuid := 'a1300000-0000-4000-8000-0000000000eb';   -- engagement, repris au 1er janvier 2025 (un 4282, un 4286, un 4482)
+  id_rcap uuid;
   ds uuid := 'a1300000-0000-4000-8000-0000000000e7';   -- engagement, une CCA de 2024 qui cite une pièce, scellée en 2024
   ps uuid := 'a1300000-0000-4000-8000-0000000000d1';   -- la pièce que la CCA de S cite
   ps2 uuid := 'a1300000-0000-4000-8000-0000000000d2';  -- la pièce qu'une provision de S cite
@@ -264,8 +267,9 @@ begin
     (de, 'INV3 essai E', cabinet, 'engagement', 'redevable', '455000'), (dt, 'INV3 essai T', cabinet, 'tresorerie', 'franchise', '455000'),
     (db, 'INV3 essai B', cabinet, 'engagement', 'redevable', '455000'), (dr, 'INV3 essai R', cabinet, 'engagement', 'redevable', '455000'),
     (dp, 'INV3 essai P', cabinet, 'engagement', 'redevable', '455000'), (dq, 'INV3 essai Q', cabinet, 'engagement', 'redevable', '455000'),
-    (ds, 'INV3 essai S', cabinet, 'engagement', 'redevable', '455000');
-  insert into dossier_assignations (dossier_id, user_id) values (de, membre), (dt, membre), (dr, membre), (dp, membre), (dq, membre), (ds, membre);
+    (ds, 'INV3 essai S', cabinet, 'engagement', 'redevable', '455000'), (dc, 'INV3 essai C', cabinet, 'engagement', 'redevable', '455000');
+  insert into dossier_assignations (dossier_id, user_id) values (de, membre), (dt, membre), (dr, membre), (dp, membre), (dq, membre), (ds, membre),
+    (dc, membre);
   insert into pieces (id, dossier_id, storage_path, storage_hash, nom_fichier) values
     (ps, ds, ds || '/assurance.pdf', repeat('1', 64), 'assurance.pdf'), (ps2, ds, ds || '/litige.pdf', repeat('2', 64), 'litige.pdf'),
     (ps3, ds, ds || '/janvier.pdf', repeat('3', 64), 'janvier.pdf');
@@ -280,7 +284,14 @@ begin
     (dq, '2025-01-01', '445860', 'debit', 20, 'essai', repeat('d', 64)),
     (dq, '2025-01-01', '408100', 'credit', 120, 'essai', repeat('d', 64)),
     (dq, '2025-01-01', '408400', 'credit', 50, 'essai', repeat('d', 64)),
-    (dq, '2025-01-01', '101000', 'credit', 1150, 'essai', repeat('d', 64));
+    (dq, '2025-01-01', '101000', 'credit', 1150, 'essai', repeat('d', 64)),
+    -- C (INV3Q2-Q1 (A)) : des congés à payer (4282), des notes de frais dues au personnel (4286), un produit à recevoir de l'État
+    -- (4482) ; seul le 4282 reçoit une régularisation reprise.
+    (dc, '2025-01-01', '512000', 'debit', 1000, 'essai', repeat('c', 64)),
+    (dc, '2025-01-01', '428200', 'credit', 300, 'essai', repeat('c', 64)),
+    (dc, '2025-01-01', '428600', 'credit', 50, 'essai', repeat('c', 64)),
+    (dc, '2025-01-01', '448200', 'debit', 80, 'essai', repeat('c', 64)),
+    (dc, '2025-01-01', '101000', 'credit', 730, 'essai', repeat('c', 64));
   issue := pg_temp.fait(membre, pg_temp.regularisation(de, op_cca, pg_temp.ecritures(2024, lib_cca, '[["486000","debit",120000],["616000","credit",120000]]')));
   id_cca := case when issue like 'OK %' then substr(issue, 4)::uuid end;
   issue := pg_temp.fait(membre, pg_temp.regularisation(de, op_fnp, pg_temp.ecritures(2024, lib_fnp, '[["622600","debit",50000],["445860","debit",10000],["408100","credit",60000]]')));
@@ -657,6 +668,49 @@ begin
   perform pg_temp.verdict('VI-R8. l''exercice qui porte leur extourne scelle les deux reprises, et se vérifie', texte,
     texte like '%' || id_rcca || '%' and texte like '%' || id_rfnp || '%' and texte like '%, true, %' and texte like '% | true');
 
+  -- Les charges à payer et produits à recevoir repris (INV3Q2-Q1 (A)) : confrontés là seulement où une reprise les touche.
+  issue := pg_temp.fait(membre, format('select public.declarer_inventaire(%L, 2025)::text', dc));
+  issue := pg_temp.tente(chef, pg_temp.valider(dc, 2025, null, null));
+  perform pg_temp.verdict('VI-R9. un 4282, un 4286 et un 4482 repris sans régularisation reprise : aucun ne se confronte, 2025 se valide (le contrôle positif)',
+    issue, issue = 'OK 0');
+  begin
+    perform pg_temp.fait(membre, pg_temp.regularisation(dc,
+      '{"exercice": 2024, "nature": "charge_a_payer", "compte_resultat": "641200", "compte_regularisation": "428200", "montant_centimes": 25000, "tva_centimes": 0, "objet": "Congés payés repris", "reprise": true}',
+      pg_temp.extourne(2024, 'Charge à payer 31/12/2024 — Congés payés repris', '[["641200","debit",25000],["428200","credit",25000]]')));
+    issue := pg_temp.tente(chef, pg_temp.valider(dc, 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  perform pg_temp.verdict('VI-R10. une charge à payer reprise qui n''extourne pas exactement le 4282 repris (250 € sur 300 €) : le compte qu''elle touche se confronte',
+    issue, issue = '23514 ' || format(m_repris, '428200'));
+  issue := pg_temp.fait(membre, pg_temp.regularisation(dc,
+    '{"exercice": 2024, "nature": "charge_a_payer", "compte_resultat": "641200", "compte_regularisation": "428200", "montant_centimes": 30000, "tva_centimes": 0, "objet": "Congés payés repris", "reprise": true}',
+    pg_temp.extourne(2024, 'Charge à payer 31/12/2024 — Congés payés repris', '[["641200","debit",30000],["428200","credit",30000]]')));
+  id_rcap := case when issue like 'OK %' then substr(issue, 4)::uuid end;
+  issue := pg_temp.tente(chef, pg_temp.valider(dc, 2025, null, null));
+  perform pg_temp.verdict('VI-R11. la même pour 300 € : le 4282 soldé ; le 4286 et le 4482, qu''aucune reprise ne touche, restés tels quels : 2025 se valide (le contrôle positif)',
+    coalesce(id_rcap::text, '?') || ' | ' || issue, id_rcap is not null and issue = 'OK 2');
+  begin
+    perform pg_temp.fait(membre, pg_temp.regularisation(dc,
+      '{"exercice": 2024, "nature": "produit_a_recevoir", "compte_resultat": "740000", "compte_regularisation": "448200", "montant_centimes": 5000, "tva_centimes": 0, "objet": "Subvention à recevoir reprise", "reprise": true}',
+      pg_temp.extourne(2024, 'Produit à recevoir 31/12/2024 — Subvention à recevoir reprise', '[["448200","debit",5000],["740000","credit",5000]]')));
+    issue := pg_temp.tente(chef, pg_temp.valider(dc, 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  perform pg_temp.verdict('VI-R12. un produit à recevoir repris de 50 € sur le 4482 repris de 80 € : touché, il se confronte',
+    issue, issue = '23514 ' || format(m_repris, '448200'));
+  begin
+    perform pg_temp.fait(membre, pg_temp.regularisation(dc,
+      '{"exercice": 2024, "nature": "charge_a_payer", "compte_resultat": "645000", "compte_regularisation": "438200", "montant_centimes": 10000, "tva_centimes": 0, "objet": "Charges sociales reprises", "reprise": true}',
+      pg_temp.extourne(2024, 'Charge à payer 31/12/2024 — Charges sociales reprises', '[["645000","debit",10000],["438200","credit",10000]]')));
+    issue := pg_temp.tente(chef, pg_temp.valider(dc, 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  perform pg_temp.verdict('VI-R13. une charge à payer reprise sur un 4382 que la balance ne porte pas : touché, il se confronte, et se refuse',
+    issue, issue = '23514 ' || format(m_repris, '438200'));
+
   -- ══ VI-S. L'empreinte qui scelle l'inventaire (INV3-Q1 (A)) ══
   issue := pg_temp.fait(membre, format('select public.enregistrer_operation_inventaire(%L, %L::jsonb, %L::jsonb, null)::text', ds,
     jsonb_build_object('exercice', 2024, 'nature', 'cca', 'compte_resultat', '616000', 'compte_regularisation', '486000', 'montant_centimes', 120000,
@@ -992,6 +1046,31 @@ begin
   exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
   end;
   insert into vi_mutation (mutation, observe, mord) values ('M-VI18 — le juge attend la constatation d''une reprise', issue, issue like '23514 L''exercice 2025 porte une régularisation reprise de la balance dont l''extourne%');
+  -- M-VI25 : les charges à payer et produits à recevoir confrontés partout, comme les autres ; le 4286 repris, qu'aucune
+  -- reprise ne touche, retient la validation de C (VI-R11 vire au rouge : la réponse (B) d'INV3Q2-Q1, écartée).
+  begin
+    execute replace(pg_get_functiondef('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure),
+      'and s.compte in (select x.compte from extournes x))', ')');
+    issue := pg_temp.tente(chef, pg_temp.valider(dc, 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI25 — les charges à payer confrontées partout : le 4286 qu''aucune reprise ne touche', issue,
+    issue = '23514 ' || format(m_repris, '428600'));
+  -- M-VI26 : les charges à payer et produits à recevoir jamais confrontés ; 250 € extournés sur un 4282 repris de 300 € passent
+  -- (VI-R10 vire au rouge).
+  begin
+    execute replace(pg_get_functiondef('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure),
+      'or ((starts_with(s.compte, ''4282'')', 'or (false and (starts_with(s.compte, ''4282'')');
+    perform pg_temp.fait(membre, format('select public.enregistrer_operation_inventaire(%L, %L::jsonb, %L::jsonb, 1)::text', dc,
+      jsonb_build_object('id', id_rcap, 'exercice', 2024, 'nature', 'charge_a_payer', 'compte_resultat', '641200', 'compte_regularisation', '428200',
+                         'montant_centimes', 25000, 'tva_centimes', 0, 'objet', 'Congés payés repris', 'reprise', true),
+      pg_temp.extourne(2024, 'Charge à payer 31/12/2024 — Congés payés repris', '[["641200","debit",25000],["428200","credit",25000]]')));
+    issue := pg_temp.tente(chef, pg_temp.valider(dc, 2025, null, null));
+    raise exception 'ANNULATION_ESSAI';
+  exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then issue := sqlstate || ' ' || sqlerrm; end if;
+  end;
+  insert into vi_mutation (mutation, observe, mord) values ('M-VI26 — les charges à payer jamais confrontées : 250 € extournés sur 300 €', issue, issue like 'OK %');
   -- M-VI19 à M-VI24 : l'empreinte qui scelle l'inventaire (INV3-Q1 (A)).
   -- M-VI19 : l'empreinte sans le bloc des régularisations ; 2024 de S ne se vérifie plus.
   begin

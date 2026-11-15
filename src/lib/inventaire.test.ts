@@ -3,7 +3,7 @@ import {
   GENRES_DE_PROVISION, MOTS_DES_REFUS, NATURES_A_EXTOURNER, NATURES_D_INVENTAIRE, NATURES_REPRISES, RACINES_DES_CHARGES_A_PAYER,
   RACINES_DES_FNP_HORS_ROLE, RACINES_DES_PRODUITS_A_RECEVOIR, ROLES_D_INVENTAIRE, composerEvaluation, composerRegularisation,
   composerRegularisationReprise, compteDeLaRepriseAdmis, compteDuRole, estEquilibree, extourneDe, prorataApresLaCloture,
-  refusDeLaRegularisation, refusDeLaRegularisationReprise, refusDeLaVentilation, refusDuPlan, repriseALaPlace,
+  racinesDeLaReprise, refusDeLaRegularisation, refusDeLaRegularisationReprise, refusDeLaVentilation, refusDuPlan, repriseALaPlace,
   type ComptesDInventaire, type ContexteDEvaluation, type ContexteDeLaReprise, type ContexteDeRegularisation, type EcritureDInventaire,
   type NatureDInventaire, type SaisieDEvaluation, type SaisieDeRegularisation,
 } from './inventaire'
@@ -485,11 +485,45 @@ describe('composerRegularisationReprise : la seule extourne d’une régularisat
     expect(refusDe(reprise(), ctx({ exercice: { exercice: 2027, valide: false, anneeEnCours: 2026, ouverture: '2028-01-01' } }))).toEqual(['exerciceAVenir'])
   })
 
-  it('la nature : celle d’un compte 486, 487, 408 ou 418 ; ni une charge à payer, ni une provision', () => {
-    expect(NATURES_REPRISES).toEqual(['cca', 'pca', 'fnp', 'fae'])
-    expect(refusDe(reprise({ nature: 'charge_a_payer', compteResultat: '641200', compteRegularisation: '428200' }))).toEqual(['natureReprise'])
+  it('la nature : toute nature qu’une régularisation extourne (INV3Q2-Q1 (A)) ; jamais une provision', () => {
+    expect(NATURES_REPRISES).toEqual(NATURES_A_EXTOURNER)
+    expect(NATURES_REPRISES).toEqual(['cca', 'pca', 'fnp', 'fae', 'charge_a_payer', 'produit_a_recevoir'])
+    expect(refusDe(reprise({ nature: 'charge_a_payer', compteResultat: '641200', compteRegularisation: '428200' }))).toEqual([])
     expect(refusDe(reprise({ nature: 'provision' }))).toEqual(['provisionParSonEvaluation'])
     expect(refusDe(reprise({ nature: 'stock' as NatureDInventaire }))).toEqual(['nature'])
+    expect(Object.keys(MOTS_DES_REFUS)).not.toContain('natureReprise')
+  })
+
+  it('une charge à payer reprise : son extourne seule, le compte de la balance sous ses racines, jamais le 467 ni le 468', () => {
+    const r = composerRegularisationReprise(
+      reprise({ nature: 'charge_a_payer', compteResultat: '641200', libelleCompteResultat: null, compteRegularisation: '428200', objet: 'Congés repris' }), ctx())
+    expect(r).toEqual({
+      ok: true,
+      extourne: {
+        date: '2025-01-01', journal: 'OD', libelle: 'Extourne — Charge à payer 31/12/2024 — Congés repris',
+        lignes: [{ compte: '641200', sens: 'credit', centimes: 30_000 }, { compte: '428200', sens: 'debit', centimes: 30_000 }],
+      },
+    })
+    for (const compte of ['428200', '428610', '438200', '438600', '448120', '168800', '518100']) {
+      expect(compteDeLaRepriseAdmis('charge_a_payer', compte), compte).toBe(true)
+    }
+    for (const compte of ['467000', '468000', '486000', '448200', '421000', '4281']) {
+      expect(compteDeLaRepriseAdmis('charge_a_payer', compte), compte).toBe(false)
+    }
+    expect(refusDe(reprise({ nature: 'charge_a_payer', compteResultat: '641200', compteRegularisation: '468000' }))).toEqual(['compteRegularisation'])
+    expect(racinesDeLaReprise('charge_a_payer')).toEqual(RACINES_DES_CHARGES_A_PAYER)
+  })
+
+  it('un produit à recevoir repris : sous le 4482 ou le 439, un produit de la classe 7', () => {
+    const r = composerRegularisationReprise(
+      reprise({ nature: 'produit_a_recevoir', compteResultat: '740000', libelleCompteResultat: null, compteRegularisation: '439100', montantCentimes: 8_000, objet: 'Aide reprise' }), ctx())
+    expect(r.ok && r.extourne.lignes).toEqual([
+      { compte: '439100', sens: 'credit', centimes: 8_000 }, { compte: '740000', sens: 'debit', centimes: 8_000 },
+    ])
+    expect(compteDeLaRepriseAdmis('produit_a_recevoir', '448200')).toBe(true)
+    expect(compteDeLaRepriseAdmis('produit_a_recevoir', '428200')).toBe(false)
+    expect(refusDe(reprise({ nature: 'produit_a_recevoir', compteResultat: '641200', compteRegularisation: '448200' }))).toEqual(['compteResultat'])
+    expect(racinesDeLaReprise('produit_a_recevoir')).toEqual(RACINES_DES_PRODUITS_A_RECEVOIR)
   })
 
   it('l’ordre de la base : le mode, l’exercice, sa place, la nature, puis les comptes et les montants', () => {

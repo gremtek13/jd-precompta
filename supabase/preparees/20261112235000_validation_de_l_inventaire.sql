@@ -52,7 +52,11 @@
 --      exige chacune à jour (son extourne seule, recomposée), à sa place (la balance ouvre toujours cet exercice au 1er
 --      janvier), puis la CONFRONTE au solde repris : au 1er janvier, les extournes des régularisations reprises soldent
 --      exactement chaque compte de régularisation de la balance — 486, 487, 408 (hors du 4084, que l'inventaire ne range pas :
---      INV1-Q1), 418, et la TVA d'attente 44586 et 44587 qui suit les factures non parvenues et à établir.
+--      INV1-Q1), 418, et la TVA d'attente 44586 et 44587 qui suit les factures non parvenues et à établir. Les charges à payer
+--      et produits à recevoir repris (4282, 4286, 4382, 4386, 44812, 1688, 518 ; 4482, 439 : INV3Q2-Q1 (A), tranchée le
+--      15/11/2026) se confrontent SEULEMENT là où une régularisation reprise les touche : ces comptes portent aussi autre
+--      chose (des notes de frais dues au personnel, au 4286), et un compte de ces familles qu'aucune reprise ne touche reste
+--      tel que la balance le reprend.
 --   6. L'EMPREINTE EN FORME 2 ÉTENDUE (INV3-Q1 (A), tranchée par le cabinet le 13/11/2026), sans forme nouvelle : elle scelle
 --      AUSSI les régularisations de l'exercice — celles qu'il constate au 31 décembre, ses évaluations de provision (la
 --      provision évaluée avec elles, INV4), et les régularisations reprises dont il porte l'extourne — et les pièces qu'elles
@@ -66,9 +70,9 @@
 --      toute pièce : la facture de janvier qu'une facture non parvenue cite se valide et s'écrit dans l'exercice suivant.
 --
 -- CE QU'ELLE NE FAIT PAS : la déclaration de l'inventaire n'entre pas dans l'empreinte (elle est figée avec l'exercice, par sa
--- garde) ; les charges à payer et les produits à recevoir d'une balance reprise (4282, 4286, 4382, 4386, 44812, 1688, 518,
--- 4482, 439) n'ont pas de régularisation reprise (INV3Q2-Q1, posée au cabinet). L'écran (INV5) non plus : aucun dossier
--- n'est en engagement en production (12/11/2026), rien ne s'y déclare avant lui.
+-- garde) ; un compte repris des charges à payer ou des produits à recevoir qu'aucune régularisation reprise ne touche ne se
+-- confronte pas (INV3Q2-Q1 (A)). L'écran (INV5) non plus : aucun dossier n'est en engagement en production (12/11/2026), rien
+-- ne s'y déclare avant lui.
 
 do $garde$
 declare
@@ -99,6 +103,9 @@ begin
   -- celles d'INV2, telles que sa migration préparée les pose, dont la validation suppose la conduite (une ligne d'inventaire
   -- n'est écrite que par sa régularisation, au 31 décembre ou au 1er janvier suivant, au 1er janvier seul pour une reprise ;
   -- une régularisation d'un exercice figé ne change plus). À l'empreinte de leur corps, les retours chariot d'un collage écartés.
+  -- REPET-Q2 (A), 15/11/2026 : chacune part du corps EN PRODUCTION le jour de son collage — un autre remplaçant de
+  -- `valider_exercice` collé avant elle (la liasse, l'affectation, les exercices décalés) change ce corps, et elle se refuse
+  -- au lieu de l'écraser ; elle se reprend alors sur le corps du jour (src/lib/remplacementsDesPreparees.test.ts).
   for v_f in select x.f from (values
       ('valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '923cfa1b57037146070ca1430f163495'),
       ('empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)',
@@ -113,7 +120,7 @@ begin
       ('retour_declencheur(text, anyelement, anyelement)', 'bc80cac6efe46d15f86d1820eb56c47e'),
       ('garder_operations_inventaire()', '7c27098f1e1d57539aed192ec28bcb31'),
       ('garder_ecriture_d_inventaire()', 'c7791b98f0840428f26bafb31efd4590'),
-      ('enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)', '13dd1361e5470e35f9e7bc06dacd83af'),
+      ('enregistrer_operation_inventaire(uuid, jsonb, jsonb, integer)', '7576f58dd358a44bbdeb085eb1658d2e'),
       ('retirer_operation_inventaire(uuid, integer)', '9588e1104ce918565702d6db5ec137db')) as x(f, empreinte)
     where (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p where p.oid = to_regprocedure('public.' || x.f))
           is distinct from x.empreinte
@@ -986,8 +993,10 @@ begin
   --      dossier en engagement ouvert au 1er janvier, la confrontation au solde repris : les extournes des régularisations
   --      reprises soldent EXACTEMENT, au 1er janvier, chaque compte de régularisation de la balance et chaque compte qu'elles
   --      touchent, sous le 486, le 487, le 408 (hors du 4084, que l'inventaire ne range pas : INV1-Q1), le 418, le 44586 et le
-  --      44587 — un compte repris sans régularisation reprise ne l'est pas. La première, par son identifiant ; le premier
-  --      compte en écart, par son numéro.
+  --      44587 — un compte repris sans régularisation reprise ne l'est pas ; et, sous les racines des charges à payer et des
+  --      produits à recevoir (4282, 4286, 4382, 4386, 44812, 1688, 518 ; 4482, 439 : INV3Q2-Q1 (A)), chaque compte qu'elles
+  --      touchent, celui-là seul — un tel compte qu'aucune reprise ne touche reste tel que la balance le reprend. La première,
+  --      par son identifiant ; le premier compte en écart, par son numéro.
   select o.objet into v_regularisation
     from public.operations_inventaire o
    where o.dossier_id = p_dossier_id and o.exercice = p_annee - 1 and o.reprise and not public.inventaire_a_jour(o.id)
@@ -1007,19 +1016,25 @@ begin
       p_annee, v_regularisation.objet using errcode = '23514';
   end if;
   if v_mode = 'engagement' and v_ouverture = v_debut then
-    with soldes as (
+    with extournes as (
+      select e.compte, round(case e.sens when 'debit' then e.montant else -e.montant end * 100)::bigint as centimes
+        from public.ecritures_brouillon e join public.operations_inventaire o on o.id = e.operation_inventaire_id
+       where e.dossier_id = p_dossier_id and o.reprise and o.exercice = p_annee - 1 and e.date = v_debut
+    ), soldes as (
       select a.compte, round(case a.sens when 'debit' then a.montant else -a.montant end * 100)::bigint as centimes
         from public.a_nouveaux a where a.dossier_id = p_dossier_id
       union all
-      select e.compte, round(case e.sens when 'debit' then e.montant else -e.montant end * 100)::bigint
-        from public.ecritures_brouillon e join public.operations_inventaire o on o.id = e.operation_inventaire_id
-       where e.dossier_id = p_dossier_id and o.reprise and o.exercice = p_annee - 1 and e.date = v_debut
+      select x.compte, x.centimes from extournes x
     )
     select s.compte into v_compte_repris
       from soldes s
-     where (starts_with(s.compte, '486') or starts_with(s.compte, '487') or starts_with(s.compte, '408')
-            or starts_with(s.compte, '418') or starts_with(s.compte, '44586') or starts_with(s.compte, '44587'))
-       and not starts_with(s.compte, '4084')
+     where ((starts_with(s.compte, '486') or starts_with(s.compte, '487') or starts_with(s.compte, '408')
+             or starts_with(s.compte, '418') or starts_with(s.compte, '44586') or starts_with(s.compte, '44587'))
+            and not starts_with(s.compte, '4084'))
+        or ((starts_with(s.compte, '4282') or starts_with(s.compte, '4286') or starts_with(s.compte, '4382') or starts_with(s.compte, '4386')
+             or starts_with(s.compte, '44812') or starts_with(s.compte, '1688') or starts_with(s.compte, '518')
+             or starts_with(s.compte, '4482') or starts_with(s.compte, '439'))
+            and s.compte in (select x.compte from extournes x))
      group by s.compte
     having sum(s.centimes) <> 0
      order by s.compte collate "C"
@@ -1108,7 +1123,7 @@ end;
 $$;
 
 comment on function public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb) is
-  'Valide un exercice terminé : vérifie la numérotation proposée par l''application, fige ses écritures — et les quatre champs du FEC d''un BNC que la numérotation porte (date, mode, nature et poste, identification du client), chacun dans sa forme, les mêmes sur les lignes d''une écriture, le client identifié par une facture validée du dossier seulement —, enregistre l''exercice sous son empreinte en forme 2 (l''en-tête, les écritures, les à-nouveaux et les soldes reportés chaînés, les fichiers des pièces citées, la 2035 validée : INAL2) et écrit l''ouverture du suivant (soldes_reportes) ; pour un dossier basculé, refuse aussi un mouvement réservé à des encaissements de factures, un virement ou un prélèvement sans son mouvement, et une vente facturée qui n''est pas écrite à jour. Refuse aussi un paiement d''une pièce par la caisse de l''exercice dont la contrepartie entière au compte de la caisse n''est pas au brouillon (relecture du 01/11/2026). L''inventaire (INV3, ligne 35) : refuse une écriture d''inventaire numérotée hors de sa pièce, un exercice en engagement dont l''inventaire n''est pas déclaré (INV-Q9), une régularisation de l''exercice qui n''est pas à jour, l''extourne incomplète d''une régularisation de l''exercice précédent, et au premier exercice un compte de provision repris qui n''est pas ventilé exactement (INV-Q11), une régularisation reprise d''une balance qui n''est pas à jour ou que la balance n''ouvre plus au 1er janvier, et un compte de régularisation repris que ses régularisations reprises n''extournent pas exactement (INV3-Q2) ; l''empreinte en forme 2 scelle aussi les régularisations de l''exercice et les pièces qu''elles citent (INV3-Q1). Chef du cabinet seul.';
+  'Valide un exercice terminé : vérifie la numérotation proposée par l''application, fige ses écritures — et les quatre champs du FEC d''un BNC que la numérotation porte (date, mode, nature et poste, identification du client), chacun dans sa forme, les mêmes sur les lignes d''une écriture, le client identifié par une facture validée du dossier seulement —, enregistre l''exercice sous son empreinte en forme 2 (l''en-tête, les écritures, les à-nouveaux et les soldes reportés chaînés, les fichiers des pièces citées, la 2035 validée : INAL2) et écrit l''ouverture du suivant (soldes_reportes) ; pour un dossier basculé, refuse aussi un mouvement réservé à des encaissements de factures, un virement ou un prélèvement sans son mouvement, et une vente facturée qui n''est pas écrite à jour. Refuse aussi un paiement d''une pièce par la caisse de l''exercice dont la contrepartie entière au compte de la caisse n''est pas au brouillon (relecture du 01/11/2026). L''inventaire (INV3, ligne 35) : refuse une écriture d''inventaire numérotée hors de sa pièce, un exercice en engagement dont l''inventaire n''est pas déclaré (INV-Q9), une régularisation de l''exercice qui n''est pas à jour, l''extourne incomplète d''une régularisation de l''exercice précédent, et au premier exercice un compte de provision repris qui n''est pas ventilé exactement (INV-Q11), une régularisation reprise d''une balance qui n''est pas à jour ou que la balance n''ouvre plus au 1er janvier, et un compte de régularisation repris que ses régularisations reprises n''extournent pas exactement (INV3-Q2 ; les charges à payer et produits à recevoir repris, là seulement où une reprise les touche : INV3Q2-Q1) ; l''empreinte en forme 2 scelle aussi les régularisations de l''exercice et les pièces qu''elles citent (INV3-Q1). Chef du cabinet seul.';
 
 -- ══ 4 bis. L'empreinte scelle l'inventaire (INV3-Q1 (A)) ══
 -- Les régularisations qu'un exercice SCELLE : celles qu'il constate au 31 décembre (une évaluation de provision comprise,
@@ -1369,7 +1384,7 @@ declare
   v record;
 begin
   for v in select * from (values
-      ('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '03732b43c1897163eaae83e23058e354', true),
+      ('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '6ead429ff05ee505cd963ae6ab479abf', true),
       ('public.declarer_inventaire(uuid, integer)', '4c4b03b22feeb1eb2e49532c8adc3761', true),
       ('public.retirer_declaration_inventaire(uuid)', '3ea40ecdcc812f8a87695ce8b11f164c', true),
       ('public.inventaire_a_jour(uuid)', 'c38104a194f1f0ef1f71598a2ae4ee4e', false),

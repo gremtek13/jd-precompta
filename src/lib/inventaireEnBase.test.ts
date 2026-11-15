@@ -36,10 +36,11 @@ const R = M.compteDeRegularisation
 const MODELE_DU_PLAN = 'Le plan du dossier ne porte pas de compte « %s » sous le %s : le régler avant d’écrire l’inventaire.'
 
 // L'ordre des contrôles du module (`refusDeLaRegularisation`), puis ceux que la base dit seule.
-// La régularisation reprise (INV3-Q2 (A)) intercale ses quatre refus : la reprise lisible, sa place, sa nature, son compte.
+// La régularisation reprise (INV3-Q2 (A)) intercale ses trois refus : la reprise lisible, sa place, son compte. Elle n'a plus
+// de refus de nature à elle : toute nature qu'une régularisation extourne se reprend (INV3Q2-Q1 (A), 15/11/2026).
 const ORDRE: readonly string[] = [
   M.tresorerie, M.repriseIllisible, M.exercice, M.exerciceFige, M.exerciceAVenir, M.repriseHorsDeLOuverture, M.avantLOuverture,
-  M.provisionParSonEvaluation, M.nature, M.natureReprise, MODELE_DU_PLAN, M.compteDeCharge, M.compteDeProduit, M.compteDeLaReprise,
+  M.provisionParSonEvaluation, M.nature, MODELE_DU_PLAN, M.compteDeCharge, M.compteDeProduit, M.compteDeLaReprise,
   R.cca, R.pca, R.fnp, R.fae, R.charge_a_payer, R.produit_a_recevoir,
   M.montant, M.tvaIllisible, M.tvaHorsFacture, M.tvaNonAssujetti, M.objet, M.periode,
 ]
@@ -227,15 +228,25 @@ describe('l’essai écrit ce que le module compose', () => {
 describe('la régularisation reprise d’une balance (INV3-Q2 (A)), en base comme dans le module', () => {
   const tableau = (racines: readonly string[]) => `array[${racines.map((x) => `'${x}'`).join(', ')}]`
 
-  it('ses natures, dans la contrainte de la table et dans la fonction : celles du module', () => {
-    expect(MIGRATION).toContain(`constraint operations_inventaire_reprise check (not reprise or nature = any (${tableau(NATURES_REPRISES)}))`)
-    expect(ENREGISTRER).toContain(`if v_reprise and not (v_nature = any (${tableau(NATURES_REPRISES)})) then`)
+  it('ses natures, dans la contrainte de la table : celles du module, toutes celles qu’une régularisation extourne (INV3Q2-Q1 (A))', () => {
+    const espaces = (t: string) => t.replace(/\s+/g, ' ')
+    expect(espaces(MIGRATION)).toContain(`constraint operations_inventaire_reprise check ( not reprise or nature = any (${tableau(NATURES_REPRISES)}))`)
+    // La fonction ne juge plus la nature d'une reprise à part : la liste fermée des natures est la même.
+    expect(ENREGISTRER).toContain(`if v_nature is null or not (v_nature = any (${tableau(NATURES_REPRISES)})) then`)
+    expect(ENREGISTRER).not.toMatch(/if v_reprise and not \(v_nature/)
   })
 
-  it('son compte : sous la racine de sa nature, lue au catalogue du module, hors du 4084', () => {
+  it('son compte : sous les racines de sa nature, lues au module, hors du 4084', () => {
     const racine = (role: RoleDInventaire) => ROLES_D_INVENTAIRE.find((r) => r.role === role)!.racines[0]
-    expect(ENREGISTRER).toContain(`case v_nature when 'cca' then '${racine('charges_constatees_avance')}' when 'pca' then '${racine('produits_constates_avance')}' `
-      + `when 'fnp' then '${racine('factures_non_parvenues')}' else '${racine('factures_a_etablir')}' end) then`)
+    const espaces = (t: string) => t.replace(/\s+/g, ' ')
+    expect(espaces(ENREGISTRER)).toContain(espaces(`or not (case v_nature
+                 when 'cca' then starts_with(v_regul, '${racine('charges_constatees_avance')}')
+                 when 'pca' then starts_with(v_regul, '${racine('produits_constates_avance')}')
+                 when 'fnp' then starts_with(v_regul, '${racine('factures_non_parvenues')}')
+                 when 'fae' then starts_with(v_regul, '${racine('factures_a_etablir')}')
+                 when 'charge_a_payer' then exists (select 1 from unnest(${tableau(RACINES_DES_CHARGES_A_PAYER)}) r(racine)
+                                                     where starts_with(v_regul, r.racine))
+                 else exists (select 1 from unnest(${tableau(RACINES_DES_PRODUITS_A_RECEVOIR)}) r(racine) where starts_with(v_regul, r.racine)) end) then`))
     expect(RACINES_HORS_DE_L_INVENTAIRE).toEqual(['4084'])
     expect(ENREGISTRER).toContain(`or starts_with(v_regul, '${RACINES_HORS_DE_L_INVENTAIRE[0]}')`)
     // Le plan d'une reprise ne fournit que la TVA d'attente.

@@ -44,12 +44,13 @@
 --      refuse toute autre clé étrangère du brouillon qu'elle ne connaît pas.
 --   8. La régularisation REPRISE d'une balance (INV3-Q2 (A), tranchée par le cabinet le 13/11/2026 ; `reprise`) : une balance
 --      reprise au 1er janvier qui porte d'anciennes charges ou d'anciens produits constatés d'avance, factures non parvenues
---      ou à établir (486, 487, 408, 418) en reçoit une par régularisation de l'ancien logiciel. Elle appartient à l'exercice
---      que la balance clôt (l'année qui précède l'ouverture du dossier) ; sa constatation est dans la balance, et SEULE son
---      extourne au 1er janvier s'écrit, recomposée et comparée comme celle de toute régularisation, sous les mêmes refus aux
---      mêmes mots que src/lib/inventaire.ts (`composerRegularisationReprise`) — son compte de régularisation pris dans la
---      balance, sous la racine de sa nature, plutôt qu'au plan. La validation du premier exercice la confronte au solde
---      repris (INV3).
+--      ou à établir (486, 487, 408, 418) en reçoit une par régularisation de l'ancien logiciel — et, depuis INV3Q2-Q1 (A)
+--      (15/11/2026), d'anciennes charges à payer ou d'anciens produits à recevoir (4282, 4286, 4382, 4386, 44812, 1688, 518 ;
+--      4482, 439) aussi : toute nature qu'une régularisation extourne. Elle appartient à l'exercice que la balance clôt
+--      (l'année qui précède l'ouverture du dossier) ; sa constatation est dans la balance, et SEULE son extourne au 1er janvier
+--      s'écrit, recomposée et comparée comme celle de toute régularisation, sous les mêmes refus aux mêmes mots que
+--      src/lib/inventaire.ts (`composerRegularisationReprise`) — son compte de régularisation pris dans la balance, sous les
+--      racines de sa nature, plutôt qu'au plan. La validation du premier exercice la confronte au solde repris (INV3).
 --
 -- CE QU'ELLE NE FAIT PAS : la validation (la sorte `inventaire`, ses filets, l'état déclaré : INV3), les provisions (INV4),
 -- l'écran (INV5). Aucun dossier n'est en engagement en production (12/11/2026) : rien ne s'y écrit avant INV5.
@@ -158,9 +159,10 @@ create table public.operations_inventaire (
   constraint operations_inventaire_objet check (
     char_length(objet) >= 1 and char_length(objet) <= 200 and objet !~ '[\r\n]'),
   constraint operations_inventaire_version check (version >= 1),
-  -- Une régularisation reprise d'une balance (INV3-Q2 (A)) : une charge ou un produit constaté d'avance, une facture non
-  -- parvenue ou à établir — les comptes 486, 487, 408 et 418 de la balance reprise.
-  constraint operations_inventaire_reprise check (not reprise or nature = any (array['cca', 'pca', 'fnp', 'fae']))
+  -- Une régularisation reprise d'une balance (INV3-Q2 (A), INV3Q2-Q1 (A)) : toute nature qu'une régularisation extourne —
+  -- jamais une provision, qui se réajuste sans extourne.
+  constraint operations_inventaire_reprise check (
+    not reprise or nature = any (array['cca', 'pca', 'fnp', 'fae', 'charge_a_payer', 'produit_a_recevoir']))
 );
 create index operations_inventaire_dossier on public.operations_inventaire (dossier_id, exercice);
 create index operations_inventaire_piece_citee on public.operations_inventaire (piece_citee_id) where piece_citee_id is not null;
@@ -170,7 +172,7 @@ comment on table public.operations_inventaire is
 comment on column public.operations_inventaire.piece_citee_id is
   'La pièce du dossier qui fonde la régularisation, quand elle existe (§ 3.3, INV-Q7) : citée ici, jamais par ecritures_brouillon.piece_id.';
 comment on column public.operations_inventaire.reprise is
-  'INV3-Q2 (A) : une régularisation reprise d''une balance reprise au 1er janvier — de l''exercice que la balance clôt, sa constatation dans la balance, seule son extourne au 1er janvier s''écrit ; la validation du premier exercice la confronte au solde repris.';
+  'INV3-Q2 (A), INV3Q2-Q1 (A) : une régularisation reprise d''une balance reprise au 1er janvier — de l''exercice que la balance clôt, sa constatation dans la balance, seule son extourne au 1er janvier s''écrit ; la validation du premier exercice la confronte au solde repris.';
 
 -- Le cabinet du dossier lit ; aucun client, aucun droit d'accès (l'inventaire est un travail du cabinet). Aucune policy
 -- d'écriture : les deux fonctions seules. La restauration réinsère par la porte du super-administrateur, que la garde ouvre.
@@ -326,7 +328,7 @@ revoke execute on function public.garder_ecriture_d_inventaire() from public, an
 -- la version que la saisie remplace (nulle pour une nouvelle). Les refus, dans l'ordre du module : le mode du dossier, la
 -- reprise, l'exercice (celui que la balance clôt, pour une reprise), la nature, le plan, les comptes, les montants, l'objet ;
 -- puis ceux que la base seule dit : la période, la pièce citée, la version lue, les écritures proposées. Rend l'identifiant
--- de la régularisation.
+-- de la régularisation. Une régularisation reprise peut avoir toute nature qu'une régularisation extourne (INV3Q2-Q1 (A)).
 create function public.enregistrer_operation_inventaire(p_dossier_id uuid, p_operation jsonb, p_ecritures jsonb, p_version_lue integer)
  returns uuid
  language plpgsql
@@ -417,7 +419,7 @@ begin
       using errcode = '22023';
   end if;
 
-  -- 3. La nature ; celle d'une régularisation reprise, un compte que la balance porte (486, 487, 408, 418).
+  -- 3. La nature : chacune se reprend aussi d'une balance (INV3Q2-Q1 (A)), la provision s'écrit par son évaluation.
   v_nature := p_operation ->> 'nature';
   if v_nature = 'provision' then
     raise exception '%', 'Une provision s’écrit par son évaluation au 31 décembre, pas comme une régularisation.' using errcode = '22023';
@@ -425,10 +427,6 @@ begin
   if v_nature is null or not (v_nature = any (array['cca', 'pca', 'fnp', 'fae', 'charge_a_payer', 'produit_a_recevoir'])) then
     raise exception '%', 'La nature de la régularisation est inconnue : une charge ou un produit constaté d’avance, une facture non '
       || 'parvenue ou à établir, une charge à payer ou un produit à recevoir.' using errcode = '22023';
-  end if;
-  if v_reprise and not (v_nature = any (array['cca', 'pca', 'fnp', 'fae'])) then
-    raise exception '%', 'Une régularisation reprise est une charge ou un produit constaté d’avance, une facture non parvenue ou à '
-      || 'établir : les comptes 486, 487, 408 et 418 de la balance reprise.' using errcode = '22023';
   end if;
   v_charge := v_nature = any (array['cca', 'fnp', 'charge_a_payer']);
 
@@ -468,8 +466,9 @@ begin
   end if;
 
   -- 6. Le compte de régularisation, dans la liste fermée de sa nature (§ 4.4, INV1-Q1) ; jamais le 467 ni le 468 (INV-Q2).
-  --    Celui d'une régularisation reprise est le compte de la balance qu'elle extourne, sous la racine de sa nature (le 4084
-  --    excepté, que l'inventaire ne range pas : INV1-Q1) : la validation du premier exercice le confronte au solde repris.
+  --    Celui d'une régularisation reprise est le compte de la balance qu'elle extourne, sous les racines de sa nature — le
+  --    486, le 487, le 408 (hors du 4084, que l'inventaire ne range pas : INV1-Q1), le 418 ; ceux d'une charge à payer ou d'un
+  --    produit à recevoir (INV3Q2-Q1 (A)) — : la validation du premier exercice le confronte au solde repris.
   v_regul := p_operation ->> 'compte_regularisation';
   v_compte_du_role := case v_nature
     when 'cca' then public.compte_du_role(p_dossier_id, 'charges_constatees_avance')
@@ -482,10 +481,18 @@ begin
   end if;
   if v_reprise then
     if v_regul is null or v_regul !~ '^[0-9]{3,}$' or starts_with(v_regul, '4084')
-       or not starts_with(v_regul, case v_nature when 'cca' then '486' when 'pca' then '487' when 'fnp' then '408' else '418' end) then
+       or not (case v_nature
+                 when 'cca' then starts_with(v_regul, '486')
+                 when 'pca' then starts_with(v_regul, '487')
+                 when 'fnp' then starts_with(v_regul, '408')
+                 when 'fae' then starts_with(v_regul, '418')
+                 when 'charge_a_payer' then exists (select 1 from unnest(array['4282', '4286', '4382', '4386', '44812', '1688', '518']) r(racine)
+                                                     where starts_with(v_regul, r.racine))
+                 else exists (select 1 from unnest(array['4482', '439']) r(racine) where starts_with(v_regul, r.racine)) end) then
       raise exception '%', 'Une régularisation reprise s’écrit sur le compte de la balance qu’elle extourne : sous le 486 pour une charge '
         || 'constatée d’avance, le 487 pour un produit constaté d’avance, le 408 (hors du 4084) pour une facture non parvenue, le 418 '
-        || 'pour une facture à établir.' using errcode = '22023';
+        || 'pour une facture à établir ; sous le 4282, le 4286, le 4382, le 4386, le 44812, le 1688 ou le 518 pour une charge à payer, '
+        || 'le 4482 ou le 439 pour un produit à recevoir.' using errcode = '22023';
     end if;
   elsif v_regul is null or v_regul !~ '^[0-9]{3,}$' or not (case v_nature
        when 'cca' then v_regul = v_compte_du_role

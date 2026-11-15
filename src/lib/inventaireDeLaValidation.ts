@@ -1,4 +1,7 @@
-import { MOTS_DES_REFUS, RACINES_HORS_DE_L_INVENTAIRE, ROLES_D_INVENTAIRE, type RoleDInventaire } from './inventaire'
+import {
+  MOTS_DES_REFUS, RACINES_DES_CHARGES_A_PAYER, RACINES_DES_PRODUITS_A_RECEVOIR, RACINES_HORS_DE_L_INVENTAIRE, ROLES_D_INVENTAIRE,
+  type RoleDInventaire,
+} from './inventaire'
 import type { ANouveau, EcritureBrouillon, InventaireDeclare, NatureOperationInventaire, OperationInventaire, Provision } from './types'
 
 // L'INVENTAIRE DANS LA VALIDATION (ligne 35, lot INV3 ; docs/conceptions/35-inventaire.md, § 3.5, § 4.5 et § 5.3). Le module
@@ -278,16 +281,23 @@ export function compteRepriseNonVentile(
 
 /** Les racines des comptes de régularisation qu'une balance reprise porte et que les régularisations reprises extournent
  *  (INV3-Q2 (A)) : 486, 487, 408 et 418, et la TVA d'attente des factures non parvenues et à établir (44586, 44587), lues au
- *  catalogue des rôles ; le 4084 excepté (`RACINES_HORS_DE_L_INVENTAIRE`). */
+ *  catalogue des rôles ; le 4084 excepté (`RACINES_HORS_DE_L_INVENTAIRE`). Chaque compte repris sous elles se confronte. */
 export const RACINES_CONFRONTEES_A_LA_REPRISE: readonly string[] = (['charges_constatees_avance', 'produits_constates_avance',
   'factures_non_parvenues', 'factures_a_etablir', 'tva_factures_non_parvenues', 'tva_factures_a_etablir'] as const)
   .flatMap((r) => racinesDuRole(r))
 
+/** Les racines des charges à payer et des produits à recevoir (INV3Q2-Q1 (A), tranchée le 15/11/2026) : un compte repris sous
+ *  elles ne se confronte que si une régularisation reprise le TOUCHE — ces comptes portent aussi autre chose (des notes de
+ *  frais dues au personnel, au 4286), et l'exiger soldé quand rien ne le reprend bloquerait une validation à tort. */
+export const RACINES_CONFRONTEES_LA_OU_UNE_REPRISE_LES_TOUCHE: readonly string[] =
+  [...RACINES_DES_CHARGES_A_PAYER, ...RACINES_DES_PRODUITS_A_RECEVOIR]
+
 /**
- * LES RÉGULARISATIONS REPRISES, CONFRONTÉES AU SOLDE REPRIS (INV3-Q2 (A)) : au 1er janvier de l'exercice que la balance ouvre,
- * les extournes des régularisations reprises (celles de l'exercice précédent) soldent exactement chaque compte de
- * régularisation de la balance et chaque compte qu'elles touchent, sous `RACINES_CONFRONTEES_A_LA_REPRISE`. Le premier compte
- * en écart, dans l'ordre des numéros (celui de la base, octet par octet) ; nul quand tout est soldé.
+ * LES RÉGULARISATIONS REPRISES, CONFRONTÉES AU SOLDE REPRIS (INV3-Q2 (A), INV3Q2-Q1 (A)) : au 1er janvier de l'exercice que la
+ * balance ouvre, les extournes des régularisations reprises (celles de l'exercice précédent) soldent exactement chaque compte
+ * de régularisation de la balance et chaque compte qu'elles touchent, sous `RACINES_CONFRONTEES_A_LA_REPRISE` ; et, sous
+ * `RACINES_CONFRONTEES_LA_OU_UNE_REPRISE_LES_TOUCHE`, chaque compte qu'elles touchent, celui-là seul. Le premier compte en
+ * écart, dans l'ordre des numéros (celui de la base, octet par octet) ; nul quand tout est soldé.
  */
 export function compteRepriseNonExtourne(
   aNouveaux: readonly Pick<ANouveau, 'compte' | 'sens' | 'montant'>[],
@@ -318,6 +328,7 @@ export function comptesReprisNonExtournes(
   const reprises = new Set(operations.filter((o) => o.reprise && o.exercice === annee - 1).map((o) => o.id))
   const repris = new Map<string, number>()
   const soldes = new Map<string, number>()
+  const touches = new Set<string>()
   const signe = (sens: Sens, montant: number) => (sens === 'debit' ? 1 : -1) * centimesDe(montant)
   const ajouter = (m: Map<string, number>, compte: string, centimes: number) => m.set(compte, (m.get(compte) ?? 0) + centimes)
   for (const a of aNouveaux) {
@@ -327,10 +338,12 @@ export function comptesReprisNonExtournes(
   for (const l of brouillon) {
     if (l.operation_inventaire_id && reprises.has(l.operation_inventaire_id) && l.date === `${annee}-01-01`) {
       ajouter(soldes, l.compte, signe(l.sens, l.montant))
+      touches.add(l.compte)
     }
   }
-  const confronte = (c: string) => RACINES_CONFRONTEES_A_LA_REPRISE.some((r) => c.startsWith(r))
-    && !RACINES_HORS_DE_L_INVENTAIRE.some((r) => c.startsWith(r))
+  const sous = (c: string, racines: readonly string[]) => racines.some((r) => c.startsWith(r))
+  const confronte = (c: string) => (sous(c, RACINES_CONFRONTEES_A_LA_REPRISE) && !sous(c, RACINES_HORS_DE_L_INVENTAIRE))
+    || (sous(c, RACINES_CONFRONTEES_LA_OU_UNE_REPRISE_LES_TOUCHE) && touches.has(c))
   return [...soldes].filter(([c, s]) => confronte(c) && s !== 0)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([compte, reste]) => ({ compte, reprisCentimes: repris.get(compte) ?? 0, resteCentimes: reste }))

@@ -945,6 +945,27 @@ describe('les régularisations reprises de la balance', () => {
     expect(screen.queryByRole('form', { name: 'Saisie d’une régularisation reprise' })).toBeNull()
   })
 
+  // INV3Q2-Q1 (A) : une charge à payer reprise se saisit comme les autres, du côté des charges ; un compte de ces familles
+  // qu'aucune reprise ne touche (le 4286 des notes de frais dues) n'est jamais dit retenu.
+  it('une charge à payer reprise : le compte de charge, les comptes du 4282 et du 4286 proposés, rien de retenu sans reprise', async () => {
+    faux.balance = (dossierId) => ({
+      dossierId, etat: 'lue', lignes: [
+        { date: '2025-01-01', compte: '512100', sens: 'debit', montant: 1000 }, { date: '2025-01-01', compte: '428200', sens: 'credit', montant: 300 },
+        { date: '2025-01-01', compte: '428600', sens: 'credit', montant: 50 },
+      ],
+    })
+    rendre({ annee: 2025 })
+    await screen.findByRole('form', { name: 'Saisie d’une régularisation reprise' })
+    remplirLaReprise({ nature: 'charge_a_payer' })
+    const f = within(section())
+    expect(f.getByLabelText('Compte de charge (classe 6)')).toBeTruthy()
+    expect([...(f.getByLabelText('Compte de la balance qu’elle extourne') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['', '428200', '428600'])
+    expect(retenus()).toContain('Les extournes enregistrées soldent chaque compte de régularisation repris')
+    expect(texte()).toContain('la validation ne le confronte pas')
+    remplirLaReprise({ compte: '428200', resultat: '641200', montant: '300', objet: 'Congés payés repris' })
+    expect((f.getByRole('button', { name: 'Enregistrer la reprise' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it('dit « seule l’extourne », propose les comptes de la balance sous la racine, et ce que la validation retiendra', async () => {
     rendre({ annee: 2025 })
     await screen.findByRole('form', { name: 'Saisie d’une régularisation reprise' })
