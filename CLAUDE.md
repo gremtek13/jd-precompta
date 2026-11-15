@@ -467,7 +467,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   des achats et des notes de frais : B8-Q1, B4RS-Q2, B4R-Q1 → « B4R-Q1, B4RS-Q2 ET B8-Q1 ».
 - **Préparées le 15/11/2026, par l'outil, derrière leurs drapeaux baissés** : la garde de ce que reçoit la pièce citée
   d'une facture reprise, différée à la fin de la transaction sur les trois sources du reçu, qui refuse ce que la citation
-  refuserait (`reglements_de_la_piece_citee`, A8Q5Q3Q2-Q2, `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS`) ; l'exonération de
+  refuserait, aussi quand une ligne qui défaisait ce reçu (un rejet, une part négative) cesse de le défaire — corrigée par
+  la relecture adverse du jour → « LA RELECTURE ADVERSE DE CINQ MIGRATIONS PRÉPARÉES » (`reglements_de_la_piece_citee`, A8Q5Q3Q2-Q2, `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS`) ; l'exonération de
   retraite 2025 d'un médecin en cumul en zone d'intervention prioritaire, une case de 2025 seulement, avec le cumul
   (`exoneration_en_zone_prioritaire`, RET2-Q2, `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` ; RET2Q2-Q1 ouverte) ; la
   prévision de trésorerie publiée au client « Banque » (`previsions_publiees`, C8-Q2, `PREVISIONS_PUBLIEES_PREVUES` ;

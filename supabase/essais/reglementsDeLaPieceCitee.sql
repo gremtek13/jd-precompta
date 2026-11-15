@@ -8,7 +8,7 @@
 --
 -- Ce qui se prouve ici, et ne se relit pas :
 --   1. LE CATALOGUE : la garde aux droits de son propriétaire, son chemin fixé, exécutable par aucun rôle de session ; ses
---      trois déclencheurs différés jusqu'à la fin de la transaction ;
+--      cinq déclencheurs différés jusqu'à la fin de la transaction, dont deux de l'image d'avant ;
 --   2. CE QUI MONTE ET SE REFUSE, quand le registre de la facture reprise a déjà des encaissements : un mouvement rapproché
 --      de la pièce, la part d'un virement groupé, un paiement par la caisse, sa correction, le statut seul qui passe
 --      « rapproché », un mouvement marqué réglé en groupe sous une part posée à la main — refusés quand le registre et ce
@@ -17,7 +17,10 @@
 --      pièce jamais citée, ce qui fait baisser le reçu (un rejet) même sur un état déjà fautif, un mouvement d'un autre
 --      dossier (A8Q5-Q4, ouverte : il ne compte pas dans le reçu) ; et la correction d'un paiement en espèces, qui écrit le
 --      nouveau avant de retirer l'ancien, jugée une fois finie ;
---   4. LA GARDE DES RÈGLEMENTS garde son rang et ses mots : un paiement du jour de la reprise se refuse à l'écriture, par elle.
+--   4. LA GARDE DES RÈGLEMENTS garde son rang et ses mots : un paiement du jour de la reprise se refuse à l'écriture, par elle ;
+--   5. CE QUI DÉFAISAIT LE REÇU ET NE LE DÉFAIT PLUS (relecture adverse du 15/11/2026) : un rejet dont le rapprochement
+--      s'annule, qui s'ignore ou passe à une autre pièce, une part négative d'un virement groupé qui monte ou cesse de
+--      compter — refusés comme ce qui monte ; le registre vide, ou ce qui baisse, passent.
 --
 -- Deux dossiers jetables du cabinet du dossier `test` (préfixe `a8540000-0000-4000-8000`) : DQ, basculé, en trésorerie,
 -- redevable ; DR, nu. Les pièces de vente P (l'original de la facture reprise, 120 € TTC, datée du 20 novembre de N) et Q
@@ -48,9 +51,9 @@ declare
   reprise constant date := date_trunc('month', now() at time zone 'Europe/Paris')::date;
   date_p constant date := make_date(extract(year from reprise)::integer - 1, 11, 20);
   date_m constant date := make_date(extract(year from reprise)::integer - 1, 12, 10);
-  -- La migration en base : la garde et ses trois déclencheurs au catalogue.
+  -- La migration en base : la garde et ses cinq déclencheurs au catalogue.
   appliquee constant boolean := to_regprocedure('public.garder_recu_d_une_piece_citee()') is not null
-    and (select count(*) from pg_trigger t where t.tgname like '%recu_d_une_piece_citee' and not t.tgisinternal) = 3;
+    and (select count(*) from pg_trigger t where t.tgname like '%recu_d_une_piece_citee' and not t.tgisinternal) = 5;
   -- La facture de l'ancien logiciel : à un taux, ou à deux ; ce qu'elle déclare encaissé avant la reprise.
   un_taux constant text := '[{"numero": "R-Q2Q2-1", "type": "facture", "date_emission": "{DP}", "tiers_nom": "Client Q2Q2",
     "type_client": "non_assujetti", "nature_operation": "services", "option_debits": false, "montant_ht": 100,
@@ -78,6 +81,27 @@ declare
     ('{M}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 PAIEMENT', {X}, 'non_rapprochee');
     update lignes_bancaires set statut = 'rapprochee', piece_id = '{PIECE}' where id = '{M}';$q$;
   recu constant text := $q$recu_par_la_piece('{P}')::text$q$;
+  -- Un paiement de 50 € et son rejet (−50 €), du 10 décembre de N, rapprochés de la pièce : ce qu'elle a reçu est nul.
+  paiement_et_rejet constant text := $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values
+    ('{M1}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 PAIEMENT', 50, 'non_rapprochee'), ('{M3}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 REJET', -50, 'non_rapprochee');
+    update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id in ('{M1}', '{M3}');$q$;
+  -- Ce que la pose a écrit, jugé avant le geste : la fin d'une transaction, simulée.
+  jugee constant text := $q$ set constraints all immediate; set constraints all deferred;$q$;
+  -- Un paiement de 50 € rapproché de la pièce, et un virement groupé de 70 € qui lui reprend 50 € (une part négative) et
+  -- règle 120 € de l'autre pièce : ce qu'elle a reçu est nul. Posé par le propriétaire, les déclencheurs de la garde coupés.
+  part_negative constant text := $q$alter table lignes_bancaires disable trigger lignes_bancaires_recu_d_une_piece_citee;
+    alter table lignes_bancaires disable trigger lignes_bancaires_depart_recu_d_une_piece_citee;
+    alter table reglements_groupes disable trigger reglements_groupes_recu_d_une_piece_citee;
+    alter table reglements_groupes disable trigger reglements_groupes_depart_recu_d_une_piece_citee;
+    update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M1}';
+    update lignes_bancaires set statut = 'rapprochee', reglement_groupe = true where id = '{M2}';
+    insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant) values ('{DQ}', '{M2}', '{P}', -50), ('{DQ}', '{M2}', '{Q}', 120);
+    alter table lignes_bancaires enable trigger lignes_bancaires_recu_d_une_piece_citee;
+    alter table lignes_bancaires enable trigger lignes_bancaires_depart_recu_d_une_piece_citee;
+    alter table reglements_groupes enable trigger reglements_groupes_recu_d_une_piece_citee;
+    alter table reglements_groupes enable trigger reglements_groupes_depart_recu_d_une_piece_citee;$q$;
+  mouvements_de_la_part_negative constant text := $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values
+    ('{M1}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 PAIEMENT', 50, 'non_rapprochee'), ('{M2}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 GROUPE', 70, 'non_rapprochee');$q$;
   deja_encaissee constant text := 'Cette pièce est l''original d''une facture reprise dont le registre a déjà reçu des encaissements : avec ce paiement, ce qu''elle a reçu avant la reprise et ce registre dépasseraient ensemble ce que la facture porte, nette de ses avoirs, et la même vente compterait deux fois. Le cabinet retire d''abord ces encaissements, ou ce paiement ne règle pas cette pièce.';
   plusieurs_taux constant text := 'Cette pièce est l''original d''une facture reprise qui porte plusieurs taux de TVA et dont le registre a déjà reçu des encaissements : avec ce paiement, elle aurait reçu avant la reprise plus que l''import n''en déclare encaissé, et le registre ne saurait plus sur lesquels il a porté. Le cabinet retire d''abord ces encaissements, ou reprend l''import en y déclarant, taux par taux, ce que la pièce a reçu.';
   date_de_la_garde constant text := 'La pièce « essai-q2q2-p.pdf » est l''original de la facture reprise R-Q2Q2-1 : ses règlements datés de la reprise des factures (le {RJ}) ou d''après passent par le registre de la facture, et le règlement du {RJ} ne la cite pas.';
@@ -113,7 +137,7 @@ begin
     -- pose après, le geste du chef, ce qu'on relit après la fin simulée de la transaction, le code attendu (`OK` : accepté)
     -- et ce qu'on relit, ou les mots du refus}.
     for e in select * from (values
-      (1, '1. le catalogue : la garde aux droits de son propriétaire, son chemin fixé, exécutable par aucun rôle de session ; trois déclencheurs différés',
+      (1, '1. le catalogue : la garde aux droits de son propriétaire, son chemin fixé, exécutable par aucun rôle de session ; cinq déclencheurs différés, dont deux de l''image d''avant',
         null, null, null, null,
         $q$(select p.prosecdef::text || ' ' || array_to_string(p.proconfig, ',') from pg_proc p where p.oid = 'public.garder_recu_d_une_piece_citee()'::regprocedure)
            || ' ' || has_function_privilege('authenticated', 'public.garder_recu_d_une_piece_citee()', 'execute')
@@ -121,7 +145,7 @@ begin
            || ' ' || has_function_privilege('service_role', 'public.garder_recu_d_une_piece_citee()', 'execute')
            || ' ' || (select string_agg(t.tgrelid::regclass::text || ':' || t.tgtype || ':' || t.tgdeferrable || ':' || t.tginitdeferred || ':' || t.tgenabled::text, ',' order by t.tgname collate "C")
                         from pg_trigger t where t.tgname like '%recu_d_une_piece_citee' and not t.tgisinternal)$q$,
-        'OK', 'true search_path=public false false false lignes_bancaires:21:true:true:O,operations_caisse:5:true:true:O,reglements_groupes:21:true:true:O'),
+        'OK', 'true search_path=public false false false lignes_bancaires:25:true:true:O,lignes_bancaires:21:true:true:O,operations_caisse:5:true:true:O,reglements_groupes:25:true:true:O,reglements_groupes:21:true:true:O'),
       (2, '2. un taux, le registre a reçu 100 € : un mouvement de 20 € du 10 décembre rapproché de la pièce — ensemble, juste ce qu''elle porte : accepté',
         null, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), null,
         replace(replace(replace(rapprocher, '{M}', '{M1}'), '{X}', '20'), '{PIECE}', '{P}'), recu, 'OK', '2000'),
@@ -228,7 +252,37 @@ begin
       (27, '16. un mouvement d''un autre dossier qui cite la pièce (A8Q5-Q4, ouverte) : il ne compte pas dans ce qu''elle a reçu, et la garde ne le juge pas',
         null, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), null,
         $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{M4}', '{DR}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 AUTRE DOSSIER', 21, 'non_rapprochee');
-           update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M4}';$q$, recu, 'OK', '0')
+           update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M4}';$q$, recu, 'OK', '0'),
+      -- CE QUI DÉFAISAIT LE REÇU ET NE LE DÉFAIT PLUS (relecture adverse du 15/11/2026) : la ligne quitte la pièce, et le
+      -- déclencheur de l'image d'avant la juge. La suppression d'un rejet se juge de même (son déclencheur tire aussi sur la
+      -- suppression) : éprouvée sur une réplique, elle n'entre pas dans ce fichier, qui n'en contient aucune.
+      (28, '17. un paiement de 50 € et son rejet, rapprochés de la pièce avant la reprise ; le registre a reçu 100 € : le rapprochement du rejet annulé, comme l''onglet Banque l''annule — la pièce reçoit de nouveau 50 € — refusé',
+        null, paiement_et_rejet || replace(replace(garni, '{E}', '0'), '{MONTANT}', '100') || jugee, null,
+        $q$update lignes_bancaires set statut = 'non_rapprochee', piece_id = null, prelevement_personnel = false where id = '{M3}';$q$,
+        recu, '23514', deja_encaissee),
+      (29, '17b. … le rejet ignoré : refusé',
+        null, paiement_et_rejet || replace(replace(garni, '{E}', '0'), '{MONTANT}', '100') || jugee, null,
+        $q$update lignes_bancaires set statut = 'ignoree', piece_id = null where id = '{M3}';$q$, recu, '23514', deja_encaissee),
+      (30, '17c. … le rejet rapproché d''une autre pièce : refusé',
+        null, paiement_et_rejet || replace(replace(garni, '{E}', '0'), '{MONTANT}', '100') || jugee, null,
+        $q$update lignes_bancaires set piece_id = '{Q}' where id = '{M3}';$q$, recu, '23514', deja_encaissee),
+      (31, '17d. … le registre vide : le rapprochement du rejet annulé passe, la pièce a reçu 50 €',
+        null, paiement_et_rejet || replace(replace(importer, '{L}', un_taux), '{E}', '0') || citer || jugee, null,
+        $q$update lignes_bancaires set statut = 'non_rapprochee', piece_id = null where id = '{M3}';$q$, recu, 'OK', '5000'),
+      (32, '17e. … le paiement défait, le rejet gardé : ce qui baisse passe',
+        null, paiement_et_rejet || replace(replace(garni, '{E}', '0'), '{MONTANT}', '100') || jugee, null,
+        $q$update lignes_bancaires set statut = 'non_rapprochee', piece_id = null where id = '{M1}';$q$, recu, 'OK', '0'),
+      (33, '18. une part négative d''un virement groupé (−50 €) qui monte à −10 €, l''autre pièce de 120 € à 80 € : refusé',
+        mouvements_de_la_part_negative, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), part_negative,
+        $q$update reglements_groupes set montant = -10 where ligne_bancaire_id = '{M2}' and piece_id = '{P}';
+           update reglements_groupes set montant = 80 where ligne_bancaire_id = '{M2}' and piece_id = '{Q}';$q$, recu, '23514', deja_encaissee),
+      (34, '18b. … le virement groupé remis à traiter, ses parts laissées : sa part négative ne compte plus, refusé',
+        mouvements_de_la_part_negative, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), part_negative,
+        $q$update lignes_bancaires set statut = 'non_rapprochee', reglement_groupe = false where id = '{M2}';$q$, recu, '23514', deja_encaissee),
+      (35, '18c. … la part négative qui descend à −60 €, l''autre pièce à 130 € : ce qui baisse passe',
+        mouvements_de_la_part_negative, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), part_negative,
+        $q$update reglements_groupes set montant = -60 where ligne_bancaire_id = '{M2}' and piece_id = '{P}';
+           update reglements_groupes set montant = 130 where ligne_bancaire_id = '{M2}' and piece_id = '{Q}';$q$, recu, 'OK', '0')
     ) as t(rang, etape, pose_super, pose, pose_apres, geste, relu, code, attendu) loop
       v_code := 'OK'; v_msg := null; v_obs := null;
       begin

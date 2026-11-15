@@ -68,19 +68,41 @@ describe('A8Q5Q3Q2-Q2 — la migration, son retour et le module', () => {
     expect(MIGRATION).toContain('revoke all on function public.garder_recu_d_une_piece_citee() from public, anon, authenticated, service_role;')
   })
 
-  it('trois déclencheurs de contrainte, différés jusqu’à la fin de la transaction, sur les trois sources du reçu', () => {
+  it('cinq déclencheurs de contrainte, différés jusqu’à la fin de la transaction, sur les trois sources du reçu', () => {
     const declencheurs = [...MIGRATION.matchAll(/create constraint trigger (\w+)\n {2}after ([^\n]+) on public\.(\w+)\n {2}deferrable initially deferred\n {2}for each row when \(([^\n]+)\)\n {2}execute function public\.garder_recu_d_une_piece_citee\(\);/gi)]
       .map((m) => ({ nom: m[1], evenements: m[2], table: m[3], quand: m[4] }))
     expect(declencheurs).toEqual([
       { nom: 'lignes_bancaires_recu_d_une_piece_citee', evenements: 'insert or update of piece_id, statut, montant, reglement_groupe, dossier_id',
         table: 'lignes_bancaires', quand: 'new.piece_id is not null or new.reglement_groupe' },
+      { nom: 'lignes_bancaires_depart_recu_d_une_piece_citee', evenements: 'update of piece_id, statut, montant, reglement_groupe, dossier_id or delete',
+        table: 'lignes_bancaires', quand: 'old.piece_id is not null or old.reglement_groupe' },
       { nom: 'reglements_groupes_recu_d_une_piece_citee', evenements: 'insert or update of piece_id, ligne_bancaire_id, montant',
         table: 'reglements_groupes', quand: 'new.piece_id is not null and new.montant > 0' },
+      { nom: 'reglements_groupes_depart_recu_d_une_piece_citee', evenements: 'update of piece_id, ligne_bancaire_id, montant or delete',
+        table: 'reglements_groupes', quand: 'old.piece_id is not null and old.montant < 0' },
       { nom: 'operations_caisse_recu_d_une_piece_citee', evenements: 'insert', table: 'operations_caisse',
         quand: "new.piece_id is not null and new.genre = 'paiement' and new.retire_le is null and new.montant > 0" },
     ])
-    // La garde de fin relit ces trois définitions, telles que la base les rend.
+    // La garde de fin relit ces cinq définitions, telles que la base les rend.
     for (const d of declencheurs) expect(bloc(MIGRATION, 'fin'), d.nom).toContain(`CREATE CONSTRAINT TRIGGER ${d.nom} AFTER `)
+  })
+
+  it('l’image d’avant : une ligne qui défaisait ce que la pièce a reçu, et ne le défait plus, se juge (relecture adverse du 15/11/2026)', () => {
+    const sql = garde()
+    // Chaque déclencheur de l'image d'avant a sa branche, nommée : sans elle, la garde jugerait la ligne comme une ligne
+    // d'après, et la pièce quittée échapperait de nouveau.
+    expect(sql).toContain("elsif tg_name = 'lignes_bancaires_depart_recu_d_une_piece_citee' then")
+    expect(sql).toContain("elsif tg_name = 'reglements_groupes_depart_recu_d_une_piece_citee' then")
+    // La pièce quittée par un rejet (une ligne négative rapprochée de son dossier) : annulé, ignoré, supprimé, déplacé.
+    expect(sql).toContain("if old.piece_id is not null and old.statut = 'rapprochee' and old.montant < 0\n       and (tg_op = 'DELETE' or new.piece_id is distinct from old.piece_id) then")
+    // Les parts négatives d'un mouvement qui cesse de les faire compter.
+    expect(sql).toContain('where g.ligne_bancaire_id = old.id and g.montant < 0 and old.dossier_id = p.dossier_id')
+    // La part d'un mouvement supprimé avec elle est supposée compter.
+    expect(sql).toContain('    else\n      v_avant_ligne := old.montant;\n    end if;')
+    // L'essai les éprouve, sans aucune suppression (la suppression d'un rejet s'éprouve sur une réplique).
+    expect(ESSAI).toContain("17. un paiement de 50 € et son rejet, rapprochés de la pièce avant la reprise")
+    expect(ESSAI).toContain("18b. … le virement groupé remis à traiter, ses parts laissées")
+    expect(ESSAI).not.toMatch(/delete from/i)
   })
 
   it('elle juge ce que la pièce reçoit des trois sources de `recu_par_la_piece`, de son dossier, comme l’export les porte', () => {
@@ -133,7 +155,9 @@ describe('A8Q5Q3Q2-Q2 — la migration, son retour et le module', () => {
     expect(MIGRATION).not.toContain('\\')
     expect(RETOUR.split('\n').filter((l) => /^drop /.test(l))).toEqual([
       'drop trigger lignes_bancaires_recu_d_une_piece_citee on public.lignes_bancaires;',
+      'drop trigger lignes_bancaires_depart_recu_d_une_piece_citee on public.lignes_bancaires;',
       'drop trigger reglements_groupes_recu_d_une_piece_citee on public.reglements_groupes;',
+      'drop trigger reglements_groupes_depart_recu_d_une_piece_citee on public.reglements_groupes;',
       'drop trigger operations_caisse_recu_d_une_piece_citee on public.operations_caisse;',
       'drop function public.garder_recu_d_une_piece_citee();',
     ])

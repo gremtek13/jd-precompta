@@ -30,14 +30,21 @@
 --      quand le registre et ce reçu dépassent ensemble ce que la facture porte, nette de ses avoirs, la même vente
 --      compterait deux fois. Le registre vide, ou le déclaré qui couvre ce reçu, rien ne change : le prochain encaissement
 --      part du plus grand des deux (A8Q5Q3-Q2).
---   2. Trois déclencheurs de contrainte, DIFFÉRÉS jusqu'à la fin de la transaction, sur les trois tables d'où ce reçu se lit
+--   2. Cinq déclencheurs de contrainte, DIFFÉRÉS jusqu'à la fin de la transaction, sur les trois tables d'où ce reçu se lit
 --      — `lignes_bancaires` (l'insertion, ou la mise à jour de la pièce, du statut, du montant, du règlement groupé ou du
 --      dossier), `reglements_groupes` (une part positive insérée, ou sa pièce, son mouvement ou son montant changés),
 --      `operations_caisse` (un paiement positif inséré ; une opération ne se modifie que pour se retirer, ce qui ne fait
---      rien monter) : la garde juge l'état où le geste laisse la pièce, une fois fini. Une garde à l'écriture de chaque
---      ligne jugerait un état de passage : la correction d'un paiement en espèces (`remplacer_paiement_par_la_caisse`)
---      écrit le nouveau paiement AVANT de retirer l'ancien, et le virement groupé (`regler_pieces_par_mouvement`) marque
---      son mouvement avant d'en remplacer les parts.
+--      rien monter, le paiement d'une pièce de vente étant positif) : la garde juge l'état où le geste laisse la pièce, une
+--      fois fini. Une garde à l'écriture de chaque ligne jugerait un état de passage : la correction d'un paiement en
+--      espèces (`remplacer_paiement_par_la_caisse`) écrit le nouveau paiement AVANT de retirer l'ancien, et le virement
+--      groupé (`regler_pieces_par_mouvement`) marque son mouvement avant d'en remplacer les parts. Sur les deux premières
+--      tables, deux déclencheurs : celui de l'image d'APRÈS (la pièce que la ligne cite après le geste, et ce qu'une part
+--      positive y ajoute) et celui de l'image d'AVANT (`…_depart_…` : la pièce que la ligne quitte, la mise à jour ou la
+--      suppression d'une ligne qui en citait une). Ce qu'une pièce a reçu monte aussi quand une ligne qui le DÉFAISAIT
+--      cesse de le défaire : un rejet (relecture adverse du 15/11/2026, un paiement de 120 € du 10 décembre puis son rejet,
+--      rapprochés de la pièce, l'import déclarant 0 € encaissé, le registre 120 € après la reprise — le rapprochement du
+--      rejet annulé par le geste de l'onglet Banque, ignoré, supprimé ou porté à une autre pièce, la pièce recevait de
+--      nouveau 120 € que rien ne jugeait), une part négative d'un virement groupé qui monte, part ou cesse de compter.
 --   Ce qui fait baisser ce que la pièce a reçu — un rapprochement défait, un rejet, un paiement retiré — ne se refuse
 --   jamais : la garde ne juge que ce qui monte, ligne par ligne (l'image d'avant et celle d'après de la ligne).
 --
@@ -47,7 +54,10 @@
 -- verrouille la pièce (FOR UPDATE) avant de poser son lien, donc tant que ce règlement tient la pièce, le lien n'existe pas
 -- encore et la garde ne demande pas la facture ; deux règlements de la même pièce se suivent sur la facture. Aucun
 -- ordre inverse : la garde ne tient jamais la facture avant la pièce. Éprouvé par cinq courses à deux sessions sur une copie
--- de la réplique (HISTORIQUE.md) : sans le verrou de la facture, ou sans celui de la pièce, la vente compte deux fois.
+-- de la réplique (HISTORIQUE.md) : sans le verrou de la facture, ou sans celui de la pièce, la vente compte deux fois. Un
+-- ordre inverse demeure, hors de la pièce (relecture adverse du 15/11/2026) : le geste tient le MOUVEMENT qu'il écrit, puis
+-- demande la facture ; un encaissement de la même facture qui cite ce même mouvement tient la facture, puis demande le
+-- mouvement. PostgreSQL rompt cet interblocage : l'un des deux échoue (40P01), rien n'est écrit, et il se refait.
 --
 -- LE RELEVÉ. La garde ne juge que ce qui monte : un double compte venu d'avant elle passerait inaperçu. La garde de tête
 -- refuse donc de s'appliquer tant qu'une pièce citée compte déjà, avec le registre de sa facture, la même vente deux fois
@@ -65,9 +75,10 @@
 -- brouillon qui cite la pièce n'est pas un paiement que la 2035 compte : la garde des règlements la juge à sa date, celle-ci
 -- ne la juge pas.
 --
--- COMMENT ELLE S'APPLIQUE : aucun mot de retrait ni de vidage, aucune barre oblique inverse, aucune fonction remplacée —
--- PAR L'OUTIL. Indépendante des autres migrations préparées : aucune ne touche ces trois tables par un déclencheur de ce
--- nom ni ces fonctions. Le jour de son application, `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS` se lève et le fichier entre dans
+-- COMMENT ELLE S'APPLIQUE : aucune instruction de retrait ni de vidage — le mot du retrait n'y paraît que comme l'évènement
+-- de deux déclencheurs et dans `tg_op`, les formes que `categories_du_dossier` et `trace_des_droits` ont passées par
+-- l'outil —, aucune barre oblique inverse, aucune fonction remplacée — PAR L'OUTIL. Indépendante des autres migrations
+-- préparées : aucune ne touche ces trois tables par un déclencheur de ce nom ni ces fonctions. Le jour de son application, `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS` se lève et le fichier entre dans
 -- supabase/schema/ sous la version que porte sa ligne d'historique, texte inchangé.
 
 -- ══ 0. La garde de tête ══════════
@@ -159,10 +170,60 @@ declare
 begin
   -- 1. Les pièces dont ce geste fait MONTER ce qu'elles ont reçu, ligne par ligne : ce que la ligne apporte à la pièce
   --    après le geste, plus que ce qu'elle lui apportait avant — les trois sources de `recu_par_la_piece`, de son dossier.
+  --    Le déclencheur de l'image d'APRÈS juge la pièce que la ligne cite après le geste ; celui de l'image d'AVANT
+  --    (`…_depart_…`), la pièce qu'elle quitte quand elle la défaisait — un rejet dont le rapprochement s'annule, qui
+  --    s'ignore, se supprime ou passe à une autre pièce ; une part négative qui monte, part ou cesse de compter.
   if tg_table_name = 'operations_caisse' then
     -- L'insertion d'un paiement positif non retiré (la clause WHEN) ; la garde de la table tient sa pièce dans son dossier.
     if exists (select 1 from public.pieces p where p.id = new.piece_id and p.dossier_id = new.dossier_id) then
       v_pieces := array[new.piece_id];
+    end if;
+  elsif tg_name = 'reglements_groupes_depart_recu_d_une_piece_citee' then
+    -- L'image d'avant d'une part négative (la clause WHEN), qui comptait — son mouvement rapproché et réglé en groupe, du
+    -- dossier de sa pièce ; ou supprimé avec elle, la cascade d'un mouvement retiré : elle est supposée compter — et qui
+    -- monte, passe à une autre pièce ou à un autre mouvement, ou part. Devenue positive sur la même pièce, l'autre
+    -- déclencheur la juge.
+    select p.dossier_id into v_dossier from public.pieces p where p.id = old.piece_id;
+    if exists (select 1 from public.lignes_bancaires l where l.id = old.ligne_bancaire_id) then
+      select coalesce(sum(old.montant), 0) into v_avant_ligne
+        from public.lignes_bancaires l
+       where l.id = old.ligne_bancaire_id and l.statut = 'rapprochee' and l.reglement_groupe and l.dossier_id = v_dossier;
+    else
+      v_avant_ligne := old.montant;
+    end if;
+    v_apres_ligne := 0;
+    if tg_op = 'UPDATE' and new.piece_id is not distinct from old.piece_id then
+      select coalesce(sum(new.montant), 0) into v_apres_ligne
+        from public.lignes_bancaires l
+       where l.id = new.ligne_bancaire_id and l.statut = 'rapprochee' and l.reglement_groupe and l.dossier_id = v_dossier;
+    end if;
+    if v_apres_ligne > v_avant_ligne
+       and not (tg_op = 'UPDATE' and new.piece_id is not distinct from old.piece_id and new.montant > 0) then
+      v_pieces := array[old.piece_id];
+    end if;
+  elsif tg_name = 'lignes_bancaires_depart_recu_d_une_piece_citee' then
+    -- `lignes_bancaires`, l'image d'avant (la clause WHEN : la ligne citait une pièce, ou était réglée en groupe). La pièce
+    -- qu'elle citait et ne cite plus — rapprochement annulé, mouvement ignoré, supprimé ou rapproché d'une autre pièce — :
+    -- elle lui apportait le montant d'un mouvement rapproché de son dossier, et rien après ; négatif (un rejet), ce que la
+    -- pièce a reçu monte. La même pièce gardée, l'autre déclencheur juge le geste.
+    if old.piece_id is not null and old.statut = 'rapprochee' and old.montant < 0
+       and (tg_op = 'DELETE' or new.piece_id is distinct from old.piece_id) then
+      select p.dossier_id into v_dossier from public.pieces p where p.id = old.piece_id;
+      if old.dossier_id = v_dossier then
+        v_pieces := array[old.piece_id];
+      end if;
+    end if;
+    -- Rapproché et réglé en groupe avant le geste, le mouvement faisait compter ses parts ; ses parts négatives qui ne
+    -- comptent plus après lui font monter ce que leur pièce a reçu. Supprimé, ses parts partent avec lui : leur
+    -- déclencheur de l'image d'avant les juge.
+    if tg_op = 'UPDATE' and old.reglement_groupe and old.statut = 'rapprochee' then
+      v_pieces := v_pieces || array(
+        select g.piece_id
+          from public.reglements_groupes g join public.pieces p on p.id = g.piece_id
+         where g.ligne_bancaire_id = old.id and g.montant < 0 and old.dossier_id = p.dossier_id
+           and not (new.statut = 'rapprochee' and new.reglement_groupe and new.dossier_id = p.dossier_id)
+           and not g.piece_id = any (v_pieces)
+         order by g.piece_id);
     end if;
   elsif tg_table_name = 'reglements_groupes' then
     -- Une part compte sur un mouvement rapproché et réglé en groupe, du dossier de sa pièce.
@@ -250,20 +311,34 @@ end
 $$;
 
 comment on function public.garder_recu_d_une_piece_citee() is
-  'A8Q5Q3Q2-Q2 : la garde sœur de garder_reglement_d_une_piece_reprise, différée jusqu''à la fin de la transaction, sur lignes_bancaires, reglements_groupes et operations_caisse. Quand un geste fait monter ce qu''une pièce a reçu (recu_par_la_piece) et que cette pièce est citée par une facture reprise dont le registre a déjà des encaissements : refusé à plusieurs taux, ou quand le registre et ce reçu dépassent ensemble ce que la facture porte, nette de ses avoirs (23514). Ce qui fait baisser le reçu ne se refuse jamais.';
+  'A8Q5Q3Q2-Q2 : la garde sœur de garder_reglement_d_une_piece_reprise, différée jusqu''à la fin de la transaction, sur lignes_bancaires, reglements_groupes et operations_caisse. Quand un geste fait monter ce qu''une pièce a reçu (recu_par_la_piece) — une ligne qui lui apporte plus, ou qui la défaisait (un rejet, une part négative) et ne la défait plus — et que cette pièce est citée par une facture reprise dont le registre a déjà des encaissements : refusé à plusieurs taux, ou quand le registre et ce reçu dépassent ensemble ce que la facture porte, nette de ses avoirs (23514). Ce qui fait baisser le reçu ne se refuse jamais.';
 
 revoke all on function public.garder_recu_d_une_piece_citee() from public, anon, authenticated, service_role;
 
--- ══ 2. Les trois déclencheurs, différés : la garde juge le geste une fois fini ══════════
+-- ══ 2. Les cinq déclencheurs, différés : la garde juge le geste une fois fini ══════════
+-- Sur `lignes_bancaires` et `reglements_groupes`, l'image d'après (la ligne qui cite une pièce après le geste, ou une part
+-- positive) et l'image d'avant (`…_depart_…` : la ligne qui citait une pièce, ou était réglée en groupe, mise à jour ou
+-- supprimée ; une part négative changée ou supprimée). Ni l'un ni l'autre ne tire sur l'insertion d'un mouvement à traiter :
+-- l'import d'un relevé n'en paie rien.
 create constraint trigger lignes_bancaires_recu_d_une_piece_citee
   after insert or update of piece_id, statut, montant, reglement_groupe, dossier_id on public.lignes_bancaires
   deferrable initially deferred
   for each row when (new.piece_id is not null or new.reglement_groupe)
   execute function public.garder_recu_d_une_piece_citee();
+create constraint trigger lignes_bancaires_depart_recu_d_une_piece_citee
+  after update of piece_id, statut, montant, reglement_groupe, dossier_id or delete on public.lignes_bancaires
+  deferrable initially deferred
+  for each row when (old.piece_id is not null or old.reglement_groupe)
+  execute function public.garder_recu_d_une_piece_citee();
 create constraint trigger reglements_groupes_recu_d_une_piece_citee
   after insert or update of piece_id, ligne_bancaire_id, montant on public.reglements_groupes
   deferrable initially deferred
   for each row when (new.piece_id is not null and new.montant > 0)
+  execute function public.garder_recu_d_une_piece_citee();
+create constraint trigger reglements_groupes_depart_recu_d_une_piece_citee
+  after update of piece_id, ligne_bancaire_id, montant or delete on public.reglements_groupes
+  deferrable initially deferred
+  for each row when (old.piece_id is not null and old.montant < 0)
   execute function public.garder_recu_d_une_piece_citee();
 create constraint trigger operations_caisse_recu_d_une_piece_citee
   after insert on public.operations_caisse
@@ -271,11 +346,11 @@ create constraint trigger operations_caisse_recu_d_une_piece_citee
   for each row when (new.piece_id is not null and new.genre = 'paiement' and new.retire_le is null and new.montant > 0)
   execute function public.garder_recu_d_une_piece_citee();
 
--- ══ 3. La garde de fin : le corps posé, ses droits, ses trois déclencheurs ══════════
+-- ══ 3. La garde de fin : le corps posé, ses droits, ses cinq déclencheurs ══════════
 do $fin$
 begin
   if (select md5(replace(p.prosrc, chr(13), '')) from pg_catalog.pg_proc p
-       where p.oid = to_regprocedure('public.garder_recu_d_une_piece_citee()')) is distinct from '21e47346d882128c78a35912141481c2'
+       where p.oid = to_regprocedure('public.garder_recu_d_une_piece_citee()')) is distinct from '8a0d30a6d400d1c578e9fc140e80d692'
      or (select not p.prosecdef or p.proconfig is distinct from array['search_path=public'] from pg_catalog.pg_proc p
           where p.oid = to_regprocedure('public.garder_recu_d_une_piece_citee()'))
      or has_function_privilege('anon', 'public.garder_recu_d_une_piece_citee()', 'execute')
@@ -285,10 +360,12 @@ begin
   end if;
   if (select string_agg(pg_get_triggerdef(t.oid) || ' ' || t.tgenabled::text, ' ; ' order by t.tgname collate "C")
         from pg_catalog.pg_trigger t where t.tgname like '%recu_d_une_piece_citee' and not t.tgisinternal)
-     is distinct from 'CREATE CONSTRAINT TRIGGER lignes_bancaires_recu_d_une_piece_citee AFTER INSERT OR UPDATE OF piece_id, statut, montant, reglement_groupe, dossier_id ON public.lignes_bancaires DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((new.piece_id IS NOT NULL) OR new.reglement_groupe)) EXECUTE FUNCTION garder_recu_d_une_piece_citee() O ; '
+     is distinct from 'CREATE CONSTRAINT TRIGGER lignes_bancaires_depart_recu_d_une_piece_citee AFTER DELETE OR UPDATE OF piece_id, statut, montant, reglement_groupe, dossier_id ON public.lignes_bancaires DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((old.piece_id IS NOT NULL) OR old.reglement_groupe)) EXECUTE FUNCTION garder_recu_d_une_piece_citee() O ; '
+                   || 'CREATE CONSTRAINT TRIGGER lignes_bancaires_recu_d_une_piece_citee AFTER INSERT OR UPDATE OF piece_id, statut, montant, reglement_groupe, dossier_id ON public.lignes_bancaires DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((new.piece_id IS NOT NULL) OR new.reglement_groupe)) EXECUTE FUNCTION garder_recu_d_une_piece_citee() O ; '
                    || 'CREATE CONSTRAINT TRIGGER operations_caisse_recu_d_une_piece_citee AFTER INSERT ON public.operations_caisse DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((new.piece_id IS NOT NULL) AND (new.genre = ''paiement''::text) AND (new.retire_le IS NULL) AND (new.montant > (0)::numeric))) EXECUTE FUNCTION garder_recu_d_une_piece_citee() O ; '
+                   || 'CREATE CONSTRAINT TRIGGER reglements_groupes_depart_recu_d_une_piece_citee AFTER DELETE OR UPDATE OF piece_id, ligne_bancaire_id, montant ON public.reglements_groupes DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((old.piece_id IS NOT NULL) AND (old.montant < (0)::numeric))) EXECUTE FUNCTION garder_recu_d_une_piece_citee() O ; '
                    || 'CREATE CONSTRAINT TRIGGER reglements_groupes_recu_d_une_piece_citee AFTER INSERT OR UPDATE OF piece_id, ligne_bancaire_id, montant ON public.reglements_groupes DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (((new.piece_id IS NOT NULL) AND (new.montant > (0)::numeric))) EXECUTE FUNCTION garder_recu_d_une_piece_citee() O' then
-    raise exception 'A8Q5Q3Q2-Q2 : les trois déclencheurs différés ne sont pas ceux de cette migration : rien n''est appliqué.';
+    raise exception 'A8Q5Q3Q2-Q2 : les cinq déclencheurs différés ne sont pas ceux de cette migration : rien n''est appliqué.';
   end if;
 end
 $fin$;
