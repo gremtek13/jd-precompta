@@ -51,7 +51,7 @@
 -- (19c), une régie d'avances (19d). Avec elle, le compte de la caisse du plan du dossier test reçoit un débit en
 -- trésorerie (19 : son écriture, la caisse au débit), un autre compte 53 se refuse sous la phrase de la caisse (19b),
 -- et l'engagement et la régie gardent celle d'hier. Les autres contrôles, dont le 580000 et le 275000, ne changent pas.
--- ADAPTÉ LE 13/11/2026 (ligne 43, PC4Q2-Q1 : la migration préparée `le_468_sur_le_releve`, qui sort le 468 de la branche
+-- ADAPTÉ LE 13/11/2026 (ligne 43, PC4Q2-Q1 : la migration `le_468_sur_le_releve`, en production depuis le 15/11/2026, qui sort le 468 de la branche
 -- du 48 et donne au 48 la phrase du plan de 2026). Sans elle — sa dernière ligne d'historique, pas son retour —, les
 -- contrôles 31, 32, 32b et 32c attendent la phrase d'hier, le 468 compris, et le 31a se dit EN ATTENTE. Avec elle, le 468
 -- se refuse plus : un débit s'écrit au 468600 face à la banque (31a), comme le 4670000001 du 13 ; le 486, le 481 et le

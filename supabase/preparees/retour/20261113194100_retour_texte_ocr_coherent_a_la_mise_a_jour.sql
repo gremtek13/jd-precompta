@@ -1,5 +1,6 @@
 -- RETOUR de la migration `texte_ocr_coherent_a_la_mise_a_jour` (SECU3-Q2 ;
--- supabase/preparees/20261113194000_texte_ocr_coherent_a_la_mise_a_jour.sql). Il rend à `piece_textes_ocr_update` son
+-- supabase/schema/20261115075329_texte_ocr_coherent_a_la_mise_a_jour.sql — en production depuis le 15/11/2026, version
+-- 20261115075329). Il rend à `piece_textes_ocr_update` son
 -- WITH CHECK d'hier (le seul dossier administré) et son rôle d'hier (PUBLIC, sans clause TO) ; son USING ne change pas.
 -- C'est un ÉLARGISSEMENT : la réécriture d'un texte lu ne relit plus sa pièce ni son document (CLAUDE.md : une policy
 -- élargie demande l'accord explicite du cabinet). Par l'outil : une policy se modifie en place, rien n'est retiré. Aucune

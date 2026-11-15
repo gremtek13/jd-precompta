@@ -22,8 +22,8 @@
 -- le 12/11/2026) : retirer (e) ; le mettre après la porte de la restauration ; après (b) ; avant (a) ; juger toute mise à
 -- jour ; juger les communes ; `^[67]` seul ; refuser un compte nul ; un autre code que 23514.
 --
--- LA CLASSE DU COMPTE D'UNE COMMUNE (PC7Q2-Q1 ; la migration PRÉPARÉE
--- supabase/preparees/20261113110000_classes_des_categories_communes.sql, après celle de PC7-Q2) : le refus (f) — une
+-- LA CLASSE DU COMPTE D'UNE COMMUNE (PC7Q2-Q1 ; la migration
+-- supabase/schema/20261115075300_classes_des_categories_communes.sql, en production depuis le 15/11/2026, après celle de PC7-Q2) : le refus (f) — une
 -- catégorie COMMUNE dont le compte, non nul, n'est pas de la classe 6 ou 7 suivie de deux chiffres, à l'insertion ou quand
 -- il change, pour tout auteur, le super-administrateur compris — se joue aux étapes 50 à 59, quand la dernière des deux
 -- lignes d'historique `classes_des_categories_communes` et `retour_classes_des_categories_communes` est la première ; et

@@ -3,8 +3,9 @@
 // TROIS MIGRATIONS PRÉPARÉES »).
 //
 // L'import des factures d'un ancien logiciel se refuse en engagement (A8-Q3, `importer_factures`) : la créance d'une facture
-// d'avant y serait au compte client de la balance reprise, que l'application n'écrit pas encore. La migration PRÉPARÉE
-// `reprises_retiennent_la_tresorerie` (supabase/preparees/20261113211000_reprises_retiennent_la_tresorerie.sql) ferme
+// d'avant y serait au compte client de la balance reprise, que l'application n'écrit pas encore. La migration
+// `reprises_retiennent_la_tresorerie` (en production depuis le 15/11/2026, par l'outil, sur l'accord du cabinet —
+// A8B-Q3-migration ; supabase/schema/20261115074926_reprises_retiennent_la_tresorerie.sql) ferme
 // l'autre chemin : la garde du réglage du modèle comptable (`verrouiller_modele_comptable`) refuse le passage VERS
 // l'engagement d'un dossier qui porte une facture ou un avoir à l'état « importee », APRÈS son refus d'hier (un brouillon qui
 // n'est pas vide), sous les mots ci-dessous — que reprisesRetiennentLaTresorerie.test.ts confronte au texte de la migration.
@@ -13,12 +14,14 @@
 // « Modèle comptable » de l'onglet Écritures dit le refus AVANT le clic, et n'offre pas le passage : un dossier qui porte des
 // factures reprises, ou dont la lecture n'est pas revenue entière, ne passe pas en engagement d'ici.
 //
-// LE DRAPEAU, BAISSÉ jusqu'à l'application de la migration : rien n'est lu (sans appel au réseau), rien n'est refusé —
-// l'écran d'hier, au caractère près. Il se lit À CHAQUE APPEL (`reprisesRetiennentLaTresoreriePrevues`) : les tests jouent
-// ses deux états sur l'objet ci-dessous, et le confrontent à l'export (levé le jour où la migration y entre).
+// LE DRAPEAU, LEVÉ depuis le 15/11/2026, la migration en production : la carte « Modèle comptable » lit les factures
+// reprises du dossier et dit le refus avant le clic. Baissé — l'état d'avant, que les tests jouent encore —, rien n'est lu
+// (sans appel au réseau), rien n'est refusé : l'écran d'hier, au caractère près. Il se baisse AVANT tout retour de la
+// migration. Il se lit À CHAQUE APPEL (`reprisesRetiennentLaTresoreriePrevues`) : les tests jouent ses deux états sur
+// l'objet ci-dessous, et le confrontent à l'export.
 export const DRAPEAU_DES_REPRISES_ET_DU_MODELE = {
-  /** Vrai le jour où la migration `reprises_retiennent_la_tresorerie` est en production et dans l'export. */
-  REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES: false as boolean,
+  /** Vrai depuis le 15/11/2026 : la migration `reprises_retiennent_la_tresorerie` est en production et dans l'export. */
+  REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES: true as boolean,
 }
 
 /** Le drapeau, lu à l'appel. */

@@ -29,9 +29,10 @@ const m = vi.hoisted(() => ({
   releverStatutsDesFactures: vi.fn(),
 }))
 vi.mock('../../lib/receptionPlateforme', () => m)
-// L'auteur de la connexion (B4RS-Q1) : la fiche dit ce que le module en dit, sous AUTEUR_DES_CONNEXIONS_PREVU — baissé tel
-// qu'il est servi, levé le temps d'un test (le module seul est éprouvé dans auteurDesConnexions.test.ts).
-const drapeauAuteur = vi.hoisted(() => ({ leve: false }))
+// L'auteur de la connexion (B4RS-Q1) : la fiche dit ce que le module en dit, sous AUTEUR_DES_CONNEXIONS_PREVU — levé tel
+// qu'il est servi depuis le 15/11/2026, baissé le temps d'un test, l'état d'avant (le module seul est éprouvé dans
+// auteurDesConnexions.test.ts).
+const drapeauAuteur = vi.hoisted(() => ({ leve: true }))
 vi.mock('../../lib/auteurDesConnexions', async (importOriginal) => {
   const vrai = await importOriginal<typeof import('../../lib/auteurDesConnexions')>()
   return {
@@ -123,7 +124,7 @@ const ouvrir = (siret: string | null = '12345678200010') =>
 
 beforeEach(() => {
   numero = 0
-  drapeauAuteur.leve = false
+  drapeauAuteur.leve = true
   bascule = false
   base.factures = []
   base.transmissions = []
@@ -676,6 +677,7 @@ describe('relire les statuts depuis le début', () => {
 
 describe('l’auteur de la connexion (B4RS-Q1)', () => {
   it('drapeau baissé : la fiche ne dit rien de l’auteur, même quand la fonction le lit', async () => {
+    drapeauAuteur.leve = false
     m.lireConnexionPlateforme.mockResolvedValue(ok({ connexion: connexion({ ecrite_par_le_cabinet: false, ecrite_le: null }) }))
     ouvrir()
     expect(await screen.findByText('Plateforme fictive')).toBeTruthy()

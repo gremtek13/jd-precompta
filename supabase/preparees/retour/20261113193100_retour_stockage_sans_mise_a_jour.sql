@@ -1,4 +1,5 @@
--- RETOUR de la migration `stockage_sans_mise_a_jour` (SECU3-Q1 ; supabase/preparees/20261113193000_stockage_sans_mise_a_jour.sql).
+-- RETOUR de la migration `stockage_sans_mise_a_jour` (SECU3-Q1 ; supabase/schema/20261115083740_stockage_sans_mise_a_jour.sql — collée
+-- par le cabinet, en production depuis le 15/11/2026, version 20261115083740).
 -- Il rend à storage.objects ses deux policies d'hier — `packs_storage_all` (pour tout, sans clause TO) et
 -- `cabinet_logos_maj_chef` (mise à jour, sans clause TO), à leurs prédicats d'hier — et retire les trois policies des
 -- packs que la migration a posées. C'est un ÉLARGISSEMENT : la mise à jour d'un pack et d'un logo se rouvre (CLAUDE.md :

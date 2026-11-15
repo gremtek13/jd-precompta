@@ -195,8 +195,9 @@ export interface EntreeRetraite extends EntreeEstimation {
  * libéral » 2026 : « les cotisations des deux premières années d'affiliation ne sont pas dues », par année civile
  * d'affiliation) ; l'affiliation est « prononcée au premier jour du trimestre civil qui suit le début de [l']activité
  * libérale ». L'application ne sait pas l'âge : le cabinet DIT la dispense, exercice par exercice.
- *  - `tenue: false` : la case n'est pas en base (migration `cumul_et_dispense_du_medecin`, PRÉPARÉE) — l'estimation d'hier,
- *    le complémentaire compté dû et dit (`carmf-debut-d-activite-complementaire-suppose-du`).
+ *  - `tenue: false` : la case n'est pas lue (le drapeau de la migration `cumul_et_dispense_du_medecin` baissé, l'état
+ *    d'avant le 15/11/2026) — l'estimation d'hier, le complémentaire compté dû et dit
+ *    (`carmf-debut-d-activite-complementaire-suppose-du`).
  *  - `tenue: true` : la case de l'exercice telle que le cabinet l'a dite, nulle tant qu'il ne l'a pas dite. Elle ne se lit
  *    que dans les deux premières années civiles d'affiliation (et l'année du début, s'il précède l'affiliation) : nulle là,
  *    l'estimation se tait en disant pourquoi ; au-delà, la règle ne peut plus jouer, et la case ne se lit pas (comme l'ACRE

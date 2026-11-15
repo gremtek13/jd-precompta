@@ -262,8 +262,8 @@ vi.mock('../../lib/champsBncDuFec', async (original) => {
 afterEach(() => { drapeauBnc.choix = undefined })
 
 // LA CLASSE DU COMPTE D'UNE CATÉGORIE DU DOSSIER (PC7-Q2), PUIS D'UNE COMMUNE (PC7Q2-Q1) : les drapeaux
-// `CLASSES_DES_CATEGORIES_PREVUES` et `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES` joués par des accesseurs — les vrais (baissés)
-// tant qu'un cas ne les lève pas.
+// `CLASSES_DES_CATEGORIES_PREVUES` et `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES` joués par des accesseurs — les vrais (levés,
+// les deux migrations en production depuis le 13 et le 15/11/2026) tant qu'un cas ne les baisse pas.
 const drapeauClasses = vi.hoisted(() => ({ leve: undefined as undefined | boolean, communes: undefined as undefined | boolean }))
 vi.mock('../../lib/categoriesDuDossier', async (original) => {
   const vrai = await original<typeof import('../../lib/categoriesDuDossier')>()
@@ -1721,14 +1721,16 @@ describe('EcrituresTab — le modèle comptable', () => {
   })
 })
 
-// A8B-Q3 (lib/reprisesRetiennentLaTresorerie.ts, la migration préparée `reprises_retiennent_la_tresorerie`) : un dossier qui
-// porte des factures reprises d'un ancien logiciel ne passe pas en engagement. Les deux états du drapeau, joués sur l'objet
-// que le module lit à l'appel ; les factures reprises, des lignes « importee » de `factures_emises` que la lecture COMPTE.
+// A8B-Q3 (lib/reprisesRetiennentLaTresorerie.ts, la migration `reprises_retiennent_la_tresorerie`, en production depuis le
+// 15/11/2026) : un dossier qui porte des factures reprises d'un ancien logiciel ne passe pas en engagement. Les deux états
+// du drapeau, joués sur l'objet que le module lit à l'appel (levé, sa valeur ; baissé, l'état d'avant tant que son code
+// existe) ; les factures reprises, des lignes « importee » de `factures_emises` que la lecture COMPTE.
 describe('EcrituresTab — le modèle comptable d’un dossier qui porte des factures reprises (A8B-Q3)', () => {
   const REPRISE = { id: 'fr1', dossier_id: 'dossier-de-test', statut: 'importee', type: 'facture', numero: 'R-1' }
-  afterEach(() => { DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = false })
+  afterEach(() => { DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = true })
 
   it('drapeau baissé : l’écran d’hier — le passage s’offre et s’enregistre, rien n’est dit', async () => {
+    DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = false
     poser({ factures_emises: [REPRISE] })
     monter()
     const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
@@ -2188,8 +2190,8 @@ describe('EcrituresTab — la classe du compte d’une catégorie du dossier (PC
 // LE COMPTE D'UNE CATÉGORIE COMMUNE EST UNE CHARGE OU UN PRODUIT (PC7Q2-Q1) : la base le refuse sinon, la migration
 // `classes_des_categories_communes` appliquée après celle de PC7-Q2, et la carte « Comptes manquants », où seul le
 // super-administrateur règle une commune, le dit avant le clic, aux mots de la base (lib/categoriesDuDossier.ts, que
-// categoriesDuDossier.test.ts confronte à la migration), sous `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES`. Baissé — l'état
-// d'aujourd'hui —, la carte écrit comme hier.
+// categoriesDuDossier.test.ts confronte à la migration), sous `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES`, levé depuis le
+// 15/11/2026. Baissé — l'état d'avant, joué tant que son code existe —, la carte écrit comme hier.
 describe('EcrituresTab — la classe du compte d’une catégorie commune (PC7Q2-Q1)', () => {
   const COMMUNE = {
     id: 'cat-commune', dossier_id: null, code: 'sans_suggestion', libelle: 'Catégorie commune',

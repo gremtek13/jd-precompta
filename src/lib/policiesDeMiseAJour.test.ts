@@ -16,25 +16,28 @@ import { controleDeLaLigneProposee, policiesDuSchema, tablesRelues, vautPour, ty
 // sous-requête soit corrélée à la ligne, les essais le jugent (rls.sql, le bloc TO), pas ce scanner.
 //
 // Il part de TOUT : chaque policy de l'export (supabase/schema, le socle compris), rejouée instruction par instruction, puis
-// les migrations préparées (supabase/preparees). Deux états : l'export seul (la production), où la policy d'aujourd'hui qui
-// manque à la règle est une EXCEPTION nommée, avec sa raison, et comptée — elle tombe le jour où la migration
-// `texte_ocr_coherent_a_la_mise_a_jour` entre dans l'export ; l'export et les préparées (la base de demain), sans
-// exception. Un plancher, et des défauts plantés. Récit : HISTORIQUE.md, « 13/11/2026 — SECU3-Q1 ET SECU3-Q2 ».
+// les migrations préparées (supabase/preparees). Trois états : l'export seul (la production), SANS exception depuis que la
+// migration `texte_ocr_coherent_a_la_mise_a_jour` y est entrée (15/11/2026) ; l'export sans elle (la production d'avant),
+// où la policy qu'elle corrige manque à la règle — le scanner la voit toujours ; l'export et les préparées (la base de
+// demain), sans exception. Un plancher, et des défauts plantés. Récit : HISTORIQUE.md, « 13/11/2026 — SECU3-Q1 ET
+// SECU3-Q2 ».
 
 const RACINE = new URL('../../', import.meta.url).pathname
 const lire = (chemin: string) => readFileSync(`${RACINE}${chemin}`, 'utf8')
-const MIGRATION = 'supabase/preparees/20261113194000_texte_ocr_coherent_a_la_mise_a_jour.sql'
+const MIGRATION = 'supabase/schema/20261115075329_texte_ocr_coherent_a_la_mise_a_jour.sql'
 const RETOUR = 'supabase/preparees/retour/20261113194100_retour_texte_ocr_coherent_a_la_mise_a_jour.sql'
 
 // Les tables qui disent QUI appelle (un accès client, un membre de l'équipe, une affectation, le super-administrateur),
 // et non ce que la ligne désigne.
 const ACCES = new Set(['public.memberships', 'public.cabinet_admins', 'public.dossier_assignations', 'public.super_admins'])
 
-// Les policies d'aujourd'hui qui manquent à la règle, chacune avec sa raison. Elles tombent quand la migration préparée
-// entre dans l'export.
-const EXCEPTIONS: Record<string, string> = {
-  'public.piece_textes_ocr.piece_textes_ocr_update': 'la réécriture du texte lu (texte_ocr_des_pieces, 16/09/2026) ne relit que le dossier annoncé, pas la pièce ni le document que l\'insertion relit : SECU3-Q2 la complète',
-}
+// Les policies d'aujourd'hui qui manquent à la règle, chacune avec sa raison : aucune depuis le 15/11/2026. La seule d'hier,
+// `piece_textes_ocr_update` — la réécriture du texte lu (texte_ocr_des_pieces, 16/09/2026) ne relisait que le dossier annoncé,
+// pas la pièce ni le document que l'insertion relit —, est tombée avec la migration `texte_ocr_coherent_a_la_mise_a_jour`
+// (SECU3-Q2) : l'état d'avant elle reste jugé (`AVANT`), le scanner y voit toujours la faute.
+const EXCEPTIONS: Record<string, string> = {}
+// La faute de l'état d'avant la migration.
+const FAUTE_D_HIER = { cle: 'public.piece_textes_ocr.piece_textes_ocr_update', manquent: ['public.documents_divers', 'public.pieces'] }
 
 interface Faute { cle: string; manquent: string[] }
 
@@ -61,15 +64,24 @@ function fautes(releve: ReleveDesPolicies): { fautes: Faute[]; jugees: number; e
 }
 
 const EXPORT = () => policiesDuSchema(fichiersDuSchema())
+// L'export sans la migration : la production d'avant le 15/11/2026.
+const fichiersDAvant = () => fichiersDuSchema().filter((f) => !/\d{14}_texte_ocr_coherent_a_la_mise_a_jour\.sql$/.test(f.chemin))
+const AVANT = () => policiesDuSchema(fichiersDAvant())
 const DEMAIN = () => policiesDuSchema([...fichiersDuSchema(), ...fichiersPrepares()])
 const planter = (sql: string) => policiesDuSchema([...fichiersDuSchema(), { chemin: 'supabase/preparees/99999999999999_plante.sql', texte: sql }])
+const planterAvant = (sql: string) => policiesDuSchema([...fichiersDAvant(), { chemin: 'supabase/preparees/99999999999999_plante.sql', texte: sql }])
 
 describe('la mise à jour relit la cible comme l’insertion', () => {
-  it('dans l’export (la production), la seule policy qui manque à la règle est l’exception nommée, et comptée', () => {
-    expect(Object.keys(EXCEPTIONS)).toHaveLength(1)
-    for (const raison of Object.values(EXCEPTIONS)) expect(raison.length).toBeGreaterThan(40)
-    expect(fautes(EXPORT()).fautes).toEqual([{ cle: 'public.piece_textes_ocr.piece_textes_ocr_update', manquent: ['public.documents_divers', 'public.pieces'] }])
+  it('dans l’export (la production), aucune policy ne manque à la règle : l’exception d’hier est tombée avec la migration', () => {
+    expect(Object.keys(EXCEPTIONS)).toHaveLength(0)
+    expect(fautes(EXPORT()).fautes).toEqual([])
     expect(fautes(EXPORT()).fautes.map((f) => f.cle)).toEqual(Object.keys(EXCEPTIONS).sort())
+    expect(lire(MIGRATION).length).toBeGreaterThan(0)
+  })
+
+  it('dans l’export sans la migration (la production d’avant), la faute qu’elle corrige se voit toujours, et elle seule', () => {
+    expect(fichiersDAvant()).toHaveLength(fichiersDuSchema().length - 1)
+    expect(fautes(AVANT()).fautes).toEqual([FAUTE_D_HIER])
   })
 
   it('avec les migrations préparées (la base de demain), aucune', () => {
@@ -82,6 +94,7 @@ describe('la mise à jour relit la cible comme l’insertion', () => {
     // texte lu, le lettrage, le règlement groupé, la règle d'affectation, la ventilation ; la ligne de facture, le mouvement
     // d'un compte courant et l'affectation d'un membre, qui remontent à leur parent).
     const { jugees, exigeantes } = fautes(EXPORT())
+    expect(fautes(AVANT()).jugees).toBe(jugees)
     expect(jugees).toBeGreaterThanOrEqual(48)
     expect(exigeantes).toBeGreaterThanOrEqual(9)
     expect(fautes(DEMAIN()).jugees).toBeGreaterThanOrEqual(jugees)
@@ -109,8 +122,9 @@ describe('la mise à jour relit la cible comme l’insertion', () => {
         with check (exists (select 1 from public.memberships m where m.dossier_id = essai_acces.dossier_id and m.user_id = auth.uid()));
       create policy essai_acces_update on public.essai_acces for update to authenticated using (admin_du_dossier(dossier_id));`)
     expect(fautes(acces).fautes).toEqual(base)
-    // La règle corrigée par un alter policy : la faute du texte lu tombe.
-    const corrigee = planter(`alter policy piece_textes_ocr_update on public.piece_textes_ocr with check (admin_du_dossier(dossier_id)
+    // La règle corrigée par un alter policy, sur l'état d'avant la migration : la faute du texte lu tombe.
+    expect(fautes(planterAvant('')).fautes).toEqual([FAUTE_D_HIER])
+    const corrigee = planterAvant(`alter policy piece_textes_ocr_update on public.piece_textes_ocr with check (admin_du_dossier(dossier_id)
       and ((piece_id is not null and exists (select 1 from pieces p where p.id = piece_textes_ocr.piece_id))
         or (document_id is not null and exists (select 1 from documents_divers d where d.id = piece_textes_ocr.document_id))));`)
     expect(fautes(corrigee).fautes).toEqual([])
@@ -118,7 +132,7 @@ describe('la mise à jour relit la cible comme l’insertion', () => {
 })
 
 describe('la migration texte_ocr_coherent_a_la_mise_a_jour, son retour et ce qui la redit', () => {
-  const avant = EXPORT().policies
+  const avant = AVANT().policies
   const insertion = avant.get('public.piece_textes_ocr.piece_textes_ocr_insert')!
   const maj = avant.get('public.piece_textes_ocr.piece_textes_ocr_update')!
   const normal = (expression: string | null) => (expression ?? '').replace(/\bpublic\./g, '').replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').toLowerCase()
@@ -126,7 +140,7 @@ describe('la migration texte_ocr_coherent_a_la_mise_a_jour, son retour et ce qui
   const cibleDe = (expression: string | null) => normal(expression).slice(normal(expression).lastIndexOf(') and (') + ') and '.length)
 
   it('elle pose le dossier administré puis la cible de l’insertion, mot pour mot, à authenticated ; l’USING ne change pas', () => {
-    const apres = policiesDuSchema([...fichiersDuSchema(), { chemin: MIGRATION, texte: lire(MIGRATION) }]).policies
+    const apres = EXPORT().policies
     const p = apres.get('public.piece_textes_ocr.piece_textes_ocr_update')!
     expect([p.permissive, p.commande, p.roles]).toEqual([true, 'update', ['authenticated']])
     expect(p.using).toBe(maj.using)
@@ -140,7 +154,7 @@ describe('la migration texte_ocr_coherent_a_la_mise_a_jour, son retour et ce qui
   })
 
   it('son retour rend le WITH CHECK et le rôle d’hier', () => {
-    const rendue = policiesDuSchema([...fichiersDuSchema(), { chemin: MIGRATION, texte: lire(MIGRATION) }, { chemin: RETOUR, texte: lire(RETOUR) }])
+    const rendue = policiesDuSchema([...fichiersDuSchema(), { chemin: RETOUR, texte: lire(RETOUR) }])
       .policies.get('public.piece_textes_ocr.piece_textes_ocr_update')!
     expect([rendue.roles, normal(rendue.using), normal(rendue.withCheck)]).toEqual([maj.roles, normal(maj.using), normal(maj.withCheck)])
   })

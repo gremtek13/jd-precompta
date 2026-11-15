@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { definitionsSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 // A8B-Q3 : UN DOSSIER QUI PORTE DES FACTURES REPRISES NE PASSE PAS EN COMPTABILITÉ D'ENGAGEMENT. Le module redit le refus
-// de la garde du modèle comptable (`verrouiller_modele_comptable`, la migration `reprises_retiennent_la_tresorerie`,
-// préparée) : ses mots confrontés au texte de la DERNIÈRE définition — préparée, ou exportée le jour où elle y entre —, son
-// rang après le refus d'hier, le drapeau confronté à l'export, la règle sous ses deux états, et la lecture qui ne rejette
-// jamais. Données FICTIVES.
+// de la garde du modèle comptable (`verrouiller_modele_comptable`, la migration `reprises_retiennent_la_tresorerie`, en
+// production depuis le 15/11/2026) : ses mots confrontés au texte de la DERNIÈRE définition — exportée —, son rang après le
+// refus d'hier, le drapeau (levé) confronté à l'export, la règle sous ses deux états, et la lecture qui ne rejette jamais —
+// l'état d'avant, le drapeau baissé, joué sur l'objet tant que son code existe. Données FICTIVES.
 
 const faux = vi.hoisted(() => ({
   reponse: { count: 0 as number | null, error: null as unknown },
@@ -39,7 +39,7 @@ const { lireLesReprisesDuModele } = await import('./reprisesRetiennentLaTresorer
 const { DRAPEAU_DES_REPRISES_ET_DU_MODELE, REFUS_ENGAGEMENT_DES_REPRISES, REPRISES_NON_LUES, refusDuPassageEnEngagement } = module
 
 afterEach(() => {
-  DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = false
+  DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = true
   faux.reponse = { count: 0, error: null }
   faux.appels = []
 })
@@ -59,7 +59,7 @@ describe('A8B-Q3 — la garde du modèle comptable, confrontée au texte de la m
   const definitions = definitionsSql('verrouiller_modele_comptable', TOUTES)
   const derniere = definitions[definitions.length - 1]
 
-  it('la dernière définition est celle de la migration, préparée ou exportée, une seule fois', () => {
+  it('la dernière définition est celle de la migration, exportée, une seule fois', () => {
     expect(TOUTES.filter((f) => MIGRATION.test(f.chemin))).toHaveLength(1)
     expect(derniere.chemin).toMatch(MIGRATION)
   })
@@ -76,7 +76,8 @@ describe('A8B-Q3 — la garde du modèle comptable, confrontée au texte de la m
     expect(refusDuCorps(definitions[definitions.length - 2].definition)).toEqual(refus.slice(0, 1))
   })
 
-  it('le drapeau suit l’export : levé le jour où la migration y entre, baissé tant qu’elle est préparée', () => {
+  it('le drapeau suit l’export : levé depuis que la migration y est entrée (15/11/2026)', () => {
+    expect(EXPORTEE).toBe(true)
     expect(module.reprisesRetiennentLaTresoreriePrevues()).toBe(EXPORTEE)
   })
 })
@@ -105,6 +106,7 @@ describe('A8B-Q3 — refusDuPassageEnEngagement, sous les deux états du drapeau
 describe('A8B-Q3 — lireLesReprisesDuModele', () => {
   const D = 'd0000000-0000-4000-8000-0000000000b3'
   it('baissé : rien n’est lu, sans appel au réseau', async () => {
+    DRAPEAU_DES_REPRISES_ET_DU_MODELE.REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES = false
     expect(await lireLesReprisesDuModele(D)).toBeNull()
     expect(faux.appels).toEqual([])
   })

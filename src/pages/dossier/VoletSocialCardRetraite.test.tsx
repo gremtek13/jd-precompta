@@ -13,8 +13,9 @@ import { PHRASE_DE_LA_CAISSE } from '../../lib/retraiteAffichee'
 // d'avant (les trois caisses, « Hors CIPAV ») se rejoue par l'accesseur, baissé, dans son propre cas.
 const drapeau = vi.hoisted(() => ({
   cipav: true,
-  // Les deux cases d'un médecin (RET-Q2) : baissées, comme servies ; levées dans leurs propres cas, avec les paramètres
-  // lus que ces cas posent.
+  // Les deux cases d'un médecin (RET-Q2) : baissées — l'état d'avant le 15/11/2026, le choix local du cumul, que les
+  // premiers cas jouent tant que son code existe ; levées — l'état servi depuis la migration — dans leurs propres cas, avec
+  // les paramètres lus que ces cas posent.
   cases: false,
   debutActivite: '2010-01-01',
   parExercice: new Map<number, unknown>(),

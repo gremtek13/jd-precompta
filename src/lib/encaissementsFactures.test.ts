@@ -437,6 +437,8 @@ describe('les refus de la base, tels que la migration les écrit', () => {
       avant_la_reprise: ['v_facture.numero', "to_char(v_reprise, 'DD/MM/YYYY')"],
       plafond_reprise: [MONTANT('greatest(v_plafond - v_deja, 0)')],
       plafond_reprise_taux: [TAUX('v_part.taux'), MONTANT('greatest((v_ttc - v_credite - v_credite_repris_taux - v_avant_taux) / 100.0 - v_deja, 0)')],
+      // Le refus de la pièce citée d'une facture reprise (A8Q5Q3-Q2, dans l'export depuis le 15/11/2026).
+      reprise_piece_plusieurs_taux: ['v_facture.numero'],
     }
     const args = argumentsSql(sql)
     expect(args).toHaveLength(REFUS_DE_L_EXPORT.length)

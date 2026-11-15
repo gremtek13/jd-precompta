@@ -4538,6 +4538,9 @@ interface ActionDeLaVente {
   preparer: (m: Monde) => void
   /** Ce que reçoit une personne admise dans ce monde. */
   admis: Pick<Attendu, 'statut' | 'refusEnFrancais' | 'aucuneDepense' | 'depenses' | 'verifier'>
+  /** Ce que reçoit le chef du cabinet, quand ce n'est pas ce que reçoit tout admis (l'attestation de l'auteur d'une
+   *  connexion, B4RS-Q1, qu'il est seul à faire) ; absent, `admis`. */
+  admisDuChef?: Pick<Attendu, 'statut' | 'refusEnFrancais' | 'aucuneDepense' | 'depenses' | 'verifier'>
 }
 
 /**
@@ -4552,16 +4555,19 @@ function matriceDesDroits(
   }
   return Object.entries(table).flatMap(([action, droit]) => {
     const a = actions[action]
-    const scenario = (profil: Profil, admis: boolean): Scenario => ({
-      nom: admis
-        ? `${action} — ${profil.nom} : admis`
-        : `${action} — ${profil.nom} : refusé (404) avant toute lecture, tout secret et toute dépense`,
-      preparer: (m) => { a.preparer(m); profil.droits(m) },
-      requete: (s) => requeteDe(s, { personne: profil.personne, corps: a.corps }),
-      attendu: admis
-        ? { ...a.admis, verifier: (r, m, c) => [...porteOuverte(r, m), ...(a.admis.verifier?.(r, m, c) ?? [])] }
-        : { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAcces },
-    })
+    const scenario = (profil: Profil, admis: boolean): Scenario => {
+      const recu = profil === LE_CHEF && a.admisDuChef ? a.admisDuChef : a.admis
+      return {
+        nom: admis
+          ? `${action} — ${profil.nom} : admis`
+          : `${action} — ${profil.nom} : refusé (404) avant toute lecture, tout secret et toute dépense`,
+        preparer: (m) => { a.preparer(m); profil.droits(m) },
+        requete: (s) => requeteDe(s, { personne: profil.personne, corps: a.corps }),
+        attendu: admis
+          ? { ...recu, verifier: (r, m, c) => [...porteOuverte(r, m), ...(recu.verifier?.(r, m, c) ?? [])] }
+          : { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAcces },
+      }
+    }
     return [scenario(LE_CHEF, true), scenario(CLIENT_VENTES, droit === 'ventes'), ...SANS_LA_VENTE.map((p) => scenario(p, false))]
   })
 }
@@ -5797,9 +5803,23 @@ const SCENARIOS_RECEPTION_PAR_LE_CLIENT: Scenario[] = [
       attendu: { statut: 404, refusEnFrancais: true, aucuneDepense: true, verifier: refusDeLAcces },
     },
   ]),
-  // L'AUTEUR NON LU (B4RS-Q1) : la fonction servie ne lit pas l'auteur de la connexion ; la relève par un accès client se
-  // refuse aussitôt la case « Achats » lue, avant toute autre lecture, tout secret et toute dépense. Le cabinet n'est pas un
-  // accès client : sa réception ne change pas.
+  {
+    nom: 'telecharger — le cabinet et un flux « .. » : refusé (400), sans autre appel que son jeton',
+    preparer: connexionPlateforme,
+    requete: (s) => requeteDe(s, {
+      personne: 'chef', corps: { action: 'telecharger', dossierId: D, version: VERSION_PLATEFORME, flowId: '..', document: 'original' },
+    }),
+    attendu: { statut: 400, refusEnFrancais: true, depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`] },
+  },
+]
+
+
+// L'AUTEUR NON LU (B4RS-Q1) : l'état d'avant la migration `auteur_des_connexions_plateformes` (en production depuis le
+// 15/11/2026), la constante `AUTEUR_DES_CONNEXIONS_EN_BASE` de plateforme-agreee baissée en mémoire
+// (`auteurDesConnexionsBaissee`, auteurDesConnexionsHttp.test.ts) : la fonction ne lit pas l'auteur de la connexion, et la
+// relève par un accès client se refuse aussitôt la case « Achats » lue, avant toute autre lecture, tout secret et toute
+// dépense. Le cabinet n'est pas un accès client : sa réception ne change pas. Éprouvé tant que son code existe.
+export const SCENARIOS_AUTEUR_NON_LU: readonly Scenario[] = [
   ...[LISTE_DES_ACHATS, RECEPTION_D_UN_ACHAT].map((corps): Scenario => ({
     nom: `${corps.action} — client « Achats » sur la base de demain, l’auteur de la connexion non lu : refusé (409) avant toute lecture, tout secret et toute dépense`,
     preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m) },
@@ -5825,16 +5845,7 @@ const SCENARIOS_RECEPTION_PAR_LE_CLIENT: Scenario[] = [
       },
     },
   },
-  {
-    nom: 'telecharger — le cabinet et un flux « .. » : refusé (400), sans autre appel que son jeton',
-    preparer: connexionPlateforme,
-    requete: (s) => requeteDe(s, {
-      personne: 'chef', corps: { action: 'telecharger', dossierId: D, version: VERSION_PLATEFORME, flowId: '..', document: 'original' },
-    }),
-    attendu: { statut: 400, refusEnFrancais: true, depenses: [`réseau POST ${HOTE_PLATEFORME}/oauth/token`] },
-  },
 ]
-
 
 /**
  * Le refus de l'auteur non lu : sa raison nommée, et rien de lu ni de demandé que les droits de l'appelant, à son jeton.
@@ -5850,8 +5861,9 @@ function refusDeLAuteurNonLu(r: Resultat, monde: Monde): string[] {
 }
 
 // LA RÉCEPTION PAR L'ACCÈS « ACHATS » QUI ABOUTIT (étape B4r ; B4RS-Q1) : elle ne passe que par une connexion dont le
-// cabinet a écrit la configuration en vigueur, donc sous la source dont `AUTEUR_DES_CONNEXIONS_EN_BASE` est levée en mémoire
-// (auteurDesConnexionsHttp.test.ts), sur le schéma des migrations préparées, l'auteur de la connexion posé au chef.
+// cabinet a écrit la configuration en vigueur, donc sous la source servie, dont `AUTEUR_DES_CONNEXIONS_EN_BASE` est levée
+// depuis le 15/11/2026 (auteurDesConnexionsHttp.test.ts), sur le schéma des migrations préparées (la case « Achats » de B1),
+// l'auteur de la connexion posé au chef.
 export const SCENARIOS_RECEPTION_SOUS_L_AUTEUR: readonly Scenario[] = ([
   (() => {
     const recherches: unknown[] = []
@@ -5953,8 +5965,9 @@ export const SCENARIOS_RECEPTION_SOUS_L_AUTEUR: readonly Scenario[] = ([
 }))
 
 // L'AUTEUR DE LA CONNEXION (B4RS-Q1, tranchée le 12/11/2026 : « (B) Garder EC-Q4, refuser sur une connexion écrite par un
-// client ») : joués sur la source dont `AUTEUR_DES_CONNEXIONS_EN_BASE` est levée en mémoire (auteurDesConnexionsHttp.test.ts),
-// sur le schéma des migrations préparées, où la connexion porte `ecrite_par` et `ecrite_le`. La base efface l'auteur à toute
+// client ») : joués sur la source servie, dont `AUTEUR_DES_CONNEXIONS_EN_BASE` est levée depuis le 15/11/2026
+// (auteurDesConnexionsHttp.test.ts), la connexion portant `ecrite_par` et `ecrite_le` (dans l'export depuis la migration).
+// La base efface l'auteur à toute
 // écriture de la configuration (sa garde, éprouvée par supabase/essais/auteurDesConnexions.sql) ; le monde factice ne la
 // rejoue pas : chaque scénario pose l'auteur qu'il suppose.
 const ATTESTEE_LE = '2026-10-01T08:05:00.000Z'
@@ -5980,6 +5993,17 @@ export const SCENARIOS_AUTEUR_DES_CONNEXIONS: readonly Scenario[] = [
       verifier: (r) => (corpsDe(r).raison === 'connexion_hors_du_cabinet' ? [] : [r.texte.slice(0, 200)]),
     },
   })),
+  {
+    // La règle ne distingue pas l'appelant : le chef lui-même ne relève pas, par l'action du client, une connexion que le
+    // cabinet n'a pas écrite (sa réception à lui reste « lister », hors de ce bloc).
+    nom: 'lister_achats — le chef, une connexion que le cabinet n’a pas écrite : refusée (409) avant tout appel à la plateforme',
+    preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m); auteurDeLaConnexion(null)(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: LISTE_DES_ACHATS }),
+    attendu: {
+      statut: 409, refusEnFrancais: true, aucuneDepense: true,
+      verifier: (r) => (corpsDe(r).raison === 'connexion_hors_du_cabinet' ? [] : [r.texte.slice(0, 200)]),
+    },
+  },
   {
     nom: 'lister_achats — une connexion que le cabinet a écrite : la relève part, comme hier',
     preparer: (m) => { plateformeDesAchats()(m); accesAchats(true)(m); auteurDeLaConnexion(PERSONNES.chef.id)(m) },
@@ -6082,9 +6106,18 @@ const PLATEFORME_AGREEE: ContratFonction = {
           verifier: (r) => ((corpsDe(r).connexion as Record<string, unknown> | null)?.client_id === 'client-plateforme' ? [] : [r.texte]),
         },
       },
+      // B4RS-Q1 (la migration en production depuis le 15/11/2026) : le chef atteste sous sa session la configuration qu'il
+      // vient d'écrire — une seconde écriture, la sienne —, le client « Ventes » n'atteste rien.
       enregistrer: {
         corps: ENREGISTREMENT, preparer: (m) => { connexionPlateforme(m); m.secrets.push(SECRET_RESSAISI) },
-        admis: { statut: 200, depenses: ['écriture update connexions_plateformes'] },
+        admis: {
+          statut: 200, depenses: ['écriture update connexions_plateformes'],
+          verifier: (r, m) => (attestationsDe(m).length === 0 && vueDe(r).ecrite_par_le_cabinet === false ? [] : [`client : ${r.texte.slice(0, 300)}`]),
+        },
+        admisDuChef: {
+          statut: 200, depenses: ['écriture update connexions_plateformes', 'écriture update connexions_plateformes'],
+          verifier: (r, m) => (attestationsDe(m).length === 1 && vueDe(r).ecrite_par_le_cabinet === true ? [] : [`chef : ${r.texte.slice(0, 300)}`]),
+        },
       },
       retirer: {
         corps: { action: 'retirer', dossierId: D }, preparer: connexionPlateforme,

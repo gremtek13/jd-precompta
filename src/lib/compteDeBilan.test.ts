@@ -133,9 +133,10 @@ function definitionDans(fichiers: readonly { chemin: string; texte: string }[], 
 }
 const AVANT_LA_CAISSE = MIGRATIONS.slice(0, MIGRATIONS.findIndex((f) => CAISSE_DU_RELEVE.test(f.chemin)))
 const AVEC_LA_CAISSE = MIGRATIONS.filter((f) => CAISSE_DU_RELEVE.test(f.chemin))
-// LE 468 SUR LE RELEVÉ (PC4Q2-Q1) : la migration `le_468_sur_le_releve`, préparée, remplace `refus_compte_de_bilan` après la
-// caisse. Ses deux états : la définition d'avant elle (la dernière des fichiers qui la précèdent) contre le module sans elle,
-// et la sienne — préparée ou exportée — contre le module avec elle ; la caisse est en base dans l'un et l'autre.
+// LE 468 SUR LE RELEVÉ (PC4Q2-Q1) : la migration `le_468_sur_le_releve`, en production depuis le 15/11/2026, remplace
+// `refus_compte_de_bilan` après la caisse. Ses deux états : la définition d'avant elle (la dernière des fichiers qui la
+// précèdent) contre le module sans elle, et la sienne — exportée — contre le module avec elle ; la caisse est en base dans
+// l'un et l'autre.
 const LE_468 = /\d{14}_le_468_sur_le_releve\.sql$/
 const RANG_DU_468 = MIGRATIONS.findIndex((f) => LE_468.test(f.chemin))
 const AVANT_LE_468 = MIGRATIONS.slice(0, RANG_DU_468)

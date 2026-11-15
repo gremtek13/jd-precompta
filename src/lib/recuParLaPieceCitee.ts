@@ -7,7 +7,8 @@ import { REFUS_CITER, remplir, type RefusDeLaBase } from './pieceDUneFactureRepr
 //
 // Une pièce de vente payée et comptée — en N, par ses paiements, dans la 2035 et la CA3 —, puis citée par une facture reprise
 // dont l'import déclare moins d'encaissé avant la reprise : le registre (A8b) partait du déclaré et acceptait d'encaisser de
-// nouveau la même somme. La migration PRÉPARÉE `recu_par_la_piece_citee` (supabase/preparees/20261113212000_recu_par_la_piece_citee.sql) :
+// nouveau la même somme. La migration `recu_par_la_piece_citee` (en production depuis le 15/11/2026, par l'outil, sur
+// l'accord du cabinet — A8Q5Q3-Q2-migration ; supabase/schema/20261115075201_recu_par_la_piece_citee.sql) :
 //   - `recu_par_la_piece` : ce qu'une pièce a reçu, la somme signée de ses paiements de son dossier (un mouvement rapproché,
 //     la part d'un virement groupé, un paiement par la caisse non retiré), jamais négative, en centimes ;
 //   - `enregistrer_encaissement` : l'encaissé avant la reprise est le plus grand du déclaré et de ce que la pièce citée a
@@ -17,14 +18,15 @@ import { REFUS_CITER, remplir, type RefusDeLaBase } from './pieceDUneFactureRepr
 //   - `citer_piece_de_facture_reprise` : deux refus neufs quand le registre a déjà des encaissements.
 // Ce module en dit les refus, aux mots de la migration, et le plancher ; recuParLaPieceCitee.test.ts les confronte à son texte.
 //
-// LE DRAPEAU, BAISSÉ jusqu'à l'application : la lecture de la reprise attend six clés (la fonction d'aujourd'hui), le module
-// juge sans le plancher — comme la base d'aujourd'hui —, et aucun refus neuf ne se dit. Levé le jour de l'application, la
-// lecture attend sept clés : l'application se déploie aussitôt après la migration (entre les deux, la reprise se lit
-// « illisible », et la fenêtre retient l'encaissement — le côté fermé). Il se lit À CHAQUE APPEL : les tests jouent ses deux
-// états sur l'objet ci-dessous.
+// LE DRAPEAU, LEVÉ depuis le 15/11/2026, la migration en production (A8Q5Q3-Q2 : appliquer, lever, déployer d'un trait) :
+// la lecture de la reprise attend sept clés, le module juge avec le plancher, comme la base, et les refus neufs se disent.
+// Entre la migration et le déploiement de l'application, la lecture d'hier attendait six clés et disait la reprise
+// « illisible » : la fenêtre retenait l'encaissement — le côté fermé. Baissé — l'état d'avant, que les tests jouent encore —,
+// la lecture attend six clés et le module juge sans le plancher ; il se baisse AVANT tout retour de la migration. Il se lit
+// À CHAQUE APPEL : les tests jouent ses deux états sur l'objet ci-dessous.
 export const DRAPEAU_DE_LA_PIECE_RECUE = {
-  /** Vrai le jour où la migration `recu_par_la_piece_citee` est en production et dans l'export. */
-  RECU_PAR_LA_PIECE_CITEE_PREVU: false as boolean,
+  /** Vrai depuis le 15/11/2026 : la migration `recu_par_la_piece_citee` est en production et dans l'export. */
+  RECU_PAR_LA_PIECE_CITEE_PREVU: true as boolean,
 }
 
 /** Le drapeau, lu à l'appel. */

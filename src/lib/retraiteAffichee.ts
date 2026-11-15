@@ -2,10 +2,11 @@
 // module de calcul (`retraiteDesLiberaux.ts`) ne porte pas. Le calcul ne se refait pas ici : on lui donne la MÊME entrée
 // que celle de l'estimation de l'Urssaf, plus le seul renseignement qu'il exige en plus — le cumul emploi-retraite d'un médecin.
 //
-// LE CUMUL ET LA DISPENSE DES DÉBUTS D'UN MÉDECIN (RET-Q2). Tant que leurs cases ne sont pas en base
-// (`CASES_DU_MEDECIN_PREVUES` baissé, migration `cumul_et_dispense_du_medecin` PRÉPARÉE), l'écran demande le cumul par un
-// choix LOCAL, non enregistré, SANS valeur par défaut, et la dispense n'est pas tenue (le complémentaire compté dû, et dit).
-// Levé, l'un et l'autre viennent des paramètres de l'exercice, que la carte des paramètres offre (`CasesDeLaRetraite`). « Non
+// LE CUMUL ET LA DISPENSE DES DÉBUTS D'UN MÉDECIN (RET-Q2). Leurs cases sont en base depuis le 15/11/2026 (migration
+// `cumul_et_dispense_du_medecin`, `CASES_DU_MEDECIN_PREVUES` levé) : l'un et l'autre viennent des paramètres de l'exercice,
+// que la carte des paramètres offre (`CasesDeLaRetraite`). Baissé — l'état d'avant, que les tests jouent encore —, l'écran
+// demande le cumul par un choix LOCAL, non enregistré, SANS valeur par défaut, et la dispense n'est pas tenue (le
+// complémentaire compté dû, et dit). « Non
 // renseigné » est un état à part, jamais « non » : tant qu'un médecin ne l'a pas dit, le module refuse et dit pourquoi, et
 // aucun montant ne s'affiche. Les autres professions n'ont pas à le dire, et un choix resté d'un médecin ne leur est jamais
 // passé.

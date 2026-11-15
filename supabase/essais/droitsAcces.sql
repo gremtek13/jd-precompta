@@ -105,7 +105,7 @@ declare
   avec_acces_trace boolean := to_regprocedure('public.tracer_les_acces()') is not null;
   -- Le départ d'un client (INAL5, migration `depart_du_client`, préparée) : sa garde d'un dossier conservé, avant
   -- l'insertion et le déplacement d'un accès, vient AVANT celle du dossier du cabinet (l'ordre des noms) ; ce qu'elle refuse
-  -- se joue dans `departDuClient.sql`. La porte d'accès (`acces_avant_les_gardes`, préparée) se pose sur memberships quand
+  -- se joue dans `departDuClient.sql`. La porte d'accès (`acces_avant_les_gardes`, en production depuis le 15/11/2026) se pose sur memberships quand
   -- cette garde y est, l'une ou l'autre migration la posant : la première de tous (le trait bas) ; `accesAvantLesGardes.sql`.
   avec_inal5 boolean := to_regprocedure('public.garder_dossier_conserve()') is not null;
   avec_porte boolean := to_regprocedure('public.acces_avant_les_gardes()') is not null

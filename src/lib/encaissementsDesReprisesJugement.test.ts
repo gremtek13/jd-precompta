@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { REFUS_ENCAISSEMENT_D_UNE_REPRISE } from './encaissementsDesReprises'
 import {
-  REFUS_ENREGISTREMENT, REFUS_ENREGISTREMENT_DES_REPRISES, REFUS_REPRISE_NON_LUE, montantsParTauxDuDocument,
+  REFUS_ENREGISTREMENT, REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE, REFUS_ENREGISTREMENT_DES_REPRISES, REFUS_REPRISE_NON_LUE,
+  montantsParTauxDuDocument,
   refusDeLaFacture, refusEnregistrementExportes, refusEnregistrementVente,
   type DocumentParTaux, type ContexteFacture, type ContexteVente, type FacturePourEncaissement, type LigneDeFacture,
   type RepriseDeLaFacture, type SaisieEncaissement,
 } from './encaissementsFactures'
+import { DRAPEAU_DE_LA_PIECE_RECUE } from './recuParLaPieceCitee'
 import { derniereDefinitionSql } from '../test/schema'
 import { messagesSql } from '../test/raiseSql'
 
@@ -91,10 +93,21 @@ describe('drapeau levé : les refus et les plafonds d’une facture reprise, sou
   })
 
   it('les refus en vigueur après les trois migrations : ceux d’hier, les quatre neufs à leur rang', () => {
-    expect(refusEnregistrementExportes()).toBe(REFUS_ENREGISTREMENT_DES_REPRISES)
-    const sql = derniereDefinitionSql('enregistrer_encaissement')
+    // Sans A8Q5Q3-Q2 (le drapeau de la pièce reçue baissé, l'état d'avant le 15/11/2026) : les refus d'A8b, que la dernière
+    // définition d'avant `recu_par_la_piece_citee` porte.
+    DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = false
+    try {
+      expect(refusEnregistrementExportes()).toBe(REFUS_ENREGISTREMENT_DES_REPRISES)
+    } finally {
+      DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = true
+    }
+    const sql = derniereDefinitionSql('enregistrer_encaissement', (f) => !/\d{14}_recu_par_la_piece_citee\.sql$/.test(f.chemin))
     expect(REFUS_ENREGISTREMENT_DES_REPRISES.map((r) => r.modele)).toEqual(messagesSql(sql))
     expect(REFUS_ENREGISTREMENT_DES_REPRISES).toHaveLength(REFUS_ENREGISTREMENT.length + REFUS_ENCAISSEMENT_D_UNE_REPRISE.length)
+    // Avec elle (en production depuis le 15/11/2026, son drapeau levé) : le refus de la pièce citée en plus, à son rang, que
+    // recuParLaPieceCitee.test.ts confronte au texte de la migration.
+    expect(refusEnregistrementExportes()).toBe(REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE)
+    expect(REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE.map((r) => r.modele)).toEqual(messagesSql(derniereDefinitionSql('enregistrer_encaissement')))
   })
 
   it('la règle de TVA de ses montants déclarés : par taux quand la somme des taux fait sa TVA, sinon ligne à ligne', () => {

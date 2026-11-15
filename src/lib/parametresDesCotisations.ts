@@ -23,12 +23,15 @@ export const PARAMETRES_DES_COTISATIONS_EXPORTES = true
 
 // LES DEUX CASES D'UN MÉDECIN, PAR EXERCICE (ligne 27.1, RET-Q2, tranchée par le cabinet le 11/11/2026 : « Oui, avec
 // l'écran ») : le cumul emploi-retraite et la dispense du complémentaire de la CARMF des deux premières années
-// d'affiliation. La migration PRÉPARÉE `cumul_et_dispense_du_medecin` (supabase/preparees/20261113203000) pose les deux
-// colonnes et fait accepter à `enregistrer_parametres_des_cotisations` cinq clés au lieu de trois. Levé (après la
-// migration) : la lecture les nomme, l'écriture part sous cinq clés, la carte les offre pour un médecin, et l'estimation de
-// la retraite les reçoit en entrée obligatoire (lib/retraiteDesLiberaux.ts, `DispenseDesDebuts`). Baissé — aujourd'hui —,
-// la lecture et l'écriture d'hier, et le cumul reste un choix local de la carte du volet social.
-export const CASES_DU_MEDECIN_PREVUES: boolean = false
+// d'affiliation. La migration `cumul_et_dispense_du_medecin` (en production depuis le 15/11/2026, par l'outil, sur l'accord
+// du cabinet — RET-Q2-migration ; supabase/schema/20261115074806_cumul_et_dispense_du_medecin.sql) pose les deux
+// colonnes et fait accepter à `enregistrer_parametres_des_cotisations` cinq clés au lieu de trois. LEVÉ le 15/11/2026, la
+// migration en base : la lecture les nomme, l'écriture part sous cinq clés, la carte les offre pour un médecin, et
+// l'estimation de la retraite les reçoit en entrée obligatoire (lib/retraiteDesLiberaux.ts, `DispenseDesDebuts`). Baissé —
+// l'état d'avant, que les tests jouent encore —, la lecture et l'écriture d'hier, et le cumul reste un choix local de la
+// carte du volet social ; il se baisse AVANT tout retour de la migration (l'écran levé enverrait cinq clés, que la fonction
+// d'hier refuse).
+export const CASES_DU_MEDECIN_PREVUES: boolean = true
 
 /** Les deux cases d'un médecin pour un exercice, telles que lues ; nulles tant que le cabinet ne les a pas dites. */
 export interface CasesDuMedecin {

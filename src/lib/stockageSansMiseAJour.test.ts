@@ -11,10 +11,11 @@ import { policiesDuSchema, vautPour, type ReleveDesPolicies } from '../test/poli
 //
 // Le scanner part de TOUT : chaque policy de l'export (supabase/schema, le socle compris), rejouée instruction par
 // instruction (src/test/policiesDuSchema.ts, qui lève sur une forme qu'il ne sait pas rejouer), puis les migrations
-// préparées (supabase/preparees). Deux états :
-//   - l'export seul, la production : les deux policies d'aujourd'hui sont des EXCEPTIONS nommées, chacune avec sa raison,
-//     et comptées ; le jour où la migration `stockage_sans_mise_a_jour` entre dans l'export, ce test tombe, et la liste se
-//     vide ;
+// préparées (supabase/preparees). Trois états :
+//   - l'export seul, la production : AUCUNE exception depuis que la migration `stockage_sans_mise_a_jour` y est entrée
+//     (collée par le cabinet le 15/11/2026, version 20261115083740) ;
+//   - l'export sans elle, la production d'avant : les deux policies qu'elle retire ouvrent la mise à jour — le scanner les
+//     voit toujours ;
 //   - l'export et les préparées, la base de demain : aucune exception.
 // Un plancher distingue « zéro faute » d'« aveugle » ; des défauts plantés prouvent qu'il voit. Le reste de ce fichier
 // confronte la migration, son retour, le retour d'INAL1 et le bloc SM de rls.sql au même prédicat. Récit : HISTORIQUE.md,
@@ -22,16 +23,17 @@ import { policiesDuSchema, vautPour, type ReleveDesPolicies } from '../test/poli
 
 const RACINE = new URL('../../', import.meta.url).pathname
 const lire = (chemin: string) => readFileSync(`${RACINE}${chemin}`, 'utf8')
-const MIGRATION = 'supabase/preparees/20261113193000_stockage_sans_mise_a_jour.sql'
+const MIGRATION = 'supabase/schema/20261115083740_stockage_sans_mise_a_jour.sql'
 const RETOUR = 'supabase/preparees/retour/20261113193100_retour_stockage_sans_mise_a_jour.sql'
 const RETOUR_INAL1 = 'supabase/preparees/retour/20261110120050_retour_piece_figee_dans_le_stockage.sql'
 
-// Les policies d'aujourd'hui qui ouvrent la mise à jour d'un objet, chacune avec sa raison. Elles tombent quand la
-// migration préparée entre dans l'export.
-const EXCEPTIONS: Record<string, string> = {
-  cabinet_logos_maj_chef: 'la mise à jour d\'un logo par le chef du cabinet (charte_graphique_cabinet, 08/09/2026) : rien ne s\'en sert, SECU3-Q1 la retire',
-  packs_storage_all: 'la policy « pour tout » du seau des packs (storage_pieces_packs_isolation_cabinet, 08/09/2026) : SECU3-Q1 la remplace par la lecture, le dépôt et la suppression',
-}
+// Les policies d'aujourd'hui qui ouvrent la mise à jour d'un objet, chacune avec sa raison : aucune depuis le 15/11/2026.
+// Les deux d'hier sont tombées avec la migration — `cabinet_logos_maj_chef`, la mise à jour d'un logo par le chef du cabinet
+// (charte_graphique_cabinet, 08/09/2026), dont rien ne se servait ; `packs_storage_all`, la policy « pour tout » du seau des
+// packs (storage_pieces_packs_isolation_cabinet, 08/09/2026), remplacée par la lecture, le dépôt et la suppression.
+const EXCEPTIONS: Record<string, string> = {}
+// Ce que l'état d'avant la migration ouvrait.
+const OUVRAIENT_HIER = ['cabinet_logos_maj_chef', 'packs_storage_all']
 
 /** Les policies permissives de storage.objects qui valent pour la mise à jour. */
 function ouvrentLaMiseAJour(releve: ReleveDesPolicies): string[] {
@@ -42,14 +44,21 @@ function ouvrentLaMiseAJour(releve: ReleveDesPolicies): string[] {
 }
 
 const EXPORT = () => policiesDuSchema(fichiersDuSchema())
+// L'export sans la migration : la production d'avant le 15/11/2026.
+const fichiersDAvant = () => fichiersDuSchema().filter((f) => !/\d{14}_stockage_sans_mise_a_jour\.sql$/.test(f.chemin))
+const AVANT = () => policiesDuSchema(fichiersDAvant())
 const DEMAIN = () => policiesDuSchema([...fichiersDuSchema(), ...fichiersPrepares()])
 const sansSchema = (expression: string | null) => (expression ?? '').replace(/\bpublic\./g, '')
 
 describe('aucun seau n’ouvre la mise à jour d’un objet du stockage', () => {
-  it('dans l’export (la production), les seules policies qui l’ouvrent sont les deux exceptions nommées, et comptées', () => {
-    expect(Object.keys(EXCEPTIONS)).toHaveLength(2)
-    for (const raison of Object.values(EXCEPTIONS)) expect(raison.length).toBeGreaterThan(40)
+  it('dans l’export (la production), aucune policy ne l’ouvre : les deux exceptions d’hier sont tombées avec la migration', () => {
+    expect(Object.keys(EXCEPTIONS)).toHaveLength(0)
     expect(ouvrentLaMiseAJour(EXPORT())).toEqual(Object.keys(EXCEPTIONS).sort())
+  })
+
+  it('dans l’export sans la migration (la production d’avant), les deux qu’elle retire se voient toujours, et elles seules', () => {
+    expect(fichiersDAvant()).toHaveLength(fichiersDuSchema().length - 1)
+    expect(ouvrentLaMiseAJour(AVANT())).toEqual(OUVRAIENT_HIER)
   })
 
   it('avec les migrations préparées (la base de demain), aucune', () => {
@@ -61,8 +70,10 @@ describe('aucun seau n’ouvre la mise à jour d’un objet du stockage', () => 
     const stockage = [...export_.policies.values()].filter((p) => p.table === 'storage.objects')
     // Relevés le 13/11/2026, export à 218 migrations : 12 policies du stockage (celles de la réplique, une à une), 381
     // instructions de policy, 6 policies deux_facteurs écrites dans une chaîne, 105 tables (signature.sql : 105) ; avec
-    // les préparées, 431 instructions, 17 chaînes, 17 policies du stockage.
-    expect(stockage.length, 'les policies de storage.objects dans l’export').toBeGreaterThanOrEqual(12)
+    // les préparées, 431 instructions, 17 chaînes, 17 policies du stockage. Le 15/11/2026, la migration dans l'export : 13
+    // policies du stockage (deux retirées, trois posées).
+    expect([...AVANT().policies.values()].filter((p) => p.table === 'storage.objects').length).toBeGreaterThanOrEqual(12)
+    expect(stockage.length, 'les policies de storage.objects dans l’export').toBeGreaterThanOrEqual(13)
     expect(export_.instructions, 'les instructions de policy lues dans l’export').toBeGreaterThanOrEqual(381)
     expect(export_.dynamiques, 'les policies restrictives deux_facteurs écrites dans une chaîne').toBeGreaterThanOrEqual(6)
     expect(export_.tables.size, 'les tables créées').toBeGreaterThanOrEqual(105)
@@ -72,8 +83,9 @@ describe('aucun seau n’ouvre la mise à jour d’un objet du stockage', () => 
   })
 
   it('un défaut planté se voit : une policy de mise à jour, ou « pour tout », sur un seau ; une restrictive n’ouvre rien', () => {
-    const plante = (sql: string) => ouvrentLaMiseAJour(policiesDuSchema([...fichiersDuSchema(), { chemin: 'supabase/preparees/99999999999999_plante.sql', texte: sql }]))
-    const aujourdhui = Object.keys(EXCEPTIONS).sort()
+    // Plantés sur l'état d'avant la migration, où ses deux policies sont encore là.
+    const plante = (sql: string) => ouvrentLaMiseAJour(policiesDuSchema([...fichiersDAvant(), { chemin: 'supabase/preparees/99999999999999_plante.sql', texte: sql }]))
+    const aujourdhui = OUVRAIENT_HIER
     expect(plante(`create policy essai_maj on storage.objects for update to authenticated using (bucket_id = 'pieces');`))
       .toEqual([...aujourdhui, 'essai_maj'].sort())
     expect(plante(`create policy "essai pour tout" on storage.objects to authenticated using (true) with check (true);`))
@@ -86,7 +98,7 @@ describe('aucun seau n’ouvre la mise à jour d’un objet du stockage', () => 
   })
 
   it('une forme qu’il ne sait pas rejouer lève au lieu d’être devinée', () => {
-    const plante = (sql: string) => () => policiesDuSchema([...fichiersDuSchema(), { chemin: 'supabase/preparees/99999999999999_plante.sql', texte: sql }])
+    const plante = (sql: string) => () => policiesDuSchema([...fichiersDAvant(), { chemin: 'supabase/preparees/99999999999999_plante.sql', texte: sql }])
     expect(plante(`alter policy pieces_storage_select on storage.objects rename to autre;`)).toThrow(FormeInconnue)
     expect(plante(`do $$ begin execute 'create policy x on storage.objects for update using (true)'; end $$;`)).toThrow(FormeInconnue)
     expect(plante(`create policy x on storage.objects for update using (true) with nonsense;`)).toThrow(FormeInconnue)
@@ -97,13 +109,13 @@ describe('aucun seau n’ouvre la mise à jour d’un objet du stockage', () => 
 })
 
 describe('la migration stockage_sans_mise_a_jour, son retour et ce qui la redit', () => {
-  const avant = EXPORT().policies
+  const avant = AVANT().policies
   const packs = avant.get('storage.objects.packs_storage_all')!
   const logos = avant.get('storage.objects.cabinet_logos_maj_chef')!
 
   it('les trois policies des packs portent le prédicat d’hier, à authenticated seul ; les deux d’hier partent', () => {
     expect(packs.using).toBe(packs.withCheck)
-    const apres = policiesDuSchema([...fichiersDuSchema(), { chemin: MIGRATION, texte: lire(MIGRATION) }]).policies
+    const apres = EXPORT().policies
     for (const [nom, commande, using, withCheck] of [
       ['packs_storage_lecture', 'select', packs.using, null], ['packs_storage_depot', 'insert', null, packs.using],
       ['packs_storage_suppression', 'delete', packs.using, null]] as const) {
@@ -121,7 +133,7 @@ describe('la migration stockage_sans_mise_a_jour, son retour et ce qui la redit'
   })
 
   it('son retour rend les deux policies d’hier, mot pour mot, et retire les trois posées', () => {
-    const migree = [...fichiersDuSchema(), { chemin: MIGRATION, texte: lire(MIGRATION) }]
+    const migree = fichiersDuSchema()
     const rendue = policiesDuSchema([...migree, { chemin: RETOUR, texte: lire(RETOUR) }]).policies
     for (const p of [packs, logos]) {
       const q = rendue.get(`${p.table}.${p.nom}`)!

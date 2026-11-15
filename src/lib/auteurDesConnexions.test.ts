@@ -9,23 +9,29 @@ import { motsDuCabinet } from './espaceVentes'
 import { refusDitAuClient } from './receptionParLeClient'
 import { indiceSql } from '../test/schema'
 
-// QUI A ÉCRIT LA CONNEXION À LA PLATEFORME DU CLIENT (B4RS-Q1) : ce que les deux espaces en disent, drapeau baissé (l'écran
-// d'hier) et levé ; la raison du refus confrontée à la fonction, et la migration à ses refus.
+// QUI A ÉCRIT LA CONNEXION À LA PLATEFORME DU CLIENT (B4RS-Q1) : ce que les deux espaces en disent, drapeau levé (la
+// migration en production depuis le 15/11/2026) et baissé (l'écran d'hier, joué tant que son code existe) ; la raison du
+// refus confrontée à la fonction, et la migration à ses refus.
 const RACINE = join(__dirname, '../..')
 const FONCTION = readFileSync(join(RACINE, 'supabase/functions/plateforme-agreee/index.ts'), 'utf8')
-const MIGRATION = readFileSync(join(RACINE, 'supabase/preparees/20261113201000_auteur_des_connexions_plateformes.sql'), 'utf8')
+const MIGRATION = readFileSync(join(RACINE, 'supabase/schema/20261115074709_auteur_des_connexions_plateformes.sql'), 'utf8')
 
 describe('le drapeau de l’auteur des connexions', () => {
-  it('est baissé tant que la migration n’est pas en base', () => {
-    expect(AUTEUR_DES_CONNEXIONS_PREVU).toBe(false)
+  it('est levé depuis que la migration est en base (15/11/2026), et la valeur par défaut le suit', () => {
+    expect(AUTEUR_DES_CONNEXIONS_PREVU).toBe(true)
+    expect(auteurDeLaConnexionDit({ ecrite_par_le_cabinet: true, ecrite_le: null }, 'cabinet')).toBe('le cabinet')
+    expect(refusDeLAuteurDitAuClient(RAISON_CONNEXION_HORS_DU_CABINET)).toBe(refusDeLAuteurDitAuClient(RAISON_CONNEXION_HORS_DU_CABINET, true))
+    // Le refus nommé de la fonction se dit au client à ses mots, pas par la phrase du serveur.
+    expect(refusDitAuClient('La connexion à la plateforme n’a pas été enregistrée par le cabinet.', RAISON_CONNEXION_HORS_DU_CABINET))
+      .toBe(refusDeLAuteurDitAuClient(RAISON_CONNEXION_HORS_DU_CABINET, true))
   })
 
-  it('baissé (la valeur par défaut) : rien ne se dit, ni dans la fiche ni dans le refus', () => {
-    expect(auteurDeLaConnexionDit({ ecrite_par_le_cabinet: false, ecrite_le: null }, 'cabinet')).toBeNull()
-    expect(auteurDeLaConnexionDit({ ecrite_par_le_cabinet: true, ecrite_le: '2026-11-13T09:00:00.000Z' }, 'client')).toBeNull()
-    expect(refusDeLAuteurDitAuClient(RAISON_CONNEXION_HORS_DU_CABINET)).toBeNull()
-    // Le refus de la fonction se dit alors par sa phrase, comme toute raison inconnue de l'écran d'hier.
-    expect(refusDitAuClient('La connexion à la plateforme n’a pas été enregistrée par le cabinet.', RAISON_CONNEXION_HORS_DU_CABINET))
+  it('baissé (l’état d’avant) : rien ne se dit, ni dans la fiche ni dans le refus', () => {
+    expect(auteurDeLaConnexionDit({ ecrite_par_le_cabinet: false, ecrite_le: null }, 'cabinet', false)).toBeNull()
+    expect(auteurDeLaConnexionDit({ ecrite_par_le_cabinet: true, ecrite_le: '2026-11-13T09:00:00.000Z' }, 'client', false)).toBeNull()
+    expect(refusDeLAuteurDitAuClient(RAISON_CONNEXION_HORS_DU_CABINET, false)).toBeNull()
+    // Le refus de la fonction se dit alors par sa phrase, comme toute raison que l'écran ne nomme pas.
+    expect(refusDitAuClient('La connexion à la plateforme n’a pas été enregistrée par le cabinet.', 'raison_que_l_ecran_ne_nomme_pas'))
       .toBe('Ta plateforme n’a pas pu être relevée : La connexion à la plateforme n’a pas été enregistrée par le cabinet.')
   })
 })

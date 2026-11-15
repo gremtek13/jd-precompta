@@ -1,5 +1,6 @@
 -- RETOUR de la migration `recu_par_la_piece_citee` (A8Q5Q3-Q2, ligne 51.5 ;
--- supabase/preparees/20261113212000_recu_par_la_piece_citee.sql). Rend à `enregistrer_encaissement` le corps d'A8b
+-- supabase/schema/20261115075201_recu_par_la_piece_citee.sql — en production depuis le 15/11/2026, version
+-- 20261115075201). Rend à `enregistrer_encaissement` le corps d'A8b
 -- (empreinte 9f3fae7d…), à `reprise_de_la_facture` celui de `reprises_au_client` (41385162…) et à
 -- `citer_piece_de_facture_reprise` celui d'A8-Q5 (690e26c9…), à l'octet près, puis retire `recu_par_la_piece`, que plus
 -- rien n'appelle : le registre d'une facture reprise repart du seul déclaré, la reprise lue rend six clés, la citation

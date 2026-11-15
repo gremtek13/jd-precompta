@@ -129,15 +129,17 @@ export function refusCompteDeBilan(compte: string | null, mode: ModeComptable, d
 }
 
 // LE 468 SUR UN MOUVEMENT DU RELEVÉ, COMME LE 467 (ligne 43 ; 43-Q12, le 17/10/2026, et PC4Q2-Q1, le 11/11/2026, « Tout de
-// suite, à part »). La migration PRÉPARÉE `le_468_sur_le_releve` (supabase/preparees/20261113210000_le_468_sur_le_releve.sql)
+// suite, à part »). La migration `le_468_sur_le_releve` (en production depuis le 15/11/2026, par l'outil, sur l'accord du
+// cabinet — PC4Q2-Q1-migration ; supabase/schema/20261115074848_le_468_sur_le_releve.sql)
 // sort le 468 de la branche du 48 de `refus_compte_de_bilan` : dans le plan comptable de 2026, il est le pendant créditeur
 // du 467, « Divers comptes créditeurs et charges à payer » (PCG, art. 1214-46), que le relevé reçoit déjà — la branche
 // `^(468|48)` gardait le sens du plan de 2019, où le 468 rangeait les charges à payer et produits à recevoir « divers »
 // (4686, 4687). Et la phrase du 48 suit la liste de 2026 (481, 486, 487, 488 ; art. 1214-48) : les frais d'émission d'un
-// emprunt en charge — l'application ne tient pas l'étalement que l'art. 212-11 permet —, le reste à l'inventaire. BAISSÉ
-// jusqu'à l'application de la migration : l'écran redit la fonction en base. `compteDeBilan.test.ts` exécute la fonction
-// SQL de chaque état — celle de l'export, et celle de la migration préparée tant qu'elle n'y est pas — et compare.
-export const LE_468_SUR_LE_RELEVE_PREVU = false
+// emprunt en charge — l'application ne tient pas l'étalement que l'art. 212-11 permet —, le reste à l'inventaire. LEVÉ le
+// 15/11/2026, la migration en base : l'écran redit la fonction en base. Il se baisse AVANT tout retour de la migration.
+// `compteDeBilan.test.ts` exécute la fonction SQL de chaque état — celle d'avant la migration, et celle de l'export — et
+// compare.
+export const LE_468_SUR_LE_RELEVE_PREVU = true
 
 // La phrase du 48, celle d'hier (le plan de 2019, le 468 compris) et celle de la migration (le plan de 2026).
 const REFUS_REGULARISATION_2019 = 'Un compte de régularisation (charges à payer, produits à recevoir, charges ou produits '

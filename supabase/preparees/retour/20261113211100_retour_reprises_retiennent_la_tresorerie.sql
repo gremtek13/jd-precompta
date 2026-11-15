@@ -1,5 +1,6 @@
 -- RETOUR de la migration `reprises_retiennent_la_tresorerie` (A8B-Q3, ligne 51.5 ;
--- supabase/preparees/20261113211000_reprises_retiennent_la_tresorerie.sql). Rend à `verrouiller_modele_comptable` le corps
+-- supabase/schema/20261115074926_reprises_retiennent_la_tresorerie.sql — en production depuis le 15/11/2026, version
+-- 20261115074926). Rend à `verrouiller_modele_comptable` le corps
 -- de la migration `modele_comptable_du_dossier`, à l'octet près (empreinte c5d5a1bd8c5f8213dee236fd0261d12f) : un dossier
 -- qui porte des factures reprises passe de nouveau en engagement tant que son brouillon est vide. Aucune donnée n'est
 -- touchée. Baisser `REPRISES_RETIENNENT_LA_TRESORERIE_PREVUES` D'ABORD (src/lib/reprisesRetiennentLaTresorerie.ts), puis

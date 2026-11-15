@@ -114,14 +114,17 @@ const FLUX_DEMANDE = /^(?!\.{1,2}$)[!-~]{1,200}$/
 const COLONNES = "dossier_id, nom, url_flux, url_jeton, client_id, client_secret, organisation_id, portee, " +
   "recherche_depuis, derniere_recuperation, cycle_vie_depuis, cycle_vie_lu_le, created_at, updated_at"
 // L'AUTEUR DE LA CONNEXION (B4RS-Q1, tranchée par le cabinet le 12/11/2026 : « (B) Garder EC-Q4, refuser sur une connexion
-// écrite par un client ») : la migration `auteur_des_connexions_plateformes` (PRÉPARÉE) pose `ecrite_par` et `ecrite_le`,
-// que la base efface à toute écriture de la configuration et que seule `attester_connexion_plateforme`, appelée sous la
-// session du cabinet, renseigne. Levée avec elle : la fonction les lit, l'action « enregistrer » du cabinet atteste ce
-// qu'elle vient d'écrire, la vue publique dit si le cabinet a écrit la configuration en vigueur, et la réception par le
-// client ne passe que par une connexion que le cabinet a écrite (bloc RÉCEPTION PAR LE CLIENT). Baissée : la fonction ne
-// nomme pas ces colonnes et ne sait donc pas qui a écrit la configuration — la réception par un accès client se refuse
-// alors toujours, du côté fermé (`auteur_de_la_connexion_non_lu`), celle du cabinet restant celle d'hier.
-const AUTEUR_DES_CONNEXIONS_EN_BASE = false
+// écrite par un client ») : la migration `auteur_des_connexions_plateformes` (en production depuis le 15/11/2026) pose
+// `ecrite_par` et `ecrite_le`, que la base efface à toute écriture de la configuration et que seule
+// `attester_connexion_plateforme`, appelée sous la session du cabinet, renseigne. LEVÉE avec elle : la fonction les lit,
+// l'action « enregistrer » du cabinet atteste ce qu'elle vient d'écrire, la vue publique dit si le cabinet a écrit la
+// configuration en vigueur, et la réception par le client ne passe que par une connexion que le cabinet a écrite (bloc
+// RÉCEPTION PAR LE CLIENT). Baissée — l'état d'avant, que le harnais rejoue encore (`auteurDesConnexionsBaissee`,
+// src/test/fonctionsEdge.ts) — : la fonction ne nomme pas ces colonnes et ne sait donc pas qui a écrit la configuration — la
+// réception par un accès client se refuse alors toujours, du côté fermé (`auteur_de_la_connexion_non_lu`), celle du
+// cabinet restant celle d'hier. Elle se baisse, la fonction redéployée, AVANT tout retour de la migration (elle lirait des
+// colonnes absentes).
+const AUTEUR_DES_CONNEXIONS_EN_BASE = true
 const COLONNES_DE_L_AUTEUR = ", ecrite_par, ecrite_le"
 const COLONNES_LUES = AUTEUR_DES_CONNEXIONS_EN_BASE ? COLONNES + COLONNES_DE_L_AUTEUR : COLONNES
 // Une facture à transmettre, telle que le générateur la lit, avec l'émetteur qu'elle a figé et la facture qu'un avoir
@@ -3523,8 +3526,8 @@ function actionPermise(table: Readonly<Record<string, DroitExige>>, action: stri
 // la configuration en vigueur. Tant que la fonction ne lit pas l'auteur (`AUTEUR_DES_CONNEXIONS_EN_BASE` baissée), elle ne
 // peut pas le vérifier : un accès client est refusé (409, `auteur_de_la_connexion_non_lu`) aussitôt sa case « Achats » lue,
 // avant toute autre lecture, tout secret et tout appel à la plateforme — la règle ne dépend pas de l'ordre des
-// déploiements. Le cabinet du dossier n'est pas un accès client : sa réception ne change pas. Levée, le refus se juge sur
-// l'auteur lu (`connexion_hors_du_cabinet`).
+// déploiements. Le cabinet du dossier n'est pas un accès client : sa réception ne change pas. Levée (depuis le 15/11/2026,
+// la migration en base), le refus se juge sur l'auteur lu (`connexion_hors_du_cabinet`).
 const TYPES_ACHATS = ["SupplierInvoice"]
 
 const LECTURE_ACHATS: LectureDesFlux<FluxVu> = {

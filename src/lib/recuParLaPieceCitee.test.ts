@@ -18,9 +18,10 @@ import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test
 import { messagesSql } from '../test/raiseSql'
 
 // A8Q5Q3-Q2 : CE QUE LA PIÈCE CITÉE D'UNE FACTURE REPRISE A DÉJÀ REÇU, PLANCHER DE SON REGISTRE. Le module redit les refus de
-// la migration `recu_par_la_piece_citee` (préparée, puis exportée le jour de son application), confrontés à son texte ; ses
-// empreintes et celles de son retour se tiennent ; la lecture de la reprise et les plafonds sous les deux états du drapeau ;
-// et l'essai attend les mots du module. Données FICTIVES.
+// la migration `recu_par_la_piece_citee` (en production et dans l'export depuis le 15/11/2026), confrontés à son texte ; ses
+// empreintes et celles de son retour se tiennent ; la lecture de la reprise et les plafonds sous les deux états du drapeau
+// (levé, sa valeur ; baissé, l'état d'avant tant que son code existe) ; et l'essai attend les mots du module. Données
+// FICTIVES.
 
 // `FACTURES_IMPORTEES_PREVUES` est levé en production : le jugement d'une facture reprise s'y joue.
 vi.mock('./facturesImportees', () => ({ FACTURES_IMPORTEES_PREVUES: true }))
@@ -54,7 +55,7 @@ const codesSql = (sql: string) =>
   [...sql.matchAll(/raise exception '(?:[^']|'')*'[\s\S]*?using errcode = '([0-9A-Z]{5})'/g)].map((m) => m[1])
 
 afterEach(() => {
-  DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = false
+  DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = true
 })
 
 describe('A8Q5Q3-Q2 — la migration, son retour et le module', () => {
@@ -66,8 +67,9 @@ describe('A8Q5Q3-Q2 — la migration, son retour et le module', () => {
     expect(REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE[rang - 1].cle).toBe('repartition_somme')
     expect(REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE[rang + 1].cle).toBe('plafond_reprise')
     expect(codesSql(sql)[rang]).toBe('22023')
-    // Celle d'hier — la dernière de l'export tant que la migration n'y est pas — porte les refus d'A8b, sans le neuf.
-    if (!EXPORTEE) expect(messagesSql(derniereDefinitionSql('enregistrer_encaissement'))).toEqual(REFUS_ENREGISTREMENT_DES_REPRISES.map((r) => r.modele))
+    // Celle d'hier — la dernière de l'export hors de la migration — porte les refus d'A8b, sans le neuf.
+    const hier = derniereDefinitionSql('enregistrer_encaissement', (f) => !/\d{14}_recu_par_la_piece_citee\.sql$/.test(f.chemin))
+    expect(messagesSql(hier)).toEqual(REFUS_ENREGISTREMENT_DES_REPRISES.map((r) => r.modele))
   })
 
   it('le plancher : le plus grand du déclaré et du reçu au total ; à plusieurs taux, le refus ; le taux garde le déclaré', () => {
@@ -126,7 +128,8 @@ describe('A8Q5Q3-Q2 — la migration, son retour et le module', () => {
     expect(RETOUR.split('\n').filter((l) => /^drop /.test(l))).toEqual(['drop function public.recu_par_la_piece(uuid);'])
   })
 
-  it('le drapeau suit l’export : levé le jour où la migration y entre', () => {
+  it('le drapeau suit l’export : levé depuis que la migration y est entrée (15/11/2026)', () => {
+    expect(EXPORTEE).toBe(true)
     expect(recuParLaPieceCiteePrevu()).toBe(EXPORTEE)
   })
 
@@ -149,6 +152,7 @@ describe('A8Q5Q3-Q2 — la lecture de la reprise, sous les deux états du drapea
     encaisse_par_taux: [{ taux: 20, encaisse_centimes: 0 }], credite_par_les_repris_centimes: 0, credite_par_les_repris_par_taux: [],
   }
   it('baissé : six clés, le reçu absent ; sept clés illisibles', () => {
+    DRAPEAU_DE_LA_PIECE_RECUE.RECU_PAR_LA_PIECE_CITEE_PREVU = false
     expect(repriseDeLaFactureRendue(SIX, 'r1')).not.toHaveProperty('recuParSaPieceCentimes')
     expect(repriseDeLaFactureRendue(SIX, 'r1')?.factureId).toBe('r1')
     expect(repriseDeLaFactureRendue({ ...SIX, recu_par_sa_piece_centimes: 5000 }, 'r1')).toBeNull()

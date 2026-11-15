@@ -1,4 +1,5 @@
--- RETOUR DE acces_avant_les_gardes (20261113120000) : la porte d'accès retirée des 32 tables, sa fonction retirée ; les
+-- RETOUR DE acces_avant_les_gardes (supabase/schema/20261115075431_acces_avant_les_gardes.sql — en production depuis le
+-- 15/11/2026, version 20261115075431, GARDES-Q1) : la porte d'accès retirée des 32 tables, sa fonction retirée ; les
 -- gardes, les policies et les données restent telles quelles. Après lui, les gardes parlent de nouveau avant la RLS (le
 -- défaut décrit en tête de la migration revient). DESTRUCTIF (des `drop`) : il se colle dans l'éditeur SQL de Supabase,
 -- dans une transaction, avec sa ligne d'historique. Il ne retire que ce que la migration a posé : la garde de tête vérifie

@@ -175,11 +175,11 @@
 --      portée, ou la garde par un déclencheur nommé ; RT2 à RT4 jouent la règle profil par profil, ce que l'application
 --      fait encore, et le catalogue de la garde. Cinq mutations ; avant la migration, une ligne « EN ATTENTE ».
 --  12. Aucun seau n'ouvre la mise à jour d'un objet (bloc SM, en fin de fichier ; migration `stockage_sans_mise_a_jour`,
---      SECU3-Q1, préparée) : aucune policy permissive de mise à jour, ni « pour tout », sur storage.objects ; personne ne
+--      SECU3-Q1, en production depuis le 15/11/2026) : aucune policy permissive de mise à jour, ni « pour tout », sur storage.objects ; personne ne
 --      réécrit ni ne déplace un pack ou un logo ; la lecture, le dépôt et le prédicat de suppression comme avant. Trois
 --      mutations ; avant la migration, une ligne « EN ATTENTE ».
 --  13. Le texte lu d'une pièce reste rattaché à son dossier quand il est réécrit (bloc TO, en fin de fichier ; migration
---      `texte_ocr_coherent_a_la_mise_a_jour`, SECU3-Q2, préparée) : la mise à jour relit la cible comme l'insertion — une
+--      `texte_ocr_coherent_a_la_mise_a_jour`, SECU3-Q2, en production depuis le 15/11/2026) : la mise à jour relit la cible comme l'insertion — une
 --      réécriture vers la pièce ou le document d'un autre dossier, ou vers un autre dossier, se refuse (42501) ; la
 --      réécriture de l'application passe. Deux mutations ; avant la migration, une ligne « EN ATTENTE ».
 --
@@ -889,7 +889,7 @@
 -- cabinet d'un dossier ne change que par le super-administrateur. Le bloc RT (RT1 à RT4, M-RT1, M-RT1b, M-RT2 à
 -- M-RT4) ; EN ATTENTE sans la migration. Joué ENTIER, en une transaction, sur une copie de la réplique au niveau de l'export
 -- (217 migrations) : sans la migration, 240 lignes d'invariants, 0 en faute, 139 mutations sur 139, RT EN ATTENTE ;
--- avec, 246 lignes, 0 en faute, 144 sur 144 ; de même avec la porte d'accès préparée (`acces_avant_les_gardes`),
+-- avec, 246 lignes, 0 en faute, 144 sur 144 ; de même avec la porte d'accès (`acces_avant_les_gardes`, alors préparée),
 -- appliquée avant ou après elle. Banc du leurre SÛR dans les deux états. Ce qu'il rend : HISTORIQUE.md, « 13/11/2026 —
 -- LE CABINET D'UN DOSSIER NE CHANGE QUE PAR LE SUPER-ADMINISTRATEUR ».
 --
@@ -8015,7 +8015,7 @@ end $pf$;
 -- plafonds d'une facture reprise ; `pieces_citees_de_la_simulation` rend au cabinet et à l'accès « Banque » les pièces
 -- citées par un lien actif. Elles contournent la RLS : elles se rejouent, chaque refus jugé à sa RAISON.
 --   RC1. Le client qui porte « Ventes » lit ce que l'encaissement de sa facture reprise demande — le contrôle POSITIF —, et
---        rien d'autre : les six clés de la fonction ; sept avec la migration préparée `recu_par_la_piece_citee` (A8Q5Q3-Q2 ;
+--        rien d'autre : les six clés de la fonction ; sept avec la migration `recu_par_la_piece_citee` (A8Q5Q3-Q2, en production depuis le 15/11/2026 ;
 --        sa dernière ligne d'historique, pas son retour), la septième disant ce que la pièce citée a reçu — zéro ici.
 --   RC2. Sans « Ventes » — « Banque » seule, puis aucune case — : « Accès refusé à ce dossier. » (42501).
 --   RC3. Le client qui porte « Banque » lit les pièces citées de son dossier (le contrôle POSITIF) ; « Ventes » seule, puis
@@ -10913,7 +10913,7 @@ begin
 end $rt$;
 
 -- ══ SM. Aucun seau n'ouvre la mise à jour d'un objet (relecture de sécurité du 13/11/2026, SECU3-Q1 ; migration
---    `stockage_sans_mise_a_jour`, PRÉPARÉE) ═══════════════════════════════════════════════════════════════════════════
+--    `stockage_sans_mise_a_jour`, collée le 15/11/2026) ═══════════════════════════════════════════════════════════════
 -- Un fichier déposé ne se réécrit, ne s'écrase ni ne se déplace : aucune policy permissive de storage.objects n'ouvre la
 -- mise à jour, ni « pour tout ». Les packs se lisent, se déposent et se retirent sous trois policies, à authenticated
 -- seul, au prédicat d'hier ; les logos sous les leurs, comme avant.

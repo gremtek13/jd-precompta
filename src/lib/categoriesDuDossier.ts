@@ -186,8 +186,9 @@ export function refusDeLaClasse(compte: string): string {
 
 // ── LA CLASSE DU COMPTE D'UNE CATÉGORIE COMMUNE, EN BASE (PC7Q2-Q1 ; la réponse du cabinet du 13/11/2026 : « Oui, dans un
 // lot à part ») ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-// La migration PRÉPARÉE `classes_des_categories_communes` (supabase/preparees/20261113110000_classes_des_categories_communes.sql,
-// à appliquer APRÈS `classes_des_categories` ; son essai, supabase/essais/categoriesDuDossier.sql, l'étape 45 et les étapes
+// La migration `classes_des_categories_communes` (en production depuis le 15/11/2026, par l'outil, sur l'accord du cabinet —
+// PC7Q2Q1-migration ; supabase/schema/20261115075300_classes_des_categories_communes.sql, appliquée APRÈS
+// `classes_des_categories` ; son essai, supabase/essais/categoriesDuDossier.sql, l'étape 45 et les étapes
 // 50 à 59 ; HISTORIQUE.md, « 13/11/2026 — PC7Q2-Q1 : LA CLASSE DU COMPTE D'UNE CATÉGORIE COMMUNE, EN BASE ») ajoute à la
 // garde de `categories` le refus (f) : une catégorie COMMUNE à tous les cabinets (`dossier_id` nul) dont le compte, non nul,
 // n'est pas de la classe 6 ou 7 suivie de deux chiffres — le prédicat de (e) —, à l'insertion ou quand il change, pour tout
@@ -195,10 +196,10 @@ export function refusDeLaClasse(compte: string): string {
 // qui le dit avant le clic sous `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES`. Un compte nul attend le sien. Mêmes sources que
 // (e) : plan comptable général, art. 1121-1 et sa liste, art. 1131-1.
 
-/** Baissé jusqu'à l'application de `classes_des_categories_communes` : la carte « Comptes manquants » ne refuse pas encore
- *  avant le clic, au super-administrateur, le compte d'une catégorie commune hors des classes 6 et 7, que la base accepterait.
- *  Il se lève la migration en base (son essai), puis le déploiement ; il se baisse AVANT tout retour de la migration. */
-export const CLASSES_DES_CATEGORIES_COMMUNES_PREVUES = false
+/** Levé le 15/11/2026, la migration `classes_des_categories_communes` en base : la carte « Comptes manquants » refuse avant
+ *  le clic, au super-administrateur, le compte d'une catégorie commune hors des classes 6 et 7, que la base refuse aussi. Il
+ *  se baisse AVANT tout retour de la migration. */
+export const CLASSES_DES_CATEGORIES_COMMUNES_PREVUES = true
 
 /** Le refus (f) de la garde de la base, à ses mots, pour le compte d'une catégorie commune tel qu'il part. */
 export function refusDeLaClasseCommune(compte: string): string {

@@ -2368,9 +2368,10 @@ describe('EncaissementsFactureModal — une facture reprise de l’ancien logici
     expect(faux.rpcs).toEqual([])
   })
 
-  // A8Q5Q3-Q2 (lib/recuParLaPieceCitee.ts, la migration préparée `recu_par_la_piece_citee`) : ce que la pièce citée a reçu
-  // avant la reprise, plancher de l'encaissé avant la reprise. Son drapeau baissé, la base rend six clés et la fenêtre juge
-  // sur le déclaré ; levé, sept, et le reste proposé part du plus grand des deux.
+  // A8Q5Q3-Q2 (lib/recuParLaPieceCitee.ts, la migration `recu_par_la_piece_citee`, en production depuis le 15/11/2026, son
+  // drapeau levé) : ce que la pièce citée a reçu avant la reprise, plancher de l'encaissé avant la reprise. Son drapeau baissé
+  // — l'état d'avant, que le `beforeEach` de ce fichier pose pour les reprises d'hier à six clés —, la base rend six clés et
+  // la fenêtre juge sur le déclaré ; levé, sept, et le reste proposé part du plus grand des deux.
   it('A8Q5Q3-Q2, son drapeau baissé : sept clés rendues se lisent illisibles, et rien n’est proposé', async () => {
     DRAPEAU_DES_REPRISES_AU_CLIENT.REPRISES_AU_CLIENT_PREVUES = true
     faux.reprise = { ...RENDU, recu_par_sa_piece_centimes: 20000 }

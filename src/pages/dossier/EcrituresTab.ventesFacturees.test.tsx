@@ -58,7 +58,10 @@ vi.mock('../../lib/supabase', async () => {
       return { data: rendu, error: null, count: toutes.length }
     }
     Object.assign(c, {
-      select: (liste: string) => {
+      select: (liste: string, options?: { head?: boolean }) => {
+        // Un compte sans ligne rendue (`head`) se note à part : la carte « Modèle comptable » compte ainsi les factures reprises
+        // du dossier (A8B-Q3), ce qui n'est pas une lecture des ventes facturées.
+        if (options?.head) faux.tables[faux.tables.length - 1] = `${table} (compte)`
         if (liste !== '*') colonnes = liste.replace(/[a-z_]+!inner\([^)]*\)/g, '').split(',').map((x) => x.trim()).filter(Boolean)
         return c
       },
@@ -204,6 +207,9 @@ describe('la section ne paraît que pour un dossier qui a basculé', () => {
     for (const table of CHAMPS_BNC_EXPORTES === null ? ['factures_emises', ...jamaisLues] : jamaisLues) {
       expect(faux.tables, table).not.toContain(table)
     }
+    // La carte « Modèle comptable » compte les factures reprises du dossier (A8B-Q3, en production depuis le 15/11/2026) :
+    // un compte, sans ligne rendue.
+    expect(faux.tables).toContain('factures_emises (compte)')
   })
 
   it('un dossier qui a basculé : chaque source dans son état, et la phrase sur le FEC', async () => {

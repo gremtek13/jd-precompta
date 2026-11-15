@@ -1,18 +1,22 @@
 // QUI A ÉCRIT LA CONNEXION À LA PLATEFORME DU CLIENT (B4RS-Q1, tranchée par le cabinet le 12/11/2026 : « (B) Garder EC-Q4,
 // refuser sur une connexion écrite par un client »). La base efface l'auteur à toute écriture de la configuration et ne le
-// pose que pour le cabinet du dossier (migration PRÉPARÉE `auteur_des_connexions_plateformes`) ; l'Edge Function
+// pose que pour le cabinet du dossier (migration `auteur_des_connexions_plateformes`, en production depuis le 15/11/2026,
+// par l'outil, sur l'accord du cabinet — B4RS-Q1-migration ; supabase/schema/20261115074709_auteur_des_connexions_plateformes.sql) ; l'Edge Function
 // `plateforme-agreee`, sa constante `AUTEUR_DES_CONNEXIONS_EN_BASE` levée, en dit un booléen dans la vue publique
 // (`ecrite_par_le_cabinet`, jamais le compte) et refuse la relève depuis l'espace client sur une connexion que le cabinet
 // n'a pas écrite (`raison: "connexion_hors_du_cabinet"`) ; sa constante baissée, elle ne sait pas qui l'a écrite et refuse
 // toute relève par un accès client (`raison: "auteur_de_la_connexion_non_lu"`), du côté fermé. Ce module, pur, dit l'un et
 // l'autre aux deux espaces.
 //
-// `AUTEUR_DES_CONNEXIONS_PREVU` se lève avec la migration et la fonction déployée sa constante levée : baissé, l'écran
-// d'hier — ni la ligne de l'auteur dans la fiche de la plateforme, ni le refus nommé (la phrase générique du serveur).
+// `AUTEUR_DES_CONNEXIONS_PREVU`, LEVÉ le 15/11/2026 avec la migration et la constante de la fonction : la fiche de la
+// plateforme dit qui a écrit la configuration — seulement quand la vue le porte, donc une fonction déployée sa constante
+// levée ; une vue d'avant ne dit rien, et l'écran n'affirme rien —, et le refus nommé se dit. Baissé — l'état d'avant, que
+// les tests jouent encore —, l'écran d'hier : ni la ligne de l'auteur dans la fiche de la plateforme, ni le refus nommé (la
+// phrase générique du serveur). Il se baisse AVANT tout retour de la migration.
 
 import { formatDate } from './format'
 
-export const AUTEUR_DES_CONNEXIONS_PREVU: boolean = false
+export const AUTEUR_DES_CONNEXIONS_PREVU: boolean = true
 
 /** La raison que la fonction nomme quand le cabinet n'a pas écrit la configuration en vigueur. */
 export const RAISON_CONNEXION_HORS_DU_CABINET = 'connexion_hors_du_cabinet'

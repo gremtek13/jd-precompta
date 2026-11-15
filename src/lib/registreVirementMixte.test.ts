@@ -40,8 +40,10 @@ const texteDeLaMigration = () => fichiersDuSchema().find((f) => MIGRATION.test(f
 const REPRISES_DEPUIS = new Map([
   ['garder_encaissement_facture', /\/\d{14}_(?:contre_passation_sur_mouvement_fige|especes_sans_mouvement|factures_reprises_encaissements)\.sql$/],
   // A8b (`factures_reprises_encaissements`, 10/11/2026) : quatre refus d'une facture reprise, que
-  // `REFUS_ENREGISTREMENT_DES_REPRISES` (encaissementsFactures.ts) range à leur rang.
-  ['enregistrer_encaissement', /\/\d{14}_factures_reprises_encaissements\.sql$/],
+  // `REFUS_ENREGISTREMENT_DES_REPRISES` (encaissementsFactures.ts) range à leur rang ; puis A8Q5Q3-Q2
+  // (`recu_par_la_piece_citee`, 15/11/2026) : le plancher de ce que la pièce citée a reçu, et un refus de plus
+  // (`REFUS_ENREGISTREMENT_AVEC_LA_PIECE_CITEE`).
+  ['enregistrer_encaissement', /\/\d{14}_(?:factures_reprises_encaissements|recu_par_la_piece_citee)\.sql$/],
 ])
 
 // Ce que cette migration a posé : la définition que son texte donne à une fonction — la dernière de l'export, sauf pour

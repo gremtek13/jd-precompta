@@ -64,9 +64,12 @@ beforeEach(() => {
   faux.appels = []
   faux.refusRpc = null
   faux.leveRpc = false
+  // Les sept clés de `reprise_de_la_facture`, la septième (ce que la pièce citée a reçu) depuis `recu_par_la_piece_citee`
+  // (A8Q5Q3-Q2, en production depuis le 15/11/2026).
   faux.rendu = {
     reprise_le: '2026-11-01', nature_operation: 'services', encaisse_avant_reprise_centimes: 0, encaisse_par_taux: [],
     credite_par_les_repris_centimes: 4010, credite_par_les_repris_par_taux: [{ taux: 20, ttc_centimes: 4010 }],
+    recu_par_sa_piece_centimes: 0,
   }
   faux.tables = {
     dossiers: [{ id: 'd1', reprise_des_factures_le: '2026-11-01' }, { id: 'd2', reprise_des_factures_le: '2020-01-01' }],
@@ -156,7 +159,7 @@ describe('au client, la migration reprises_au_client en base (drapeau levé)', (
     expect(await lireCeQueLAvoirDUneRepriseDemande('d1', 'r1', 'client')).toMatchObject({ etat: 'illisible', motif: 'valeur illisible' })
     faux.rendu = {
       reprise_le: null, nature_operation: null, encaisse_avant_reprise_centimes: 0, encaisse_par_taux: [],
-      credite_par_les_repris_centimes: -1, credite_par_les_repris_par_taux: [],
+      credite_par_les_repris_centimes: -1, credite_par_les_repris_par_taux: [], recu_par_sa_piece_centimes: 0,
     }
     expect(await lireCeQueLAvoirDUneRepriseDemande('d1', 'r1', 'client'))
       .toMatchObject({ etat: 'illisible', motif: 'ce que les avoirs repris créditent n’a pas été rendu' })

@@ -465,10 +465,12 @@ describe.each(['cabinet', 'client'] as const)('L’avoir d’une facture reprise
       // Un avoir repris cite sa facture par le registre (`factures_importees.origine_id`), jamais par `facture_origine_id`.
       facture_origine_id: null,
     }))
+    // Les sept clés que la fonction rend depuis `recu_par_la_piece_citee` (A8Q5Q3-Q2, en production le 15/11/2026).
     faux.reprise = {
       data: {
         reprise_le: '2026-11-01', nature_operation: 'services', encaisse_avant_reprise_centimes: 0, encaisse_par_taux: [],
         credite_par_les_repris_centimes: 3000, credite_par_les_repris_par_taux: [{ taux: 20, ttc_centimes: 3000 }],
+        recu_par_sa_piece_centimes: 0,
       },
       error: null,
     }
