@@ -6,6 +6,9 @@
 -- administre le dossier (CLAUDE.md : une policy élargie demande l'accord explicite du cabinet). Il se COLLE (ses retraits
 -- retiennent l'outil), dans une transaction, sur l'accord du cabinet ; le commit qui le colle rend aussi le second passage
 -- de src/lib/suppressionDossier.ts inutile, sans le rendre faux (un premier passage qui retire tout laisse le second vide).
+-- Ses deux gardes ne lisent que ce qu'il défait — la policy `pieces_storage_delete`, `fichier_fige` et ses trois index
+-- (INAL1R-Q1, 15/11/2026) : il s'applique sur la production d'aujourd'hui comme après B2 et SECU3-Q1, dans un ordre ou
+-- dans l'autre. Il refuse après INV3 (`validation_de_l_inventaire`), qui remplace `fichier_fige` : le retour d'INV3 d'abord.
 
 do $garde$
 declare
@@ -41,30 +44,29 @@ drop index public.pieces_storage_path_idx;
 drop index public.pieces_lisible_path_idx;
 drop index public.documents_divers_storage_path_idx;
 
--- La garde de fin : la surface de suppression de storage.objects est celle d'hier, à l'empreinte de chaque prédicat. Deux
--- de ses policies ont changé depuis INAL1 sans que ce retour les rende, et chacune s'admet dans ses deux états (relevé du
--- 13/11/2026 sur la réplique) : la suppression par le chef du seau des ventes, `f4be98cf…` avant
--- `originaux_retenus_par_leur_import` (A8D2A-Q1, en production depuis le 12/11/2026), `d0d6134d…` depuis ; la
--- suppression des packs, `packs_storage_all` (pour tout) avant `stockage_sans_mise_a_jour` (SECU3-Q1, préparée),
--- `packs_storage_suppression` (suppression) après, au même prédicat (`a8ac8b3e…`).
+-- La garde de fin ne lit que ce que ce retour défait, le rangement des pièces (INAL1R-Q1, réponse du cabinet du 15/11/2026) :
+-- la policy de suppression du seau des pièces rendue à son prédicat d'hier, mot pour mot (lue sous un chemin vide), à son
+-- rôle d'hier (`public`), sans clause WITH CHECK ; `fichier_fige` et ses trois index partis. Les autres policies du stockage
+-- ne se lisent pas : d'autres migrations les changent sans que ce retour les touche — la suppression par le chef du seau des
+-- ventes (`originaux_retenus_par_leur_import`, A8D2A-Q1, en production depuis le 12/11/2026), les packs et les logos
+-- (`stockage_sans_mise_a_jour`, SECU3-Q1, préparée), le seau des documents du cabinet (`documents_et_demandes`, B2,
+-- préparée) —, et il s'applique devant chacune, qu'elle soit en base ou non. Jusqu'au 14/11/2026, elle exigeait toute la
+-- surface de suppression de storage.objects telle qu'hier : B2 l'aurait fait refuser.
 do $fin$
 declare
   v_chemin constant text := current_setting('search_path');
-  v_surface text;
 begin
   perform set_config('search_path', '', true);
-  select string_agg(p.polname || ':' || p.polcmd::text || ':' || md5(coalesce(pg_get_expr(p.polqual, p.polrelid), '')),
-                    ',' order by p.polname collate "C") into v_surface
-    from pg_policy p where p.polrelid = 'storage.objects'::regclass and p.polcmd in ('d', '*') and p.polpermissive;
-  if v_surface is null
-     or v_surface not in (
-          'cabinet_logos_suppression_chef:d:fc46cee26a76edcb9a6f03a0d3cd7b1e,packs_storage_all:*:a8ac8b3ed86beb70e800f88abb083b3b,pieces_storage_delete:d:b5d0298fe469d6ccb5b73a7520156ec3,ventes_suppression_par_le_chef:d:f4be98cf500b3037eba40f0f8e3ea94c',
-          'cabinet_logos_suppression_chef:d:fc46cee26a76edcb9a6f03a0d3cd7b1e,packs_storage_all:*:a8ac8b3ed86beb70e800f88abb083b3b,pieces_storage_delete:d:b5d0298fe469d6ccb5b73a7520156ec3,ventes_suppression_par_le_chef:d:d0d6134d6d7bbcfb8ab50b6ea50d44c9',
-          'cabinet_logos_suppression_chef:d:fc46cee26a76edcb9a6f03a0d3cd7b1e,packs_storage_suppression:d:a8ac8b3ed86beb70e800f88abb083b3b,pieces_storage_delete:d:b5d0298fe469d6ccb5b73a7520156ec3,ventes_suppression_par_le_chef:d:f4be98cf500b3037eba40f0f8e3ea94c',
-          'cabinet_logos_suppression_chef:d:fc46cee26a76edcb9a6f03a0d3cd7b1e,packs_storage_suppression:d:a8ac8b3ed86beb70e800f88abb083b3b,pieces_storage_delete:d:b5d0298fe469d6ccb5b73a7520156ec3,ventes_suppression_par_le_chef:d:d0d6134d6d7bbcfb8ab50b6ea50d44c9')
-     or not exists (select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass
-                     and p.polname = 'pieces_storage_delete' and p.polroles = array[0]::oid[]) then
-    raise exception 'Garde de fin : les policies de suppression de storage.objects ne sont pas celles d''hier.';
+  if not exists (select 1 from pg_policy p where p.polrelid = 'storage.objects'::regclass
+                  and p.polname = 'pieces_storage_delete' and p.polcmd = 'd' and p.polpermissive
+                  and p.polroles = array[0]::oid[] and p.polwithcheck is null
+                  and pg_get_expr(p.polqual, p.polrelid)
+                      = '((bucket_id = ''pieces''::text) AND public.admin_du_dossier(((storage.foldername(name))[1])::uuid))')
+     or to_regprocedure('public.fichier_fige(text)') is not null
+     or to_regclass('public.pieces_storage_path_idx') is not null
+     or to_regclass('public.pieces_lisible_path_idx') is not null
+     or to_regclass('public.documents_divers_storage_path_idx') is not null then
+    raise exception 'Garde de fin : le rangement des pièces n''est pas celui d''hier (la policy pieces_storage_delete, ou fichier_fige et ses trois index).';
   end if;
   perform set_config('search_path', v_chemin, true);
 end

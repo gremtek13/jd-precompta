@@ -97,6 +97,20 @@ describe('la migration du fichier d’une pièce figée', () => {
     expect(lire('supabase/essais/rls.sql')).toContain(`attendu_predicat constant text := '${PREDICAT_RENDU}'`)
   })
 
+  // INAL1R-Q1 (15/11/2026) : la garde de fin du retour attend la policy d'hier telle que pg_get_expr la rend — le prédicat
+  // posé, sans « le fichier n'est pas figé » —, à `public`, et l'absence de ce que la migration a posé ; rien d'autre.
+  it('la garde de fin du retour attend le prédicat rendu d’hier, à public, et l’absence de la fonction et des index', () => {
+    const fin = blocEntre(RETOUR(), 'do $fin$', '$fin$;')
+    const dHier = PREDICAT_RENDU.replace(' AND (NOT public.fichier_fige(name)))', ')')
+    expect(dHier).not.toBe(PREDICAT_RENDU)
+    expect(fin).toContain(`= '${dHier}'`)
+    expect(fin).toContain('p.polroles = array[0]::oid[] and p.polwithcheck is null')
+    for (const objet of ["to_regprocedure('public.fichier_fige(text)') is not null", "to_regclass('public.pieces_storage_path_idx') is not null",
+      "to_regclass('public.pieces_lisible_path_idx') is not null", "to_regclass('public.documents_divers_storage_path_idx') is not null"]) {
+      expect(fin).toContain(objet)
+    }
+  })
+
   it('son retour rend le prédicat et le rôle d’hier, et retire ce qu’elle a posé', () => {
     const alter = blocEntre(RETOUR(), 'alter policy pieces_storage_delete on storage.objects', ';\n')
     expect(espaces(alter)).toBe(espaces(`alter policy pieces_storage_delete on storage.objects to public using (${predicatDHier()})`))
