@@ -96,6 +96,14 @@ export const IconEstimation = (p: IconProps) => base(<>
   <path d="M15 8h5v5" />
 </>, p)
 
+// Trésorerie à 90 jours (« Ma trésorerie », espace client) : deux axes et une courbe qui devient pointillée là où
+// elle prévoit, distincte d'IconEstimation (flèche de tendance) et d'IconFinancement (fronton de banque).
+export const IconTresorerie = (p: IconProps) => base(<>
+  <path d="M4 4v16h16" />
+  <path d="M7 15l3.5-4 3 2" />
+  <path d="M13.5 13l2.5-3.5 3-1.5" strokeDasharray="2 2.4" />
+</>, p)
+
 export const IconVirements = (p: IconProps) => base(<>
   <path d="M4 8h13" />
   <path d="M14 4l3 4-3 4" />

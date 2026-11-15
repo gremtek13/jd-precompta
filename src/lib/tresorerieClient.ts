@@ -543,7 +543,7 @@ export function nonCompteEncaisseDepuisLeReleve(au: string): string {
   return `Encaissé sur tes factures depuis le ${enLettres(au)}, date de ton dernier relevé contrôlé : ni dans ton solde, ni compté ici.`
 }
 export function nonCompteEnRetard(nombre: number): string {
-  return `${nombre === 1 ? 'Une facture en retard' : `${nombre} factures en retard`} : leur encaissement n’a plus de date sûre.`
+  return `${nombre === 1 ? 'Une facture en retard' : `${nombre} factures en retard`} : ${nombre === 1 ? 'son' : 'leur'} encaissement n’a plus de date sûre.`
 }
 export function nonCompteSansEcheance(nombre: number): string {
   return `${nombre === 1 ? 'Une facture' : `${nombre} factures`} sans date d’échéance.`

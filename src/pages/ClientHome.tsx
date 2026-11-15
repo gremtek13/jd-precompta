@@ -6,7 +6,7 @@ import { deposerFichier } from '../lib/depot'
 import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois, dateRelative } from '../lib/format'
 import { lireAnneesCloturees } from '../lib/clotureExercice'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
-import { IconBanque, IconCaisse, IconCamera, IconDocuments, IconEcheancier, IconEstimation, IconFinancement, IconInformations, IconPieces } from '../components/icons'
+import { IconBanque, IconCaisse, IconCamera, IconDocuments, IconEcheancier, IconEstimation, IconTresorerie, IconInformations, IconPieces } from '../components/icons'
 import EcheancierAccueil from './EcheancierAccueil'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -337,7 +337,7 @@ export default function ClientHome() {
         )}
         {tresorerieOuverte && (
           <Link to="/ma-tresorerie" className="tuile">
-            <span className="tuile-icone"><IconFinancement width={24} height={24} /></span>
+            <span className="tuile-icone"><IconTresorerie width={24} height={24} /></span>
             <span className="tuile-libelle">Ma trésorerie</span>
             <span className="tuile-desc">Ce que ton compte devrait devenir sur les 90 jours qui viennent.</span>
           </Link>
