@@ -775,10 +775,11 @@ begin
     -- celui qu'on supprime, déjà parti quand la cascade atteint ses catégories (restaurationEtSuppressionDUnDossier.sql).
     -- 64 en production à 205 migrations.
     array['valeur', '141. tout déclencheur qui garde une suppression laisse passer la cascade d''un dossier qu''on supprime', 'postgres', $q$select count(*) || ' ' || string_agg(c.relname || '.' || t.tgname || ':' || p.proname || ':' || case when regexp_replace(p.prosrc, '\s+', ' ', 'g') ~ 'not exists \(select 1 from public\.dossiers( [a-z_]+)? where ([a-z_]+\.)?id = old\.dossier_id\)' then 'dossier' when not exists (select 1 from pg_attribute a where a.attrelid = t.tgrelid and a.attname = 'dossier_id' and not a.attisdropped) then 'parent:' || coalesce((select string_agg(k.confrelid::regclass::text, '+' order by k.confrelid::regclass::text collate "C") from pg_constraint k where k.conrelid = t.tgrelid and k.contype = 'f' and k.confdeltype = 'c'), 'aucun') else '?' end || ':' || t.tgenabled::text, ',' order by c.relname collate "C", t.tgname collate "C") from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_proc p on p.oid = t.tgfoid where not t.tgisinternal and c.relnamespace = 'public'::regnamespace and (t.tgtype & 2) <> 0 and (t.tgtype & 8) <> 0 and p.proname not in ('garder_operation_caisse', 'garder_ecriture_de_caisse')$q$, '',
-      -- Les gardes des migrations préparées des lignes 35, 36, 33 et 45, et 42 (INV2, INV3, INV4, LIA2, AFF2, EXD2), présentes ou
-      -- non, ajoutées à la liste d'hier et triées comme la lecture les trie (la chaîne entière en « C » : le point, puis le
-      -- deux-points, précèdent le blanc souligné et les lettres).
-      (select case when to_regclass('public.operations_inventaire') is null and to_regclass('public.inventaires_declares') is null and to_regclass('public.provisions') is null and to_regclass('public.stocks_de_cloture') is null and to_regclass('public.affectations_du_resultat') is null and to_regclass('public.exercices') is null then iv
+      -- Les gardes des migrations préparées des lignes 35, 36, 33 et 45, et 42 (INV2, INV3, INV4, LIA2, AFF2, EXD2), et celle de
+      -- la prévision publiée (C8-Q2, `previsions_publiees_garde`, de la forme `dossier` : une prévision part avec son dossier),
+      -- présentes ou non, ajoutées à la liste d'hier et triées comme la lecture les trie (la chaîne entière en « C » : le point,
+      -- puis le deux-points, précèdent le blanc souligné et les lettres).
+      (select case when to_regclass('public.operations_inventaire') is null and to_regclass('public.inventaires_declares') is null and to_regclass('public.provisions') is null and to_regclass('public.stocks_de_cloture') is null and to_regclass('public.affectations_du_resultat') is null and to_regclass('public.exercices') is null and to_regclass('public.previsions_publiees') is null then iv
          else (select count(*) || ' ' || string_agg(g, ',' order by g collate "C")
                  from unnest(string_to_array(substr(iv, strpos(iv, ' ') + 1), ',')
            || case when to_regclass('public.operations_inventaire') is null then array[]::text[] else array['ecritures_brouillon.ecritures_brouillon_inventaire:garder_ecriture_d_inventaire:dossier:O', 'operations_inventaire.operations_inventaire_garde:garder_operations_inventaire:dossier:O'] end
@@ -786,7 +787,8 @@ begin
            || case when to_regclass('public.provisions') is null then array[]::text[] else array['operations_inventaire.operations_inventaire_evaluation:garder_evaluations_de_provision:dossier:O', 'provisions.provisions_par_ses_fonctions:garder_provisions:dossier:O'] end
            || case when to_regclass('public.stocks_de_cloture') is null then array[]::text[] else array['ecritures_brouillon.ecritures_brouillon_stock:garder_ecriture_de_stock:dossier:O', 'stocks_de_cloture.stocks_de_cloture_par_ses_fonctions:garder_stock_de_cloture:dossier:O'] end
            || case when to_regclass('public.affectations_du_resultat') is null then array[]::text[] else array['affectations_du_resultat.affectations_du_resultat_garde:garder_affectations_du_resultat:dossier:O', 'ecritures_brouillon.ecritures_brouillon_affectation:garder_ecriture_d_affectation:dossier:O', 'lignes_d_affectation.lignes_d_affectation_garde:garder_lignes_d_affectation:dossier:O'] end
-           || case when to_regclass('public.exercices') is null then array[]::text[] else array['exercices.exercices_garde:garder_exercices:dossier:O'] end) as u(g)) end
+           || case when to_regclass('public.exercices') is null then array[]::text[] else array['exercices.exercices_garde:garder_exercices:dossier:O'] end
+           || case when to_regclass('public.previsions_publiees') is null then array[]::text[] else array['previsions_publiees.previsions_publiees_garde:garder_prevision_publiee:dossier:O'] end) as u(g)) end
        from (values ((select case when to_regprocedure('public.garder_categorie_du_dossier()') is null then pa
          else (split_part(pa, ' ', 1)::int + 1)::text || substr(replace(pa,
            ',adresses_reception.adresses_reception_gardes:garder_adresse_reception:dossier:O,',

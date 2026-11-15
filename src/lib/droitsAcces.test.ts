@@ -1989,6 +1989,12 @@ describe('ce que dit « Banque » de la prévision de trésorerie publiée (C8-Q
     expect(phrase).toContain(CE_QUE_LA_BANQUE_OUVRE_DE_LA_PREVISION)
     expect(phrase).toContain('« Ma trésorerie »')
     expect(phrase).toContain('« prévision »')
+    // Ce que la base lui ouvre, aux mots de la migration : la seule prévision en cours, figée, jamais une retirée ni une
+    // remplacée.
+    expect(MIGRATION_PP).toContain('un accès « Banque » lit la seule prévision EN COURS de son dossier')
+    for (const terme of ['la dernière seulement', 'figée au jour de sa publication', 'jamais une prévision retirée ni celle qu’une autre a remplacée']) {
+      expect(CE_QUE_LA_BANQUE_OUVRE_DE_LA_PREVISION, terme).toContain(terme)
+    }
     expect(MIGRATION_PP).toContain("using (client_du_dossier(dossier_id, 'banque') and geste = 'publication' and prevision_publiee_en_cours(id))")
     for (const t of TABLES_LUES_AVEC_BANQUE_DE_LA_PREVISION) {
       expect(MIGRATION_PP).toContain(`create policy previsions_publiees_lecture_banque on public.${t}`)
