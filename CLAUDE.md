@@ -459,7 +459,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   → « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES », « LA RELECTURE ADVERSE DE SIX MIGRATIONS PRÉPARÉES ».
 - **En production le 15/11/2026, neuf migrations (218 → 227)**, leurs drapeaux levés : le 468 sur le relevé (PC4Q2-Q1), une
   reprise retient la trésorerie (A8B-Q3), le registre d'une facture reprise part de ce que sa pièce citée a reçu
-  (A8Q5Q3-Q2), l'auteur d'une connexion de plateforme (B4RS-Q1 ; `plateforme-agreee` à déployer, sa constante levée), le
+  (A8Q5Q3-Q2), l'auteur d'une connexion de plateforme (B4RS-Q1 ; `plateforme-agreee` déployée, v14), le
   cumul et la dispense d'un médecin (RET-Q2), la classe d'une catégorie commune (PC7Q2-Q1), SECU3-Q1 et Q2, la porte
   devant les gardes (GARDES-Q1) → « NEUF MIGRATIONS EN PRODUCTION ». Reste préparée, à coller :
   `arrivee_et_depart_des_acces` (P1T-Q2) — la lecture du mot levée (`ACCES_DANS_LA_TRACE_PREVU`), la phrase de la carte
