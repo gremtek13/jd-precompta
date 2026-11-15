@@ -418,8 +418,10 @@ function Coque() {
                   <span className="nav-label-court">Analyse</span>
                 </NavLink>
               )}
+              {/* Hors de la barre du bas du téléphone (`nav-hors-barre-du-bas`, index.css) : à dix entrées, elle ne tient plus à
+                  390 px ; la tuile de l'accueil y mène (ClientHome). Sur ordinateur, l'entrée reste dans la barre latérale. */}
               {maTresorerie && (
-                <NavLink to="/ma-tresorerie" title="Ma trésorerie" className={({ isActive }) => (isActive ? 'active' : '')}>
+                <NavLink to="/ma-tresorerie" title="Ma trésorerie" className={({ isActive }) => `nav-hors-barre-du-bas${isActive ? ' active' : ''}`}>
                   <IconFinancement width={18} height={18} />
                   <span className="nav-label-full">Ma trésorerie</span>
                   <span className="nav-label-court">Trésorerie</span>

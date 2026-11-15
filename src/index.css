@@ -1744,6 +1744,9 @@ a.btn { text-decoration: none; }
   /* À l'accueil du client, ses tuiles font office de navigation : la barre du bas les doublerait. Cachée ICI seulement :
      sur ordinateur, la même navigation reste dans la barre latérale (voir Layout). */
   .sidebar nav.app-nav-accueil-client { display: none; }
+  /* Une entrée que la barre du bas ne porte pas : au-delà de neuf entrées elle ne tient plus à 390 px (« Ma trésorerie », étape
+     C8, banc des débordements, passe `client-banque`). La tuile de l'accueil y mène. */
+  .sidebar nav a.nav-hors-barre-du-bas { display: none; }
 
   .sidebar-actions-mobile { display: block; position: relative; flex-shrink: 0; margin-left: 10px; }
 

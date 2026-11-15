@@ -2132,6 +2132,15 @@ const VISITES_CAISSE_CLIENT = [
 
 const VISITES_BANQUE_CLIENT = [
   { chemin: '#/ma-banque', nom: 'client/ma-banque', nav: true },
+  // « MA TRÉSORERIE À 90 JOURS » (ligne 51.5, étape C8 ; drapeau levé le 15/11/2026, C8-Q1) : la case « Banque » l'ouvre, sur
+  // la société affichée ; la projection, ses lignes, et ce qui n'est pas compté. AVANT les visites du dossier basculé, qui
+  // rechargent la page et changent la société du compte.
+  {
+    chemin: '#/ma-tresorerie', nom: 'client/ma-tresorerie', nav: true,
+    apres: async (page) => {
+      await page.getByRole('heading', { name: 'Ma trésorerie à 90 jours' }).waitFor({ timeout: 10000 })
+    },
+  },
   ...[
     { nom: 'client/ma-banque-question', libelle: 'VIR SEPA EMIS LOYER BUREAU SEPTEMBRE' },
     { nom: 'client/ma-banque-envoi', libelle: 'CB RESTAURANT LE COMPTOIR DES HALLES' },

@@ -6,7 +6,7 @@ import { deposerFichier } from '../lib/depot'
 import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois, dateRelative } from '../lib/format'
 import { lireAnneesCloturees } from '../lib/clotureExercice'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
-import { IconBanque, IconCaisse, IconCamera, IconDocuments, IconEcheancier, IconEstimation, IconInformations, IconPieces } from '../components/icons'
+import { IconBanque, IconCaisse, IconCamera, IconDocuments, IconEcheancier, IconEstimation, IconFinancement, IconInformations, IconPieces } from '../components/icons'
 import EcheancierAccueil from './EcheancierAccueil'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -22,6 +22,7 @@ import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import AccueilVentesClient from './AccueilVentesClient'
 import { maBanqueOuverte } from '../lib/banqueClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
+import { maTresorerieOuverte, TRESORERIE_A_90_JOURS_OFFERTE } from '../lib/tresorerieClient'
 import { useEcarteesDuClient } from '../lib/piecesJointesEcarteesClientLecture'
 import PiecesJointesEcarteesAccueil from './PiecesJointesEcarteesAccueil'
 import AvisChangementDeRib from '../components/AvisChangementDeRib'
@@ -65,6 +66,9 @@ export default function ClientHome() {
   const banqueOuverte = maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)
   // « Ma caisse » (ligne 26.6, étape C12a) : sa tuile, sous la même garde que son entrée.
   const caisseOuverte = maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).caisse)
+  // « Ma trésorerie » (étape C8) : sa tuile, sous la même garde que son entrée et sa route. Sur téléphone, son entrée n'est pas
+  // dans la barre du bas, qui ne tient pas dix entrées à 390 px (index.css, `nav-hors-barre-du-bas`) : la tuile y mène.
+  const tresorerieOuverte = maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, banqueOuverte)
   const navigate = useNavigate()
   // Les pièces jointes que la réception par e-mail n'a pas déposées (ligne 22.94) : la lecture de « Mes pièces », écrite une
   // fois (lib/piecesJointesEcarteesClientLecture.ts), À PART de `load` — sa panne n'en fausse aucune autre, et la panne des
@@ -329,6 +333,13 @@ export default function ClientHome() {
             <span className="tuile-icone"><IconBanque width={24} height={24} /></span>
             <span className="tuile-libelle">Ma banque</span>
             <span className="tuile-desc">Tes mouvements, et la pièce que ton cabinet attend pour chacun.</span>
+          </Link>
+        )}
+        {tresorerieOuverte && (
+          <Link to="/ma-tresorerie" className="tuile">
+            <span className="tuile-icone"><IconFinancement width={24} height={24} /></span>
+            <span className="tuile-libelle">Ma trésorerie</span>
+            <span className="tuile-desc">Ce que ton compte devrait devenir sur les 90 jours qui viennent.</span>
           </Link>
         )}
         {caisseOuverte && (

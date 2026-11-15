@@ -49,11 +49,11 @@ import type { ControleReleveBancaire, LigneBancaire, ReglementGroupe } from './t
 
 // ── Le drapeau, et qui voit la page ───────────────────────────────────────────────────────────────────────────────────
 /**
- * La page « Ma trésorerie » (sa route, App.tsx ; son entrée, Layout.tsx) : BAISSÉ tant que le cabinet ne l'a pas vue (la
- * question C8-Q1). Aucune migration ne l'attend : le lever ne demande que le commit. Son état d'avant reste éprouvé
- * (espaceClientTresorerie.test.tsx joue les deux).
+ * La page « Ma trésorerie » (sa route, App.tsx ; son entrée, Layout.tsx) : LEVÉ le 15/11/2026 sur C8-Q1 (A) « l'ouvrir
+ * maintenant », après sa vérification au banc (outils/captures/, la passe `client-banque`). Aucune migration ne l'attendait.
+ * Son état d'avant reste éprouvé tant que le drapeau existe (espaceClientTresorerie.test.tsx joue les deux par un accesseur).
  */
-export const TRESORERIE_A_90_JOURS_OFFERTE = false
+export const TRESORERIE_A_90_JOURS_OFFERTE: boolean = true
 
 /** La page s'offre-t-elle ? Avec son drapeau, et quand « Ma banque » s'offre sur la société affichée (`maBanqueOuverte`). */
 export function maTresorerieOuverte(offerte: boolean, maBanque: boolean): boolean {

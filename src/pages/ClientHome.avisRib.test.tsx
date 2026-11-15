@@ -326,3 +326,17 @@ describe('ClientHome — la tuile « Ma caisse »', () => {
     expect(screen.queryByRole('link', { name: /Ma caisse/ })).toBeNull()
   })
 })
+
+// « Ma trésorerie » (ligne 51.5, étape C8 ; drapeau levé le 15/11/2026, C8-Q1) : sa tuile, sous la même garde que son entrée et sa
+// route — « Banque » sur la société affichée. Sur téléphone, la barre du bas ne porte pas son entrée (index.css) : la tuile y mène.
+describe('ClientHome — la tuile « Ma trésorerie »', () => {
+  it('avec « Banque », la tuile mène à « Ma trésorerie » ; « Ventes » seule n’y suffit pas', async () => {
+    faux.droits = { 'dossier-a': { ...AUCUNE, banque: true } }
+    const { unmount } = await monter()
+    expect(screen.getByRole('link', { name: /Ma trésorerie/ }).getAttribute('href')).toBe('/ma-tresorerie')
+    unmount()
+    faux.droits = { 'dossier-a': { ...AUCUNE, ventes: true } }
+    await monter()
+    expect(screen.queryByRole('link', { name: /Ma trésorerie/ })).toBeNull()
+  })
+})

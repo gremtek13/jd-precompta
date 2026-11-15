@@ -52776,3 +52776,35 @@ les 102 essais hors de la famille « apres » SÛRS ; les cinq essais de ces mig
 rejoue pas : rejoués hors de lui, P et L égaux, aucun motif ; la ligne des stocks retirée, le banc s'arrête sur elle.
 `essaisEnProduction.test.ts` exige qu'une table préparée ne se garnisse que sous sa propre condition ; il a trouvé la lecture
 d'un document (B2) et la ligne d'une décision conditionnées sur leur table parente seulement, désormais sur la leur.
+
+### 15/11/2026 — 48S-Q3 (A) : LE CADRE DES MONO-ÉTABLISSEMENTS COCHÉ SE REMPLIT SUR LE PDF DE L'ANNEXE 2035-E
+
+(Agent architecte, ligne 48, sans migration.) Sur la réponse du cabinet « remplir AH, AJ, BK et la période (année civile), avec la
+mention ». `gabarit2035E.ts` (`cadreDesMonoEtablissements`) : le cadre COCHÉ porte la croix « X » au centre de la case AH (entre les
+deux premiers filets à droite du code, 255,9 et 276,6 sur le millésime 2026), AJ (le chiffre d'affaires de référence, toujours, zéro
+compris) et BK (l'effectif dit, zéro compris ; « à saisir » s'il ne l'est pas, comme hier) au bord de leur case (566,3 − 4), et la
+période KA-LA sur l'année civile, chiffre par chiffre. Les positions se lisent toutes sur la page : les dates par `grilleDeDate`, qui
+suit les cases d'un caractère après le code et exige exactement « JJ / MM / AAAA » (deux cases, le « / » imprimé, deux, « / »,
+quatre) — `grilleDeSaisie` ne convenait pas : les grilles de KA et de LA avancent du même pas et se suivent, elle les lit comme une
+seule ; une position illisible remonte son code, rien n'est dessiné au jugé. BO (groupe de l'article 223 A, IS seulement) et MA (la
+date de cessation) restent vides. 48-Q6 laisse les dates d'activité à la main : la mention de tête dit en deux lignes que le cadre est
+rempli sur l'année civile et qu'une activité commencée ou cessée en cours d'année corrige KA ou LA et porte MA à la main ; l'écran de
+Clôture (`avisAvantLeTelechargement2035E`), la carte de l'annexe et celle des saisies le disent aussi. Drapeau baissé (cadre nul), le
+PDF reste celui d'avant au haché près. Vérifié sur le vrai formulaire relu par pdf.js (`remplir2035.test.ts` : la croix centrée,
+AJ, BK, `0101202531122025`, rien sur BO ni MA) et rendu en image ; `gabarit2035E.test.ts` : positions, BK non dit, page sans ancre,
+« / » retiré (KA refusée, LA lue), date d'une autre forme.
+
+### 15/11/2026 — C8-Q1 (A) : « MA TRÉSORERIE À 90 JOURS » OUVERTE AU CLIENT, ET LA BARRE DU BAS QUI NE LA TIENT PAS
+
+(Agent architecte, ligne 51.5, sans migration.) `TRESORERIE_A_90_JOURS_OFFERTE` levé ; l'état d'avant reste joué par l'accesseur
+d'`espaceClientTresorerie.test.tsx` ; la phrase de l'entrée dans l'équipe nomme désormais « Ma trésorerie » (`CE_QUE_PERD_LE_CLIENT`,
+qui suit le drapeau). **Le banc a vu un défaut** : la passe `client-banque` à 390 px, 0 avant la levée, rendait 45 débordements après —
+dix entrées (« Mes comptes » compris), la barre du bas 43 px plus large que l'écran, « Infos » et « Simulation » hors de lui, sur
+chaque écran du client. Corrigé sans toucher à l'ordinateur : l'entrée porte `nav-hors-barre-du-bas`, que le bloc du téléphone
+d'`index.css` cache ; une tuile « Ma trésorerie » de l'accueil y mène, sous la même garde que l'entrée et la route
+(`ClientHome.avisRib.test.tsx`). Le regroupement en « … » de la conception (MEG2-Q12, « le banc décide ») reste à faire avant la
+prochaine entrée. Banc (visite `client/ma-tresorerie` ajoutée, avant celles du dossier basculé qui rechargent la page) : 0 à 390, 720,
+1 024, 1 280 et 1 440 px en `client-banque`, 0 en `client` et `client-caisse` à 390. C8-Q3 (A) vérifiée, rien changé : une facture
+en retard reste hors de la projection, dite à part avec sa somme. Remarqués, non corrigés : « Une facture en retard : leur
+encaissement… » (l'accord du singulier) ; l'icône de « Ma trésorerie » est presque celle de « Ma banque » ; le banc cherche
+Chromium sous `chrome-linux/`, l'environnement l'a sous `chrome-linux64/` (`CHROMIUM=` le contourne).
