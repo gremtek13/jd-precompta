@@ -1321,7 +1321,7 @@ describe('ClotureTab — l’annexe 2035-E', () => {
     }
   })
 
-  it('drapeau levé, saisie complète et cadre coché : rien « à saisir », le cadre dit à reporter à la main, le PDF le reçoit', async () => {
+  it('drapeau levé, saisie complète et cadre coché : rien « à saisir », le cadre dit rempli sur l’année civile, le PDF le reçoit', async () => {
     poser()
     faux.saisies2035E = true
     try {
@@ -1333,7 +1333,7 @@ describe('ClotureTab — l’annexe 2035-E', () => {
       }]
       faux.annexes = []
       monter(2025, false)
-      await screen.findByText(/^Le cadre des mono-établissements, coché, ne s’imprime pas sur le PDF/)
+      await screen.findByText(/^Le cadre des mono-établissements, coché, s’imprime sur le PDF : .* du 01\/01\/2025 au 31\/12\/2025\./)
       expect(screen.queryByText(/lignes? à saisir \(/)).toBeNull()
       await telecharger()
       const annexe = faux.annexes[0]!

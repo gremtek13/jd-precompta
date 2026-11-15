@@ -108,8 +108,8 @@ export default function Saisies2035ECard({ dossierId, annee, lecture, fige, onRe
     <div className="card">
       <strong>Annexe 2035-E — saisies du cabinet, {annee}</strong>
       <p className="muted">Ce que la 2035 ne porte pas et que seul le cabinet sait. Un champ vide reste « à saisir » : l’annexe
-        ne le compte pas pour zéro (notice 2035-NOT-SD, p. 11-12). Une activité commencée ou cessée en cours d’année se juge
-        à la main.</p>
+        ne le compte pas pour zéro (notice 2035-NOT-SD, p. 11-12). Le cadre coché s’imprime sur l’année civile : une activité
+        commencée ou cessée en cours d’année se corrige à la main.</p>
       {MONTANTS_SAISIS_2035E.map((m) => (
         <div key={m.code} className="field">
           <label htmlFor={`annexe-${annee}-${m.code}`}>{LIBELLES[m.code]}</label>

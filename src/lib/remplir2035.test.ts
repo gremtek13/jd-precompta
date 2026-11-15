@@ -177,21 +177,39 @@ describe('remplir2035 — l’annexe 2035-E et ce qui reste à saisir', () => {
     expect(texte).not.toContain('Cadre des mono-établissements coché')
   })
 
-  it('le cadre coché et complet : rien n’est marqué, la tête dit qu’il est à reporter à la main', () => {
+  it('le cadre coché et complet (48S-Q3 (A)) : la croix, AJ, BK et l’année civile imprimés, la tête demande de corriger la période', () => {
     expect(cadreCoche.aSaisir).toEqual([])
     expect(textes(pageCadreCoche)).not.toContain('à saisir')
     const texte = textes(pageCadreCoche).join(' ')
     for (const ligne of mentionDeLAnnexe2035E([], true)) expect(texte).toContain(ligne)
     expect(texte).not.toContain('ATTENTION')
-    // Le cadre ne s'imprime toujours pas : entre les ordonnées 120 et 215, rien de plus que ce que la page vierge y porte.
-    const cadre = (p: Fragment[]) => p.filter((f) => f.y > 120 && f.y < 215).map((f) => f.texte)
-    expect(cadre(pageCadreCoche)).toEqual(cadre(pageVierge))
+    // Entre les ordonnées 120 et 215, le cadre : ce que la page vierge y porte, plus ce qui y est imprimé, relu sur le PDF.
+    const cadre = (p: Fragment[]) => p.filter((f) => f.y > 120 && f.y < 215)
+    const vierge = cadre(pageVierge).map((f) => f.texte)
+    const ajoute = cadre(pageCadreCoche).filter((f) => {
+      const k = vierge.indexOf(f.texte)
+      if (k < 0) return true
+      vierge.splice(k, 1)
+      return false
+    })
+    expect(vierge).toEqual([])
+    const sur = (y: number) => ajoute.filter((f) => Math.abs(f.y - y) < 1).sort((a, b) => a.x - b.x).map((f) => f.texte)
+    expect(sur(211.2)).toEqual(['X'])
+    expect(sur(198.4)).toEqual([formaterMontant(cadreCoche.cadre.etat === 'coche' ? cadreCoche.cadre.chiffreDeReference : NaN)])
+    expect(sur(165.4)).toEqual(['3'])
+    expect(sur(138.5).join('')).toBe('0101202531122025')
+    expect(sur(181.9)).toEqual([])
+    expect(sur(125.7)).toEqual([])
+    // La croix au centre de sa case (255,9 à 276,6), relue où pdf.js la place.
+    const croix = ajoute.find((f) => f.texte === 'X')!
+    expect(croix.x + croix.largeur / 2).toBeCloseTo((255.9 + 276.6) / 2, 0)
   })
 
-  it('les mentions : rien quand il ne reste rien, une ligne pour le cadre coché, des caractères que le PDF sait écrire', () => {
+  it('les mentions : rien quand il ne reste rien, deux lignes pour le cadre coché, des caractères que le PDF sait écrire', () => {
     expect(mentionDeLAnnexe2035E([], false)).toEqual([])
-    expect(mentionDeLAnnexe2035E([], true)).toHaveLength(1)
-    expect(mentionDeLAnnexe2035E(['EN'], true)).toHaveLength(3)
+    expect(mentionDeLAnnexe2035E([], true)).toHaveLength(2)
+    expect(mentionDeLAnnexe2035E([], true).join(' ')).toMatch(/année civile.*cessée en cours d'année : corriger KA ou LA.*\(MA\)/)
+    expect(mentionDeLAnnexe2035E(['EN'], true)).toHaveLength(4)
     for (const ligne of mentionDeLAnnexe2035E(['EN', 'AH'], true)) expect(texteCompatiblePdf(ligne)).toBe(ligne)
     expect(annexe2035EAvecSaisie(ENTREE_ANNEXE, SAISIE_2035E_VIDE).aSaisir).toEqual(['EN', 'EK', 'EM', 'ER', 'EU', 'EV', 'AH'])
   })

@@ -38,7 +38,7 @@ describe('avant le PDF', () => {
     expect(motifDesSaisies2035E({ dossierId: 'd', etat: 'incompletes', motif: 'x' }, false)).toBeNull()
   })
 
-  it('l’écran dit combien de lignes le PDF portera « à saisir », et le cadre coché qu’il n’imprime pas', () => {
+  it('l’écran dit combien de lignes le PDF portera « à saisir », et le cadre coché qu’il remplit sur l’année civile', () => {
     const vide = avisAvantLeTelechargement2035E(annexe2035EAvecSaisie(ENTREE, SAISIE_2035E_VIDE))
     expect(vide).toEqual([
       'Annexe 2035-E : 7 lignes à saisir (EN, EK, EM, ER, EU, EV, AH). Le PDF les porte « à saisir », comme les totaux qui en '
@@ -46,7 +46,11 @@ describe('avant le PDF', () => {
     ])
     const uneSeule = avisAvantLeTelechargement2035E(annexe2035EAvecSaisie(ENTREE, { ...PLEINE, moinsValues: null }))
     expect(uneSeule[0]).toMatch(/^Annexe 2035-E : 1 ligne à saisir \(EV\)\. Le PDF la porte « à saisir »/)
-    expect(uneSeule[1]).toMatch(/^Le cadre des mono-établissements, coché, ne s’imprime pas sur le PDF/)
+    expect(uneSeule[1]).toBe('Le cadre des mono-établissements, coché, s’imprime sur le PDF : la croix en AH, AJ, l’effectif en BK et '
+      + 'la période sur l’année civile, du 01/01/2025 au 31/12/2025. Pour une activité commencée ou cessée en cours d’année, '
+      + 'corriger la période et porter la date de cessation (MA) à la main.')
+    const sansEffectif = avisAvantLeTelechargement2035E(annexe2035EAvecSaisie(ENTREE, { ...PLEINE, effectif: null }))
+    expect(sansEffectif.at(-1)).toMatch(/la croix en AH, AJ, BK « à saisir » et la période/)
     expect(avisAvantLeTelechargement2035E(annexe2035EAvecSaisie(ENTREE, { ...PLEINE, monoEtablissement: false, effectif: null })))
       .toEqual([])
   })
