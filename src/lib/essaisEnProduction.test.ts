@@ -455,7 +455,7 @@ describe('les essais de la base, rejoués en production', () => {
     // Vingt-quatre le 15/11/2026 : `auteurDesConnexions` et `accesAvantLesGardes` sortis (B4RS-Q1 et la porte en production,
     // 20261115074709 et 20261115075431 ; ni l'un ni l'autre ne cherche un semis, ils se jouent comme des essais de la
     // production) ; SÛRS au banc, sur une copie de la réplique au niveau de la production (226 migrations).
-    // Vingt-cinq le même jour: `previsionsPubliees` (C8-Q2, `previsions_publiees`) entré dans la famille « apres », après sa
+    // Vingt-cinq le même jour : `previsionsPubliees` (C8-Q2, `previsions_publiees`) entré dans la famille « apres », après sa
     // migration préparée ; SÛR au banc, sur une copie de la réplique au niveau de la production (226 migrations).
     expect(cas.length).toBe(25)
     for (const [essai, c] of cas) {
