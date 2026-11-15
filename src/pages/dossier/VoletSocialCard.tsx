@@ -12,8 +12,8 @@ import {
 } from '../../lib/regularisationDesCotisations'
 import { aujourdHuiAParis, formatMoney } from '../../lib/format'
 import {
-  CASES_DU_MEDECIN_PREVUES, PARAMETRES_DES_COTISATIONS_EXPORTES, casesDuMedecinDeLExercice, parametresDeLEstimation,
-  type LectureDesParametres,
+  CASES_DU_MEDECIN_PREVUES, EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE, PARAMETRES_DES_COTISATIONS_EXPORTES, casesDuMedecinDeLExercice,
+  parametresDeLEstimation, type LectureDesParametres,
 } from '../../lib/parametresDesCotisations'
 import { lireLesParametresDesCotisations } from '../../lib/parametresDesCotisationsLecture'
 import type { EntreeEstimation, ParametresEstimation } from '../../lib/voletSocialPamc'
@@ -192,10 +192,16 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage, co
   const cleDuCumul = `${dossierId}:${annee}`
   const [cumulDit, setCumulDit] = useState<{ cle: string; choix: CumulChoisi }>({ cle: '', choix: 'non_renseigne' })
   const cumul: CumulChoisi = cumulDit.cle === cleDuCumul ? cumulDit.choix : 'non_renseigne'
-  const casesLues = CASES_DU_MEDECIN_PREVUES ? casesDuMedecinDeLExercice(parametresDuDossier, annee) : null
+  const casesLues = CASES_DU_MEDECIN_PREVUES ? casesDuMedecinDeLExercice(parametresDuDossier, annee, EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE) : null
+  // L'exonération de 2025 en zone d'intervention prioritaire (RET2-Q2) : tenue sous son drapeau, lue de l'exercice.
   const cases: CasesDeLaRetraite = !CASES_DU_MEDECIN_PREVUES
     ? { tenues: false, cumulChoisi: cumul }
-    : { tenues: true, cumul: casesLues?.cumulEmploiRetraite ?? null, dispense: casesLues?.dispenseComplementaire ?? null }
+    : {
+        tenues: true, cumul: casesLues?.cumulEmploiRetraite ?? null, dispense: casesLues?.dispenseComplementaire ?? null,
+        exoneration: EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE
+          ? { tenue: true, exoneration: casesLues?.exonerationZonePrioritaire ?? null }
+          : { tenue: false },
+      }
   // La retraite, sur la MÊME entrée ; et ce que l'Urssaf appelle en tout — pour la CIPAV, la retraite comprise.
   const retraite: ResultatRetraite | null = entree === null ? null : estimerLaRetraiteAffichee(entree, cases)
   const definitives = definitivesDeLUrssaf(estimation, retraite, entree?.profession ?? null)

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { derniereAnneeDeLaDispense, BAREMES_RETRAITE, CAISSE_DE_LA_PROFESSION, estimerRetraite, type EntreeRetraite } from './retraiteDesLiberaux'
+import {
+  derniereAnneeDeLaDispense, BAREMES_RETRAITE, CAISSE_DE_LA_PROFESSION, MOTIF_EXONERATION_NON_DITE, estimerRetraite, type EntreeRetraite,
+} from './retraiteDesLiberaux'
 import { CAS_REFERENCE_RETRAITE, MOTEUR_REFERENCE_RETRAITE, type CasReferenceRetraite } from './retraiteDesLiberauxReference'
 import { PLAFONDS_SECURITE_SOCIALE } from './voletSocialPamc'
 
@@ -18,6 +20,7 @@ const entreeDe = (c: CasReferenceRetraite): EntreeRetraite => ({
   cumulEmploiRetraite: CAISSE_DE_LA_PROFESSION[c.entree.profession] === 'carmf' ? c.entree.enRetraite : null,
   // Le moteur de l'Urssaf ne connaît pas la case de la dispense (RET-Q2) : l'estimation d'hier, sans elle.
   dispenseDesDebuts: { tenue: false },
+  exonerationEnZonePrioritaire: { tenue: false },
 })
 
 const enCentimes = (euros: number) => Math.round(euros * 100)
@@ -129,6 +132,7 @@ describe('ce que l’estimation de la retraite refuse ou suppose', () => {
     parametres: { tenus: true, debutActivite: '2015-01-01', acre: null, tauxDentiste: null },
     cumulEmploiRetraite: null,
     dispenseDesDebuts: { tenue: false },
+    exonerationEnZonePrioritaire: { tenue: false },
   }
 
   it('se tait quand le volet de l’Urssaf se tait, pour la même raison', () => {
@@ -173,6 +177,7 @@ describe('la dispense du complémentaire de la CARMF des débuts (RET-Q2)', () =
     annee, profession: 'medecin_secteur_1', remplacant: false, revenuBrutSocial: 60_000, revenuProfessionnelPositif: true,
     recettesBrutes: 80_000, honorairesConventionnes: 80_000, depassements: null,
     parametres: { tenus: true, debutActivite, acre: false, tauxDentiste: null }, cumulEmploiRetraite: false, dispenseDesDebuts,
+    exonerationEnZonePrioritaire: { tenue: false },
   })
   const estimee = (e: EntreeRetraite) => {
     const r = estimerRetraite(e)
@@ -233,3 +238,57 @@ describe('la dispense du complémentaire de la CARMF des débuts (RET-Q2)', () =
   })
 })
 
+
+// L'EXONÉRATION DES COTISATIONS DE RETRAITE 2025 D'UN MÉDECIN EN CUMUL EXERÇANT EN ZONE D'INTERVENTION PRIORITAIRE (RET2-Q2) :
+// la case dite par le cabinet, lue en 2025 seulement, pour un médecin dont le cumul est dit « oui » (loi n° 2025-199, art. 6).
+describe('l’exonération de 2025 en zone d’intervention prioritaire (RET2-Q2)', () => {
+  const medecin = (annee: number, cumul: boolean | null, exonerationEnZonePrioritaire: EntreeRetraite['exonerationEnZonePrioritaire'],
+    debutActivite = '2010-01-01'): EntreeRetraite => ({
+    annee, profession: 'medecin_secteur_1', remplacant: false, revenuBrutSocial: 60_000, revenuProfessionnelPositif: true,
+    recettesBrutes: 80_000, honorairesConventionnes: 80_000, depassements: null,
+    parametres: { tenus: true, debutActivite, acre: false, tauxDentiste: null }, cumulEmploiRetraite: cumul,
+    dispenseDesDebuts: { tenue: true, dispense: null }, exonerationEnZonePrioritaire,
+  })
+  const estimee = (e: EntreeRetraite) => {
+    const r = estimerRetraite(e)
+    if (!r.disponible) throw new Error(r.motif)
+    return r.estimation
+  }
+
+  it('non tenue (le drapeau baissé) : l’estimation d’hier, les cotisations comptées dues', () => {
+    const e = estimee(medecin(2025, true, { tenue: false }))
+    expect(e.retraiteDeBase).toBeGreaterThan(0)
+    expect(e.retraiteComplementaire).toBeGreaterThan(0)
+    expect(e.pcv).toBeGreaterThan(0)
+    expect(e.invaliditeDeces).toBe(0)
+    expect(e.hypotheses).not.toContain('carmf-exoneration-en-zone-prioritaire')
+  })
+
+  it('tenue, en 2025, le cumul dit : non dite, l’estimation se tait ; dite oui, rien n’est dû ; non, l’estimation d’hier', () => {
+    const tait = estimerRetraite(medecin(2025, true, { tenue: true, exoneration: null }))
+    expect(tait).toEqual({ disponible: false, motif: MOTIF_EXONERATION_NON_DITE })
+    const oui = estimee(medecin(2025, true, { tenue: true, exoneration: true }))
+    const non = estimee(medecin(2025, true, { tenue: true, exoneration: false }))
+    const hier = estimee(medecin(2025, true, { tenue: false }))
+    expect(non).toEqual(hier)
+    expect(oui).toEqual({
+      ...hier, retraiteDeBase: 0, priseEnChargeRetraiteDeBase: 0, retraiteComplementaire: 0, invaliditeDeces: 0, pcv: 0,
+      priseEnChargePcv: 0, total: 0, hypotheses: ['carmf-exoneration-en-zone-prioritaire'],
+    })
+    expect(oui.assiette).toBe(hier.assiette)
+  })
+
+  it('exonéré, la dispense des débuts ne se demande plus : rien n’est dû au complémentaire', () => {
+    // Un début au 15/11/2024 : la dispense des débuts se lirait en 2025, non dite elle tairait l'estimation.
+    expect(estimerRetraite({ ...medecin(2025, true, { tenue: true, exoneration: false }, '2024-11-15') }).disponible).toBe(false)
+    expect(estimee(medecin(2025, true, { tenue: true, exoneration: true }, '2024-11-15')).total).toBe(0)
+  })
+
+  it('hors de 2025, sans le cumul, ou pour une autre profession, la case ne se lit pas', () => {
+    expect(estimee(medecin(2026, true, { tenue: true, exoneration: true }))).toEqual(estimee(medecin(2026, true, { tenue: false })))
+    expect(estimee(medecin(2026, true, { tenue: true, exoneration: null })).total).toBeGreaterThan(0)
+    expect(estimee(medecin(2025, false, { tenue: true, exoneration: null }))).toEqual(estimee(medecin(2025, false, { tenue: false })))
+    const infirmiere = estimerRetraite({ ...medecin(2025, null, { tenue: true, exoneration: null }), profession: 'auxiliaire_medical' })
+    expect(infirmiere.disponible).toBe(true)
+  })
+})

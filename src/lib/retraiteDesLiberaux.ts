@@ -38,7 +38,10 @@
 // exonération incapacité ») ; le conjoint collaborateur ; l'outre-mer ; les cotisations facultatives. La règle de la
 // CARMF qui dispense du complémentaire les deux premières années un médecin installé avant quarante ans (le moteur
 // l'ignore) : tant que sa case n'est pas en base, l'estimation le compte dû et le dit ; la case en base (RET-Q2,
-// `dispenseDesDebuts`), elle suit ce que le cabinet a dit. Deux gestes que la CARCDSF accorde SUR DEMANDE — la réduction du forfait complémentaire sous 85 % du
+// `dispenseDesDebuts`), elle suit ce que le cabinet a dit. L'exonération des cotisations de retraite 2025 d'un médecin en
+// cumul exerçant en zone d'intervention prioritaire (loi n° 2025-199, art. 6 ; RET2-Q2) : tant que sa case n'est pas en base,
+// les cotisations sont comptées dues ; la case en base (`exonerationEnZonePrioritaire`), l'estimation de 2025 d'un médecin en
+// cumul suit ce que le cabinet a dit. Deux gestes que la CARCDSF accorde SUR DEMANDE — la réduction du forfait complémentaire sous 85 % du
 // plafond, l'exonération des PCV des faibles revenus — le moteur les suppose demandés ; l'estimation les suit et le dit
 // (`hypotheses`, RET-Q3).
 
@@ -186,7 +189,38 @@ export interface EntreeRetraite extends EntreeEstimation {
   cumulEmploiRetraite: boolean | null
   /** La dispense du complémentaire de la CARMF des débuts (RET-Q2) : voir `DispenseDesDebuts`. OBLIGATOIRE, sans défaut. */
   dispenseDesDebuts: DispenseDesDebuts
+  /**
+   * L'exonération des cotisations de retraite 2025 d'un médecin en cumul exerçant en zone d'intervention prioritaire
+   * (RET2-Q2) : voir `ExonerationEnZonePrioritaire`. OBLIGATOIRE, sans défaut.
+   */
+  exonerationEnZonePrioritaire: ExonerationEnZonePrioritaire
 }
+
+/**
+ * L'EXONÉRATION DES COTISATIONS DE RETRAITE 2025 D'UN MÉDECIN EN CUMUL EXERÇANT EN ZONE D'INTERVENTION PRIORITAIRE (RET2-Q2,
+ * tranchée par le cabinet le 15/11/2026 : « (B) Une case de plus »). Loi n° 2025-199 du 28 février 2025, art. 6 : les
+ * cotisations « mentionnées aux articles L. 642-1, L. 644-1, L. 645-2 et L. 645-3 » du code de la sécurité sociale — le
+ * régime de base, le complémentaire, les PCV —, « dues sur les revenus perçus en 2025 », d'un médecin en cumul intégral
+ * (L. 643-6) exerçant en zone d'intervention prioritaire (CSP, L. 1434-4), qui a liquidé ses pensions avant le 1er mars
+ * 2025, sous un revenu de 70 000 € (décret n° 2025-810 du 13 août 2025) ; la CARMF (« Guide du cumul », juin 2026, p. 5)
+ * le dit « retraite prise au plus tard le 1er janvier 2025 » et régularise en 2026 et en 2027. L'invalidité-décès n'en est
+ * pas : un médecin en cumul n'y cotise plus, ce que la case du cumul fait déjà. L'application ne sait ni la zone, ni la date
+ * de la retraite, ni le revenu que la caisse compare au plafond : le cabinet DIT l'exonération, pour 2025 seulement.
+ *  - `tenue: false` : la case n'est pas lue (le drapeau de la migration `exoneration_en_zone_prioritaire` baissé, l'état
+ *    d'avant) — l'estimation d'hier, les cotisations comptées dues.
+ *  - `tenue: true` : la case de l'exercice telle que le cabinet l'a dite, nulle tant qu'il ne l'a pas dite. Elle ne se lit
+ *    qu'en 2025, pour un médecin dont le cumul est dit « oui » : nulle là, l'estimation se tait en disant pourquoi ; ailleurs,
+ *    la mesure ne peut pas jouer, et la case ne se lit pas (la base la refuse d'ailleurs hors de 2025 et sans le cumul).
+ */
+export type ExonerationEnZonePrioritaire = { tenue: false } | { tenue: true; exoneration: boolean | null }
+
+/** Le seul exercice où l'exonération vaut : les revenus de 2025 (loi n° 2025-199, art. 6, I). */
+export const EXERCICE_DE_L_EXONERATION_EN_ZONE_PRIORITAIRE = 2025
+
+/** Le motif de l'estimation qui se tait tant que le cabinet n'a pas dit l'exonération d'un médecin en cumul, en 2025. */
+export const MOTIF_EXONERATION_NON_DITE =
+  'Dites si le médecin est exonéré de ses cotisations de retraite 2025 : cumul intégral, retraite liquidée au plus tard le '
+  + '1er janvier 2025, exercice en zone d’intervention prioritaire et revenus 2025 sous 70 000 €.'
 
 /**
  * LA DISPENSE DU COMPLÉMENTAIRE DE LA CARMF DES DÉBUTS (RET-Q2). La CARMF dispense « de la totalité de la cotisation » du
@@ -226,6 +260,7 @@ export type HypotheseRetraite =
   | 'carcdsf-exoneration-des-pcv-supposee-demandee'
   | 'carmf-debut-d-activite-complementaire-suppose-du'
   | 'carmf-complementaire-dispense'
+  | 'carmf-exoneration-en-zone-prioritaire'
   | 'cipav-invalidite-deces-avant-68-ans-supposee'
 
 export interface EstimationRetraite {
@@ -272,6 +307,14 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
       motif: 'Dites si le médecin cumule sa retraite et son activité : la CARMF ne lui appelle alors plus l’invalidité-décès.',
     }
   }
+  // L'exonération de 2025 en zone d'intervention prioritaire (RET2-Q2) : pour un médecin dont le cumul est dit, en 2025
+  // seulement ; non dite là, l'estimation se tait plutôt que de deviner un « non ».
+  const z = e.exonerationEnZonePrioritaire
+  let exonere = false
+  if (medecin && z.tenue && e.annee === EXERCICE_DE_L_EXONERATION_EN_ZONE_PRIORITAIRE && e.cumulEmploiRetraite === true) {
+    if (z.exoneration === null) return { disponible: false, motif: MOTIF_EXONERATION_NON_DITE }
+    exonere = z.exoneration
+  }
   // L'activité de l'exercice : déjà lue sans faute par le volet de l'Urssaf, quand les paramètres sont tenus.
   let activite: ActiviteDeLExercice = ACTIVITE_OUVERTE_AVANT
   if (e.parametres.tenus && e.parametres.debutActivite !== null) {
@@ -302,6 +345,26 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
   // ── Le régime de base de la CNAVPL : 8,73 % puis 1,87 %, sur l'assiette portée au plancher.
   const assietteMinimale =
     activite.joursCetteAnnee < JOURS_SANS_PLANCHER ? ZERO : aLEuro(fois(euros(bareme.smicHoraire), q(HEURES_DU_PLANCHER)))
+  // Exonéré (RET2-Q2) : le régime de base, le complémentaire et les PCV ne sont pas dus, ni donc pris en charge ;
+  // l'invalidité-décès non plus, le cumul étant dit (la condition ci-dessus). Les assiettes restent dites.
+  if (exonere) {
+    return {
+      disponible: true,
+      estimation: {
+        caisse,
+        assiette: centimes(a),
+        assietteMinimale: centimes(assietteMinimale),
+        retraiteDeBase: 0,
+        priseEnChargeRetraiteDeBase: 0,
+        retraiteComplementaire: 0,
+        invaliditeDeces: 0,
+        pcv: 0,
+        priseEnChargePcv: 0,
+        total: 0,
+        hypotheses: ['carmf-exoneration-en-zone-prioritaire'],
+      },
+    }
+  }
   const assietteBase = max(a, assietteMinimale)
   const tranche1 = aLEuro(fois(min(assietteBase, PP), taux(BASE_TRANCHE_1)))
   const tranche2 = aLEuro(fois(min(assietteBase, fois(PP, q(5))), taux(BASE_TRANCHE_2)))

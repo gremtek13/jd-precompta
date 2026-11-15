@@ -33,10 +33,35 @@ export const PARAMETRES_DES_COTISATIONS_EXPORTES = true
 // d'hier refuse).
 export const CASES_DU_MEDECIN_PREVUES: boolean = true
 
-/** Les deux cases d'un médecin pour un exercice, telles que lues ; nulles tant que le cabinet ne les a pas dites. */
+// L'EXONÉRATION DES COTISATIONS DE RETRAITE 2025 D'UN MÉDECIN EN CUMUL EXERÇANT EN ZONE D'INTERVENTION PRIORITAIRE (ligne
+// 27.1, RET2-Q2, tranchée par le cabinet le 15/11/2026 : « (B) Une case de plus », contre la recommandation de le dire
+// seulement ; loi n° 2025-199, art. 6, décret n° 2025-810, et le guide du cumul de la CARMF, juin 2026). La migration
+// PRÉPARÉE `exoneration_en_zone_prioritaire` (supabase/preparees/20261115131000_exoneration_en_zone_prioritaire.sql) pose
+// la troisième case d'un exercice, pour 2025 seulement et avec le cumul, et fait accepter à
+// `enregistrer_parametres_des_cotisations` six clés en plus des formes d'hier. BAISSÉ jusqu'à son application : la lecture,
+// l'écriture, la carte et l'estimation d'hier. Levé, la lecture la nomme, l'écriture part sous six clés, la carte l'offre
+// pour un médecin en cumul en 2025, et l'estimation de la retraite la reçoit (lib/retraiteDesLiberaux.ts,
+// `ExonerationEnZonePrioritaire`) ; il se baisse AVANT tout retour de la migration (l'écran levé enverrait six clés, que la
+// fonction d'hier refuse).
+export const EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE: boolean = false
+
+/** Le seul exercice où l'exonération se dit : les revenus de 2025 (la contrainte `parametres_des_cotisations_exoneration_de_2025`). */
+export const EXERCICE_DE_L_EXONERATION = 2025
+
+/** Les deux refus neufs de `enregistrer_parametres_des_cotisations` sous la migration, aux mots de la base (« % » : l'exercice). */
+export const REFUS_EXONERATION_HORS_DE_2025 =
+  "L'exonération des cotisations de retraite d'un médecin en cumul exerçant en zone d'intervention prioritaire ne vaut que pour les revenus de 2025 : elle ne se dit pas pour l'exercice %."
+export const REFUS_EXONERATION_SANS_LE_CUMUL =
+  "L'exonération de 2025 en zone d'intervention prioritaire ne vaut qu'en cumul emploi-retraite intégral : dis d'abord le cumul, ou retire l'exonération."
+
+/**
+ * Les deux cases d'un médecin pour un exercice, telles que lues ; nulles tant que le cabinet ne les a pas dites. La troisième,
+ * l'exonération de 2025 (RET2-Q2), seulement quand elle a été lue (la migration en base).
+ */
 export interface CasesDuMedecin {
   cumulEmploiRetraite: boolean | null
   dispenseComplementaire: boolean | null
+  exonerationZonePrioritaire?: boolean | null
 }
 
 /** Ce qu'une ligne des deux tables porte, une fois lue et crue ; `medecin` seulement quand les deux cases ont été lues. */
@@ -69,10 +94,12 @@ export function lireDebutActivite(ligne: unknown): string | null | undefined {
 /**
  * Les paramètres d'un exercice d'une ligne lue, ou null si la ligne ne se croit pas. PostgREST rend un `numeric` en nombre.
  * `avecLesCases` (par défaut, `CASES_DU_MEDECIN_PREVUES`) : les deux cases d'un médecin font partie de la ligne, et une case
- * absente ou d'une autre forme la rend illisible — jamais un « non » deviné.
+ * absente ou d'une autre forme la rend illisible — jamais un « non » deviné. `avecLExoneration` (par défaut,
+ * `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE`, avec les cases) : l'exonération de 2025 aussi, et une exonération dite hors de 2025
+ * ou « oui » sans le cumul — ce que la base refuse — rend la ligne illisible.
  */
 export function lireParametresDUnExercice(
-  ligne: unknown, avecLesCases: boolean = CASES_DU_MEDECIN_PREVUES,
+  ligne: unknown, avecLesCases: boolean = CASES_DU_MEDECIN_PREVUES, avecLExoneration: boolean = EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE,
 ): (ParametresDUnExercice & { annee: number }) | null {
   if (typeof ligne !== 'object' || ligne === null) return null
   const l = ligne as Record<string, unknown>
@@ -84,18 +111,32 @@ export function lireParametresDUnExercice(
   const cumul = l.cumul_emploi_retraite
   const dispense = l.dispense_complementaire
   if ((cumul !== null && typeof cumul !== 'boolean') || (dispense !== null && typeof dispense !== 'boolean')) return null
-  return { annee: l.annee, acre: l.acre, tauxDentiste: taux, medecin: { cumulEmploiRetraite: cumul, dispenseComplementaire: dispense } }
+  if (!avecLExoneration) {
+    return { annee: l.annee, acre: l.acre, tauxDentiste: taux, medecin: { cumulEmploiRetraite: cumul, dispenseComplementaire: dispense } }
+  }
+  const exoneration = l.exoneration_zone_prioritaire
+  if (exoneration !== null && typeof exoneration !== 'boolean') return null
+  if (exoneration !== null && l.annee !== EXERCICE_DE_L_EXONERATION) return null
+  if (exoneration === true && cumul !== true) return null
+  return {
+    annee: l.annee, acre: l.acre, tauxDentiste: taux,
+    medecin: { cumulEmploiRetraite: cumul, dispenseComplementaire: dispense, exonerationZonePrioritaire: exoneration },
+  }
 }
 
 /**
  * Les deux cases d'un médecin pour un exercice, telles que l'estimation de la retraite les reçoit : nulles quand la ligne
  * de l'exercice n'existe pas encore ou ne les porte pas. Null quand les paramètres ne sont pas lus en entier, ou que les
- * cases ne sont pas en base (`absents`).
+ * cases ne sont pas en base (`absents`). `avecLExoneration` (par défaut, le drapeau de RET2-Q2) : l'exonération aussi, nulle
+ * de même.
  */
-export function casesDuMedecinDeLExercice(lecture: LectureDesParametres | null, annee: number): CasesDuMedecin | null {
+export function casesDuMedecinDeLExercice(
+  lecture: LectureDesParametres | null, annee: number, avecLExoneration: boolean = EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE,
+): CasesDuMedecin | null {
   if (lecture === null || lecture.etat !== 'lus') return null
   const medecin = lecture.parExercice.get(annee)?.medecin
-  return { cumulEmploiRetraite: medecin?.cumulEmploiRetraite ?? null, dispenseComplementaire: medecin?.dispenseComplementaire ?? null }
+  const cases = { cumulEmploiRetraite: medecin?.cumulEmploiRetraite ?? null, dispenseComplementaire: medecin?.dispenseComplementaire ?? null }
+  return avecLExoneration ? { ...cases, exonerationZonePrioritaire: medecin?.exonerationZonePrioritaire ?? null } : cases
 }
 
 /**
@@ -119,7 +160,8 @@ export function parametresDeLEstimation(lecture: LectureDesParametres | null, an
 
 /**
  * Ce que le formulaire porte : la date telle que le champ la rend, l'ACRE en trois états, le taux tel que tapé ; et, sous
- * `CASES_DU_MEDECIN_PREVUES`, les deux cases d'un médecin en trois états (« » : non dit).
+ * `CASES_DU_MEDECIN_PREVUES`, les deux cases d'un médecin en trois états (« » : non dit) ; sous
+ * `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE`, l'exonération de 2025 de même.
  */
 export interface SaisieDesParametres {
   debutActivite: string
@@ -127,11 +169,12 @@ export interface SaisieDesParametres {
   tauxDentiste: string
   cumul: 'oui' | 'non' | ''
   dispense: 'oui' | 'non' | ''
+  exoneration: 'oui' | 'non' | ''
 }
 
 /**
  * Les valeurs telles que la fonction les reçoit (`p_lus`, `p_saisis`) : les trois clés d'hier, ou, les deux cases en base
- * (RET-Q2), les cinq — la même forme des deux côtés, que la fonction exige.
+ * (RET-Q2), les cinq, ou, l'exonération en base (RET2-Q2), les six — la même forme des deux côtés, que la fonction exige.
  */
 export interface ValeursDesParametres {
   debut_activite: string | null
@@ -139,6 +182,7 @@ export interface ValeursDesParametres {
   taux_dentiste: number | null
   cumul_emploi_retraite?: boolean | null
   dispense_complementaire?: boolean | null
+  exoneration_zone_prioritaire?: boolean | null
 }
 
 const ouiNon = (v: boolean | null): 'oui' | 'non' | '' => (v === null ? '' : v ? 'oui' : 'non')
@@ -146,17 +190,19 @@ const versBooleen = (v: 'oui' | 'non' | ''): boolean | null => (v === '' ? null 
 
 export function valeursLues(
   lecture: Extract<LectureDesParametres, { etat: 'lus' }>, annee: number, avecLesCases: boolean = CASES_DU_MEDECIN_PREVUES,
+  avecLExoneration: boolean = EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE,
 ): ValeursDesParametres {
   const exercice = lecture.parExercice.get(annee)
   const valeurs: ValeursDesParametres = {
     debut_activite: lecture.debutActivite, acre: exercice?.acre ?? null, taux_dentiste: exercice?.tauxDentiste ?? null,
   }
   if (!avecLesCases) return valeurs
-  return {
+  const cases: ValeursDesParametres = {
     ...valeurs,
     cumul_emploi_retraite: exercice?.medecin?.cumulEmploiRetraite ?? null,
     dispense_complementaire: exercice?.medecin?.dispenseComplementaire ?? null,
   }
+  return avecLExoneration ? { ...cases, exoneration_zone_prioritaire: exercice?.medecin?.exonerationZonePrioritaire ?? null } : cases
 }
 
 export function saisieDe(valeurs: ValeursDesParametres): SaisieDesParametres {
@@ -166,6 +212,7 @@ export function saisieDe(valeurs: ValeursDesParametres): SaisieDesParametres {
     tauxDentiste: valeurs.taux_dentiste === null ? '' : String(valeurs.taux_dentiste).replace('.', ','),
     cumul: ouiNon(valeurs.cumul_emploi_retraite ?? null),
     dispense: ouiNon(valeurs.dispense_complementaire ?? null),
+    exoneration: ouiNon(valeurs.exoneration_zone_prioritaire ?? null),
   }
 }
 
@@ -175,6 +222,7 @@ export function saisieDe(valeurs: ValeursDesParametres): SaisieDesParametres {
  */
 export function valeursSaisies(
   s: SaisieDesParametres, avecLesCases: boolean = CASES_DU_MEDECIN_PREVUES,
+  avecLExoneration: boolean = EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE,
 ): { valeurs: ValeursDesParametres; refus: null } | { valeurs: null; refus: string } {
   let debut: string | null = null
   if (s.debutActivite.trim() !== '') {
@@ -201,8 +249,22 @@ export function valeursSaisies(
   if (avecLesCases) {
     valeurs.cumul_emploi_retraite = versBooleen(s.cumul)
     valeurs.dispense_complementaire = versBooleen(s.dispense)
+    if (avecLExoneration) valeurs.exoneration_zone_prioritaire = versBooleen(s.exoneration)
   }
   return { valeurs, refus: null }
+}
+
+/**
+ * Ce que la base refuserait de l'exonération, redit avant le clic sur les valeurs TELLES QU'ELLES PARTENT (RET2-Q2) : dite
+ * pour un autre exercice que 2025, ou « oui » sur une ligne dont le cumul ne l'est pas — sous la forme à six clés, celle
+ * que la carte envoie, l'exonération et le cumul étant tous deux dans la saisie. Nul quand rien, ou hors de cette forme.
+ */
+export function refusDeLExoneration(valeurs: ValeursDesParametres, annee: number): string | null {
+  if (!('exoneration_zone_prioritaire' in valeurs)) return null
+  const exoneration = valeurs.exoneration_zone_prioritaire ?? null
+  if (exoneration !== null && annee !== EXERCICE_DE_L_EXONERATION) return REFUS_EXONERATION_HORS_DE_2025.replace('%', String(annee))
+  if (exoneration === true && valeurs.cumul_emploi_retraite !== true) return REFUS_EXONERATION_SANS_LE_CUMUL
+  return null
 }
 
 /** Les deux jeux de valeurs disent-ils la même chose ? Rien à enregistrer sinon. */
@@ -210,6 +272,7 @@ export function memesValeurs(a: ValeursDesParametres, b: ValeursDesParametres): 
   return a.debut_activite === b.debut_activite && a.acre === b.acre && a.taux_dentiste === b.taux_dentiste
     && (a.cumul_emploi_retraite ?? null) === (b.cumul_emploi_retraite ?? null)
     && (a.dispense_complementaire ?? null) === (b.dispense_complementaire ?? null)
+    && (a.exoneration_zone_prioritaire ?? null) === (b.exoneration_zone_prioritaire ?? null)
 }
 
 /** Les paramètres de `enregistrer_parametres_des_cotisations` : l'exercice, les valeurs lues qu'elles remplacent, les saisies. */

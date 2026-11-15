@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { formatDate } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import {
-  CASES_DU_MEDECIN_PREVUES, memesValeurs, parametresDeLEnregistrement, saisieDe, valeursLues, valeursSaisies,
+  CASES_DU_MEDECIN_PREVUES, EXERCICE_DE_L_EXONERATION, EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE, memesValeurs,
+  parametresDeLEnregistrement, refusDeLExoneration, saisieDe, valeursLues, valeursSaisies,
   type LectureDesParametres, type SaisieDesParametres, type ValeursDesParametres,
 } from '../../lib/parametresDesCotisations'
 import { supabase } from '../../lib/supabase'
@@ -13,6 +14,9 @@ import type { ProfessionLiberale } from '../../lib/types'
 // l'estimation des cotisations réclame quand ils lui manquent. La lecture d'abord (lue en entier, ou rien n'est offert),
 // le formulaire ensuite, l'écriture par `enregistrer_parametres_des_cotisations` seule, contre les valeurs lues, sous un
 // verrou relâché après la relecture ; la confirmation nomme ce qui change ; ses refus redits avant le clic.
+// L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE (RET2-Q2), sous `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` (baissé
+// jusqu'à sa migration) : offerte pour l'exercice 2025 d'un médecin dont le cumul est dit « oui » (ou dès qu'elle est dite),
+// remise à « non dit » dans la même écriture quand le cumul cesse d'être « oui » — elle devient sans objet.
 
 const ACRE = { oui: 'oui', non: 'non', '': 'non dite' } as const
 const OUI_NON = { oui: 'oui', non: 'non', '': 'non dit' } as const
@@ -30,6 +34,10 @@ function enMots(v: ValeursDesParametres, annee: number): string[] {
     mots.push(`Cumul emploi-retraite ${annee} : ${motDuCas(v.cumul_emploi_retraite)}`)
     mots.push(`Dispense du complémentaire CARMF ${annee} : ${motDuCas(v.dispense_complementaire)}`)
   }
+  // L'exonération de 2025 (RET2-Q2) : nommée quand les valeurs la portent (la forme à six clés).
+  if ('exoneration_zone_prioritaire' in v) {
+    mots.push(`Exonération de la retraite ${annee} (zone d’intervention prioritaire) : ${motDuCas(v.exoneration_zone_prioritaire)}`)
+  }
   return mots
 }
 
@@ -44,9 +52,9 @@ export default function ParametresDesCotisationsCard({ dossierId, annee, lecture
   // Relit les paramètres du dossier ; la carte l'attend avant de relâcher son verrou.
   onRelire: () => Promise<void>
 }) {
-  // Le drapeau des cases d'un médecin (RET-Q2), passé tel que la carte le lit : la lecture, les valeurs lues et les saisies
-  // prennent la même forme (trois clés, ou cinq), que la fonction exige des deux côtés.
-  const lus = lecture?.etat === 'lus' ? valeursLues(lecture, annee, CASES_DU_MEDECIN_PREVUES) : null
+  // Les drapeaux des cases d'un médecin (RET-Q2) et de l'exonération (RET2-Q2), passés tels que la carte les lit : la lecture,
+  // les valeurs lues et les saisies prennent la même forme (trois clés, cinq ou six), que la fonction exige des deux côtés.
+  const lus = lecture?.etat === 'lus' ? valeursLues(lecture, annee, CASES_DU_MEDECIN_PREVUES, EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE) : null
   const [enCours, setEnCours] = useState(false)
   const [message, setMessage] = useState<{ cle: string; texte: string; erreur: boolean } | null>(null)
   const enregistrementEnCours = useRef(false)
@@ -106,12 +114,14 @@ function Formulaire({ annee, lus, profession, exerciceValide, enCours, message, 
   onEnregistrer: (saisies: ValeursDesParametres) => void
 }) {
   const [saisie, setSaisie] = useState<SaisieDesParametres>(() => saisieDe(lus))
-  const sortie = valeursSaisies(saisie, CASES_DU_MEDECIN_PREVUES)
+  const sortie = valeursSaisies(saisie, CASES_DU_MEDECIN_PREVUES, EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE)
   const inchange = sortie.valeurs !== null && memesValeurs(sortie.valeurs, lus)
   const exerciceChange = sortie.valeurs !== null && (sortie.valeurs.acre !== lus.acre || sortie.valeurs.taux_dentiste !== lus.taux_dentiste
     || (sortie.valeurs.cumul_emploi_retraite ?? null) !== (lus.cumul_emploi_retraite ?? null)
-    || (sortie.valeurs.dispense_complementaire ?? null) !== (lus.dispense_complementaire ?? null))
-  const refus = sortie.refus ?? (exerciceValide && exerciceChange
+    || (sortie.valeurs.dispense_complementaire ?? null) !== (lus.dispense_complementaire ?? null)
+    || (sortie.valeurs.exoneration_zone_prioritaire ?? null) !== (lus.exoneration_zone_prioritaire ?? null))
+  // Les refus de la base redits sur la saisie telle qu'elle part : sa forme, puis l'exonération (RET2-Q2), puis le gel.
+  const refus = sortie.refus ?? (sortie.valeurs === null ? null : refusDeLExoneration(sortie.valeurs, annee)) ?? (exerciceValide && exerciceChange
     ? (CASES_DU_MEDECIN_PREVUES
       ? `L’exercice ${annee} est validé : son ACRE, son taux dentiste et les cases du médecin ne changent plus.`
       : `L’exercice ${annee} est validé : son ACRE et son taux dentiste ne changent plus.`)
@@ -120,8 +130,13 @@ function Formulaire({ annee, lus, profession, exerciceValide, enCours, message, 
   // Les deux cases d'un médecin (RET-Q2), sous leur drapeau : offertes à un médecin, ou dès qu'une est dite.
   const medecin = CASES_DU_MEDECIN_PREVUES && (profession === 'medecin_secteur_1' || profession === 'medecin_secteur_2'
     || (lus.cumul_emploi_retraite ?? null) !== null || (lus.dispense_complementaire ?? null) !== null)
+  // L'exonération de 2025 (RET2-Q2), sous son drapeau : pour l'exercice 2025 d'un médecin en cumul, ou dès qu'elle est dite.
+  const exonerationOfferte = EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE && medecin && annee === EXERCICE_DE_L_EXONERATION
+    && (saisie.cumul === 'oui' || (lus.exoneration_zone_prioritaire ?? null) !== null)
   const changer = (champ: keyof SaisieDesParametres) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setSaisie({ ...saisie, [champ]: e.target.value })
+    const valeur = e.target.value as SaisieDesParametres[typeof champ]
+    // Le cumul qui cesse d'être « oui » rend l'exonération sans objet : elle repart « non dite » dans la même écriture.
+    setSaisie(champ === 'cumul' && valeur !== 'oui' ? { ...saisie, cumul: valeur as SaisieDesParametres['cumul'], exoneration: '' } : { ...saisie, [champ]: valeur })
     onChange()
   }
 
@@ -165,6 +180,14 @@ function Formulaire({ annee, lus, profession, exerciceValide, enCours, message, 
                 {(Object.keys(OUI_NON) as (keyof typeof OUI_NON)[]).map((v) => <option key={v} value={v}>{OUI_NON[v]}</option>)}
               </select>
             </div>
+            {exonerationOfferte && (
+              <div className="field">
+                <label htmlFor={`exoneration-${annee}`}>Exonération de la retraite {annee} (zone d’intervention prioritaire)</label>
+                <select id={`exoneration-${annee}`} value={saisie.exoneration} disabled={exerciceValide} onChange={changer('exoneration')}>
+                  {(Object.keys(OUI_NON) as (keyof typeof OUI_NON)[]).map((v) => <option key={v} value={v}>{OUI_NON[v]}</option>)}
+                </select>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -173,6 +196,14 @@ function Formulaire({ annee, lus, profession, exerciceValide, enCours, message, 
           Un médecin en cumul emploi-retraite ne cotise plus à l’invalidité-décès de la CARMF. La CARMF dispense du
           complémentaire, ses deux premières années d’affiliation, le médecin dont l’activité a commencé avant quarante
           ans : l’application ne sait pas l’âge, dites-le.
+        </p>
+      )}
+      {exonerationOfferte && (
+        <p className="muted" style={{ margin: '4px 0 8px' }}>
+          La loi de financement de la sécurité sociale pour 2025 (art. 6) exonère du régime de base, du complémentaire et
+          des PCV de 2025 le médecin en cumul intégral, retraité de la CARMF au plus tard le 1er janvier 2025, qui exerce en
+          zone d’intervention prioritaire, quand ses revenus 2025 sont inférieurs à 70 000 € : l’application ne sait ni la
+          zone, ni la date de la retraite, ni le revenu que la caisse retient, dites-le.
         </p>
       )}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
