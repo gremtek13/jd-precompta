@@ -226,8 +226,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `est_chef_du_cabinet()`, `admin_du_dossier()`, `admin_du_cabinet()`, `is_super_admin()` (chacune inclut le
   super-admin). Toute table métier d'un dossier : une policy `FOR ALL to authenticated` sur
   `admin_du_dossier(dossier_id)` ; une table enfant remonte à son parent ; vérifiée par impersonation avant d'être crue.
-- **Toute table neuve qui porte une garde `security definer` porte aussi la porte `_acces_avant_les_gardes`** (une fois la
-  porte en base ; préparée, sous condition que sa fonction existe), éprouvée par l'étape 32 de `accesAvantLesGardes.sql`
+- **Toute table neuve qui porte une garde `security definer` porte aussi la porte `_acces_avant_les_gardes`** (en base depuis le
+  15/11/2026, GARDES-Q1 : posée directement, ou sous condition que sa fonction existe), éprouvée par l'étape 32 de `accesAvantLesGardes.sql`
   et, pour les préparées, par `porteDevantLesGardes.test.ts` → « LA PORTE COUVRE LES GARDES DES MIGRATIONS PRÉPARÉES ».
 - **Un prédicat de policy ne doit JAMAIS pouvoir être vrai sans session** : sans `to`, une policy vise `public`, donc
   `anon` ; toute nouvelle porte `to authenticated` → « Une policy sans clause `to` s'applique à `public` ».
@@ -302,8 +302,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   par UPDATE et DELETE ; le défaut de `supabase_admin` et le schéma `net` sont hors de portée → « LES DROITS QUE LA RLS NE
   GARDE PAS », « LES DROITS QUE LA RLS NE GARDE PAS, EN PRODUCTION ».
 - **Aucun seau n'ouvre la mise à jour d'un objet, et une mise à jour relit la cible comme l'insertion** (relecture du
-  13/11/2026) : `stockage_sans_mise_a_jour` (à coller) et `texte_ocr_coherent_a_la_mise_a_jour` (par l'outil), préparées,
-  attendent SECU3-Q1 et Q2 ; trois scanners gardent la règle, leurs exceptions nommées tombant avec les migrations
+  13/11/2026) : `stockage_sans_mise_a_jour` (collée) et `texte_ocr_coherent_a_la_mise_a_jour` (par l'outil), en production depuis le
+  15/11/2026 ; trois scanners gardent la règle, sans exception
   (`stockageSansMiseAJour.test.ts`, `policiesDeMiseAJour.test.ts`, `deuxFacteursDesTablesNeuves.test.ts` : toute préparée
   qui crée une table pose la restrictive `deux_facteurs` sous condition) ; un essai qui compte des policies met cette
   restrictive à part (`essaisHorsLaRestrictive.test.ts`) → « SECU3-Q1 ET SECU3-Q2 », « DES ESSAIS DE LA BASE REMIS AU SCHÉMA ».
@@ -457,15 +457,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   l'ordre de collage recommandé est dans le récit ; deux préparées du 13/11 ont été corrigées par une relecture adverse
   (la version d'une connexion posée par la base ; ce qu'une pièce a reçu lu dans son seul dossier)
   → « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES », « LA RELECTURE ADVERSE DE SIX MIGRATIONS PRÉPARÉES ».
-- **Préparées le 13/11/2026, éprouvées sur la réplique, en attente de leur fiche** (chacune derrière son drapeau baissé) :
-  le 468 sur le relevé (`le_468_sur_le_releve`, PC4Q2-Q1) ; une reprise retient la trésorerie
-  (`reprises_retiennent_la_tresorerie`, A8B-Q3) ; le registre d'une facture reprise part de ce que sa pièce citée a reçu
-  (`recu_par_la_piece_citee`, A8Q5Q3-Q2 : appliquer, lever, déployer d'un trait) ; l'auteur d'une connexion de plateforme,
-  posé par la base, sans lequel la relève du client se refuse (`auteur_des_connexions_plateformes`, B4RS-Q1, puis
-  `plateforme-agreee` à déployer) ; l'arrivée et le départ d'un accès dans la trace (`arrivee_et_depart_des_acces`, à
-  coller, P1T-Q2) ; le cumul et la dispense d'un médecin (`cumul_et_dispense_du_medecin`, RET-Q2). Sans migration, derrière
-  les drapeaux des achats et des notes de frais : B8-Q1, B4RS-Q2, B4R-Q1 (« Lire la facture électronique » remplit,
-  n'écrit rien) → « PC4Q2-Q1, A8B-Q3 ET A8Q5Q3-Q2 », « B4RS-Q1, P1T-Q2 ET RET-Q2 », « B4R-Q1, B4RS-Q2 ET B8-Q1 ».
+- **En production le 15/11/2026, neuf migrations (218 → 227)**, leurs drapeaux levés : le 468 sur le relevé (PC4Q2-Q1), une
+  reprise retient la trésorerie (A8B-Q3), le registre d'une facture reprise part de ce que sa pièce citée a reçu
+  (A8Q5Q3-Q2), l'auteur d'une connexion de plateforme (B4RS-Q1 ; `plateforme-agreee` à déployer, sa constante levée), le
+  cumul et la dispense d'un médecin (RET-Q2), la classe d'une catégorie commune (PC7Q2-Q1), SECU3-Q1 et Q2, la porte
+  devant les gardes (GARDES-Q1) → « NEUF MIGRATIONS EN PRODUCTION ». Reste préparée, à coller :
+  `arrivee_et_depart_des_acces` (P1T-Q2) — la lecture du mot levée (`ACCES_DANS_LA_TRACE_PREVU`), la phrase de la carte
+  sous `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE`, à lever avec le fichier dans l'export. Sans migration, derrière les drapeaux
+  des achats et des notes de frais : B8-Q1, B4RS-Q2, B4R-Q1 → « B4R-Q1, B4RS-Q2 ET B8-Q1 ».
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
   levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la
@@ -521,8 +520,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **CFE et CVAE** (ligne 48) : la saisie par exercice de l'annexe (EM, EN, EK, ER, EU, EV, AH, BK ; nul « à saisir »)
   en production depuis le 12/11/2026 (`saisies_2035e`, `SAISIES_2035E_PREVUES` levé), son écran depuis le 13/11/2026
   (`SAISIES_2035E_EXPORTEES` levé, 48S-Q2) : le PDF porte « à saisir » en rouge dans la case d'une ligne non dite et des
-  totaux qui en dépendent, à côté de la case AH, dans celle de BK ; le cadre coché ne s'imprime pas, dit à reporter à la
-  main ; l'écran compte les lignes avant le clic et retient le PDF d'une annexe due tant que la saisie n'est pas lue en
+  totaux qui en dépendent, à côté de la case AH, dans celle de BK ; le cadre coché se remplit (la croix en AH, AJ, BK, la période sur l'année civile, une mention
+  pour une activité d'une partie de l'année ; 48S-Q3, 15/11/2026) ; l'écran compte les lignes avant le clic et retient le PDF d'une annexe due tant que la saisie n'est pas lue en
   entier ; les dates d'activité jugées à la main (48-Q6) ; restent le millésime 2027, le plafonnement de la CET (plus tard,
   48-Q9) → « L'ANNEXE 2035-E SE TIRE DE LA 2035 DÉPOSÉE », « LA SAISIE DE L'ANNEXE 2035-E PAR EXERCICE, EN BASE », « LE PDF
   DE L'ANNEXE 2035-E DIT « À SAISIR » ».
@@ -730,7 +729,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     dans « Mon analyse », chaque évènement sous la case de son domaine relue à la base, « par ton cabinet » là seulement
     où la base garde l'origine (B9C-Q1 et Q2) → « « MON ANALYSE » : LES INDICATEURS ET LES ÉTATS DU CLIENT (B9A) »,
     « « ESPACE CLIENT : CE QUI A BOUGÉ » », « « MON ANALYSE » : CE QUI A BOUGÉ, CÔTÉ CLIENT (B9C) » ; C8, « Ma trésorerie à
-    90 jours », sans migration, sous « Banque », derrière `TRESORERIE_A_90_JOURS_OFFERTE` baissé (C8-Q1) → « « MA TRÉSORERIE
+    90 jours », sans migration, sous « Banque », ouverte le 15/11/2026 (`TRESORERIE_A_90_JOURS_OFFERTE` levé, C8-Q1 ; sur téléphone, hors de la barre du bas, une tuile de l'accueil y mène) → « « MA TRÉSORERIE
     À 90 JOURS » (C8), DERRIÈRE SON DRAPEAU ». Le 07/11/2026 : C6,
     le rapprochement proposé par l'encaissement, sans migration (la carte d'un mouvement réservé dit « proposé par le
     client le … » ; l'encaissement d'une facture d'avant la bascule enregistré avec son crédit propose en tête
@@ -820,7 +819,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   MODÈLE DU CABINET À UN DOSSIER, À L'ÉCRAN (LIGNE 43) » ; PC7 en production depuis le 12/11/2026 (`categories_du_dossier`, la garde de la table ; l'écran sous
   `CATEGORIES_DU_DOSSIER_PREVUES` levé, le troisième temps de la balance attendant aussi PC6) → « PC7 : LES CATÉGORIES DU DOSSIER, DONT CELLES DE SA
   BALANCE » ; le compte d'une catégorie du dossier hors des classes 6 et 7 refusé en base depuis le 13/11/2026
-  (`classes_des_categories`, PC7-Q2, `CLASSES_DES_CATEGORIES_PREVUES` levé ; celui d'une commune, PC7Q2-Q1, préparé)
+  (`classes_des_categories`, PC7-Q2, `CLASSES_DES_CATEGORIES_PREVUES` levé ; celui d'une commune depuis le 15/11/2026, PC7Q2-Q1, `CLASSES_DES_CATEGORIES_COMMUNES_PREVUES` levé)
   → « PC7-Q2 EN PRODUCTION » ; puis PC8 et PC9, sur décision → « LE PLAN COMPTABLE PERSONNALISABLE : LA CONCEPTION », « L'APPLICATION LIT LE
   PLAN ».
 
