@@ -52826,3 +52826,65 @@ collage. **Contrôles** (copie de la mère à 227) : dérive `96c4f6d3…`, des 
 grappe neuve : la même base. **Essais** (143, sur bases fraîches, 218 contre 227) : les EN ATTENTE des neuf se lèvent, justes ; neuf
 essais disent le refus de la RLS là où la garde parlait, justes ; `rls.sql` 253/0, 148 mutations sur 148, TO et SM levés ;
 `restauration.sql` IDENTIQUE (96 tables) ; banc du leurre SÛR (14). Laissée : `/home/user/repliques/replique_227`.
+
+### 15/11/2026 — REPET-Q2 : LA GARDE D'INV3 VÉRIFIAIT DÉJÀ LE CORPS QU'ELLE REMPLACE ; UN SCANNER DE TOUTES LES PRÉPARÉES
+
+(Agent architecte, réponse (A) du cabinet du 15/11/2026, « ajouter la vérification d'empreinte maintenant » ; rien en
+production.) **Constat** : la garde de tête de `validation_de_l_inventaire` (INV3) nommait déjà, depuis le 12/11/2026,
+l'empreinte du corps de production de chacune des trois fonctions qu'elle remplace — `valider_exercice` (923cfa1b…, celle
+d'`empreinte_des_exercices_forme_2`), `empreinte_exercice_forme_2` (a62b0761…), `fichier_fige` (5372f8d2…) — et
+`inventaireScelle.test.ts` les recalculait de l'export : la répétition du 14/11/2026 ne l'avait pas vu. Prouvé sur une copie
+de la mère à 226 : `valider_exercice` altérée d'un caractère, INV3 se refuse (« n'est plus celle que cette migration suppose »).
+**Ajouté** : la règle de CLAUDE.md (« chacun part du corps EN PRODUCTION le jour de son collage ») gardée pour TOUTES les
+préparées par `src/lib/remplacementsDesPreparees.test.ts` — chaque `create or replace function` d'une préparée, la garde
+`$garde$` nomme l'empreinte du corps que l'export porte ; 17 remplacements dans 9 préparées le 15/11/2026, une exception nommée (e7a,
+`enregistrer_facture` : sa garde nomme le corps d'`acomptes_des_devis`, d'où son refus au collage, REPET-Q1) ; une garde
+mutée dans le fichier fait tomber le test, et trois défauts plantés (sans l'empreinte, en commentaire, un corps d'hier). La
+garde d'INV3 le dit en commentaire. Son texte change pour INV3Q2-Q1 (entrée suivante) : sa fiche suit.
+
+### 15/11/2026 — INV3Q2-Q1 : LES CHARGES À PAYER ET PRODUITS À RECEVOIR REPRIS, CONFRONTÉS LÀ SEULEMENT OÙ UNE REPRISE LES TOUCHE (PRÉPARÉES, PAS APPLIQUÉES)
+
+(Agent architecte, réponse (A) du 15/11/2026.) **INV2** (`ba9b3beb…` → `046d4397…`, à coller) : une régularisation reprise peut
+avoir toute nature qu'une régularisation extourne — la contrainte `operations_inventaire_reprise` ouvre `charge_a_payer` et
+`produit_a_recevoir` ; le refus « nature reprise » (devenu sans objet) part de la fonction et du module ; le compte se prend
+dans la balance sous les racines de la nature (4282, 4286, 4382, 4386, 44812, 1688, 518 ; 4482, 439), jamais le 467 ni le 468,
+aux mots neufs de `compteDeLaReprise`. **INV3** (`98debf56…` → `abc22cf1…`, par l'outil ; retour `b1204792…` → `dc75a4ac…`) : le
+point f confronte comme hier tout compte repris du 486, du 487, du 408 (hors du 4084), du 418 et de la TVA d'attente, et, sous
+les racines des charges à payer et produits à recevoir, le seul compte qu'une extourne reprise touche (option (B), écartée :
+le 4286 des notes de frais dues aurait bloqué). INV4 (`a8b5bea5…` → `40a40070…`) et INV3 suivent l'empreinte neuve d'INV2.
+Module : `racinesDeLaReprise`, `RACINES_CONFRONTEES_LA_OU_UNE_REPRISE_LES_TOUCHE` ; l'écran offre les six natures, le compte de
+charge pour une charge à payer (il disait « produit »). **Preuves** (copies de la mère à 226) : `operationsDInventaire` 92/0,
+14 sur 14 ; `validationDeLInventaire` 77/0, 26 sur 26 (VI-R9 à R13, M-VI25 la réponse (B), M-VI26) — sur les textes d'hier, sept
+et quatre contrôles en faute ; I-P-V et I-V-P, et deux chaînes avec MCB5g, le filet, LIA2, AFF2, INV4, EXD2, INAL5 : même base ;
+`rls.sql` 272/0/165 ; validationExercice, provisions, stocks, affectation, accesAvantLesGardes justes ; les retours à rebours
+rendent la mère (données comprises) ; banc du leurre SÛR (cinq essais de production, 95 tables). Les textes d'hier d'INV3 et
+d'INV4 se refusent sur l'INV2 neuve. Question : un compte touché qui mêle une charge à payer et autre chose (INV3Q2Q1-Q1).
+
+### 15/11/2026 — INAL1R-Q1 : LE RETOUR D'INAL1 NE VÉRIFIE PLUS QUE LE RANGEMENT DES PIÈCES
+
+(Agent architecte, réponse du 15/11/2026, « le récrire maintenant ».) Sa garde de fin exigeait toute la surface de suppression
+de storage.objects telle qu'hier (quatre états admis) : B2 (`documents_et_demandes`), qui pose la suppression du seau
+`documents-cabinet`, l'aurait fait refuser — vu sur une copie : l'ancien texte refuse après B1 et B2. Elle ne lit plus que ce
+qu'il défait : `pieces_storage_delete` à son prédicat d'hier tel que `pg_get_expr` le rend sous un chemin vide, à `public`,
+sans WITH CHECK, et `fichier_fige` et ses trois index partis (`95dbc0aa…` → `5d0bc433…`, à coller). Éprouvé (mère à 226) : il
+s'applique sur la production d'aujourd'hui, après B1+B2, après SECU3-Q1, après les trois dans les deux ordres, sans changer
+aucune autre policy du stockage ; B2 et SECU3-Q1 s'appliquent ensuite ; trois mutations du retour (le rôle, un index laissé,
+le prédicat) font refuser sa fin. Il refuse toujours après INV3, qui remplace `fichier_fige` (son en-tête le dit : le retour
+d'INV3 d'abord). `stockageSansMiseAJour.test.ts` exige ses deux gardes sans policy des packs, des logos ni d'un autre seau ;
+`pieceFigeeDansLeStockage.test.ts`, le prédicat rendu d'hier.
+
+### 15/11/2026 — MCB6Q2-Q1 : LE COMPTE PROPRE HORS D'UN EXERCICE VALIDÉ, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, réponse (A) du 15/11/2026, « un filet en base, collé avec MCB5g, la restauration exceptée ».) La migration
+`compte_propre_hors_des_exercices_valides` (20261111235700, `84bc036d…`, par l'outil ; retour 20261111235800, `052013df…`, à
+coller) : un déclencheur BEFORE INSERT OR UPDATE OF `compte_propre_depuis` sur `comptes_bancaires`, après la garde d'hier, aux
+droits de l'appelant (seul le cabinet du dossier écrit un compte et lit ses exercices validés : un appelant refusé n'apprend
+rien, d'où ni porte ni definer), refuse en 23514 une date posée ou changée sur un exercice validé ou avant lui, aux mots de
+l'écran (`REFUS_DES_EXERCICES_VALIDES`, dont la fiche tire `REFUS_ANNEE_VALIDEE`) ; une date déjà posée se garde ; le verrou
+partagé de la validation (la clé de `cle_validation`, recopiée comme douze fonctions le font) précède la lecture. La
+restauration est exceptée par son ordre — les exercices validés réinsérés après les comptes —, sans exempter le
+super-administrateur, qui est aussi le chef sur ce projet (l'écueil de MCB5G-Q2). **Preuves** : son essai 20/0, 7 mutations
+sur 7 (dont le super-administrateur exempté, le verrou ôté, la fonction en definer) ; avant et après MCB5g et MCB5g-Q2, même
+base ; leurs essais, `rls.sql` (246/0/145) et validationExercice identiques avec et sans elle ; le retour rend la mère, et la
+migration se réapplique ; banc SÛR (six essais) ; une batterie (`ficheDesComptesBancaires.test.ts`) éprouve que l'écran et le
+filet refusent les mêmes saisies. `COMPTES_BANCAIRES_PREVUS` ne se lève qu'avec elle dans l'export.
