@@ -1,4 +1,5 @@
 import { calculer2035E, cadreMonoEtablissement } from './declaration2035E'
+import { formatDate } from './format'
 import type { Annexe2035E, Entree2035E, Saisies2035E } from './declaration2035E'
 
 // L'ANNEXE 2035-E : CE QUE SEUL LE CABINET SAIT, SAISI PAR EXERCICE (ligne 48 ; migration `saisies_2035e`, en production
@@ -186,8 +187,9 @@ export function annexe2035EAvecSaisie(entree: Omit<Entree2035E, 'saisies'>, sais
 // LE PDF MARQUE CHAQUE LIGNE DE `aSaisir` (gabarit2035E.ts) : les montants (EN, EK, EM, ER, EU, EV) par « à saisir » dans leur
 // case, AH à côté de sa case à cocher (vingt points de large : les mots n'y tiennent pas) quand le cadre n'est pas dit, BK
 // dans sa case quand il est coché sans effectif. Les totaux qui en dépendent (EI, EW, EX, JU) portent aussi « à saisir » sans
-// être nommés : ils ne se saisissent pas, ils suivent. Le cadre COCHÉ ne s'imprime toujours pas (ni la croix, ni AJ, ni BK,
-// ni la période : 48-Q6 laisse les dates d'activité à la main) : la mention et l'écran le disent.
+// être nommés : ils ne se saisissent pas, ils suivent. Le cadre COCHÉ s'imprime depuis le 15/11/2026 (48S-Q3 (A)) : la croix
+// en AH, AJ, BK et la période sur l'année civile entière. 48-Q6 laisse les dates d'activité à la main : la mention de tête et
+// l'écran demandent de corriger la période d'une activité commencée ou cessée en cours d'année, et d'y porter MA.
 
 /** La lecture des saisies de l'annexe retient le PDF d'une annexe due tant qu'elle n'est pas revenue entière : sans elle,
  *  l'annexe retomberait sur des zéros supposés, sans « à saisir ». Drapeau baissé (`ouvert` faux), rien ne retient. */
@@ -200,7 +202,8 @@ export function motifDesSaisies2035E(lecture: LectureDesSaisies2035E | null, ouv
 }
 
 /** CE QUE L'ÉCRAN DIT AVANT LE TÉLÉCHARGEMENT, sous le bouton : combien de lignes le PDF portera « à saisir », et le cadre
- *  coché qu'il n'imprime pas. Rien quand l'annexe est complète et le cadre non coché. */
+ *  coché qu'il remplit sur l'année civile, à corriger à la main pour une activité d'une partie de l'année. Rien quand
+ *  l'annexe est complète et le cadre non coché. */
 export function avisAvantLeTelechargement2035E(annexe: Annexe2035ESaisie): string[] {
   const avis: string[] = []
   const n = annexe.aSaisir.length
@@ -209,14 +212,19 @@ export function avisAvantLeTelechargement2035E(annexe: Annexe2035ESaisie): strin
       + `${n > 1 ? 'les' : 'la'} porte « à saisir », comme les totaux qui en dépendent : à ne pas déposer tel quel.`)
   }
   if (annexe.cadre.etat === 'coche') {
-    avis.push('Le cadre des mono-établissements, coché, ne s’imprime pas sur le PDF : AH, AJ, BK et la période sont à y reporter à la main.')
+    const { du, au, effectif } = annexe.cadre
+    avis.push(`Le cadre des mono-établissements, coché, s’imprime sur le PDF : la croix en AH, AJ, `
+      + `${effectif === null ? 'BK « à saisir »' : 'l’effectif en BK'} et la période sur l’année civile, du ${formatDate(du)} au `
+      + `${formatDate(au)}. Pour une activité commencée ou cessée en cours d’année, corriger la période et porter la date de `
+      + 'cessation (MA) à la main.')
   }
   return avis
 }
 
 /** CE QUI S'ÉCRIT EN ROUGE, EN TÊTE DE LA PAGE DE L'ANNEXE (même place et même forme que la mention d'un millésime absent,
- *  `mentionDuPdf`) : les lignes encore à saisir, et le cadre coché que le PDF ne remplit pas. Lignes courtes, sans caractère
- *  hors de l'encodage WinAnsi des polices PDF standard. Rien quand il ne reste rien : le PDF d'avant, à l'octet près. */
+ *  `mentionDuPdf`) : les lignes encore à saisir, et, le cadre coché, la période remplie sur l'année civile qu'une activité
+ *  d'une partie de l'année corrige à la main (48-Q6). Lignes courtes, sans caractère hors de l'encodage WinAnsi des polices
+ *  PDF standard. Rien quand il ne reste rien : le PDF d'avant, à l'octet près. */
 export function mentionDeLAnnexe2035E(aSaisir: readonly string[], cadreCoche: boolean): string[] {
   const mention: string[] = []
   if (aSaisir.length > 0) {
@@ -226,7 +234,10 @@ export function mentionDeLAnnexe2035E(aSaisir: readonly string[], cadreCoche: bo
     )
   }
   if (cadreCoche) {
-    mention.push('Cadre des mono-établissements coché par le cabinet : non imprimé, AH, AJ, BK et la période à reporter à la main.')
+    mention.push(
+      'Cadre des mono-établissements coché par le cabinet : AH, AJ, BK et la période (KA, LA) remplis sur l\'année civile.',
+      'Activité commencée ou cessée en cours d\'année : corriger KA ou LA, et porter la date de cessation (MA) à la main.',
+    )
   }
   return mention
 }

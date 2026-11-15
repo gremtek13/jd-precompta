@@ -133,7 +133,7 @@ export default function Annexe2035ECard({ annexe, saisie, lectureIncomplete }: {
               <li>
                 {saisie.cadre.etat === 'non'
                   ? 'Cadre réservé aux mono-établissements : non coché, la déclaration 1330-CVAE est à déposer.'
-                  : `Cadre réservé aux mono-établissements : coché, AJ = ${euros(saisie.cadre.chiffreDeReference)}, BK = ${saisie.cadre.effectif === null ? 'à saisir' : saisie.cadre.effectif}, la période du ${formatDate(saisie.cadre.du)} au ${formatDate(saisie.cadre.au)} ; la 1330-CVAE n’est pas à déposer. Le PDF ne remplit pas ce cadre : à y reporter à la main.`}
+                  : `Cadre réservé aux mono-établissements : coché, AJ = ${euros(saisie.cadre.chiffreDeReference)}, BK = ${saisie.cadre.effectif === null ? 'à saisir' : saisie.cadre.effectif}, la période du ${formatDate(saisie.cadre.du)} au ${formatDate(saisie.cadre.au)} ; la 1330-CVAE n’est pas à déposer. Le PDF remplit ce cadre sur l’année civile : pour une activité commencée ou cessée en cours d’année, y corriger la période et porter la date de cessation (MA) à la main.`}
               </li>
             )}
             {(saisie === null || saisie.cadre.etat === 'a_dire') && <li>

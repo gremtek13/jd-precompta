@@ -174,7 +174,7 @@ describe('planDeRemplissage2035E — les lignes « à saisir »', () => {
     expect(aSaisir[0].y).toBeCloseTo(211.2, 0)
   })
 
-  it('cadre coché sans effectif : « à saisir » dans la case BK ; coché et complet, ou non coché : rien', async () => {
+  it('cadre coché sans effectif : « à saisir » dans la case BK ; coché et complet, ou non coché : rien à saisir', async () => {
     const page = await lirePage(3)
     const coche = { etat: 'coche' as const, chiffreDeReference: 160_000, du: '2025-01-01', au: '2025-12-31' }
     const { aSaisir } = planDeRemplissage2035E(page, 3, new Map(), sansEntete, { ...coche, effectif: null })
@@ -185,5 +185,73 @@ describe('planDeRemplissage2035E — les lignes « à saisir »', () => {
     expect(planDeRemplissage2035E(page, 3, new Map(), sansEntete, { ...coche, effectif: 2 }).aSaisir).toEqual([])
     expect(planDeRemplissage2035E(page, 3, new Map(), sansEntete, { etat: 'non' }).aSaisir).toEqual([])
     expect(planDeRemplissage2035E(page, 3, new Map(), sansEntete, null).aSaisir).toEqual([])
+  })
+})
+
+// LE CADRE COCHÉ, REMPLI (48S-Q3 (A), 15/11/2026), sur le vrai formulaire : chaque position se lit sur la page — la case AH
+// entre les filets 255,9 et 276,6, AJ et BK au bord de 566,3, les grilles de KA (de 131,8 à 338,7) et de LA (de 359,4 à
+// 566,3), leurs « / » imprimés sautés. BO et MA restent vides.
+describe('planDeRemplissage2035E — le cadre des mono-établissements coché', () => {
+  const sansEntete = { ...ENTETE, nom: null, siret: null, adresse: null }
+  const coche = { etat: 'coche' as const, chiffreDeReference: 160_000, du: '2025-01-01', au: '2025-12-31', effectif: 0 }
+  const dansLeCadre = (inscriptions: { y: number }[]) => inscriptions.filter((i) => i.y > 120 && i.y < 215)
+
+  it('la croix au centre de la case AH, AJ et BK (zéro compris) au bord de leur case', async () => {
+    const { inscriptions, aSaisir, codesSansAncrage } = planDeRemplissage2035E(await lirePage(3), 3, new Map(), sansEntete, coche)
+    expect(codesSansAncrage).toEqual([])
+    expect(aSaisir).toEqual([])
+    const croix = inscriptions.find((i) => i.texte === 'X')!
+    expect(croix).toMatchObject({ alignement: 'centre', page: 3 })
+    expect(croix.x).toBeCloseTo((255.9 + 276.6) / 2, 1)
+    expect(croix.y).toBeCloseTo(211.2, 0)
+    const aj = inscriptions.find((i) => i.texte === '160 000')!
+    expect(aj).toMatchObject({ alignement: 'droite' })
+    expect(aj.x).toBeCloseTo(566.3 - 4, 0)
+    expect(aj.y).toBeCloseTo(198.4, 0)
+    const bk = inscriptions.find((i) => i.texte === '0' && Math.abs(i.y - 165.4) < 1)!
+    expect(bk.x).toBeCloseTo(566.3 - 4, 0)
+    // Rien sur la ligne de BO (181,9) ni sur celle de MA (125,7).
+    expect(dansLeCadre(inscriptions).filter((i) => Math.abs(i.y - 181.9) < 1 || Math.abs(i.y - 125.7) < 1)).toEqual([])
+  })
+
+  it('la période sur l’année civile, chiffre par chiffre, dans les grilles de KA et de LA', async () => {
+    const { inscriptions } = planDeRemplissage2035E(await lirePage(3), 3, new Map(), sansEntete, coche)
+    const periode = inscriptions.filter((i) => Math.abs(i.y - 138.5) < 1).sort((a, b) => a.x - b.x)
+    expect(periode.map((i) => i.texte).join('')).toBe('0101202531122025')
+    for (const i of periode) expect(i.alignement).toBe('centre')
+    // Les cases de KA : 131,8 et 152,5, puis le « / » (173,2 à 193,9), 193,9 et 214,6, le « / », de 255,9 à 318,0 ; de même
+    // pour LA, de 359,4 à 545,6. Aucun chiffre sur un « / » imprimé, aucun dans la cellule d'un code.
+    const pas = 20.7
+    const ka = [131.8, 152.5, 193.9, 214.6, 255.9, 276.6, 297.3, 318.0]
+    const la = [359.4, 380.1, 421.5, 442.2, 483.6, 504.3, 524.9, 545.6]
+    ;[...ka, ...la].forEach((gauche, k) => expect(periode[k].x, String(k)).toBeCloseTo(gauche + pas / 2, 0))
+  })
+
+  it('BK non dit : « à saisir » dans sa case, et le reste du cadre rempli', async () => {
+    const { inscriptions, aSaisir } = planDeRemplissage2035E(await lirePage(3), 3, new Map(), sansEntete, { ...coche, effectif: null })
+    expect(aSaisir.map((i) => i.texte)).toEqual(['à saisir'])
+    expect(inscriptions.map((i) => i.texte)).toContain('X')
+    expect(inscriptions.map((i) => i.texte)).toContain('160 000')
+    expect(inscriptions.filter((i) => Math.abs(i.y - 165.4) < 1)).toEqual([])
+  })
+
+  it('une position qui ne se lit pas remonte son code, rien n’est dessiné au jugé', async () => {
+    const vide: PageFormulaire = { fragments: [], filets: [] }
+    const { inscriptions, codesSansAncrage } = planDeRemplissage2035E(vide, 3, new Map(), sansEntete, coche)
+    expect(inscriptions).toEqual([])
+    expect(codesSansAncrage).toEqual(['AH', 'AJ', 'BK', 'KA', 'LA'])
+    // Une grille dont un « / » manque n'est plus « JJ / MM / AAAA » : KA se refuse, LA reste lue.
+    const page = await lirePage(3)
+    const sansBarre: PageFormulaire = {
+      ...page, fragments: page.fragments.filter((f) => !(f.texte.trim() === '/' && Math.abs(f.x - 182.1) < 1)),
+    }
+    const plan = planDeRemplissage2035E(sansBarre, 3, new Map(), sansEntete, coche)
+    expect(plan.codesSansAncrage).toEqual(['KA'])
+    expect(plan.inscriptions.filter((i) => Math.abs(i.y - 138.5) < 1)).toHaveLength(8)
+  })
+
+  it('une date d’une autre forme ne s’écrit pas', async () => {
+    const { codesSansAncrage } = planDeRemplissage2035E(await lirePage(3), 3, new Map(), sansEntete, { ...coche, au: '31/12/2025' })
+    expect(codesSansAncrage).toEqual(['LA'])
   })
 })

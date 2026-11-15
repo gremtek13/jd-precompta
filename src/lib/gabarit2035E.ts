@@ -12,10 +12,14 @@ import type { CadreMonoSaisi } from './saisies2035E'
 // le code imprimé de chaque ligne donne sa hauteur, le deuxième filet vertical à sa droite ferme la case du montant.
 // Relevé sur ce millésime : les dix-huit codes de montant ont leur case entre x ≈ 421,5 et x ≈ 566,3.
 //
-// CE QUI N'EST PAS ÉCRIT : le cadre réservé aux mono-établissements (AH, AJ, BO, BK, KA, LA, MA). Il ne se remplit que si le
-// dossier n'a qu'un établissement au sens de la CFE — coché, il dispense de la 1330-CVAE. Le cabinet le dit dans sa saisie
-// (lib/saisies2035E.ts) ; le PDF ne le coche toujours pas (la période se juge à la main, 48-Q6), mais il marque « à saisir »
-// ce que le cabinet n'a pas dit : AH à côté de sa case à cocher, BK dans la sienne (voir `marquesASaisir`).
+// LE CADRE RÉSERVÉ AUX MONO-ÉTABLISSEMENTS (AH, AJ, BO, BK, KA, LA, MA). Il ne se remplit que si le dossier n'a qu'un
+// établissement au sens de la CFE — coché, il dispense de la 1330-CVAE [notice 2035-NOT-SD 2026, p. 11-12 ; BOI-CVAE-DECLA-10
+// § 20]. Le cabinet le dit dans sa saisie (lib/saisies2035E.ts). Non dit, le PDF marque « à saisir » à côté de la case AH ;
+// coché (48S-Q3 (A), 15/11/2026), il le remplit : la croix dans la case AH, AJ (le chiffre d'affaires de référence), BK
+// (l'effectif dit, « à saisir » sinon) et la période KA-LA sur l'année civile entière — la période de référence d'un BNC
+// [BOI-CVAE-CHAMP-10-20 § 60]. Une activité commencée ou cessée en cours d'année se corrige à la main (48-Q6) : la mention de
+// tête le demande (`mentionDeLAnnexe2035E`). Restent vides BO (le groupe de l'article 223 A, qui ne vise que l'IS) et MA (la
+// date de cessation, que l'application ne connaît pas). Non coché, rien. Voir `cadreDesMonoEtablissements`.
 //
 // « À SAISIR » DANS LA CASE (48S-Q2, 13/11/2026) : une ligne de montant que le cabinet n'a pas dite (`null`), ou un total qui
 // en dépend, porte « à saisir » en rouge, aligné à droite dans sa case comme un montant — la case fait 145 points, les mots
@@ -112,6 +116,11 @@ export function planDeRemplissage2035E(
   const marques = marquesASaisir(page, numeroDePage, cadre)
   aSaisir.push(...marques.aSaisir)
   codesSansAncrage.push(...marques.codesSansAncrage)
+  if (cadre?.etat === 'coche') {
+    const rempli = cadreDesMonoEtablissements(page, numeroDePage, cadre)
+    inscriptions.push(...rempli.inscriptions)
+    codesSansAncrage.push(...rempli.codesSansAncrage)
+  }
 
   // Le SIRET chiffre par chiffre, seulement si la grille est trouvée entière (voir `grilleDeSaisie`).
   const chiffres = chiffresDuSiret(entete.siret)
@@ -180,4 +189,114 @@ function marquesASaisir(
     })
   }
   return { aSaisir, codesSansAncrage }
+}
+
+// LE CADRE COCHÉ, REMPLI (48S-Q3 (A), 15/11/2026). Toutes les positions se lisent sur CETTE page, jamais devinées :
+// - AH : la croix au centre de la case à cocher, celle que ferment les deux premiers filets à droite du code (255,9 à 276,6
+//   sur ce millésime) ;
+// - AJ, BK : dans leur case, alignés à droite comme un montant (le deuxième filet à droite du code, 566,3) ; AJ toujours —
+//   le cadre coché le porte, zéro compris —, BK seulement quand l'effectif est dit (sinon `marquesASaisir` y pose « à
+//   saisir »), zéro compris : un praticien sans salarié le déclare ainsi ;
+// - KA, LA : chaque chiffre de la date au centre de sa case, dans la grille « JJ / MM / AAAA » qui suit le code (voir
+//   `grilleDeDate`).
+// Une position qui ne se lit pas remonte son code, et rien n'est dessiné à sa place.
+function cadreDesMonoEtablissements(
+  page: PageFormulaire, numeroDePage: number, cadre: Extract<CadreMonoSaisi, { etat: 'coche' }>,
+): { inscriptions: Inscription[]; codesSansAncrage: string[] } {
+  const inscriptions: Inscription[] = []
+  const codesSansAncrage: string[] = []
+
+  const caseAH = caseACocher(page, 'AH')
+  if (caseAH) {
+    inscriptions.push({ page: numeroDePage, texte: CROIX, x: caseAH.x, y: caseAH.y, alignement: 'centre', taille: TAILLE_MONTANT })
+  } else {
+    codesSansAncrage.push('AH')
+  }
+
+  const montants: [string, number | null][] = [['AJ', cadre.chiffreDeReference], ['BK', cadre.effectif]]
+  const ancrages = ancragesDesCodes([page], new Set(['AJ', 'BK']))
+  for (const [code, valeur] of montants) {
+    if (valeur === null) continue
+    const ancrage = ancrages.get(code)
+    if (!ancrage) {
+      codesSansAncrage.push(code)
+      continue
+    }
+    inscriptions.push({
+      page: numeroDePage, texte: formaterMontant(valeur), x: ancrage.xDroite - RETRAIT_DROITE, y: ancrage.y, alignement: 'droite',
+      taille: TAILLE_MONTANT,
+    })
+  }
+
+  for (const [code, date] of [['KA', cadre.du], ['LA', cadre.au]] as const) {
+    const chiffres = chiffresDeLaDate(date)
+    const grille = grilleDeDate(page, code)
+    if (!chiffres || !grille) {
+      codesSansAncrage.push(code)
+      continue
+    }
+    grille.centres.forEach((x, i) => inscriptions.push({
+      page: numeroDePage, texte: chiffres[i], x, y: grille.y, alignement: 'centre', taille: TAILLE_ENTETE,
+    }))
+  }
+  return { inscriptions, codesSansAncrage }
+}
+
+// Ce que la case AH reçoit quand le cadre est coché.
+export const CROIX = 'X'
+
+// La case à cocher d'un code : la cellule que ferment les deux premiers filets à sa droite, sur sa ligne. Rend son centre et
+// la ligne de base du code ; `null` sans les deux filets.
+function caseACocher(page: PageFormulaire, code: string): { x: number; y: number } | null {
+  const fragment = page.fragments.find((f) => f.texte.trim() === code)
+  if (!fragment) return null
+  const filets = filetsADroite(page, fragment)
+  if (filets.length < 2) return null
+  return { x: (filets[0] + filets[1]) / 2, y: fragment.y }
+}
+
+// Les filets verticaux à droite d'un fragment, sur sa ligne, dédoublonnés au dixième de point et triés.
+function filetsADroite(page: PageFormulaire, fragment: FragmentTexte): number[] {
+  const centre = fragment.y + fragment.hauteur / 2
+  return [...new Set(
+    page.filets
+      .filter((f) => f.x > fragment.x + fragment.largeur + 1 && f.y0 < centre && f.y1 > centre)
+      .map((f) => Math.round(f.x * 10) / 10),
+  )].sort((a, b) => a - b)
+}
+
+// « AAAA-MM-JJ » en ses huit chiffres JJ MM AAAA, dans l'ordre des cases ; `null` sur toute autre forme.
+function chiffresDeLaDate(date: string): string[] | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  return m ? [...`${m[3]}${m[2]}${m[1]}`] : null
+}
+
+// LA GRILLE D'UNE DATE : après la cellule du code, une suite de cases d'un caractère, dont deux portent le « / » imprimé —
+// « JJ / MM / AAAA ». Elle s'arrête à la première case qui porte un autre texte (« LA » suit « KA » sur la même ligne) ou au
+// dernier filet. Rend les centres des huit cases à chiffres, seulement si la suite est exactement deux cases, « / », deux
+// cases, « / », quatre cases : sinon `null`, plutôt qu'une date décalée d'une case. `grilleDeSaisie` ne convient pas : les
+// cases de KA et de LA avancent du même pas et se suivent, elle les lirait comme une seule grille.
+export function grilleDeDate(page: PageFormulaire, code: string): { centres: number[]; y: number } | null {
+  const fragment = page.fragments.find((f) => f.texte.trim() === code)
+  if (!fragment) return null
+  const filets = filetsADroite(page, fragment)
+  const surLaLigne = page.fragments.filter((f) => f !== fragment && f.texte.trim() !== '' && Math.abs(f.y - fragment.y) < 1)
+  // Le premier filet ferme la cellule du code ; chaque paire suivante est une case.
+  const forme: ('chiffre' | 'barre')[] = []
+  const centres: number[] = []
+  for (let i = 1; i < filets.length; i++) {
+    const [gauche, droite] = [filets[i - 1], filets[i]]
+    const dedans = surLaLigne.filter((f) => f.x >= gauche && f.x + f.largeur <= droite)
+    if (dedans.length === 0) {
+      forme.push('chiffre')
+      centres.push((gauche + droite) / 2)
+    } else if (dedans.length === 1 && dedans[0].texte.trim() === '/') {
+      forme.push('barre')
+    } else {
+      break
+    }
+  }
+  const attendue = ['chiffre', 'chiffre', 'barre', 'chiffre', 'chiffre', 'barre', 'chiffre', 'chiffre', 'chiffre', 'chiffre']
+  if (forme.join() !== attendue.join()) return null
+  return { centres, y: fragment.y }
 }
