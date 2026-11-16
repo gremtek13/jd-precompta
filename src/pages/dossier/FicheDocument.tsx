@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { CategorieDocument, DocumentDivers } from '../../lib/types'
+import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/types'
 import { EntetePanneau } from '../../components/PanneauDroit'
 import ApercuDuFichier from '../../components/ApercuDuFichier'
 import { IconChevron, IconPrecedent } from '../../components/icons'
@@ -15,22 +15,30 @@ import { PHRASE_FACTURE_PROBABLE } from '../../lib/facturesProbablesLecture'
 // C'est l'onglet qui la pose dans le volet, lui donne sa place dans la liste affichée, et la ferme après une suppression.
 // Il la monte avec `key` = le document : passer au suivant repart de zéro, et une lecture (l'aperçu, le texte lu) partie
 // pour le document quitté ne s'affiche jamais sur le suivant.
+//
+// LE SOUS-DOSSIER SE CHOISIT ICI, ET ICI SEULEMENT (DOCF-Q1 (A), tranchée par le cabinet le 16/11/2026), comme dans la fiche
+// d'une pièce : la ligne n'offre pas ce geste. La fiche n'offre que les sous-dossiers de CE dossier, lus EN ENTIER par
+// l'onglet ; lus en partie, ou pas encore revenus, elle dit le sous-dossier sans offrir de choix (`choixDuSousDossier`).
 export interface GestesDuDocument {
   changerCategorie: (categorie: CategorieDocument) => void
+  // Null : aucun sous-dossier.
+  changerSousDossier: (sousDossierId: string | null) => void
   convertir: () => void
   supprimer: () => void
   ouvrir: () => void
 }
 
 export default function FicheDocument({
-  dossierId, document: doc, libellesCategories, sousDossier, avecTexteLu, factureProbable, doublon, citation, refus,
-  conversionSuspendue, erreur, navigation, gestes, onFermer,
+  dossierId, document: doc, libellesCategories, sousDossier, choixDuSousDossier, avecTexteLu, factureProbable, doublon,
+  citation, refus, conversionSuspendue, erreur, navigation, gestes, onFermer,
 }: {
   dossierId: string
   document: DocumentDivers
   libellesCategories: Record<CategorieDocument, string>
   // Le nom du sous-dossier, tel que la ligne l'affiche (« — » sans sous-dossier).
   sousDossier: string
+  // Les sous-dossiers de ce dossier, lus en entier : le choix s'offre. Sinon, pourquoi il ne s'offre pas.
+  choixDuSousDossier: { offert: true; sousDossiers: readonly SousDossier[] } | { offert: false; motif: string }
   // L'onglet SAIT qu'un texte lu existe (la liste des textes lue) : la section ne s'offre que là, comme sur la ligne.
   avecTexteLu: boolean
   factureProbable: boolean
@@ -130,9 +138,30 @@ export default function FicheDocument({
             ))}
           </select>
         </div>
-        <p className="muted fiche-document-details">
-          Sous-dossier : {sousDossier} · Ajouté le {formatDate(doc.created_at)}
-        </p>
+        <div className="field">
+          <label htmlFor={`sous-dossier-${doc.id}`}>Sous-dossier</label>
+          {choixDuSousDossier.offert ? (
+            <select
+              id={`sous-dossier-${doc.id}`}
+              value={doc.sous_dossier_id ?? ''}
+              onChange={(e) => gestes.changerSousDossier(e.target.value === '' ? null : e.target.value)}
+            >
+              <option value="">— Aucun —</option>
+              {choixDuSousDossier.sousDossiers.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+              {/* Un sous-dossier que la liste du dossier, lue en entier, ne porte pas : la base ne lie pas le sous-dossier
+                  d'un document à son dossier (DOCF-Q1-B). Dit, jamais choisi. */}
+              {doc.sous_dossier_id !== null && !choixDuSousDossier.sousDossiers.some((s) => s.id === doc.sous_dossier_id) && (
+                <option value={doc.sous_dossier_id} disabled>Sous-dossier absent de ce dossier</option>
+              )}
+            </select>
+          ) : (
+            <>
+              <p style={{ margin: 0 }}>{sousDossier}</p>
+              <p className="muted" style={{ margin: 0, fontSize: '0.82rem' }}>{choixDuSousDossier.motif}</p>
+            </>
+          )}
+        </div>
+        <p className="muted fiche-document-details">Ajouté le {formatDate(doc.created_at)}</p>
 
         {avecTexteLu && (
           <div className="texte-lu">

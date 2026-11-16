@@ -97,6 +97,9 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // demandaient deux confirmations et envoyaient deux suppressions, la seconde disant « aucune ligne supprimée » sur un
   // document bel et bien parti.
   const suppressionDUnDocument = useRef(false)
+  // Verrou du changement de sous-dossier depuis la fiche (DOCF-Q1, 16/11/2026) : un seul envoi à la fois, relâché après la
+  // relecture — deux choix du même rendu enverraient deux mises à jour, la seconde pouvant revenir avant la première.
+  const changementDeSousDossier = useRef(false)
 
   // LA FICHE D'UN DOCUMENT DANS LE PANNEAU DE DROITE (demande du cabinet du 16/11/2026, voir FicheDocument) : un clic sur
   // une ligne l'ouvre, comme la fiche d'une pièce dans Justificatifs. L'onglet retient l'IDENTIFIANT et relit la ligne dans
@@ -312,6 +315,60 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       ? `La catégorie du document n’a pas pu être changée : ${messageErreur(erreurCategorie, 'refus de la base')}.`
       : null)
     load()
+  }
+
+  // LE SOUS-DOSSIER D'UN DOCUMENT, CHOISI DANS SA FICHE (DOCF-Q1 (A), 16/11/2026), comme celui d'une pièce dans la sienne.
+  // La policy `documents_divers_admins_all` ouvre la mise à jour au cabinet du dossier ; la base ne vérifie pas que le
+  // sous-dossier soit de CE dossier (une clé étrangère simple vers `sous_dossiers`) : l'écran n'offre que ceux qu'il a lus
+  // sur ce dossier, lus en entier, et le revérifie ici. Mutation optimiste, annulée sur un refus ou sur zéro ligne modifiée
+  // (la policy qui écarte la ligne, ou un document déjà parti), puis relecture.
+  async function changerSousDossier(doc: DocumentDivers, sousDossierId: string | null) {
+    if (changementDeSousDossier.current) return
+    setErreurDe(doc.id)
+    const choix = choixDuSousDossier()
+    if (!choix.offert) {
+      setError(choix.motif)
+      return
+    }
+    if (sousDossierId !== null && !choix.sousDossiers.some((s) => s.id === sousDossierId)) {
+      setError('Ce sous-dossier n’est pas un sous-dossier de ce dossier : le document garde le sien.')
+      return
+    }
+    if (sousDossierId === doc.sous_dossier_id) return
+    // Posé AVANT le `try` et avant le premier `await`, relâché après la relecture.
+    changementDeSousDossier.current = true
+    const avant = doc.sous_dossier_id
+    setDocuments((liste) => liste.map((d) => (d.id === doc.id ? { ...d, sous_dossier_id: sousDossierId } : d)))
+    try {
+      const { data, error: erreurMaj } = await supabase
+        .from('documents_divers').update({ sous_dossier_id: sousDossierId }).eq('id', doc.id).select('id').maybeSingle()
+      if (erreurMaj || !data) {
+        setDocuments((liste) => liste.map((d) => (
+          d.id === doc.id && d.sous_dossier_id === sousDossierId ? { ...d, sous_dossier_id: avant } : d)))
+        setError(erreurMaj
+          ? `Le sous-dossier du document n’a pas pu être changé : ${messageErreur(erreurMaj, 'refus de la base')}.`
+          : 'Le sous-dossier du document n’a pas été changé : la base n’a modifié aucune ligne (le document a peut-être été retiré entre-temps).')
+      } else {
+        setError(null)
+      }
+      await load()
+    } finally {
+      changementDeSousDossier.current = false
+    }
+  }
+
+  // Le choix d'un sous-dossier ne s'offre que sur la liste des sous-dossiers de ce dossier lue EN ENTIER : lue en partie, un
+  // sous-dossier manquerait au choix, et le document paraîtrait n'en avoir aucun.
+  function choixDuSousDossier(): { offert: true; sousDossiers: readonly SousDossier[] } | { offert: false; motif: string } {
+    if (loading) return { offert: false, motif: 'La liste des sous-dossiers se lit : le sous-dossier se choisira ensuite.' }
+    if (referencesIncompletes !== null) {
+      return {
+        offert: false,
+        motif: `La liste des sous-dossiers n’a pas pu être lue en entier (${referencesIncompletes}) : le sous-dossier ne se change pas d’ici.`,
+      }
+    }
+    // Ceux de CE dossier : `load` les lit par `.eq('dossier_id', dossierId)`.
+    return { offert: true, sousDossiers }
   }
 
   async function voir(storagePath: string) {
@@ -796,6 +853,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
             document={docOuvert}
             libellesCategories={LABEL_CATEGORIE}
             sousDossier={sousDossierLabel(docOuvert.sous_dossier_id)}
+            choixDuSousDossier={choixDuSousDossier()}
             avecTexteLu={avecTexteOcr.has(docOuvert.id)}
             factureProbable={facturesProbables?.documents.has(docOuvert.id) ?? false}
             doublon={doublonParDocument.get(docOuvert.id) ?? null}
@@ -808,6 +866,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
             navigation={navigationFiche}
             gestes={{
               changerCategorie: (categorie) => changerCategorie(docOuvert, categorie),
+              changerSousDossier: (sousDossierId) => changerSousDossier(docOuvert, sousDossierId),
               convertir: () => convertirEnPiece(docOuvert),
               supprimer: () => supprimer(docOuvert),
               ouvrir: () => voir(docOuvert.storage_path),
