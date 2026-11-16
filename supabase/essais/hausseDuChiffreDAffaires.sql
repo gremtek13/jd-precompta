@@ -7,7 +7,8 @@
 -- production retient une suppression) : il se joue dans son compagnon de réplique, hausseDuChiffreDAffairesSuppression.sql.
 --
 -- Ce qui se prouve ici, et ne se relit pas :
---   - le catalogue : les colonnes, les contraintes au texte près, la RLS et les policies (le cabinet du dossier, à
+--   - le catalogue : les colonnes, les contraintes au texte près (hors des quatre colonnes et des deux contraintes du réglage
+--     de chaque seuil, CA2-Q1, qu'éprouve auteurDeChaqueSeuil.sql : l'essai se joue avant comme après elles), la RLS et les policies (le cabinet du dossier, à
 --     authenticated ; aucune mise à jour ni aucun retrait d'une marque), les gardes avant toute écriture, les droits
 --     d'exécution (les deux fonctions à authenticated seul, les gardes à personne, aux droits de l'appelant) ;
 --   - les seuils, chacun réglé à part : la hausse puis la baisse réglées par le chef, relues, le dernier réglage à son nom et
@@ -80,7 +81,8 @@ begin
   || '|' || (select count(*) from cabinet_admins where user_id = 'ca520000-0000-4000-8000-0000000000f1')$q$, 'OK', '1|1|0|0'),
       (2, 'proprietaire', '1. le catalogue : les colonnes des seuils, les deux seuils seuls nullables', $q$select string_agg(a.attname || ':'
   || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull, ',' order by a.attnum)
-  from pg_attribute a where a.attrelid = 'public.seuils_du_chiffre_d_affaires'::regclass and a.attnum > 0 and not a.attisdropped$q$,
+  from pg_attribute a where a.attrelid = 'public.seuils_du_chiffre_d_affaires'::regclass and a.attnum > 0 and not a.attisdropped
+    and a.attname not in ('seuil_de_hausse_regle_par', 'seuil_de_hausse_regle_le', 'seuil_de_baisse_regle_par', 'seuil_de_baisse_regle_le')$q$,
         'OK', 'id:uuid:true,dossier_id:uuid:true,seuil_de_hausse:integer:false,seuil_de_baisse:integer:false,regle_par:uuid:true,regle_le:timestamp with time zone:true'),
       (3, 'proprietaire', '1b. … celles de la marque, aucune nullable', $q$select string_agg(a.attname || ':'
   || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull, ',' order by a.attnum)
@@ -88,7 +90,8 @@ begin
         'OK', 'id:uuid:true,dossier_id:uuid:true,annee:integer:true,trimestre:integer:true,vue_par:uuid:true,vue_le:timestamp with time zone:true'),
       (4, 'proprietaire', '1c. … leurs contraintes, au texte près (les clés, le dossier en cascade, les bornes de chaque seuil, les unicités TOTALES)', $q$select count(*) || ' ' || md5(string_agg(c.conrelid::regclass::text || ' ' || c.conname || ' ' || pg_get_constraintdef(c.oid), ' ; '
   order by c.conrelid::regclass::text collate "C", c.conname collate "C"))
-  from pg_constraint c where c.conrelid in ('public.seuils_du_chiffre_d_affaires'::regclass, 'public.hausses_vues_avec_le_client'::regclass)$q$,
+  from pg_constraint c where c.conrelid in ('public.seuils_du_chiffre_d_affaires'::regclass, 'public.hausses_vues_avec_le_client'::regclass)
+    and c.conname not in ('seuils_du_chiffre_d_affaires_reglage_de_hausse', 'seuils_du_chiffre_d_affaires_reglage_de_baisse')$q$,
         'OK', '10 4425c9527e392ceec3c433f320a335a0'),
       (5, 'proprietaire', '1d. … la RLS active des deux, et leurs policies, toutes à authenticated (aucune mise à jour ni aucun retrait d''une marque)', $q$select (select string_agg(c.relrowsecurity::text, ',' order by c.relname) from pg_class c
   where c.oid in ('public.seuils_du_chiffre_d_affaires'::regclass, 'public.hausses_vues_avec_le_client'::regclass))

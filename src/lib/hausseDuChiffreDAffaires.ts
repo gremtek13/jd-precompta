@@ -43,6 +43,18 @@ import type { VentesFacturees } from './ventesFacturees'
  *  en base ? Baissé : aucune lecture, aucun écran, aucune table au plan de sauvegarde. */
 export const HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE = true
 
+/**
+ * La migration `auteur_de_chaque_seuil` (CA2-Q1, décision du cabinet du 16/11/2026 : « garder l'auteur et la date de chaque
+ * seuil » ; supabase/preparees/20261116190000_auteur_de_chaque_seuil.sql) est-elle en base ? Baissé : ses quatre colonnes ne se
+ * lisent pas, et la carte dit le dernier réglage de la LIGNE, comme hier. Levé le jour où la migration entre dans l'export ;
+ * baissé AVANT tout retour. Un objet, que les tests basculent pour jouer ses deux états.
+ */
+export const DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL = { AUTEUR_DE_CHAQUE_SEUIL_PREVU: false as boolean }
+
+export function auteurDeChaqueSeuilPrevu(): boolean {
+  return DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU
+}
+
 /** Les deux sens d'un seuil : une colonne chacun en base (`seuil_de_hausse`, `seuil_de_baisse`), réglés à part. */
 export type SensDuSeuil = 'hausse' | 'baisse'
 export const SENS_DES_SEUILS: readonly SensDuSeuil[] = ['hausse', 'baisse']
@@ -70,9 +82,14 @@ export interface SeuilDuDossier {
   seuil_de_baisse: number | null
   regle_par: string
   regle_le: string
+  /** Le compte et l'instant du dernier réglage de chaque seuil — posé, changé ou retiré —, posés par la base (CA2-Q1) ; lus sous
+   *  `AUTEUR_DE_CHAQUE_SEUIL_PREVU` seulement. Nuls : aucun réglage connu de ce seuil. */
+  seuil_de_hausse_regle_par?: string | null
+  seuil_de_hausse_regle_le?: string | null
+  seuil_de_baisse_regle_par?: string | null
+  seuil_de_baisse_regle_le?: string | null
 }
 
-export const COLONNES_DU_SEUIL = 'dossier_id, seuil_de_hausse, seuil_de_baisse, regle_par, regle_le'
 export const COLONNES_DES_VUES = 'id, dossier_id, annee, trimestre, vue_par, vue_le'
 
 /** Les seuils d'une ligne lue, ou deux seuils nuls sans ligne. */
@@ -588,6 +605,58 @@ export function phraseDesSeuilsDuDossier(ligne: SeuilDuDossier | null, utilisate
   if (!aUnSeuil(s)) return `${SEUILS_VIDES} ${reglage}`
   const dit = (n: number | null) => (n === null ? 'aucun' : pourcent(n))
   return `Seuil de hausse : ${dit(s.hausse)} ; seuil de baisse : ${dit(s.baisse)}. ${reglage}`
+}
+
+// ── L'auteur de chaque seuil (CA2-Q1, sous `AUTEUR_DE_CHAQUE_SEUIL_PREVU`) ─────────────────────────────────────────────
+
+/** Le compte et l'instant du dernier réglage d'un seuil, lus de la ligne ; nuls sans réglage connu. */
+export function reglageDuSens(ligne: SeuilDuDossier, sens: SensDuSeuil): { par: string | null; le: string | null } {
+  return sens === 'hausse'
+    ? { par: ligne.seuil_de_hausse_regle_par ?? null, le: ligne.seuil_de_hausse_regle_le ?? null }
+    : { par: ligne.seuil_de_baisse_regle_par ?? null, le: ligne.seuil_de_baisse_regle_le ?? null }
+}
+
+/** Les comptes qui ont réglé un seuil de la ligne, sans doublon, triés : ceux dont l'équipe se lit. */
+export function auteursDesSeuils(ligne: SeuilDuDossier | null): string[] {
+  if (ligne === null) return []
+  const comptes = SENS_DES_SEUILS.map((sens) => reglageDuSens(ligne, sens).par).filter((c): c is string => c !== null && c !== '')
+  return [...new Set(comptes)].sort()
+}
+
+/**
+ * Qui a réglé, pour qui regarde : « toi » ; l'adresse d'un autre compte quand SA session la lit dans l'équipe du cabinet
+ * (`cabinet_admins`, que la policy ne rend qu'au chef, au super-administrateur et au membre lui-même : la règle de l'onglet
+ * Accès, lib/ouverturesAttestees.ts) ; sinon « le cabinet » — un membre parti aussi. Aucun identifiant ne se montre.
+ */
+export function quiARegle(auteur: string, utilisateur: string | null, equipe: ReadonlyMap<string, string>): string {
+  if (utilisateur !== null && auteur.toLowerCase() === utilisateur.toLowerCase()) return 'toi'
+  return equipe.get(auteur) ?? 'le cabinet'
+}
+
+/**
+ * La ligne d'un seuil dans la carte : sa valeur, puis qui l'a réglé et quand, ce que la base a posé. Un seuil retiré dit qui l'a
+ * retiré ; un seuil jamais réglé, « aucun seuil » ; un seuil sans réglage connu (ce que les contraintes de la base excluent) le
+ * dit, sans deviner un auteur.
+ */
+export function phraseDuSeuilEtDeSonReglage(
+  ligne: SeuilDuDossier, sens: SensDuSeuil, utilisateur: string | null, equipe: ReadonlyMap<string, string>,
+): string {
+  const nom = sens === 'hausse' ? 'Hausse' : 'Baisse'
+  const seuil = seuilDuSens(ligne, sens)
+  const { par, le } = reglageDuSens(ligne, sens)
+  const connu = par !== null && par !== '' && le !== null && le !== ''
+  if (seuil === null) return connu ? `${nom} : aucun seuil, retiré le ${formatDate(le)} par ${quiARegle(par, utilisateur, equipe)}.` : `${nom} : aucun seuil.`
+  return connu
+    ? `${nom} : ${pourcent(seuil)}, réglé le ${formatDate(le)} par ${quiARegle(par, utilisateur, equipe)}.`
+    : `${nom} : ${pourcent(seuil)}, son réglage n’est pas connu.`
+}
+
+/** Les lignes des seuils dans la carte, la migration en base : une par seuil, ou « aucun seuil » sans ligne. */
+export function phrasesDesSeuilsEtDeLeurReglage(
+  ligne: SeuilDuDossier | null, utilisateur: string | null, equipe: ReadonlyMap<string, string>,
+): string[] {
+  if (ligne === null) return [SEUILS_VIDES]
+  return SENS_DES_SEUILS.map((sens) => phraseDuSeuilEtDeSonReglage(ligne, sens, utilisateur, equipe))
 }
 
 /** Ce que la carte dit après un réglage réussi. */

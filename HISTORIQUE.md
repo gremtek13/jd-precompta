@@ -53416,3 +53416,22 @@ avant le retour, une lecture partielle dite) ; A8Q5Q3Q2Q2Q1-Q1 (A) et A8Q5Q3Q2Q3
 client ; les mots gardés). Vérifié sur une copie de `replique_227` portée à 234 (les trois contrôles égaux à la production) :
 les quatre essais 24/24, 26/26, 21/21, 39/39 ; `rls.sql` 259 lignes, 0 en faute sur 1 205 vérifications, 150 mutations sur
 150 ; la suite entière 895 fichiers, 22 792 tests.
+### 16/11/2026 — CA2-Q1 : L'AUTEUR DE CHAQUE SEUIL (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 234, puis supprimée.) CA2-Q1 tranchée (B) par le
+cabinet, contre la recommandation : garder l'auteur et la date de chaque seuil ; CA3-Q1 (A) : les douze mois se jugent à la fin
+de chaque trimestre, comme en place — rien ne change. Préparée, à appliquer par l'outil : `auteur_de_chaque_seuil` — quatre
+colonnes nullables (`seuil_de_hausse_regle_par`, `…_le`, `seuil_de_baisse_regle_par`, `…_le`), deux contraintes (le compte et
+l'instant ensemble ; un seuil qui a une valeur a son réglage) ; la garde (e3c2126c… remplacée) pose le compte et l'instant de
+l'écriture qui CHANGE un seuil, garde ceux d'avant sinon, écarte ce que l'écriture y met ; le super-administrateur garde ce qu'il
+écrit, un seuil sans réglage prenant celui de la ligne ; la fonction (d379a82e… remplacée), mêmes refus, n'écrit plus rien pour un
+réglage inchangé. Les lignes d'aujourd'hui : le dernier réglage de la ligne vaut pour chacun de ses seuils non nuls (la garde
+suspendue le temps de l'instruction, le patron de MCB1) ; un seuil nul reste sans réglage ; `regle_par`, `regle_le` restent.
+Derrière `AUTEUR_DE_CHAQUE_SEUIL_PREVU` baissé, la carte dit « Hausse : 20 %, réglé le … par … » — « toi », l'adresse que la
+session lit dans l'équipe, sinon « le cabinet » (la règle de l'onglet Accès) ; la lecture prend la ligne entière. Éprouvé :
+l'essai neuf `auteurDeChaqueSeuil.sql` 26 sur 26 (EN ATTENTE sans elle) ; `hausseDuChiffreDAffaires.sql` 52 sur 52 avant et
+après (son catalogue écarte les quatre colonnes) ; la recopie juste sur quatre lignes d'avant ; 10 mutations sur 10 mordent, la
+seconde application refusée ; `rls.sql` entier 259 lignes, 0 en faute sur 1 205, 150 mutations sur 150, avant comme après ; le
+banc du leurre SÛR pour les deux essais ; le retour (des `drop`, à coller) rend la signature d'avant, neuf familles. Migration
+`27e0ae12…` (sans le dernier saut de ligne), retour `17498b01…`. Questions : CA2Q1-migration ; CA2Q1-Q1 (la marque « vue avec
+le client » montre encore le début de l'identifiant d'un autre compte).
