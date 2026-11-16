@@ -498,6 +498,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (par l'outil, aucune branche client) ; la carte du seuil (Informations), un avis de la Vue d'ensemble hors des anomalies et de
   la validation, une ligne du tableau de bord (au plus dix dossiers calculés) ; CA-Q1 à Q5 et CA-migration → « L'ALERTE DE
   HAUSSE DU CHIFFRE D'AFFAIRES (MVP) ».
+- **L'import NOEMIE et les paiements de l'assurance maladie** (demande et décision du cabinet du 16/11/2026 : les chiffres
+  seuls, aucune donnée de patient) : conçus (`docs/conceptions/53-import-noemie-et-remboursements.md`) — le fichier lu
+  dans le navigateur du praticien, des agrégats par journée comptable, organisme et part, aucune colonne de texte en base,
+  ni numéro de facture ou de lot ; le paiement justifie et contrôle le crédit du relevé, il ne compte dans aucun moteur ;
+  rien d'associé sans clic ; NOE1 à NOE8, NOE-Q1 à Q7, NOE-E1 à E3 → « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES
+  PAIEMENTS DE L'ASSURANCE MALADIE : LA CONCEPTION ».
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
   levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la
