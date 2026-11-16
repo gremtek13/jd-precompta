@@ -369,7 +369,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   - « Ma banque » sous `maBanqueOuverte` : l'état DÉDUIT, le solde LU au dernier relevé contrôlé, jamais calculé ; ni
     catégorie ni écriture → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » » ; avec « Ventes », le registre lu APRÈS la
     case dit le mouvement classé ou réservé par ses encaissements, lu en partie il tait les mouvements libres → « « MA
-    BANQUE » DIT LES ENCAISSEMENTS DE SES FACTURES ». Côté cabinet, la pièce proposée en tête de la fiche ; écarter par
+    BANQUE » DIT LES ENCAISSEMENTS DE SES FACTURES ». L'accueil en montre le solde et sa courbe, un point par relevé
+    contrôlé, sous « Banque » (`lib/soldeDeLAccueil.ts`, 16/11/2026) : muet sur une lecture partielle, jamais 0. Côté cabinet, la pièce proposée en tête de la fiche ; écarter par
     `retirer_proposition` seule → « « MA BANQUE » CÔTÉ CABINET ».
   - « Règlements » : rien ne s'écrit d'ici ; totaux et CSV sur les lignes FILTRÉES → « « MES VENTES › RÈGLEMENTS » ».
     « Articles » : un prix infidèle est « illisible », jamais arrondi → « LA LISTE DES ARTICLES, À L'ÉCRAN ».
