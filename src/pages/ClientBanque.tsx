@@ -6,6 +6,9 @@ import { aujourdHuiAParis, formatDate, formatMoney } from '../lib/format'
 import { lireTout, type LectureComplete } from '../lib/lectureComplete'
 import { lireLesDroitsVentes } from '../lib/espaceVentes'
 import { correspondALaRecherche } from '../lib/recherche'
+import { EnTeteTriable, SelecteurDeTri } from '../components/EnTeteTriable'
+import { trierLignes, type ColonneTriable } from '../lib/triDesTableaux'
+import { useTriDuTableau } from '../lib/useTriDuTableau'
 import { deposerFichier } from '../lib/depot'
 import {
   anneesDuReleve, argumentsDeLaPrecision, argumentsDeProposer, argumentsDeRetirer, attendUnePiece, auteurPourLeClient,
@@ -411,6 +414,8 @@ interface ProprietesReleve {
 
 function Releve(p: ProprietesReleve) {
   const { lecture } = p
+  // Le tri choisi d'un toucher sur un en-tête (16/11/2026) : l'affichage seul, remis à l'ordre d'origine au changement de dossier.
+  const { tri, trierPar, choisirTri } = useTriDuTableau(p.dossierId)
   const situations = situationsDuReleve(lecture)
   const solde = soldeAuReleve(lecture.controles)
   const couverture = couvertureDuReleve(lecture.mouvements)
@@ -444,6 +449,18 @@ function Releve(p: ProprietesReleve) {
     return correspondALaRecherche([formatDate(m.date), m.libelle, m.montant, s ? LIBELLE_DE_L_ETAT[s.etat] : null,
       nomDuCompte.get(m.compte_bancaire_id ?? '') ?? null], p.recherche)
   })
+  // LE TRI CHOISI (16/11/2026) : il n'ordonne que les lignes dessinées ; le résumé, les filtres et le compteur restent sur les
+  // listes d'avant. Un mouvement dont l'état est tu va en fin, comme toute valeur vide. Le compte, seulement s'il est nommé.
+  const colonnesTri: ColonneTriable<MouvementDuClient>[] = [
+    { cle: 'date', libelle: 'Date', type: 'date', valeur: (m) => m.date },
+    ...(comptesNommes !== null
+      ? [{ cle: 'compte', libelle: 'Compte', type: 'texte', valeur: (m) => nomDuCompte.get(m.compte_bancaire_id ?? '') } satisfies ColonneTriable<MouvementDuClient>]
+      : []),
+    { cle: 'libelle', libelle: 'Libellé', type: 'texte', valeur: (m) => m.libelle },
+    { cle: 'montant', libelle: 'Montant', type: 'montant', valeur: (m) => m.montant },
+    { cle: 'etat', libelle: 'État', type: 'rang', valeur: (m) => etatDe(m)?.etat, ordre: Object.keys(LIBELLE_DE_L_ETAT) },
+  ]
+  const affichesTries = trierLignes(affiches, colonnesTri, tri)
   const nomDesPieces = new Map(lecture.pieces.lignes.map((x) => [x.id, x.nom_fichier]))
   const libellePeriode = (periode === 'toutes' ? 'tout ton relevé' : `${periode}`)
     + (filtreCompte === 'tous' ? '' : ` sur le compte « ${nomDuCompte.get(filtreCompte) ?? ''} »`)
@@ -583,14 +600,20 @@ function Releve(p: ProprietesReleve) {
               </div>
             ) : (
               <div className="tableau-adaptable">
+                <SelecteurDeTri colonnes={colonnesTri} etat={tri} onChoisir={choisirTri} />
                 <table className="table-empilable table-empilable-en-carte">
                   <thead>
                     <tr>
-                      <th>Date</th>{comptesNommes !== null && <th>Compte</th>}<th>Libellé</th><th>Montant</th><th>État</th><th>Détail</th>
+                      <EnTeteTriable colonne="date" etat={tri} onTrier={trierPar}>Date</EnTeteTriable>
+                      {comptesNommes !== null && <EnTeteTriable colonne="compte" etat={tri} onTrier={trierPar}>Compte</EnTeteTriable>}
+                      <EnTeteTriable colonne="libelle" etat={tri} onTrier={trierPar}>Libellé</EnTeteTriable>
+                      <EnTeteTriable colonne="montant" etat={tri} onTrier={trierPar}>Montant</EnTeteTriable>
+                      <EnTeteTriable colonne="etat" etat={tri} onTrier={trierPar}>État</EnTeteTriable>
+                      <th>Détail</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {affiches.map((m) => {
+                    {affichesTries.map((m) => {
                       const s = etatDe(m)
                       const estOuvert = p.ouvert === m.id
                       return (

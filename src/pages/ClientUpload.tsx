@@ -12,6 +12,9 @@ import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesIncon
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, PieceCommentaire } from '../lib/types'
 import BarreRecherche from '../components/BarreRecherche'
 import { correspondALaRecherche } from '../lib/recherche'
+import { EnTeteTriable, SelecteurDeTri } from '../components/EnTeteTriable'
+import { trierLignes, type ColonneTriable } from '../lib/triDesTableaux'
+import { useTriDuTableau } from '../lib/useTriDuTableau'
 import FilCommentaires from '../components/FilCommentaires'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { chargerCommentaires, cleCible, commentairesParCible } from '../lib/commentaires'
@@ -70,6 +73,16 @@ interface Depot {
   // dossier — le geste le dit alors sans rien demander au stockage. Sans objet tant que `cible` est nulle (envoi en cours).
   fichier: FichierDUnEnvoi | null
 }
+
+// Les colonnes triables de « Mes dépôts » (16/11/2026) : le statut dans l'ordre du travail — en cours, en attente, traité.
+const COLONNES_DES_DEPOTS: ColonneTriable<Depot>[] = [
+  { cle: 'fichier', libelle: 'Fichier', type: 'texte', valeur: (d) => d.nomFichier },
+  { cle: 'depot', libelle: 'Déposé le', type: 'date', valeur: (d) => d.createdAt },
+  {
+    cle: 'statut', libelle: 'Statut', type: 'rang', ordre: ['en_cours', 'a_traiter', 'traite'],
+    valeur: (d) => d.cible === null ? 'en_cours' : d.traite ? 'traite' : 'a_traiter',
+  },
+]
 
 export default function ClientUpload() {
   const { dossierActifId, droitsParDossier, session } = useAuth()
@@ -134,6 +147,8 @@ export default function ClientUpload() {
   // l'accueil, écrite une fois (lib/piecesJointesEcarteesClientLecture.ts, ligne 22.94) : gardée avec la société, annulée à
   // son changement, nulle tant qu'elle n'est pas revenue ; rien ne se lit tant que la fonction n'est pas en base.
   const ecartees = useEcarteesDuClient(dossierId)
+  // Le tri choisi d'un toucher sur un en-tête (16/11/2026) : l'affichage seul, remis à l'ordre d'origine au changement de dossier.
+  const { tri, trierPar, choisirTri } = useTriDuTableau(dossierId)
   // Les pièces que le cabinet a déposées pour ses honoraires (ligne 47, LM8), derrière `DEPOT_DES_HONORAIRES_PREVU` : baissé,
   // rien n'est lu et « Mes pièces » est celle d'hier.
   const honorairesDeposes = useHonorairesDeposes(dossierId ?? null, 0)
@@ -407,6 +422,8 @@ export default function ClientUpload() {
       recherche,
     )
   })
+  // LE TRI CHOISI (16/11/2026) : il n'ordonne que les lignes dessinées ; l'ordre d'origine reste le plus récent d'abord.
+  const depotsTries = trierLignes(depotsAffiches, COLONNES_DES_DEPOTS, tri)
 
   // "Ce qu'il manque" — les 3 signaux communs à tous les dossiers (mêmes que le Dashboard cabinet),
   // pour que le client sache ce qu'il reste à envoyer sans avoir à demander. Volontairement limité à
@@ -600,10 +617,18 @@ export default function ClientUpload() {
           </div>
         ) : (
           <div className="tableau-adaptable">
+            <SelecteurDeTri colonnes={COLONNES_DES_DEPOTS} etat={tri} onChoisir={choisirTri} />
             <table className="table-empilable table-empilable-en-carte">
-              <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th><th>Gestes</th></tr></thead>
+              <thead>
+                <tr>
+                  <EnTeteTriable colonne="fichier" etat={tri} onTrier={trierPar}>Fichier</EnTeteTriable>
+                  <EnTeteTriable colonne="depot" etat={tri} onTrier={trierPar}>Déposé le</EnTeteTriable>
+                  <EnTeteTriable colonne="statut" etat={tri} onTrier={trierPar}>Statut</EnTeteTriable>
+                  <th>Gestes</th>
+                </tr>
+              </thead>
               <tbody>
-                {depotsAffiches.map((d) => {
+                {depotsTries.map((d) => {
                   const cle = d.cible ? cleCible(d.cible) : null
                   const fil = cle ? parCible.get(cle) ?? [] : []
                   const ouvert = cle !== null && filOuvert === cle

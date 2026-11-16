@@ -1011,3 +1011,30 @@ describe('FacturesTab — les statuts lus sur la plateforme du client', () => {
     screen.getByText(/^La plateforme refuse l’accès \(recherche des statuts, 403\)\. Demandez au client d’ouvrir au cabinet le droit de lire/)
   })
 })
+
+// LE TRI PAR UN CLIC SUR L'EN-TÊTE (demande du cabinet du 16/11/2026, lib/triDesTableaux.ts).
+describe('FacturesTab — le tri par un clic sur l’en-tête', () => {
+  const clients = () => [...document.querySelectorAll('tbody td[data-libelle="Client"]')].map((td) => td.textContent)
+  const enTete = (nom: string) => screen.getByRole('button', { name: new RegExp(`^${nom}`) })
+
+  it('croissant, décroissant, puis l’ordre d’origine — un brouillon sans numéro en fin, dans les deux sens', async () => {
+    poser([
+      facture({ id: 'f2', numero: 'F2026-0002', tiers_nom: 'BETA', date_emission: '2026-03-12' }),
+      facture({ id: 'b1', numero: null, statut: 'brouillon', tiers_nom: 'BROUILLON', validated_at: null, date_emission: '2026-03-13' }),
+      facture({ id: 'f10', numero: 'F2026-0010', tiers_nom: 'ALPHA', date_emission: '2026-03-14' }),
+      facture({ id: 'f1', numero: 'F2026-0001', tiers_nom: 'GAMMA', date_emission: '2026-03-10' }),
+    ])
+    monter()
+    await screen.findByText('ALPHA')
+    const origine = clients()
+    fireEvent.click(enTete('Numéro'))
+    expect(clients()).toEqual(['GAMMA', 'BETA', 'ALPHA', 'BROUILLON'])
+    expect(enTete('Numéro').closest('th')!.getAttribute('aria-sort')).toBe('ascending')
+    fireEvent.click(enTete('Numéro'))
+    expect(clients()).toEqual(['ALPHA', 'BETA', 'GAMMA', 'BROUILLON'])
+    expect(enTete('Numéro').closest('th')!.getAttribute('aria-sort')).toBe('descending')
+    fireEvent.click(enTete('Numéro'))
+    expect(clients()).toEqual(origine)
+    expect(enTete('Numéro').closest('th')!.getAttribute('aria-sort')).toBe('none')
+  })
+})
