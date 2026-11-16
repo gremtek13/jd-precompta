@@ -241,7 +241,8 @@ td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); font-vari
    colonne qui ne trie pas reste pâle. Le sélecteur « Trier par » d'un tableau replié en fiches (`SelecteurDeTri`) ne paraît
    que replié, dans les deux blocs `@container tableau` plus bas. */
 .tri-en-tete {
-  display: inline-flex; align-items: center; gap: 4px;
+  /* En ligne, pas en boîte souple : un libellé qui passe à la ligne (« Sous-dossier ») garde sa flèche contre son dernier mot. */
+  display: inline;
   padding: 0; margin: 0; border: 0; background: none; cursor: pointer;
   color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; text-align: inherit;
   border-radius: var(--radius-sm);
@@ -252,14 +253,19 @@ td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); font-vari
 th[aria-sort="ascending"] .tri-en-tete, th[aria-sort="descending"] .tri-en-tete { color: var(--color-text); }
 .tri-en-tete::after {
   content: '↕'; content: '↕' / '';
-  font-size: 0.65rem; line-height: 1;
+  margin-left: 4px; font-size: 0.65rem; line-height: 1; white-space: nowrap;
   color: color-mix(in srgb, var(--color-text-light) 55%, transparent);
 }
 th[aria-sort="ascending"] .tri-en-tete::after { content: '▲'; content: '▲' / ''; color: inherit; }
 th[aria-sort="descending"] .tri-en-tete::after { content: '▼'; content: '▼' / ''; color: inherit; }
 .tri-replie { display: none; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 12px 0; }
 .tri-replie > span { font-size: 0.85rem; color: var(--color-text-light); }
-.tri-replie select { flex: 1 1 12rem; min-width: 0; font-size: 16px; }
+.tri-replie select {
+  flex: 1 1 12rem; min-width: 0; font-size: 16px; /* 16px : en dessous, Safari iOS zoome à la mise au point. */
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); padding: 8px 10px;
+  background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-xs);
+}
+.tri-replie select:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 tr:last-child td { border-bottom: none; }
 tbody tr { transition: background-color var(--duree) var(--ease); }
 tbody tr:hover { background: var(--color-surface-2); }
