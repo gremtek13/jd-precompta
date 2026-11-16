@@ -379,7 +379,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     catégorie ni écriture → « « MA BANQUE » : L'ÉCRAN DU CLIENT « BANQUE » » ; avec « Ventes », le registre lu APRÈS la
     case dit le mouvement classé ou réservé par ses encaissements, lu en partie il tait les mouvements libres → « « MA
     BANQUE » DIT LES ENCAISSEMENTS DE SES FACTURES ». L'accueil en montre le solde et sa courbe, un point par relevé
-    contrôlé, sous « Banque » (`lib/soldeDeLAccueil.ts`, 16/11/2026) : muet sur une lecture partielle, jamais 0. Côté cabinet, la pièce proposée en tête de la fiche ; écarter par
+    contrôlé, sous « Banque » (`lib/soldeDeLAccueil.ts`, 16/11/2026) : muet sur une lecture partielle, jamais 0.
+    « Mon année » (`lib/analyseDeMaBanque.ts`, 16/11/2026) : entrées, sorties et différence, mois par mois et par année, et
+    le cumul à date contre la même période de l'année d'avant ; un mois ne se compte que couvert par un relevé contrôlé
+    cohérent, sinon « non couvert », jamais 0 ; plusieurs comptes, un à la fois, jamais leur total → « « MON ANNÉE » DANS
+    « MA BANQUE » ». Côté cabinet, la pièce proposée en tête de la fiche ; écarter par
     `retirer_proposition` seule → « « MA BANQUE » CÔTÉ CABINET ».
   - « Règlements » : rien ne s'écrit d'ici ; totaux et CSV sur les lignes FILTRÉES → « « MES VENTES › RÈGLEMENTS » ».
     « Articles » : un prix infidèle est « illisible », jamais arrondi → « LA LISTE DES ARTICLES, À L'ÉCRAN ».
