@@ -200,7 +200,13 @@ async function monter(espace: 'cabinet' | 'client') {
 
 const ligneDe = (texte: string) => screen.getAllByRole('row').find((r) => r.textContent?.includes(texte)) as HTMLElement
 const lignesBrouillon = () => screen.getAllByRole('row').filter((r) => r.textContent?.includes('Brouillon'))
-const empreinte = (html: string) => createHash('sha256').update(html).digest('hex')
+// LE TRI PAR UN CLIC SUR L'EN-TÊTE (16/11/2026) est venu après ces empreintes, et pour toutes les factures : il est retiré
+// du rendu avant l'empreinte — l'en-tête rendu à son texte, le sélecteur « Trier par » ôté —, et ce qui reste se compare
+// au rendu d'hier au caractère près. Une retouche du tri qui laisserait une trace ailleurs changerait encore l'empreinte.
+const sansLeTri = (html: string) => html
+  .replace(/<th aria-sort="none"><button type="button" class="tri-en-tete">(.*?)<\/button><\/th>/g, '<th>$1</th>')
+  .replace(/<label class="tri-replie"><span>Trier par<\/span><select>.*?<\/select><\/label>/g, '')
+const empreinte = (html: string) => createHash('sha256').update(sansLeTri(html)).digest('hex')
 const texte = (el: Element) => (el.textContent ?? '').replace(/\s/g, ' ')
 const sansMotsDuCabinet = (espace: 'cabinet' | 'client', t: string) => {
   if (espace === 'client') expect(motsDuCabinet(t)).toEqual([])

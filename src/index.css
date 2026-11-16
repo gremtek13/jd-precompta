@@ -250,10 +250,15 @@ td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); font-vari
 .tri-en-tete:hover { color: var(--color-text); }
 .tri-en-tete:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 th[aria-sort="ascending"] .tri-en-tete, th[aria-sort="descending"] .tri-en-tete { color: var(--color-text); }
-.tri-fleche { font-size: 0.65rem; line-height: 1; }
-.tri-fleche-inactive { color: color-mix(in srgb, var(--color-text-light) 55%, transparent); }
+.tri-en-tete::after {
+  content: '↕'; content: '↕' / '';
+  font-size: 0.65rem; line-height: 1;
+  color: color-mix(in srgb, var(--color-text-light) 55%, transparent);
+}
+th[aria-sort="ascending"] .tri-en-tete::after { content: '▲'; content: '▲' / ''; color: inherit; }
+th[aria-sort="descending"] .tri-en-tete::after { content: '▼'; content: '▼' / ''; color: inherit; }
 .tri-replie { display: none; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 12px 0; }
-.tri-replie label { font-size: 0.85rem; color: var(--color-text-light); }
+.tri-replie > span { font-size: 0.85rem; color: var(--color-text-light); }
 .tri-replie select { flex: 1 1 12rem; min-width: 0; font-size: 16px; }
 tr:last-child td { border-bottom: none; }
 tbody tr { transition: background-color var(--duree) var(--ease); }
@@ -1055,8 +1060,8 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    règles que le bloc précédent — une requête de conteneur ne prend pas son seuil dans une variable, d'où ce second
    bloc. Le tableau a du jeu autour de ses fiches : la carte qui le porte n'a pas de marge intérieure. */
 @container tableau (max-width: 520px) {
-  .tri-replie-etroite { display: flex; }
   .table-empilable-etroite thead { display: none; }
+  .tri-replie-etroite { display: flex; }
   .table-empilable-etroite,
   .table-empilable-etroite tbody,
   .table-empilable-etroite tfoot,

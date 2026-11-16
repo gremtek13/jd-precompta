@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import {
   ariaSortDe, choixDuSelecteur, etatDuSelecteur, valeurDuSelecteur,
   type ColonneTriable, type EtatDuTri,
@@ -6,7 +6,8 @@ import {
 
 // L'EN-TÊTE D'UNE COLONNE TRIABLE (demande du cabinet du 16/11/2026). Le `<th>` porte `aria-sort`, que lit un
 // lecteur d'écran ; le geste est un VRAI bouton, atteint au clavier, dont le nom est le libellé de la colonne. La
-// flèche est décorative (`aria-hidden`) : l'état se lit à `aria-sort`, jamais à un dessin.
+// flèche est dessinée par la feuille de style (`.tri-en-tete::after`, d'après `aria-sort`), sans texte de remplacement :
+// l'état se lit à `aria-sort`, jamais à un dessin, et le texte de l'en-tête reste son libellé, au caractère près.
 export function EnTeteTriable({ colonne, etat, onTrier, className, children }: {
   colonne: string
   etat: EtatDuTri
@@ -19,9 +20,6 @@ export function EnTeteTriable({ colonne, etat, onTrier, className, children }: {
     <th aria-sort={sort} className={className}>
       <button type="button" className="tri-en-tete" onClick={() => onTrier(colonne)}>
         {children}
-        <span className={`tri-fleche${sort === 'none' ? ' tri-fleche-inactive' : ''}`} aria-hidden="true">
-          {sort === 'ascending' ? '▲' : sort === 'descending' ? '▼' : '↕'}
-        </span>
       </button>
     </th>
   )
@@ -36,13 +34,13 @@ export function SelecteurDeTri<T>({ colonnes, etat, onChoisir, etroite = false }
   onChoisir: (etat: EtatDuTri) => void
   etroite?: boolean
 }) {
-  const id = useId()
+  // Le champ DANS son libellé, sans identifiant : un `useId` décalerait ceux des formulaires de l'écran.
   return (
-    <div className={`tri-replie${etroite ? ' tri-replie-etroite' : ''}`}>
-      <label htmlFor={id}>Trier par</label>
-      <select id={id} value={valeurDuSelecteur(etat)} onChange={(e) => onChoisir(etatDuSelecteur(e.target.value, colonnes))}>
+    <label className={`tri-replie${etroite ? ' tri-replie-etroite' : ''}`}>
+      <span>Trier par</span>
+      <select value={valeurDuSelecteur(etat)} onChange={(e) => onChoisir(etatDuSelecteur(e.target.value, colonnes))}>
         {choixDuSelecteur(colonnes).map((c) => <option key={c.valeur} value={c.valeur}>{c.libelle}</option>)}
       </select>
-    </div>
+    </label>
   )
 }

@@ -589,3 +589,28 @@ describe('ClientUpload — trois lectures à la fois, et ce que la lecture n’a
     expect(screen.queryByText('ancienne.pdf')).toBeNull()
   })
 })
+
+// LE TRI PAR UN TOUCHER SUR L'EN-TÊTE (demande du cabinet du 16/11/2026, lib/triDesTableaux.ts).
+describe('ClientUpload — le tri par l’en-tête', () => {
+  it('croissant, décroissant, puis l’ordre d’origine (le plus récent d’abord), et aria-sort le dit', async () => {
+    poser({
+      pieces: [
+        piece({ id: 'p1', nom_fichier: 'b.pdf', created_at: '2026-09-03T08:00:00Z' }),
+        piece({ id: 'p2', nom_fichier: 'C.pdf', created_at: '2026-09-02T08:00:00Z' }),
+        piece({ id: 'p3', nom_fichier: 'a.pdf', created_at: '2026-09-01T08:00:00Z' }),
+      ],
+    })
+    await monter()
+    const noms = () => [...document.querySelectorAll('tbody td[data-libelle="Fichier"]')].map((t) => t.textContent)
+    const enTete = () => screen.getByRole('button', { name: /^Fichier/ })
+    expect(noms()).toEqual(['b.pdf', 'C.pdf', 'a.pdf'])
+    await act(async () => { fireEvent.click(enTete()) })
+    expect(noms()).toEqual(['a.pdf', 'b.pdf', 'C.pdf'])
+    expect(enTete().closest('th')!.getAttribute('aria-sort')).toBe('ascending')
+    await act(async () => { fireEvent.click(enTete()) })
+    expect(noms()).toEqual(['C.pdf', 'b.pdf', 'a.pdf'])
+    await act(async () => { fireEvent.click(enTete()) })
+    expect(noms()).toEqual(['b.pdf', 'C.pdf', 'a.pdf'])
+    expect(enTete().closest('th')!.getAttribute('aria-sort')).toBe('none')
+  })
+})

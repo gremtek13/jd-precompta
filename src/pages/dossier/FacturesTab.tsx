@@ -15,6 +15,9 @@ import { pastilleDeclaration, pastilleEncaissement } from '../../lib/encaissemen
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { EnTeteTriable, SelecteurDeTri } from '../../components/EnTeteTriable'
+import { trierLignes, type ColonneTriable } from '../../lib/triDesTableaux'
+import { useTriDuTableau } from '../../lib/useTriDuTableau'
 import FactureFormModal from './FactureFormModal'
 import FactureAvoirModal from './FactureAvoirModal'
 import { estUneFactureReprise } from '../../lib/facturesReprises'
@@ -107,6 +110,15 @@ type Props = QuiRegarde & {
 // agréée — celle du client ou Super PDP (voir TransmissionFactureModal) — ou, comme avant, simplement
 // imprimée/exportée en PDF pour être envoyée manuellement : la transmission électronique n'est jamais
 // obligatoire ici (un client particulier, une plateforme pas encore reliée).
+// Les colonnes triables de la liste des factures (16/11/2026) : un brouillon sans numéro va en fin, comme toute valeur vide.
+const COLONNES_DES_FACTURES: ColonneTriable<FactureEmise>[] = [
+  { cle: 'numero', libelle: 'Numéro', type: 'texte', valeur: (f) => f.numero },
+  { cle: 'date', libelle: 'Date', type: 'date', valeur: (f) => f.date_emission },
+  { cle: 'client', libelle: 'Client', type: 'texte', valeur: (f) => f.tiers_nom },
+  { cle: 'montant', libelle: 'Montant TTC', type: 'montant', valeur: (f) => f.montant_ttc },
+  { cle: 'statut', libelle: 'Statut', type: 'rang', valeur: (f) => f.statut, ordre: ['brouillon', 'validee'] },
+]
+
 export default function FacturesTab(props: Props) {
   const { dossierId, dossierNom, dossierSiret, dossierAdresse, statutTva, articleExoneration, numeroTvaAttribue, tvaSurDebits, reglageDesVentes, espace } = props
   const dire = (texte: string) => pourLEspace(espace, texte)
@@ -115,6 +127,8 @@ export default function FacturesTab(props: Props) {
   const [loading, setLoading] = useState(true)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [recherche, setRecherche] = useState('')
+  // Le tri choisi d'un clic sur un en-tête (16/11/2026) : l'affichage seul, remis à l'ordre d'origine au changement de dossier.
+  const { tri, trierPar, choisirTri } = useTriDuTableau(dossierId)
   const [editing, setEditing] = useState<FactureEmise | 'new' | null>(null)
   const [apercu, setApercu] = useState<FactureEmise | null>(null)
   const [avoirDe, setAvoirDe] = useState<FactureEmise | null>(null)
@@ -312,6 +326,9 @@ export default function FacturesTab(props: Props) {
       ...(ACOMPTES_PREVUS ? [motsDeLaMarque(marqueDeLaFacture(acompteDe(f.id)))] : []),
     ], recherche),
   )
+  // LE TRI CHOISI PAR UN CLIC SUR UN EN-TÊTE (16/11/2026) : il n'ordonne que les lignes dessinées — la suite des numéros, les
+  // pastilles et les fenêtres lisent `factures` en entier, comme avant.
+  const facturesTriees = trierLignes(filtered, COLONNES_DES_FACTURES, tri)
 
   // Le résultat de la suppression est LU : le `load()` qui suit fait bien réapparaître un brouillon
   // refusé, mais sans un mot, sur un geste que l'opérateur vient de CONFIRMER — le réflexe est alors
@@ -618,12 +635,20 @@ export default function FacturesTab(props: Props) {
               // dans index.css). `.card` reste l'enveloppe qui défile et qui arrondit l'en-tête : l'enveloppe adaptable est DANS
               // la carte, et c'est `table-empilable-en-carte` qui rend aux fiches le jeu que la carte, sans marge, ne leur donne pas.
               <div className="tableau-adaptable">
+                <SelecteurDeTri colonnes={COLONNES_DES_FACTURES} etat={tri} onChoisir={choisirTri} />
                 <table className="table-empilable table-empilable-en-carte">
                   <thead>
-                    <tr><th>Numéro</th><th>Date</th><th>Client</th><th>Montant TTC</th><th>Statut</th><th></th></tr>
+                    <tr>
+                      <EnTeteTriable colonne="numero" etat={tri} onTrier={trierPar}>Numéro</EnTeteTriable>
+                      <EnTeteTriable colonne="date" etat={tri} onTrier={trierPar}>Date</EnTeteTriable>
+                      <EnTeteTriable colonne="client" etat={tri} onTrier={trierPar}>Client</EnTeteTriable>
+                      <EnTeteTriable colonne="montant" etat={tri} onTrier={trierPar}>Montant TTC</EnTeteTriable>
+                      <EnTeteTriable colonne="statut" etat={tri} onTrier={trierPar}>Statut</EnTeteTriable>
+                      <th></th>
+                    </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((f) => {
+                    {facturesTriees.map((f) => {
                       const origine = f.facture_origine_id ? factures.find((o) => o.id === f.facture_origine_id) : null
                       const acompte = acompteDe(f.id)
                       const marque = marqueDeLaFacture(acompte)

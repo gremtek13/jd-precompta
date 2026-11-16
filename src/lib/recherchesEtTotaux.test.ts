@@ -190,6 +190,12 @@ describe('une recherche filtre l’affichage, jamais un total', () => {
     expect(fautes(correct)).toEqual([])
   })
 
+  it('et il lit les tris branchés — un plancher, pas une simple présence', () => {
+    // Huit tableaux branchés le 16/11/2026 : un scanner qui n'en verrait plus aucun rendrait « zéro faute » par cécité.
+    const fichiers = sources('src').filter((f) => lireTris(readFileSync(f, 'utf8')).length > 0)
+    expect(fichiers.length).toBeGreaterThanOrEqual(8)
+  })
+
   it('et l’ensemble d’un tri ne porte aucun chiffre non plus — défaut PLANTÉ', () => {
     const synthetique = [
       '  const affichees = trierLignes(filtrees, COLONNES, tri)',

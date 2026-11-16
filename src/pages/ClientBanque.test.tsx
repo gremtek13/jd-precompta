@@ -885,3 +885,22 @@ describe('« Mon année »', () => {
     expect(enTexte(section())).not.toMatch(/€/)
   })
 })
+
+// LE TRI PAR UN TOUCHER SUR L'EN-TÊTE (demande du cabinet du 16/11/2026, lib/triDesTableaux.ts) : les lignes, jamais le résumé.
+describe('le tri des mouvements par l’en-tête', () => {
+  it('croissant, décroissant, puis l’ordre d’origine, et aria-sort le dit', async () => {
+    await monter()
+    const origine = libelles()
+    const enTete = () => screen.getByRole('button', { name: /^Montant/ })
+    await act(async () => { fireEvent.click(enTete()) })
+    expect(libelles()[0]).toBe('VIR FICTIF COMPTE PERSO')
+    expect(libelles().at(-1)).toBe('VIR FICTIF ASSURANCE MALADIE')
+    expect(enTete().closest('th')!.getAttribute('aria-sort')).toBe('ascending')
+    await act(async () => { fireEvent.click(enTete()) })
+    expect(libelles()[0]).toBe('VIR FICTIF ASSURANCE MALADIE')
+    expect(enTete().closest('th')!.getAttribute('aria-sort')).toBe('descending')
+    await act(async () => { fireEvent.click(enTete()) })
+    expect(libelles()).toEqual(origine)
+    expect(enTete().closest('th')!.getAttribute('aria-sort')).toBe('none')
+  })
+})
