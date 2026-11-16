@@ -53349,3 +53349,10 @@ plus de 42704 sans le rôle `proprietaire`. Copie de `replique_227` portée à 2
 identique à l'avant ; la production simulée (cabinet changé d'identifiant, `proprietaire` renommé, les objets à un autre
 rôle ; l'ancien fichier y tombe en 42704) : sans désignation et libre, 255, 0, 148 sur 148 ; verrouillée, 227, 0, 134 sur
 134, la désignation intacte ; trois mutations plantées dans le code neuf mordent.
+
+ESSAIS-Q2 tranchée (A) par le cabinet le 16/11/2026, dans la conversation. Les cinq blocs rejoués en production le même
+soir, par `execute_sql`, un appel par bloc (le texte recopié, ses commentaires omis), rien resté en base : DC 9 sur 9 et
+3 mutations sur 3, LM 11 sur 11 et 4 sur 4, HF 10 sur 10 et 4 sur 4, HD 10 sur 10 et 4 sur 4 (la ligne du stockage
+s'écrit bien dans la transaction annulée), FL 11 sur 11 et 5 sur 5. La désignation du dossier du cabinet s'est remplacée
+dans chaque bloc : aucune ligne « NON JOUÉS ». Restent non rejoués en production les blocs de `rls.sql` hors de ceux
+nommés dans les entrées du 15 et du 16/11.
