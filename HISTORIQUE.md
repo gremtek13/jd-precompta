@@ -53219,5 +53219,5 @@ en espèces d'une pièce citée, saisi par un accès client, se refuse sous des 
 reprise ; une lecture neuve (les seuls identifiants, au cabinet et à « Caisse ») le fait dire avant le clic dans « Mes pièces »
 — elle se présente au cabinet. **Preuves** : trois essais neufs justes, 28 mutations sur 28 ; le plancher balayé contre
 `partsDesPaiements` (9 813 cas) ; trois ordres, une signature ; retours à rebours ; relevés de tête ; quatre courses (sans le
-verrou de la facture, la vente compte deux fois) ; `rls.sql` 259/0, 150 sur 150 ; 151 essais avant/après identiques hors de
-trois attendus rendus conditionnels ; banc du leurre SÛR.
+verrou de la facture, la vente compte deux fois) ; `rls.sql` 259/0, 150 sur 150 (le bloc HC) ; 151 essais avant/après
+identiques, hors des neufs, de l'inventaire, de la signature et de trois attendus justes avec ou sans A8Q5-Q4 ; banc SÛR.

@@ -99,6 +99,12 @@ describe('A8Q5Q3Q2Q2-Q1 — la migration, son retour et le module', () => {
     expect(MIGRATION).toContain('ELLE OUVRE AU CLIENT UNE LECTURE QU\'IL N\'A PAS')
   })
 
+  it('« Mes pièces » appelle la fonction de la migration, sous son nom, pour la société affichée', () => {
+    const ecran = readFileSync(new URL('../pages/ClientUpload.tsx', import.meta.url), 'utf8')
+    expect(ecran).toContain(`supabase.rpc('${FONCTION_DES_PIECES_HORS_DE_LA_CAISSE}', { p_dossier_id: id })`)
+    expect(MIGRATION).toContain(`create function public.${FONCTION_DES_PIECES_HORS_DE_LA_CAISSE}(p_dossier_id uuid)`)
+  })
+
   it('la garde de fin, le retour et les empreintes se tiennent ; le retour ne retire que ce qu’elle pose', () => {
     const empreintes = ['garder_especes_du_client_hors_des_reprises', FONCTION_DES_PIECES_HORS_DE_LA_CAISSE]
       .map((nom) => `${nom}=${md5(corps(definition(nom)))}`)

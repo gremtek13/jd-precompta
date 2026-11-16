@@ -100,6 +100,13 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
       + '`security definer`, sans écriture ; migration `reprises_au_client`, A8Q5-Q2, préparée), au montage de « Ma '
       + 'simulation » — derrière `REPRISES_AU_CLIENT_PREVUES`.',
   },
+  'rpc:pieces_hors_de_la_caisse_du_client': {
+    nature: 'lecture',
+    raison: 'Les pièces d’un dossier que la caisse du client ne règle pas — l’original d’une facture reprise —, leurs seuls '
+      + 'identifiants (fonction `stable`, `security definer`, sans écriture ; migration `especes_du_client_hors_des_reprises`, '
+      + 'A8Q5Q3Q2Q2-Q1, préparée), lue avec la caisse de « Mes pièces » et relue après un geste — derrière '
+      + '`ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES`.',
+  },
   'rpc:lettres_de_mission_du_client': {
     nature: 'lecture',
     raison: 'Les lettres de mission proposées d’un client, figées, à son accès « Documents » (fonction `stable`, `security '
