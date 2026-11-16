@@ -7,8 +7,8 @@ import type { RefusDeLaBase } from './pieceDUneFactureReprise'
 // Rien ne tenait la pièce d'un mouvement du relevé, ni celle de la part d'un virement groupé, dans le dossier de la ligne : la
 // base vérifiait seulement qu'elle existe, et une garde qui juge la pièce citée (celle des factures reprises, celle de
 // l'exemplaire d'une facture source) répondait alors sur la pièce d'un dossier que l'auteur du geste ne lit pas, en en disant le
-// nom de fichier et la facture. La migration préparée `piece_d_un_paiement_dans_son_dossier`
-// (supabase/preparees/20261116140000_piece_d_un_paiement_dans_son_dossier.sql) pose `garder_piece_dans_son_dossier`, qui tire
+// nom de fichier et la facture. La migration `piece_d_un_paiement_dans_son_dossier`, en production
+// depuis le 16/11/2026 (supabase/schema/20261116174425_piece_d_un_paiement_dans_son_dossier.sql), pose `garder_piece_dans_son_dossier`, qui tire
 // juste après la porte d'accès et avant toute garde qui lit la pièce : la pièce d'un mouvement est de son dossier ; celle d'une
 // part, du dossier de la part et de son mouvement ; une pièce qu'un mouvement ou une part cite, un mouvement dont des parts
 // citent une pièce, ne changent pas de dossier. Le paiement par la caisse la tenait déjà (sa fonction, la garde de la table).
@@ -19,11 +19,12 @@ import type { RefusDeLaBase } from './pieceDUneFactureReprise'
 // aucun écran ne change le dossier d'une pièce ni d'un mouvement. La garde ne dit rien de la pièce (ni nom, ni dossier) et ne
 // distingue pas une pièce d'un autre dossier d'un identifiant inconnu : elle tire avant la clé étrangère.
 
-// LE DRAPEAU, BAISSÉ jusqu'à l'application de la migration. Levé le jour de l'application (le fichier entré dans
-// supabase/schema/, texte inchangé). Il se lit À CHAQUE APPEL : les tests jouent ses deux états sur l'objet ci-dessous.
+// LE DRAPEAU, LEVÉ depuis l'application de la migration le 16/11/2026 (le fichier entré dans supabase/schema/ sous la version
+// 20261116174425, texte inchangé) ; il se baisse AVANT tout retour. Il se lit À CHAQUE APPEL : les tests jouent ses deux états sur
+// l'objet ci-dessous.
 export const DRAPEAU_DE_LA_PIECE_D_UN_PAIEMENT = {
-  /** Faux jusqu'à l'application de `piece_d_un_paiement_dans_son_dossier`, préparée le 16/11/2026. */
-  PIECE_D_UN_PAIEMENT_DANS_SON_DOSSIER_PREVUE: false as boolean,
+  /** Vrai depuis l'application de `piece_d_un_paiement_dans_son_dossier`, le 16/11/2026. */
+  PIECE_D_UN_PAIEMENT_DANS_SON_DOSSIER_PREVUE: true as boolean,
 }
 
 /** Le drapeau, lu à l'appel. */

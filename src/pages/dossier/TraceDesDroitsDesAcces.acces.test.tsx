@@ -13,6 +13,11 @@ vi.mock('../../lib/traceDesDroits', () => ({
 vi.mock('../../lib/adressesDesAccesRetires', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/adressesDesAccesRetires')>()), ADRESSES_DES_ACCES_RETIRES_PREVUES: false,
 }))
+// Qui a ouvert un accès (P1TQ2-Q1) : son drapeau, levé depuis le 16/11/2026, baissé ici — ce fichier éprouve un autre état,
+// et l'état d'avant l'attestation reste éprouvé tant que son code existe (TraceDesDroitsDesAcces.ouvertures.test.tsx, le levé).
+vi.mock('../../lib/ouverturesAttestees', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/ouverturesAttestees')>()), OUVERTURES_ATTESTEES_PREVUES: false,
+}))
 vi.mock('../../lib/traceDesDroitsLecture', () => ({
   lireLaTraceDuDossier: async (dossierId: string) => ({
     dossierId, motif: null,
@@ -22,6 +27,10 @@ vi.mock('../../lib/traceDesDroitsLecture', () => ({
     ],
   }),
   lireLesAdressesDesAccesRetires: async () => { throw new Error('non lue sous son drapeau baissé') },
+  // Le compte du cabinet derrière les gestes (P1TQ2Q1-Q1), tel que la session du chef le lit dans l'équipe.
+  lireLesComptesDuCabinet: async (dossierId: string, comptes: readonly string[]) => ({
+    dossierId, comptes: comptes.join(','), motif: null, equipe: new Map([['u-cabinet', 'chef@cabinet.example']]),
+  }),
 }))
 
 describe('« Droits changés », l’accès lui-même tracé', () => {
@@ -34,6 +43,9 @@ describe('« Droits changés », l’accès lui-même tracé', () => {
     expect(screen.getByText('ouvert')).toBeTruthy()
     expect(screen.getByText('retiré')).toBeTruthy()
     expect(screen.getByText(/^Chaque accès ouvert ou retiré, même sans case cochée/)).toBeTruthy()
+    // P1TQ2Q1-Q1 : qui a retiré l'accès se nomme par l'adresse de son compte, lue sous la session de qui regarde.
+    const retrait = screen.getByText('retiré').closest('tr') as HTMLElement
+    expect(retrait.querySelector('[data-libelle="Par"]')?.textContent).toBe('Le cabinet — chef@cabinet.example')
   })
 
   it('la lecture levée seule, avant le collage : la carte ne dit pas qu’elle trace les accès', async () => {

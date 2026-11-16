@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   ACCES, AUCUN_CHANGEMENT_TRACE, GESTES, INTITULE_SANS_ADRESSE, LIBELLE_DE_L_ACCES, MENTIONS_DE_L_AUTEUR, TITRES_DE_L_AUTEUR,
-  TITRE_DE_L_OUVERTURE_ATTESTEE, auteurDuGeste, auteurMontre,
+  TITRE_DE_L_OUVERTURE_ATTESTEE, TITRE_DU_COMPTE_DU_CABINET_NOMME, auteurDuGeste, auteurMontre, comptesANommer,
   groupesDeLaTrace, ligneDeTrace, nombreDeChangements, ordreDeLaTrace, phraseDeLaTrace, quandADitLaTrace, traceDeLaLecture,
   type LigneDeTrace,
 } from './traceDesDroitsVue'
@@ -315,5 +315,42 @@ describe('l’auteur montré, l’attestation d’une ouverture lue', () => {
     const sousSession = ligne({ id: 't-a', droit: ACCES, geste: 'creation', coche: true, auteur_id: 'u-collegue' })
     expect(auteurMontre(lus(), sousSession, attestee, equipe))
       .toEqual({ mention: MENTIONS_DE_L_AUTEUR.cabinet, adresse: null, titre: TITRES_DE_L_AUTEUR.cabinet })
+  })
+})
+
+// P1TQ2Q1-Q1 (tranchée par le cabinet le 16/11/2026) : le compte du cabinet qui a coché, décoché ou retiré se nomme par l'adresse
+// que la session de qui regarde lit dans l'équipe ; sinon « Le cabinet ». Le client et « sans session » ne se nomment jamais.
+describe('le compte du cabinet derrière un geste', () => {
+  const equipe = new Map([['u-cabinet', 'chef@cabinet.example'], ['u-client', 'client-aussi@cabinet.example']])
+
+  it('les comptes à nommer : les auteurs connectés, hors du titulaire de la ligne, triés, sans doublon', () => {
+    expect(comptesANommer([
+      ligne({ id: 't1', auteur_id: 'u-z' }), ligne({ id: 't2', auteur_id: null }), ligne({ id: 't3', auteur_id: 'u-client' }),
+      ligne({ id: 't4', auteur_id: 'u-a' }), ligne({ id: 't5', auteur_id: 'u-z' }),
+    ])).toEqual(['u-a', 'u-z'])
+    expect(comptesANommer([])).toEqual([])
+  })
+
+  it('une case cochée, décochée, un accès retiré par le cabinet : « Le cabinet », suivi de l’adresse lue', () => {
+    for (const geste of [
+      ligne({ id: 'a', droit: 'ventes', coche: true }), ligne({ id: 'b', droit: 'banque', coche: false }),
+      ligne({ id: 'c', droit: ACCES, geste: 'retrait', coche: false }),
+    ]) {
+      expect(auteurMontre(lus(), geste, null, equipe))
+        .toEqual({ mention: MENTIONS_DE_L_AUTEUR.cabinet, adresse: 'chef@cabinet.example', titre: TITRE_DU_COMPTE_DU_CABINET_NOMME })
+    }
+  })
+
+  it('l’adresse non lue (un autre membre), ou l’équipe absente : « Le cabinet », sans adresse', () => {
+    const cabinet = { mention: MENTIONS_DE_L_AUTEUR.cabinet, adresse: null, titre: TITRES_DE_L_AUTEUR.cabinet }
+    expect(auteurMontre(lus(), ligne(), null, new Map())).toEqual(cabinet)
+    expect(auteurMontre(lus(), ligne(), null, null)).toEqual(cabinet)
+  })
+
+  it('le client et « sans session » ne se nomment jamais par l’équipe', () => {
+    expect(auteurMontre(lus(), ligne({ auteur_id: 'u-client' }), null, equipe))
+      .toEqual({ mention: MENTIONS_DE_L_AUTEUR.client, adresse: null, titre: TITRES_DE_L_AUTEUR.client })
+    expect(auteurMontre(lus('u-cabinet'), ligne(), null, equipe).adresse).toBeNull()
+    expect(auteurMontre(lus(), ligne({ auteur_id: null }), null, equipe).adresse).toBeNull()
   })
 })

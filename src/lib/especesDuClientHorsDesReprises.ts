@@ -10,7 +10,7 @@ import { piecesCiteesRendues } from './reprisesAuClient'
 // Le client « Caisse », sans « Ventes », qui paie en espèces l'original d'une facture reprise apprenait, en essayant des
 // montants, ce qui reste à encaisser au registre qu'il ne lit pas (la garde différée des règlements, A8Q5Q3Q2-Q2), et, d'un
 // paiement daté de la reprise ou d'après, le nom de la pièce et le numéro de la facture (la garde des règlements d'A8-Q5). La
-// migration préparée `especes_du_client_hors_des_reprises` (supabase/preparees/20261116142000_especes_du_client_hors_des_reprises.sql)
+// migration `especes_du_client_hors_des_reprises`, en production depuis le 16/11/2026 (supabase/schema/20261116174819_especes_du_client_hors_des_reprises.sql),
 // refuse au client, avant toute autre garde qui parle de la reprise, tout paiement en espèces d'une pièce citée — sa
 // correction comprise —, sous des mots NEUTRES : ni montant, ni nom de fichier, ni facture, ni encaissements. Le cabinet garde
 // le geste. Elle ouvre aussi au client « Caisse » la liste des pièces concernées (`pieces_hors_de_la_caisse_du_client`, leurs
@@ -19,12 +19,13 @@ import { piecesCiteesRendues } from './reprisesAuClient'
 // Ce module redit le refus, aux mots de la base, lit la liste, et dit ce que l'écran en fait ; especesDuClientHorsDesReprises.test.ts
 // les confronte au texte de la migration et à son essai. Pur : il n'importe jamais `supabase.ts` (l'écran passe la requête).
 
-// LE DRAPEAU, BAISSÉ jusqu'à l'application de la migration : la fonction n'existe pas encore en base, et « Mes pièces » est celle
-// d'hier, au caractère près — rien ne se lit. Levé le jour de l'application (le fichier entré dans supabase/schema/, texte
-// inchangé). Il se lit À CHAQUE APPEL : les tests jouent ses deux états sur l'objet ci-dessous.
+// LE DRAPEAU, LEVÉ depuis l'application de la migration le 16/11/2026 (le fichier entré dans supabase/schema/ sous la version
+// 20261116174819, texte inchangé). Baissé, la fonction n'existerait pas en base et « Mes pièces » serait celle d'avant, au
+// caractère près — rien ne se lirait ; il se baisse AVANT tout retour. Il se lit À CHAQUE APPEL : les tests jouent ses deux
+// états sur l'objet ci-dessous.
 export const DRAPEAU_DES_ESPECES_DU_CLIENT = {
-  /** Faux jusqu'à l'application de `especes_du_client_hors_des_reprises`, préparée le 16/11/2026. */
-  ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES: false as boolean,
+  /** Vrai depuis l'application de `especes_du_client_hors_des_reprises`, le 16/11/2026. */
+  ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES: true as boolean,
 }
 
 /** Le drapeau, lu à l'appel. */

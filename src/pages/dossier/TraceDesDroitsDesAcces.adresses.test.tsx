@@ -15,6 +15,11 @@ vi.mock('../../lib/traceDesDroits', () => ({
 vi.mock('../../lib/adressesDesAccesRetires', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/adressesDesAccesRetires')>()), ADRESSES_DES_ACCES_RETIRES_PREVUES: true,
 }))
+// Qui a ouvert un accès (P1TQ2-Q1) : son drapeau, levé depuis le 16/11/2026, baissé ici — ce fichier éprouve un autre état,
+// et l'état d'avant l'attestation reste éprouvé tant que son code existe (TraceDesDroitsDesAcces.ouvertures.test.tsx, le levé).
+vi.mock('../../lib/ouverturesAttestees', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/ouverturesAttestees')>()), OUVERTURES_ATTESTEES_PREVUES: false,
+}))
 vi.mock('../../lib/traceDesDroitsLecture', () => ({
   lireLaTraceDuDossier: async (dossierId: string) => ({
     dossierId, motif: null,

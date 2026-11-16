@@ -257,13 +257,14 @@ async function refusDesDeuxFacteurs(appelant: AppelantDesDeuxFacteurs): Promise<
 // ── FIN DEUX FACTEURS ────────────────────────────────────────────────────────────────────────────────────────────────
 
 // QUI A OUVERT L'ACCÈS (P1TQ2-Q1, tranchée par le cabinet le 16/11/2026 : « (A) Nommer le compte du cabinet » ; la migration
-// PRÉPARÉE `auteur_des_ouvertures_d_acces`). L'accès s'écrit ici sous la clé secrète, sans session : la trace des droits en
+// `auteur_des_ouvertures_d_acces`, en production depuis le 16/11/2026). L'accès s'écrit ici sous la clé secrète, sans session : la trace des droits en
 // note l'arrivée sans auteur. Juste après, SOUS LA SESSION DE L'APPELANT, `attester_ouverture_d_acces(dossier, accès)` : la base
 // n'en croit que le cabinet du dossier, et nomme elle-même le compte de la session (jamais un paramètre). Une attestation
 // refusée ou en panne ne défait pas l'accès, déjà écrit : la réponse le dit (`ouvertureAttestee: false`), et la trace reste
-// « sans session », comme hier. La constante reste baissée tant que la migration n'est pas en base : la fonction SQL
-// n'existerait pas, et chaque ouverture le dirait ; baissée, la fonction écrit et répond comme hier, mot pour mot.
-const OUVERTURES_ATTESTEES_EN_BASE = false
+// « sans session », comme avant. La constante est LEVÉE depuis que la migration est en base ; baissée (l'état d'avant, à
+// remettre AVANT tout retour : la fonction SQL n'existerait plus, et chaque ouverture le dirait), la fonction écrit et
+// répond comme avant, mot pour mot.
+const OUVERTURES_ATTESTEES_EN_BASE = true
 
 interface AppelantDeLAttestation {
   rpc: (fonction: "attester_ouverture_d_acces", args: { p_dossier_id: string; p_acces_id: string }) => PromiseLike<{ error: unknown }>

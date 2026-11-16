@@ -30,6 +30,10 @@ const RETOUR = leFichier(/^\d{14}_retour_reglements_de_la_piece_citee\.sql$/, ['
 const ESSAI = readFileSync(new URL('../../supabase/essais/reglementsDeLaPieceCitee.sql', import.meta.url), 'utf8')
 const EXPORTEE = fichiersDuSchema().some((f) => /\d{14}_reglements_de_la_piece_citee\.sql$/.test(f.chemin))
 const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
+// Les corps que la garde de tête suppose sont ceux de la production le jour de son collage : les migrations de l'export
+// d'AVANT elle (plancher_a_l_ecart_d_alignement, appliquée le même jour après elle, redéfinit `recu_par_la_piece`).
+const VERSION = /\/(\d{14})_reglements_de_la_piece_citee\.sql$/.exec(fichiersDuSchema().find((f) => /\d{14}_reglements_de_la_piece_citee\.sql$/.test(f.chemin))?.chemin ?? '')?.[1] ?? '99999999999999'
+const AVANT_ELLE = (f: { chemin: string }) => (/\/(\d{14})_[^/]*$/.exec(f.chemin)?.[1] ?? '') < VERSION
 
 /** La définition de la garde dans la migration : de son `create` au délimiteur fermant, exclu. */
 function garde(): string {
@@ -108,7 +112,7 @@ describe('A8Q5Q3Q2-Q2 — la migration, son retour et le module', () => {
   })
 
   it('elle juge ce que la pièce reçoit des trois sources de `recu_par_la_piece`, de son dossier, comme l’export les porte', () => {
-    const recu = derniereDefinitionSql('recu_par_la_piece')
+    const recu = derniereDefinitionSql('recu_par_la_piece', AVANT_ELLE)
     expect(recu).toContain("where l.piece_id = p.id and l.dossier_id = p.dossier_id and l.statut = 'rapprochee'")
     expect(recu).toContain("where g.piece_id = p.id and l.dossier_id = p.dossier_id and l.statut = 'rapprochee' and l.reglement_groupe")
     expect(recu).toContain("where o.piece_id = p.id and o.dossier_id = p.dossier_id and o.genre = 'paiement' and o.retire_le is null")
@@ -119,7 +123,7 @@ describe('A8Q5Q3Q2-Q2 — la migration, son retour et le module', () => {
     expect(sql).toContain('v_recu := public.recu_par_la_piece(v_piece);')
     // La garde de tête lit les quatre corps qu'elle suppose à leur empreinte dans l'export.
     const attendu = ['citer_piece_de_facture_reprise', 'enregistrer_encaissement', 'garder_reglement_d_une_piece_reprise', 'recu_par_la_piece']
-      .map((nom) => `${nom}=${md5(corps(derniereDefinitionSql(nom)))}`).join(',')
+      .map((nom) => `${nom}=${md5(corps(derniereDefinitionSql(nom, AVANT_ELLE)))}`).join(',')
     const lus = [...bloc(MIGRATION, 'garde').matchAll(/'(\w+)=([0-9a-f]{32})/g)].map((m) => `${m[1]}=${m[2]}`).join(',')
     expect(lus).toBe(attendu)
   })

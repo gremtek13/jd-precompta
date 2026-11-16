@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { lireLaTraceDuDossier } from './traceDesDroitsLecture'
+import { lireLaTraceDuDossier, lireLesComptesDuCabinet } from './traceDesDroitsLecture'
 
 // LA LECTURE DE LA TRACE DES DROITS D'UN DOSSIER (étape P1-trace). Ce que ces cas gardent : les lignes DU DOSSIER demandé et
 // d'aucun autre, lues jusqu'au bout de ce que la base annonce (`lireTout`), sous un tri total terminé par la clé primaire ;
@@ -8,18 +8,20 @@ import { lireLaTraceDuDossier } from './traceDesDroitsLecture'
 
 const faux = vi.hoisted(() => ({
   lignes: [] as Record<string, unknown>[],
+  // L'équipe telle que la policy la rend à la session (P1TQ2Q1-Q1).
+  equipe: [] as Record<string, unknown>[],
   mode: 'entier' as 'entier' | 'muet' | 'refus' | 'leve',
   muetApres: 1,
-  demandes: [] as { table: string; colonnes: string; dossier: unknown; tri: { colonne: string; options: unknown }[] }[],
+  demandes: [] as { table: string; colonnes: string; dossier: unknown; comptes: unknown; tri: { colonne: string; options: unknown }[] }[],
 }))
 
 vi.mock('./supabase', async () => {
-  const { filtrer, predicatEq } = await import('../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn } = await import('../test/filtresPostgrest')
   return {
     supabase: {
       from: (table: string) => {
         const predicats: ((l: Record<string, unknown>) => boolean)[] = []
-        const demande = { table, colonnes: '', dossier: null as unknown, tri: [] as { colonne: string; options: unknown }[] }
+        const demande = { table, colonnes: '', dossier: null as unknown, comptes: null as unknown, tri: [] as { colonne: string; options: unknown }[] }
         faux.demandes.push(demande)
         let debut = 0
         let fin = Number.MAX_SAFE_INTEGER
@@ -27,12 +29,13 @@ vi.mock('./supabase', async () => {
         Object.assign(c, {
           select: (colonnes: string) => { demande.colonnes = colonnes; return c },
           eq: (colonne: string, valeur: unknown) => { demande.dossier = valeur; predicats.push(predicatEq(colonne, valeur)); return c },
+          in: (colonne: string, valeurs: readonly unknown[]) => { demande.comptes = valeurs; predicats.push(predicatIn(colonne, valeurs)); return c },
           order: (colonne: string, options?: unknown) => { demande.tri.push({ colonne, options }); return c },
           range: (d: number, f: number) => { debut = d; fin = f; return c },
           then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
             if (faux.mode === 'leve') return Promise.reject(new Error('réseau coupé')).then(suite, echec)
             if (faux.mode === 'refus') return Promise.resolve({ data: null, error: { message: 'accès refusé' }, count: null }).then(suite, echec)
-            const toutes = filtrer(faux.lignes, predicats)
+            const toutes = filtrer(table === 'cabinet_admins' ? faux.equipe : faux.lignes, predicats)
             const jusqua = faux.mode === 'muet' ? Math.min(fin + 1, faux.muetApres) : fin + 1
             return Promise.resolve({ data: toutes.slice(debut, jusqua), error: null, count: toutes.length }).then(suite, echec)
           },
@@ -52,6 +55,37 @@ beforeEach(() => {
   faux.mode = 'entier'
   faux.demandes = []
   faux.lignes = [trace('t1', 'd1'), trace('t2', 'd1', { fait_le: '2026-11-09T09:00:00Z' }), trace('t3', 'd2')]
+  faux.equipe = [
+    { user_id: 'u-cabinet', email: ' chef@cabinet.example ' },
+    { user_id: 'u-sans', email: '' },
+    { user_id: 'u-ailleurs', email: 'ailleurs@cabinet.example' },
+  ]
+})
+
+// P1TQ2Q1-Q1 : les comptes du cabinet derrière les gestes, lus dans l'équipe sous la session de qui regarde.
+describe('lireLesComptesDuCabinet', () => {
+  it('aucun compte à nommer : rien n’est demandé, une lecture entière et vide', async () => {
+    expect(await lireLesComptesDuCabinet('d1', [])).toEqual({ dossierId: 'd1', comptes: '', equipe: new Map(), motif: null })
+    expect(faux.demandes).toEqual([])
+  })
+
+  it('demande l’équipe, deux colonnes, les seuls comptes demandés, un tri total ; rend les adresses lisibles, gardées avec la clé', async () => {
+    const lue = await lireLesComptesDuCabinet('d1', ['u-cabinet', 'u-sans'])
+    expect(lue).toEqual({ dossierId: 'd1', comptes: 'u-cabinet,u-sans', equipe: new Map([['u-cabinet', 'chef@cabinet.example']]), motif: null })
+    expect(faux.demandes).toHaveLength(1)
+    expect(faux.demandes[0]).toMatchObject({ table: 'cabinet_admins', colonnes: 'user_id, email', comptes: ['u-cabinet', 'u-sans'] })
+    expect(faux.demandes[0].tri).toEqual([{ colonne: 'user_id', options: undefined }])
+  })
+
+  it('en partie, refusée ou rompue : le motif le dit, ce qui est lu reste', async () => {
+    faux.mode = 'muet'
+    const partielle = await lireLesComptesDuCabinet('d1', ['u-ailleurs', 'u-cabinet'])
+    expect(partielle.motif).toMatch(/^l’équipe : /)
+    faux.mode = 'refus'
+    expect(await lireLesComptesDuCabinet('d1', ['u-cabinet'])).toMatchObject({ equipe: new Map(), motif: expect.stringMatching(/^l’équipe : /) })
+    faux.mode = 'leve'
+    expect(await lireLesComptesDuCabinet('d1', ['u-cabinet'])).toMatchObject({ equipe: new Map(), motif: expect.stringMatching(/^l’équipe : /) })
+  })
 })
 
 describe('lireLaTraceDuDossier', () => {

@@ -5,13 +5,13 @@ import type { AccesDuDossier } from '../../lib/auteursVentes'
 import { OUVERTURES_ATTESTEES_PREVUES } from '../../lib/ouverturesAttestees'
 import { ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE, TRACE_DES_DROITS_PREVUE } from '../../lib/traceDesDroits'
 import {
-  lireLaTraceDuDossier, lireLesAdressesDesAccesRetires, lireLesOuverturesAttestees, type LectureDeLaTrace,
-  type LectureDesAdresses, type LectureDesOuvertures,
+  lireLaTraceDuDossier, lireLesAdressesDesAccesRetires, lireLesComptesDuCabinet, lireLesOuverturesAttestees,
+  type LectureDeLaTrace, type LectureDesAdresses, type LectureDesComptesDuCabinet, type LectureDesOuvertures,
 } from '../../lib/traceDesDroitsLecture'
 import {
-  AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE, CE_QUE_DIT_LA_TRACE_DES_ACCES, CE_QUE_DIT_L_ADRESSE_RETENUE,
-  CE_QUE_DIT_L_OUVERTURE_ATTESTEE, auteurMontre, groupesDeLaTrace, nombreDeChangements, phraseDeLaTrace, quandADitLaTrace,
-  type AccesNomme,
+  AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE, CE_QUE_DIT_LA_TRACE_DES_ACCES, CE_QUE_DIT_LE_COMPTE_DU_CABINET,
+  CE_QUE_DIT_L_ADRESSE_RETENUE, CE_QUE_DIT_L_OUVERTURE_ATTESTEE, auteurMontre, comptesANommer, groupesDeLaTrace,
+  nombreDeChangements, phraseDeLaTrace, quandADitLaTrace, type AccesNomme,
 } from '../../lib/traceDesDroitsVue'
 
 // « DROITS CHANGÉS » : LA TRACE DES CASES D'UN ACCÈS, SOUS LA LISTE DE L'ONGLET ACCÈS (étape P1-trace, ligne 51.5). Côté cabinet
@@ -32,6 +32,11 @@ import {
 // gardées avec leur dossier ; rien ne s'affiche avant leur retour. Une arrivée attestée se dit « Le cabinet », suivie de
 // l'adresse du compte quand cette session la lit ; lues en partie, le bandeau le dit, et une arrivée sans attestation lue
 // reste « Sans session ».
+//
+// QUI A COCHÉ, DÉCOCHÉ OU RETIRÉ (P1TQ2Q1-Q1, tranchée par le cabinet le 16/11/2026, sans migration) : la trace revenue, ses
+// auteurs connectés (`comptesANommer`) se lisent dans l'équipe sous la même session, gardés avec le dossier et la liste
+// demandée ; rien ne s'affiche avant leur retour. Un geste du cabinet se dit « Le cabinet », suivi de l'adresse de son compte
+// quand cette session la lit (le chef, le super-administrateur, le compte lui-même) ; lue en partie, le bandeau le dit.
 export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, accesDuDossier, lectureNo }: {
   dossierId: string
   /** Les accès lus aujourd'hui (leur identifiant ne sert qu'à retrouver leur trace). */
@@ -47,6 +52,7 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
   const [lecture, setLecture] = useState<LectureDeLaTrace | null>(null)
   const [lectureDesAdresses, setLectureDesAdresses] = useState<LectureDesAdresses | null>(null)
   const [lectureDesOuvertures, setLectureDesOuvertures] = useState<LectureDesOuvertures | null>(null)
+  const [lectureDesComptes, setLectureDesComptes] = useState<LectureDesComptesDuCabinet | null>(null)
 
   useEffect(() => {
     if (!TRACE_DES_DROITS_PREVUE) return
@@ -62,13 +68,30 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
     return () => { annulee = true }
   }, [dossierId, lectureNo])
 
+  // Les comptes à nommer, de la trace revenue POUR CE DOSSIER seulement ; leur liste jointe est la clé de leur lecture.
+  // La même liste, relue avec la trace, ne se redemande pas : l'effet suit la clé, pas le tableau.
+  const cleDesComptes = lecture !== null && lecture.dossierId === dossierId ? comptesANommer(lecture.lignes).join(',') : null
+  useEffect(() => {
+    // Aucun compte à nommer (aucun geste sous une session du cabinet) : rien à lire.
+    if (!TRACE_DES_DROITS_PREVUE || cleDesComptes === null || cleDesComptes === '') return
+    let annulee = false
+    void lireLesComptesDuCabinet(dossierId, cleDesComptes.split(',')).then((lus) => { if (!annulee) setLectureDesComptes(lus) })
+    return () => { annulee = true }
+  }, [dossierId, cleDesComptes])
+
   if (!TRACE_DES_DROITS_PREVUE) return null
 
+  const comptesLus: LectureDesComptesDuCabinet | null = cleDesComptes === ''
+    ? { dossierId, comptes: '', equipe: new Map(), motif: null }
+    : lectureDesComptes !== null && lectureDesComptes.dossierId === dossierId && lectureDesComptes.comptes === cleDesComptes
+      ? lectureDesComptes : null
   const adressesLues = lectureDesAdresses !== null && lectureDesAdresses.dossierId === dossierId ? lectureDesAdresses : null
   const ouverturesLues = lectureDesOuvertures !== null && lectureDesOuvertures.dossierId === dossierId ? lectureDesOuvertures : null
   const lue = lecture !== null && lecture.dossierId === dossierId && (!ADRESSES_DES_ACCES_RETIRES_PREVUES || adressesLues !== null)
-    && (!OUVERTURES_ATTESTEES_PREVUES || ouverturesLues !== null)
+    && (!OUVERTURES_ATTESTEES_PREVUES || ouverturesLues !== null) && comptesLus !== null
     ? lecture : null
+  // Les adresses que la session lit dans l'équipe : celles des comptes qui ont attesté une ouverture, et celles des gestes.
+  const equipe = new Map([...(ouverturesLues?.equipe ?? []), ...(comptesLus?.equipe ?? [])])
   const groupes = lue === null ? [] : groupesDeLaTrace(lue.lignes, acces, listeLue, adressesLues?.parAcces ?? null)
 
   return (
@@ -78,6 +101,7 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
       <p className="muted" style={{ marginTop: -8 }}>{ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE ? CE_QUE_DIT_LA_TRACE_DES_ACCES : CE_QUE_DIT_LA_TRACE}</p>
       {ADRESSES_DES_ACCES_RETIRES_PREVUES && <p className="muted">{CE_QUE_DIT_L_ADRESSE_RETENUE}</p>}
       {OUVERTURES_ATTESTEES_PREVUES && <p className="muted">{CE_QUE_DIT_L_OUVERTURE_ATTESTEE}</p>}
+      <p className="muted">{CE_QUE_DIT_LE_COMPTE_DU_CABINET}</p>
       {lue === null ? (
         <p className="muted">Chargement de la trace des droits…</p>
       ) : (
@@ -98,6 +122,12 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
               consequence="Un accès ouvert dont l’attestation n’a pas été lue se dit « Sans session », et un compte dont l’adresse n’a pas été lue, « Le cabinet ». Recharge la page."
             />
           )}
+          {comptesLus !== null && (
+            <BandeauLecturePartielle
+              quoi="Les adresses des comptes du cabinet" accord="lues" motif={comptesLus.motif}
+              consequence="Un geste du cabinet dont le compte n’a pas été lu se dit « Le cabinet », sans adresse. Recharge la page."
+            />
+          )}
           {groupes.length === 0 && lue.motif === null && (
             <p className="muted">Aucun changement de droits tracé pour ce dossier.</p>
           )}
@@ -116,7 +146,7 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
                     <tbody>
                       {g.lignes.map((l) => {
                         const phrase = phraseDeLaTrace(l)
-                        const auteur = auteurMontre(accesDuDossier, l, ouverturesLues, ouverturesLues?.equipe ?? null)
+                        const auteur = auteurMontre(accesDuDossier, l, ouverturesLues, equipe)
                         return (
                           <tr key={l.id}>
                             <td data-libelle="Date et heure (Paris)">{quandADitLaTrace(l.instant)}</td>

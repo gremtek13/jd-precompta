@@ -128,7 +128,8 @@ beforeEach(() => {
   DRAPEAU_DES_ESPECES_DU_CLIENT.ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES = true
 })
 afterEach(() => {
-  DRAPEAU_DES_ESPECES_DU_CLIENT.ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES = false
+  // L'état du chargement : levé depuis l'application de la migration (16/11/2026).
+  DRAPEAU_DES_ESPECES_DU_CLIENT.ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES = true
   vi.useRealTimers()
   vi.restoreAllMocks()
 })

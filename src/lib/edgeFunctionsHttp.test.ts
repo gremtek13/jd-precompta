@@ -623,7 +623,8 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
   },
   {
     slug: 'create-client-access', quoi: 'le marqueur sur la réponse d’un compte connu repris',
-    remplacements: [['  return json({ ok: true, compte })', '  return json({ ok: true, compte, rattachementAConfirmer: compte === "existant" })']],
+    // La réponse servie depuis P1TQ2-Q1 (16/11/2026) : celle de l'accès écrit, l'ouverture attestée.
+    remplacements: [['    return json({ ok: true, compte, ouvertureAttestee })', '    return json({ ok: true, compte, ouvertureAttestee, rattachementAConfirmer: compte === "existant" })']],
     scenario: 'un compte existant déjà lié au cabinet (un membre de son équipe) : repris tel qu’il est, et la réponse le dit',
   },
   {

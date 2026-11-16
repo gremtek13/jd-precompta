@@ -10,7 +10,7 @@ import {
 } from './especesDuClientHorsDesReprises'
 
 // A8Q5Q3Q2Q2-Q1 : LE CLIENT NE RÈGLE JAMAIS EN ESPÈCES L'ORIGINAL D'UNE FACTURE REPRISE. Le module redit le refus de la migration
-// préparée `especes_du_client_hors_des_reprises`, confronté à son texte ; le déclencheur tire après la garde de la table et
+// `especes_du_client_hors_des_reprises` (en production depuis le 16/11/2026), confronté à son texte ; le déclencheur tire après la garde de la table et
 // avant celle des règlements d'une pièce reprise ; la lecture ouverte au client ne rend que des identifiants ; les empreintes
 // et le retour se tiennent ; le drapeau suit l'export ; l'essai attend les mots du module. Données FICTIVES.
 
@@ -45,8 +45,10 @@ const bloc = (texte: string, etiquette: string) => {
 const avant = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffer.from(b)) < 0
 const P1 = 'a8580000-0000-4000-8000-0000000000b1'
 
+// L'état du drapeau au chargement (levé depuis l'application du 16/11/2026) : chaque test qui le force le rend.
+const DRAPEAU_AU_CHARGEMENT = DRAPEAU_DES_ESPECES_DU_CLIENT.ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES
 afterEach(() => {
-  DRAPEAU_DES_ESPECES_DU_CLIENT.ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES = false
+  DRAPEAU_DES_ESPECES_DU_CLIENT.ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES = DRAPEAU_AU_CHARGEMENT
 })
 
 describe('A8Q5Q3Q2Q2-Q1 — la migration, son retour et le module', () => {
@@ -122,8 +124,9 @@ describe('A8Q5Q3Q2Q2-Q1 — la migration, son retour et le module', () => {
     ])
   })
 
-  it('le drapeau suit l’export : baissé tant que la migration n’y est pas', () => {
-    expect(EXPORTEE).toBe(false)
+  it('le drapeau suit l’export : levé depuis que la migration y est (appliquée le 16/11/2026)', () => {
+    expect(EXPORTEE).toBe(true)
+    expect(DRAPEAU_AU_CHARGEMENT).toBe(EXPORTEE)
     expect(especesDuClientHorsDesReprisesPrevues()).toBe(EXPORTEE)
   })
 
@@ -169,6 +172,8 @@ describe('A8Q5Q3Q2Q2-Q1 — la lecture et ce que « Mes pièces » en fait', () 
     expect(especesRefuseesAvantLeClic(P1, { etat: 'lues', pieces: new Set([P1]) })).toBe(REFUS_DES_ESPECES_DU_CLIENT.modele)
     expect(especesRefuseesAvantLeClic('autre', { etat: 'lues', pieces: new Set([P1]) })).toBeNull()
     expect(especesRefuseesAvantLeClic(P1, { etat: 'sans_objet' })).toBeNull()
+    DRAPEAU_DES_ESPECES_DU_CLIENT.ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES = false
+    expect(especesDuClientHorsDesReprisesPrevues()).toBe(false)
     DRAPEAU_DES_ESPECES_DU_CLIENT.ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES = true
     expect(especesDuClientHorsDesReprisesPrevues()).toBe(true)
   })

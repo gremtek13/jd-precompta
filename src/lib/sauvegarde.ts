@@ -185,10 +185,10 @@ export function auPlanDesAdressesDesAccesRetires(table: string, prevues: boolean
   return prevues || !TABLES_DES_ADRESSES_DES_ACCES_RETIRES.includes(table)
 }
 
-// QUI A OUVERT UN ACCÈS CLIENT (P1TQ2-Q1 ; migration `auteur_des_ouvertures_d_acces`, PRÉPARÉE le 16/11/2026,
-// supabase/preparees/20261116120000_auteur_des_ouvertures_d_acces.sql) : le compte du cabinet qui a attesté l'arrivée d'un
+// QUI A OUVERT UN ACCÈS CLIENT (P1TQ2-Q1 ; migration `auteur_des_ouvertures_d_acces`, en production depuis le 16/11/2026,
+// supabase/schema/20261116174937_auteur_des_ouvertures_d_acces.sql) : le compte du cabinet qui a attesté l'arrivée d'un
 // accès écrite sans session. Sous le drapeau de la migration (`OUVERTURES_ATTESTEES_PREVUES`, src/lib/ouverturesAttestees.ts),
-// baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde. Le patron de l'adresse d'un accès
+// levé depuis l'application : baissé, la table n'existerait pas, et la lire ferait échouer toute sauvegarde. Le patron de l'adresse d'un accès
 // retiré : sa relation (le dossier en cascade ; ni l'accès, ni la ligne de la trace, ni le compte n'ont de clé), son rang
 // (juste après l'adresse des accès retirés, donc après la trace qu'elle nomme), son chemin ; aucune vague ; sa clé est la
 // commune, `id`. La restauration la réinsère par la porte que sa garde et sa policy ouvrent au super-administrateur ; la

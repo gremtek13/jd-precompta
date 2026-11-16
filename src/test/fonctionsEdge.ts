@@ -106,17 +106,18 @@ export function auteurDesConnexionsBaissee(source: string): string {
   return muter(source, [[AUTEUR_DES_CONNEXIONS_LEVE, AUTEUR_DES_CONNEXIONS_BAISSE]])
 }
 
-/** La constante de create-client-access qui atteste l'ouverture d'un accès (P1TQ2-Q1), telle qu'elle est servie : baissée. */
+/** La constante de create-client-access qui atteste l'ouverture d'un accès (P1TQ2-Q1), baissée : la source d'avant sa migration. */
 export const OUVERTURES_ATTESTEES_BAISSEES = 'const OUVERTURES_ATTESTEES_EN_BASE = false'
-/** La même, levée : la source du jour où la migration `auteur_des_ouvertures_d_acces` sera en base. */
+/** La même, levée, telle qu'elle est servie depuis la migration `auteur_des_ouvertures_d_acces` (en production le 16/11/2026). */
 export const OUVERTURES_ATTESTEES_LEVEES = 'const OUVERTURES_ATTESTEES_EN_BASE = true'
 
 /**
- * La source de create-client-access telle qu'elle se servira APRÈS la migration `auteur_des_ouvertures_d_acces` : la constante
- * levée, en mémoire, rien d'autre de changé. Une occurrence exactement de la constante baissée, sinon `muter` lève.
+ * La source de create-client-access telle qu'elle se servait AVANT la migration `auteur_des_ouvertures_d_acces` : la constante
+ * baissée, en mémoire, rien d'autre de changé — son état d'avant reste éprouvé tant que son code existe. Une occurrence
+ * exactement de la constante levée, sinon `muter` lève.
  */
-export function ouverturesAttesteesLevees(source: string): string {
-  return muter(source, [[OUVERTURES_ATTESTEES_BAISSEES, OUVERTURES_ATTESTEES_LEVEES]])
+export function ouverturesAttesteesBaissees(source: string): string {
+  return muter(source, [[OUVERTURES_ATTESTEES_LEVEES, OUVERTURES_ATTESTEES_BAISSEES]])
 }
 
 /** La constante de send-email qui admet la relance d'une facture (étape C5), baissée : la source d'avant sa migration. */
