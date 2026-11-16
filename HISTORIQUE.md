@@ -53054,3 +53054,17 @@ règle du partage de « Ma banque », extraite en `partageDesComptes`, chaque co
 relevés contrôlés et des comptes, écrite une fois (`lib/banqueClientLecture.ts`), sert « Ma banque » et l'accueil. Le banc :
 trois relevés de plus pour l'atelier (d7) ; à 390 px, les trois débordements de la passe `client-banque` (« Ma simulation »
 dans la barre du bas, l'adresse de réception) existaient avant ce changement, à l'identique.
+
+### 16/11/2026 — LE DOSSIER DE DÉMONSTRATION : UN FICHIER DE SAUVEGARDE FICTIF, RESTAURÉ PAR L'ÉCRAN
+
+(Agent architecte ; rien en production, rien déployé.) Demande du cabinet : un dossier fictif complet pour se familiariser.
+Rien ne s'écrit par SQL : `src/test/dossierDeDemonstration.ts` compose un fichier de sauvegarde (format 2) que « Restaurer une
+sauvegarde » (Comptes master) relit et réinsère — un infirmier fictif, BNC en trésorerie, exonéré, non basculé, 2025 et 2026 à
+la mi-novembre (823 lignes, 15 tables), les écritures composées par les vrais moteurs (l'enchaînement du FEC fictif). Voulus en
+2026 : juillet sans relevé (la rupture, l'achat de juillet sans paiement), quatre mouvements à rapprocher, quatre pièces à valider
+dont un doublon probable et une faible confiance ; 2025 muette, sa 2035 concorde, validable. Ni `categories` (cinq communes de
+production citées, vérifiées comme références externes avant toute écriture : jamais une commune créée), ni facture, ni fichier
+de pièce (« Aperçu indisponible. »). Sur une copie de `replique_227` portée à 228, restauré par `outils/demonstration/replique.mts`
+(le plan et les lots de l'écran, sous `authenticated` et un super-administrateur) : aucune garde ne refuse (la porte de la
+restauration : un horodatage d'avant `now()`, le test le garde), 0 écart à la relecture, les contrôles relus identiques ; un
+cabinet absent refusé avant écriture, une catégorie inconnue arrêtée par sa clé ; la suppression du dossier emporte tout.
