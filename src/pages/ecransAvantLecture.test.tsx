@@ -42,6 +42,7 @@ import ClientAnalyse from './ClientAnalyse'
 import ClientTresorerie from './ClientTresorerie'
 import EcheancierAccueil from './EcheancierAccueil'
 import AccueilVentesClient from './AccueilVentesClient'
+import SoldeAccueil from './SoldeAccueil'
 import DossierDetail from './DossierDetail'
 import DossiersList from './DossiersList'
 import EquipePage from './EquipePage'
@@ -352,6 +353,10 @@ const ECRANS: Ecran[] = [
   ) },
   // Les tuiles « À encaisser » et « À déclarer » de l'accueil (étape P4b) et l'encart « Facture électronique » (étape A6b2), d'après
   // UNE lecture des ventes : montés seuls, l'accueil ne les monte qu'une fois ses propres lectures revenues.
+  // Le solde du compte sur l'accueil (16/11/2026) : avant toute réponse, un squelette ; jamais « 0,00 € ».
+  { nom: 'SoldeAccueil', fichier: 'pages/SoldeAccueil.tsx', rendre: () => (
+    <MemoryRouter><div className="bento"><SoldeAccueil dossierId="d1" /></div></MemoryRouter>
+  ) },
   { nom: 'AccueilVentesClient', fichier: 'pages/AccueilVentesClient.tsx', rendre: () => (
     <MemoryRouter><div className="bento"><AccueilVentesClient dossierId="d1" /></div></MemoryRouter>
   ) },

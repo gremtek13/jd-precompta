@@ -1353,7 +1353,12 @@ const BANQUE_DU_CLIENT_D7 = CLIENT_DU_BANC && VENTES_DU_BANC === 'banque'
     precisions: [
       { id: 'qb1', dossier_id: 'd7', ligne_bancaire_id: 't22', auteur_id: 'u-cabinet', origine: 'cabinet', texte: 'Peux-tu nous envoyer la quittance de loyer de septembre ? Le bail ne couvre que jusqu’en août.', created_at: '2026-09-24T08:00:00Z' },
     ],
+    // Trois relevés d'avant, contrôlés, à des soldes différents : la courbe du solde de l'accueil (16/11/2026), qui finit sur
+    // celui d'août.
     controles: [
+      { id: 'cb-05', dossier_id: 'd7', source_fichier: 'releve-2026-05.csv', solde_initial: 8720.4, solde_final: 9870.2, somme_mouvements: 1149.8, ecart: 0, coherent: true, periode_debut: '2026-05-01', periode_fin: '2026-05-31', created_at: MAINTENANT },
+      { id: 'cb-06', dossier_id: 'd7', source_fichier: 'releve-2026-06.csv', solde_initial: 9870.2, solde_final: 11215.8, somme_mouvements: 1345.6, ecart: 0, coherent: true, periode_debut: '2026-06-01', periode_fin: '2026-06-30', created_at: MAINTENANT },
+      { id: 'cb-07', dossier_id: 'd7', source_fichier: 'releve-2026-07.csv', solde_initial: 11215.8, solde_final: 10000, somme_mouvements: -1215.8, ecart: 0, coherent: true, periode_debut: '2026-07-01', periode_fin: '2026-07-31', created_at: MAINTENANT },
       { id: 'cb1', dossier_id: 'd7', source_fichier: 'releve-2026.csv', solde_initial: 10000, solde_final: 12480.35, somme_mouvements: 2480.35, ecart: 0, coherent: true, periode_debut: '2026-08-01', periode_fin: '2026-08-31', created_at: MAINTENANT },
     ],
   }
