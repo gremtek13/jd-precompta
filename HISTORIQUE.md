@@ -53068,3 +53068,16 @@ de pièce (« Aperçu indisponible. »). Sur une copie de `replique_227` portée
 (le plan et les lots de l'écran, sous `authenticated` et un super-administrateur) : aucune garde ne refuse (la porte de la
 restauration : un horodatage d'avant `now()`, le test le garde), 0 écart à la relecture, les contrôles relus identiques ; un
 cabinet absent refusé avant écriture, une catégorie inconnue arrêtée par sa clé ; la suppression du dossier emporte tout.
+
+### 16/11/2026 — LE CLIENT OUVRE LE FICHIER DE SES ENVOIS (« MES PIÈCES » ET « MES DERNIERS ENVOIS »)
+
+Le cabinet, en essayant l'espace client : le client ne pouvait ni voir ni ouvrir les pièces qu'il avait déposées. La base le
+permettait déjà (`pieces_storage_select`, le premier segment du chemin est son dossier) ; seul l'écran n'offrait pas le geste.
+« Mes pièces » porte un bouton « Voir » sur chaque envoi lu (pièce ou document), et chaque ligne de « Mes derniers envois » de
+l'accueil est devenue un bouton qui ouvre son fichier (elle menait à « Mes pièces », « Tout voir » y mène toujours). Le module
+pur `lib/ouvertureDeMesPieces.ts` désigne le fichier (la version lisible d'une facture reçue en XML, sinon l'original) et le
+juge contre le dossier de la ligne (`cheminDuDossier`) : hors du dossier ou vide, rien ne part au stockage. Le geste
+(`lib/ouvertureDeMesPiecesGeste.ts`) passe par `ouvrirApercu` seul, sous un verrou `useRef`. `ApercuRefuse` porte désormais sa
+`cause` (chemin, lien, bloquée, téléchargement) : l'échec se dit au client à ses mots, sans relire la phrase du cabinet.
+Rien d'autre de la pièce n'est montré. Tests : le module, « Mes pièces », la liste de l'accueil (deux touchers dans le même
+`act` : une fenêtre ; le verrou retiré, les deux tests rougissent). Banc : 0 débordement à 390 et 1 440 px, passe du client.

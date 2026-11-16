@@ -27,7 +27,11 @@ import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from './cheminDuDossier
 // On ouvre sans le mot-clé, on teste le retour, PUIS on coupe la référence par `opener = null` —
 // qui protège autant et laisse le blocage visible.
 export interface ApercuOuvert { ok: true }
-export interface ApercuRefuse { ok: false; message: string }
+// `cause` dit POURQUOI sans relire la phrase : l'espace client (lib/ouvertureDeMesPieces.ts) dit l'échec à ses mots, et une
+// phrase du cabinet retouchée en route ne doit pas l'aveugler. « chemin » : refusé avant le stockage (CFCS-Q1) ; « lien » : le
+// stockage n'a pas signé ; « bloquee » : le navigateur a refusé la fenêtre ; « telechargement » : le PDF tiré ici.
+export type CauseDuRefus = 'chemin' | 'lien' | 'bloquee' | 'telechargement'
+export interface ApercuRefuse { ok: false; message: string; cause: CauseDuRefus }
 export type ResultatApercu = ApercuOuvert | ApercuRefuse
 
 // `validiteSecondes` est EXIGÉ, sans valeur par défaut : les appelants ne veulent pas la même chose
@@ -41,12 +45,13 @@ export type ResultatApercu = ApercuOuvert | ApercuRefuse
 // pour premier segment.
 export async function ouvrirApercu(seau: string, chemin: string, validiteSecondes: number, dossierId: string): Promise<ResultatApercu> {
   if (!cheminDuDossier(chemin, dossierId)) {
-    return { ok: false, message: `Le fichier n'a pas été ouvert : ${MOTIF_CHEMIN_HORS_DU_DOSSIER}.` }
+    return { ok: false, cause: 'chemin', message: `Le fichier n'a pas été ouvert : ${MOTIF_CHEMIN_HORS_DU_DOSSIER}.` }
   }
   const { data, error } = await supabase.storage.from(seau).createSignedUrl(chemin, validiteSecondes)
   if (error || !data) {
     return {
       ok: false,
+      cause: 'lien',
       message: `Le lien d'ouverture n'a pas pu être créé (${messageErreur(error, 'raison inconnue')}).`,
     }
   }
@@ -57,6 +62,7 @@ export async function ouvrirApercu(seau: string, chemin: string, validiteSeconde
     // l'opérateur devant un bouton qui ne marche pas, sur un fichier qui existe pourtant.
     return {
       ok: false,
+      cause: 'bloquee',
       message: "L'ouverture a été bloquée par le navigateur (fenêtre surgissante refusée). "
         + 'Autorise les fenêtres surgissantes pour ce site, puis réessaie — le fichier, lui, est bien là.',
     }
@@ -80,6 +86,6 @@ export function telechargerUnPdf(octets: Uint8Array, nom: string): ResultatAperc
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
     return { ok: true }
   } catch (e) {
-    return { ok: false, message: messageErreur(e, 'le PDF n’a pas pu être téléchargé') }
+    return { ok: false, cause: 'telechargement', message: messageErreur(e,'le PDF n’a pas pu être téléchargé') }
   }
 }

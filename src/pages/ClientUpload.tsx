@@ -39,6 +39,10 @@ import type { SaisieDuReglement } from '../lib/paiementParLaCaisse'
 import {
   caisseDeMesPieces, libelleDuGeste, paiementDit, paiementsDeLaPiece, payableParLaCaisse, pieceVueParLeClient, premiereAnneeLue,
 } from '../lib/paiementDeMesPieces'
+import {
+  fichierDeLaPiece, fichierDuDocument, LIBELLE_VOIR, nomAccessibleDuGeste, type FichierDUnEnvoi,
+} from '../lib/ouvertureDeMesPieces'
+import { useOuvertureDeMesPieces } from '../lib/ouvertureDeMesPiecesGeste'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const LABEL_CATEGORIE: Record<DocumentDivers['categorie'], string> = {
@@ -62,6 +66,9 @@ interface Depot {
   cible: CibleCommentaire | null
   // La pièce elle-même, pour le paiement par la caisse (étape C12b) ; nulle pour un document ou un envoi en cours.
   piece: Piece | null
+  // Le fichier que « Voir » ouvre (16/11/2026), désigné par le module pur ; nul quand la ligne n'en désigne aucun dans son
+  // dossier — le geste le dit alors sans rien demander au stockage. Sans objet tant que `cible` est nulle (envoi en cours).
+  fichier: FichierDUnEnvoi | null
 }
 
 export default function ClientUpload() {
@@ -130,6 +137,8 @@ export default function ClientUpload() {
   // Les pièces que le cabinet a déposées pour ses honoraires (ligne 47, LM8), derrière `DEPOT_DES_HONORAIRES_PREVU` : baissé,
   // rien n'est lu et « Mes pièces » est celle d'hier.
   const honorairesDeposes = useHonorairesDeposes(dossierId ?? null, 0)
+  // « Voir » le fichier d'un envoi (16/11/2026) : le geste de lib/ouvertureDeMesPiecesGeste.ts, sous son propre verrou.
+  const ouverture = useOuvertureDeMesPieces()
 
   // LE PAIEMENT D'UNE PIÈCE PAR LA CAISSE (étape C12b ; CAISSE2-Q4, (A)) : avec la case « Caisse » sur la société affichée
   // (lue à la connexion), la caisse se lit — et la case se RELIT à la base avec elle (lib/caisseClientLecture.ts) — depuis
@@ -360,6 +369,7 @@ export default function ClientUpload() {
       traite: p.statut === 'validee',
       cible: { type: 'piece', id: p.id },
       piece: p,
+      fichier: fichierDeLaPiece(p),
     })),
     ...documents.map((d): Depot => ({
       id: `doc-${d.id}`,
@@ -369,12 +379,14 @@ export default function ClientUpload() {
       traite: true,
       cible: { type: 'document', id: d.id },
       piece: null,
+      fichier: fichierDuDocument(d),
     })),
     ...enCours.map((f): Depot => ({
       id: f.id, nomFichier: f.nomFichier, createdAt: new Date().toISOString(),
       label: f.enAttente ? 'En attente…' : 'Analyse en cours…', traite: false,
       cible: null,
       piece: null,
+      fichier: null,
     })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 
@@ -555,6 +567,7 @@ export default function ClientUpload() {
       {avisDeLecture && <p className="muted" role="status" style={{ marginBottom: 14 }}>{avisDeLecture}</p>}
 
       <h3>Mes dépôts</h3>
+      {ouverture.refus && <p className="error-text" role="alert" style={{ marginBottom: 14 }}>{ouverture.refus}</p>}
       {caisse.etat === 'muette' && <p className="error-text" style={{ marginBottom: 14 }}>{caisse.texte}</p>}
       {caisse.etat === 'lue' && caisse.raison !== null && <p className="muted" style={{ marginBottom: 14 }}>{caisse.raison}</p>}
       <div style={{ marginBottom: 14 }}>
@@ -588,7 +601,7 @@ export default function ClientUpload() {
         ) : (
           <div className="tableau-adaptable">
             <table className="table-empilable table-empilable-en-carte">
-              <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th><th>{caisseOuverte ? 'Gestes' : 'Précisions'}</th></tr></thead>
+              <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th><th>Gestes</th></tr></thead>
               <tbody>
                 {depotsAffiches.map((d) => {
                   const cle = d.cible ? cleCible(d.cible) : null
@@ -616,6 +629,19 @@ export default function ClientUpload() {
                         </td>
                         <td className="td-boutons">
                           {/* Rien à commenter tant que l'analyse tourne : la ligne n'existe pas encore. */}
+                          {d.cible !== null && (
+                            // « Voir » : le fichier seul, celui que le client a en main (16/11/2026). Désactivé pendant une
+                            // ouverture ; le verrou du geste arrête le second toucher du même rendu.
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              aria-label={nomAccessibleDuGeste(d.nomFichier)}
+                              disabled={ouverture.enCours}
+                              onClick={() => { void ouverture.ouvrir(d.fichier) }}
+                            >
+                              {LIBELLE_VOIR}
+                            </button>
+                          )}
                           {d.cible === null ? (
                             <span className="muted">—</span>
                           ) : (
