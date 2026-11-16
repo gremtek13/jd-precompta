@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
-import { definitionsSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, fichiersDuSchema, indiceSql } from '../test/schema'
 import { codesSql, messagesSql } from '../test/raiseSql'
 import { sansCommentaires } from '../test/blocsSql'
 import {
@@ -112,7 +112,7 @@ describe('A8Q5-Q4 — la migration, son retour et le module', () => {
     expect(tete).toContain('from public.lignes_bancaires l join public.pieces p on p.id = l.piece_id')
     expect(tete).toContain('where p.dossier_id is distinct from g.dossier_id or l.dossier_id is distinct from g.dossier_id')
     expect(tete).toContain('from public.operations_caisse o join public.pieces p on p.id = o.piece_id')
-    expect(MIGRATION.indexOf('do $garde$')).toBeLessThan(MIGRATION.indexOf('create function public.garder_piece_dans_son_dossier'))
+    expect(MIGRATION.indexOf('do $garde$')).toBeLessThan(indiceSql(MIGRATION, 'create function public.garder_piece_dans_son_dossier'))
   })
 
   it('la garde de fin, le retour et les empreintes se tiennent ; le retour ne retire que ce qu’elle pose', () => {

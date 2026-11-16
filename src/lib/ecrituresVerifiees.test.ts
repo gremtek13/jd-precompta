@@ -126,6 +126,14 @@ const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
       + 'un refus, une valeur illisible ou une requête qui lève rendent une lecture ILLISIBLE, et la simulation se dit incomplète, '
       + 'jamais un ensemble vide deviné',
   },
+  lireLesPiecesHorsDeLaCaisse: {
+    nombre: 1,
+    raison:
+      'ce n’est pas une écriture : `pieces_hors_de_la_caisse_du_client` LIT les pièces que la caisse du client ne règle pas, '
+      + 'l’original d’une facture reprise (A8Q5Q3Q2Q2-Q1), pour que « Mes pièces » le dise avant le clic. '
+      + '`lib/especesDuClientHorsDesReprises.ts` attend la requête et lit son erreur : un refus, une valeur illisible ou une '
+      + 'requête qui lève rendent une liste ILLISIBLE, que l’écran dit sans offrir aucun geste de la caisse, jamais un vide deviné',
+  },
   lireLesMissionsParLaFonction: {
     nombre: 1,
     raison:

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
-import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema, indiceSql } from '../test/schema'
 import { codesSql, messagesSql } from '../test/raiseSql'
 import { SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF } from './alignementBanque'
 import { partsDesPaiements } from './rattachement'
@@ -147,8 +147,8 @@ describe('A8Q5Q3Q2-Q3 — la migration, son retour et le module', () => {
     expect(tete).toContain(`recu_par_la_piece=${md5(corps(derniereDefinitionSql('recu_par_la_piece')))}`)
     expect(tete).toContain(`garder_recu_d_une_piece_citee=${md5(corps(definition(REGLEMENTS, 'garder_recu_d_une_piece_citee')))}`)
     // Le relevé, sur le plancher neuf, après la pose de la fonction et avant celle de la garde.
-    expect(MIGRATION.indexOf('do $releve$')).toBeGreaterThan(MIGRATION.indexOf('create or replace function public.recu_par_la_piece('))
-    expect(MIGRATION.indexOf('do $releve$')).toBeLessThan(MIGRATION.indexOf('create function public.garder_plancher_d_une_piece_citee'))
+    expect(MIGRATION.indexOf('do $releve$')).toBeGreaterThan(indiceSql(MIGRATION, 'create or replace function public.recu_par_la_piece('))
+    expect(MIGRATION.indexOf('do $releve$')).toBeLessThan(indiceSql(MIGRATION, 'create function public.garder_plancher_d_une_piece_citee'))
   })
 
   it('la garde de fin, le retour et les empreintes se tiennent ; le retour rend le corps de production', () => {

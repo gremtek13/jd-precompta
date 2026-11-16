@@ -43,8 +43,8 @@ import {
   caisseDeMesPieces, libelleDuGeste, paiementDit, paiementsDeLaPiece, payableParLaCaisse, pieceVueParLeClient, premiereAnneeLue,
 } from '../lib/paiementDeMesPieces'
 import {
-  especesDuClientHorsDesReprisesPrevues, especesRefuseesAvantLeClic, FONCTION_DES_PIECES_HORS_DE_LA_CAISSE, gestesDeLaCaisseOfferts,
-  lireLesPiecesHorsDeLaCaisse, piecesHorsDeLaCaisseSelon, type LectureDesPiecesHorsDeLaCaisse,
+  especesDuClientHorsDesReprisesPrevues, especesRefuseesAvantLeClic, gestesDeLaCaisseOfferts, lireLesPiecesHorsDeLaCaisse,
+  piecesHorsDeLaCaisseSelon, type LectureDesPiecesHorsDeLaCaisse,
 } from '../lib/especesDuClientHorsDesReprises'
 import {
   fichierDeLaPiece, fichierDuDocument, LIBELLE_VOIR, nomAccessibleDuGeste, type FichierDUnEnvoi,
@@ -177,8 +177,10 @@ export default function ClientUpload() {
   // `ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES` baissé, rien ne se lit et « Mes pièces » est celle d'hier.
   const especesHorsDesReprises = especesDuClientHorsDesReprisesPrevues()
   const [horsDeLaCaisseLue, setHorsDeLaCaisseLue] = useState<{ dossierId: string; lecture: LectureDesPiecesHorsDeLaCaisse } | null>(null)
+  // Le nom de la fonction écrit en toutes lettres : les gardes de la source (verrousEcritures, ecrituresVerifiees) lisent la
+  // porte par son nom ; especesDuClientHorsDesReprises.test.ts le confronte à `FONCTION_DES_PIECES_HORS_DE_LA_CAISSE`.
   const lireHorsDeLaCaisse = (id: string) =>
-    lireLesPiecesHorsDeLaCaisse(supabase.rpc(FONCTION_DES_PIECES_HORS_DE_LA_CAISSE, { p_dossier_id: id }))
+    lireLesPiecesHorsDeLaCaisse(supabase.rpc('pieces_hors_de_la_caisse_du_client', { p_dossier_id: id }))
   useEffect(() => {
     if (!dossierId || !caisseOuverte) return
     let annule = false
