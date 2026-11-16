@@ -100,7 +100,7 @@ const INVENTAIRE: Record<string, { nombre: number; raison: string }> = {
   'méthode:filter': { nombre: 4, raison: 'le compte des validées, l’exercice affiché, la recherche affichée : les lignes d’une vente facturée sont des écritures du journal comme les autres ; et (VF4c2) le compte de celles que le FEC ne rattache pas' },
   'méthode:length': { nombre: 8, raison: 'le compte des proposées ; le modèle verrouillé dès la première écriture, vente facturée comprise ; le FEC vide ; la recherche et le journal vides' },
   'méthode:some': { nombre: 2, raison: 'par `piece_id` : la part figée d’une pièce' },
-  'méthode:map': { nombre: 1, raison: 'les lignes affichées du journal' },
+  'appel:trierLignes': { nombre: 1, raison: 'les lignes affichées du journal, dans l’ordre du tri choisi par un clic sur un en-tête (16/11/2026) : l’affichage seul, le FEC et les totaux restent sur `ecrituresFiltrees`' },
   'autre:conditionnelle': { nombre: 1, raison: '`ecrituresFiltrees`, toutes années : le brouillon entier' },
 }
 

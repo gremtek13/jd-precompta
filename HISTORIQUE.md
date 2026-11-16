@@ -53169,3 +53169,21 @@ la légende dit l'année, son trait, son total sur les mois couverts ou « aucun
 les valeurs exactes sont dans un tableau mois × années (`.tableau-adaptable`, « — » pour un mois non couvert). Aucune case
 cochée : une phrase. Lecture partielle : la section se tait déjà. Banc : 2024, 2025 sans mars et 2026 de janvier à avril
 contrôlés sur l'atelier (d7) ; `client-banque` à 0 à 390 et 1 440 px.
+
+### 16/11/2026 — LE TRI DES TABLEAUX PAR UN CLIC SUR L'EN-TÊTE
+
+Demande du cabinet : un clic sur l'en-tête d'une colonne trie le tableau (« sur Justificatifs : date, tiers, catégorie,
+statut »). Un mécanisme commun : `lib/triDesTableaux.ts` (pur) — le cycle croissant, décroissant, ordre d'origine ; un
+comparateur par TYPE déclaré par l'écran (date civile comparée en chaîne `AAAA-MM-JJ`, jamais `new Date` ; montant ; texte au
+collateur français créé à chaque tri ; rang d'une liste fournie, pour un statut) ; les vides en fin dans les deux sens ; un tri
+stable, l'ordre d'origine tenant à égalité. `lib/useTriDuTableau.ts` retient l'état sous la clé du dossier : un autre dossier
+repart de l'origine, sans effet. `components/EnTeteTriable.tsx` : le `th` porte `aria-sort`, un vrai bouton y vit, la flèche
+est dessinée par la feuille de style (`::after`, sans texte de remplacement) pour que le texte d'un en-tête reste son libellé
+— deux tests d'écran comparaient les en-têtes au caractère près, et l'empreinte du rendu d'hier de l'onglet des factures se
+retrouve en retirant le tri (`sansLeTri`, `FacturesTabAcomptes.test.tsx`). Replié en fiches, le tableau offre « Trier par »
+(`SelecteurDeTri`), visible sous la largeur du repli seulement, son champ DANS son libellé (un `useId` décalait les identifiants
+des formulaires). Branchés : Justificatifs, Banque, Documents administratifs, Écritures, Cotisations, Factures, « Mes pièces »,
+« Ma banque ». Le tri n'ordonne que l'AFFICHAGE : la sélection, les totaux, le FEC, les lots et le compteur restent sur les
+listes d'avant ; la fiche d'une pièce, d'un mouvement et d'un document suit l'ordre trié. Sous « À valider », la pièce non lue
+en tête (`rangSousAValider`) reste l'ordre d'origine. `recherchesEtTotaux.test.ts` lit aussi l'ensemble d'un `trierLignes(`
+(défaut planté, plancher de huit écrans). Banc : `debordements.mjs` aux cinq largeurs et `390 client-banque`.
