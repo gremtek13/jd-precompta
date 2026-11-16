@@ -78,6 +78,11 @@ et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉE
   dossiers (`lib/listeDossiers.ts`), tronquée ou refusée, le dit ; elle ne montre que les dossiers que le cabinet ouvre
   au compte (`lib/dossiersOuverts.ts`, `admin_du_dossier`), jamais un dossier lu par un seul accès client, dont
   l'adresse directe le dit → « LA LISTE D'UN MEMBRE DE L'ÉQUIPE NE MONTRE QUE LES DOSSIERS QUE LE CABINET LUI OUVRE ».
+- **Le bouton « Retour »** (`lib/historiqueNavigation.ts`, 16/11/2026) : la coque note les emplacements VISITÉS depuis son
+  montage, sous la clé du routeur ; « Retour » fait `navigate(-n)` vers l'entrée d'avant au chemin différent, jamais
+  `history.length`, jamais vers `/retour-banque` ; absent quand rien ne précède. Barre du haut du téléphone, tête du
+  panneau central sur ordinateur ; il ne consulte pas la garde du panneau → « LE BOUTON « RETOUR » DE LA COQUE, DANS LES
+  DEUX ESPACES ».
 - **Le panneau de droite** (`components/PanneauDroit.tsx`) : rendu par PORTAIL, un seul contenu désigné par son nom ;
   `fermer()` ne ferme que s'il occupe encore le volet ; vide, l'emplacement n'existe pas (`:empty`). Sous 1 280 px il se
   superpose ; sur mobile, carte flottante. **Garde de sortie** (`useGardePanneau`) : `ouvrir()` et `fermer()` la
