@@ -519,14 +519,16 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   CLIENT, ATTESTÉ PAR LE CABINET ». `outils/membre-d-essai/` : le membre d'équipe d'essai que trois essais de production
   supposent (ESSAIS-Q1), `creer.sql` à coller par le cabinet, `verifier.sql` pour la session, `retirer.sql` ; sans mot de
   passe, banni, affecté à `test` seul, il part avec `test` → « ESSAIS-Q1 : LE MEMBRE D'ÉQUIPE D'ESSAI ».
-- **L'alerte de hausse du chiffre d'affaires** (ligne 29.6, MVP, demande du cabinet du 15/11/2026) : conçue
-  (`docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md`), préparée derrière `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`
-  baissé — le chiffre de l'estimation (`chiffreDAffairesDeLaPeriode`), le trimestre clos et le cumul contre l'année d'avant,
-  l'un ou l'autre au seuil du dossier, en entiers ; des mots neutres, jamais un conseil (le cabinet décide de ce qu'il dit au
-  client) ; muette sur une lecture partielle, un mois absent du relevé, un crédit à traiter ; `hausse_du_chiffre_d_affaires`
-  (par l'outil, aucune branche client) ; la carte du seuil (Informations), un avis de la Vue d'ensemble hors des anomalies et de
-  la validation, une ligne du tableau de bord (au plus dix dossiers calculés) ; CA-Q1 à Q5 et CA-migration → « L'ALERTE DE
-  HAUSSE DU CHIFFRE D'AFFAIRES (MVP) ».
+- **L'alerte de hausse et de baisse du chiffre d'affaires** (ligne 29.6, MVP ; CA-Q1 à Q5 tranchées le 16/11/2026) : en
+  production depuis le 16/11/2026 (230 ; `hausse_du_chiffre_d_affaires`, par l'outil ; `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`
+  levé, les noms gardant « hausse ») — le chiffre de l'estimation (`chiffreDAffairesDeLaPeriode`), le trimestre clos, le
+  cumul et les douze mois qui finissent avec le trimestre contre la même période un an plus tôt, l'une ou l'autre comparaison
+  au seuil de hausse ou au seuil de baisse du dossier, réglés chacun à part (`regler_seuil_du_chiffre_d_affaires`), en
+  entiers ; des mots neutres, jamais un conseil ; muette sur une lecture partielle, un mois absent du relevé, un crédit à
+  traiter ; aucune branche client ; la carte des seuils (Informations), un avis de la Vue d'ensemble hors des anomalies et
+  de la validation, une ligne du tableau de bord (au plus dix dossiers calculés) ; CA2-Q1 et CA3-Q1 ouvertes → « L'ALERTE
+  DE HAUSSE DU CHIFFRE D'AFFAIRES (MVP) », « L'ALERTE DU CHIFFRE D'AFFAIRES REPRISE », « L'ALERTE DU CHIFFRE D'AFFAIRES EN
+  PRODUCTION ».
 - **L'import NOEMIE et les paiements de l'assurance maladie** (demande et décision du cabinet du 16/11/2026 : les chiffres
   seuls, aucune donnée de patient) : conçus (`docs/conceptions/53-import-noemie-et-remboursements.md`) — le fichier lu
   dans le navigateur du praticien, des agrégats par journée comptable, organisme et part, aucune colonne de texte en base,
