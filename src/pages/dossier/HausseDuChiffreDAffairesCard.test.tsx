@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import HausseDuChiffreDAffairesCard from './HausseDuChiffreDAffairesCard'
-import { LIBELLES_DES_SEUILS, REGLAGE_ILLISIBLE, SEUILS_HORS_BORNES, SEUILS_VIDES, type SensDuSeuil } from '../../lib/hausseDuChiffreDAffaires'
+import {
+  DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL, LIBELLES_DES_SEUILS, REGLAGE_ILLISIBLE, SEUILS_HORS_BORNES, SEUILS_VIDES, type SensDuSeuil,
+} from '../../lib/hausseDuChiffreDAffaires'
 import type { LectureDuReglage } from '../../lib/hausseDuChiffreDAffairesLecture'
 
 // LA CARTE DES DEUX SEUILS DE L'ALERTE DU CHIFFRE D'AFFAIRES, À L'ÉCRAN (onglet Informations). Ce que le module ne voit pas : rien
@@ -59,6 +61,7 @@ function formulaire(sens: SensDuSeuil) {
 }
 
 beforeEach(() => {
+  DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = false
   faux.prevue = true
   faux.lectures = {}
   faux.lues = []
@@ -136,5 +139,39 @@ describe('la carte des seuils', () => {
     expect(await screen.findByText(faux.refus)).toBeTruthy()
     expect(faux.ecritures).toEqual([{ dossierId: 'd1', sens: 'hausse', lu: 15, seuil: 30 }])
     expect(formulaire('hausse').champ.value).toBe('15')
+  })
+})
+
+// CA2-Q1 : l'auteur de chaque seuil, sous `AUTEUR_DE_CHAQUE_SEUIL_PREVU`. Baissé, la ligne d'hier (le dernier réglage de la
+// ligne) ; levé, une ligne par seuil — « toi », l'adresse que la session lit dans l'équipe, sinon « le cabinet », jamais un
+// identifiant.
+describe('l’auteur de chaque seuil (CA2-Q1)', () => {
+  const NB = String.fromCharCode(160)
+  const lecture: LectureDuReglage = {
+    dossierId: 'd1', etat: 'lu', vues: [], equipe: new Map([['u-membre', 'membre@cabinet.example']]),
+    seuil: {
+      dossier_id: 'd1', seuil_de_hausse: 20, seuil_de_baisse: 10, regle_par: 'u-chef', regle_le: '2026-11-16T10:00:00Z',
+      seuil_de_hausse_regle_par: 'u-membre', seuil_de_hausse_regle_le: '2026-11-14T10:00:00Z',
+      seuil_de_baisse_regle_par: 'u-parti', seuil_de_baisse_regle_le: '2026-11-16T10:00:00Z',
+    },
+  }
+
+  it('drapeau baissé : le dernier réglage de la ligne, comme hier', async () => {
+    faux.lectures.d1 = lecture
+    const { container } = render(<HausseDuChiffreDAffairesCard dossierId="d1" />)
+    await screen.findByText(/Dernier réglage/)
+    expect(container.textContent).toContain(`Seuil de hausse : 20${NB}% ; seuil de baisse : 10${NB}%. Dernier réglage le 16/11/2026, par toi.`)
+    expect(screen.queryByText(/réglé le/)).toBeNull()
+  })
+
+  it('drapeau levé : chaque seuil, son compte et sa date ; l’adresse lue dans l’équipe, sinon « le cabinet »', async () => {
+    DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = true
+    faux.lectures.d1 = lecture
+    const { container } = render(<HausseDuChiffreDAffairesCard dossierId="d1" />)
+    await screen.findByText(/réglé le 14\/11\/2026/)
+    expect(container.textContent).toContain(`Hausse : 20${NB}%, réglé le 14/11/2026 par membre@cabinet.example.`)
+    expect(container.textContent).toContain(`Baisse : 10${NB}%, réglé le 16/11/2026 par le cabinet.`)
+    expect(screen.queryByText(/Dernier réglage/)).toBeNull()
+    expect(container.textContent).not.toMatch(/u-parti|u-membre/)
   })
 })

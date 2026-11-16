@@ -525,7 +525,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   au seuil de hausse ou au seuil de baisse du dossier, réglés chacun à part (`regler_seuil_du_chiffre_d_affaires`), en
   entiers ; des mots neutres, jamais un conseil ; muette sur une lecture partielle, un mois absent du relevé, un crédit à
   traiter ; aucune branche client ; la carte des seuils (Informations), un avis de la Vue d'ensemble hors des anomalies et
-  de la validation, une ligne du tableau de bord (au plus dix dossiers calculés) ; CA2-Q1 et CA3-Q1 ouvertes → « L'ALERTE
+  de la validation, une ligne du tableau de bord (au plus dix dossiers calculés) ; CA3-Q1 (A), rien ne change ; CA2-Q1 (B), l'auteur
+  et la date de chaque seuil, préparée par l'outil (`auteur_de_chaque_seuil`, `AUTEUR_DE_CHAQUE_SEUIL_PREVU` baissé) → « CA2-Q1 :
+  L'AUTEUR DE CHAQUE SEUIL », « L'ALERTE
   DE HAUSSE DU CHIFFRE D'AFFAIRES (MVP) », « L'ALERTE DU CHIFFRE D'AFFAIRES REPRISE », « L'ALERTE DU CHIFFRE D'AFFAIRES EN
   PRODUCTION ».
 - **L'import NOEMIE et les paiements de l'assurance maladie** (demande et décision du cabinet du 16/11/2026 : les chiffres

@@ -3,8 +3,9 @@ import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { lireLaCaisse } from './caisseLecture'
 import { lireLesVentesFacturees } from './ventesFactureesLecture'
+import { equipeNommable, type MembreLu } from './ouverturesAttestees'
 import {
-  COLONNES_DES_VUES, COLONNES_DU_SEUIL, MARQUE_NON_ENREGISTREE, SEUIL_NON_ENREGISTRE, aUnSeuil, chiffreDAffairesDesSources,
+  auteursDesSeuils, COLONNES_DES_VUES, MARQUE_NON_ENREGISTREE, SEUIL_NON_ENREGISTRE, aUnSeuil, chiffreDAffairesDesSources,
   jugerLaHausse, seuilsDeLaLigne, type HausseVue, type LectureDeLaHausse, type SensDuSeuil, type SeuilDuDossier,
   type SeuilsDeLAlerte, type SourcesDuChiffreDAffaires, type Trimestre,
 } from './hausseDuChiffreDAffaires'
@@ -24,15 +25,22 @@ import type { Categorie, Dossier, LigneBancaire, Piece, ReglementGroupe, Ventila
 // Drapeau `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` baissé, les écrans n'appellent rien d'ici : les tables n'existent pas.
 
 export type LectureDuReglage =
-  | { dossierId: string; etat: 'lu'; seuil: SeuilDuDossier | null; vues: HausseVue[] }
+  | {
+    dossierId: string; etat: 'lu'; seuil: SeuilDuDossier | null; vues: HausseVue[]
+    /** Les adresses des comptes qui ont réglé un seuil, telles que la session les lit dans l'équipe (CA2-Q1, sous
+     *  `AUTEUR_DE_CHAQUE_SEUIL_PREVU`) ; absente ou vide : aucune adresse, la carte dit « le cabinet ». */
+    equipe?: ReadonlyMap<string, string>
+  }
   | { dossierId: string; etat: 'illisible'; motif: string }
 
 /** Les seuils du dossier et ses marques « vue avec le client », lus en entier ; ou « illisible ». */
 export async function lireLeReglageDeLaHausse(dossierId: string): Promise<LectureDuReglage> {
   try {
     const [seuils, vues] = await Promise.all([
+      // La ligne entière : sans les quatre colonnes du réglage de chaque seuil avant leur migration (CA2-Q1), avec elles après ;
+      // `AUTEUR_DE_CHAQUE_SEUIL_PREVU` décide de ce que la carte en dit.
       lireTout<SeuilDuDossier & { id?: string }>((debut, fin) =>
-        supabase.from('seuils_du_chiffre_d_affaires').select(`id, ${COLONNES_DU_SEUIL}`, { count: 'exact' })
+        supabase.from('seuils_du_chiffre_d_affaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
       lireTout<HausseVue & { id: string }>((debut, fin) =>
@@ -45,9 +53,29 @@ export async function lireLeReglageDeLaHausse(dossierId: string): Promise<Lectur
     if ([...seuils.lignes, ...vues.lignes].some((l) => l.dossier_id !== dossierId) || seuils.lignes.length > 1) {
       return { dossierId, etat: 'illisible', motif: 'une ligne rendue n’est pas celle de ce dossier' }
     }
-    return { dossierId, etat: 'lu', seuil: seuils.lignes[0] ?? null, vues: vues.lignes }
+    const seuil = seuils.lignes[0] ?? null
+    return { dossierId, etat: 'lu', seuil, vues: vues.lignes, equipe: await lireLesAuteursNommables(auteursDesSeuils(seuil)) }
   } catch (erreur) {
     return { dossierId, etat: 'illisible', motif: messageErreur(erreur, 'la lecture du seuil a échoué') }
+  }
+}
+
+/**
+ * Les adresses des comptes qui ont réglé un seuil (CA2-Q1), lues dans l'équipe SOUS LA SESSION de qui regarde : la policy de
+ * `cabinet_admins` ne rend l'adresse qu'au chef du cabinet, au super-administrateur et au membre lui-même (la règle de l'onglet
+ * Accès, lib/traceDesDroitsLecture.ts). Ce qui ne revient pas — une ligne que la policy ne rend pas, un membre parti, une
+ * lecture partielle ou en échec — se dit « le cabinet », ce qui reste vrai : rien ne se devine, rien ne se signale de plus.
+ */
+async function lireLesAuteursNommables(auteurs: readonly string[]): Promise<ReadonlyMap<string, string>> {
+  if (auteurs.length === 0) return new Map()
+  try {
+    const equipe = await lireTout<MembreLu>((debut, fin) =>
+      supabase.from('cabinet_admins').select('user_id, email', { count: 'exact' })
+        .in('user_id', [...auteurs]).order('user_id').range(debut, fin),
+    )
+    return equipe.complete ? equipeNommable(equipe.lignes) : new Map()
+  } catch {
+    return new Map()
   }
 }
 

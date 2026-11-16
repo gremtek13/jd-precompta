@@ -467,7 +467,9 @@ describe('les essais de la base, rejoués en production', () => {
     // SÛRS au banc, sur une copie de la réplique à 229 (228, puis `reglements_de_la_piece_citee`).
     // Trente le même jour : `auteurDesOuvertures` (P1TQ2-Q1, `auteur_des_ouvertures_d_acces`) entré dans la famille
     // « apres », après sa migration préparée ; SÛR au banc, sur une copie de la réplique à 228.
-    expect(cas.length).toBe(30)
+    // Trente et un le même jour : `auteurDeChaqueSeuil` (CA2-Q1, `auteur_de_chaque_seuil`) entré dans la famille « apres »,
+    // après sa migration préparée ; SÛR au banc, sur une copie de la réplique à 234.
+    expect(cas.length).toBe(31)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

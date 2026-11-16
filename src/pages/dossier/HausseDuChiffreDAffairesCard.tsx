@@ -2,9 +2,9 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { messageErreur } from '../../lib/messageErreur'
 import {
-  EXPLICATION_DE_LA_CARTE, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE, LIBELLES_DES_SEUILS, REGLAGE_ILLISIBLE, SENS_DES_SEUILS,
+  auteurDeChaqueSeuilPrevu, EXPLICATION_DE_LA_CARTE, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE, LIBELLES_DES_SEUILS, REGLAGE_ILLISIBLE, SENS_DES_SEUILS,
   SEUIL_NON_ENREGISTRE, SOURCE_DU_CHIFFRE, TITRE_DE_LA_CARTE, marquesDansLOrdre, phraseDeLaMarque, phraseDesSeuilsDuDossier,
-  phraseDuReglage, refusDuSeuil, seuilDeLaSaisie, seuilDuSens, type SensDuSeuil,
+  phraseDuReglage, phrasesDesSeuilsEtDeLeurReglage, refusDuSeuil, seuilDeLaSaisie, seuilDuSens, type SensDuSeuil,
 } from '../../lib/hausseDuChiffreDAffaires'
 import { lireLeReglageDeLaHausse, reglerLeSeuil, type LectureDuReglage } from '../../lib/hausseDuChiffreDAffairesLecture'
 
@@ -16,7 +16,8 @@ import { lireLeReglageDeLaHausse, reglerLeSeuil, type LectureDuReglage } from '.
 // (lib/hausseDuChiffreDAffairesLecture.ts), qui ne rejette jamais. Rien ne s'offre avant le retour de la lecture, ni sur une
 // lecture ratée ; le refus d'une saisie se dit avant le clic ; l'écriture passe la fonction de la base seule, contre la valeur
 // LUE qu'elle remplace, sous un verrou relâché après la relecture — un seul réglage à la fois pour la carte. Le drapeau
-// `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` baissé, la carte ne rend rien et ne lit rien.
+// `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` baissé, la carte ne rend rien et ne lit rien. Sous `AUTEUR_DE_CHAQUE_SEUIL_PREVU` (CA2-Q1),
+// chaque seuil dit qui l'a réglé et quand — « toi », l'adresse que la session lit dans l'équipe, sinon « le cabinet ».
 
 /** Ce que le cabinet tape, seuil par seuil ; un seuil absent repart de la valeur lue. */
 type Saisies = Partial<Record<SensDuSeuil, string>>
@@ -104,7 +105,10 @@ export default function HausseDuChiffreDAffairesCard({ dossierId }: { dossierId:
         <p className="error-text" title={lecture.motif}>{REGLAGE_ILLISIBLE}</p>
       ) : (
         <>
-          <p>{phraseDesSeuilsDuDossier(lecture.seuil, moi)}</p>
+          {/* L'auteur de chaque seuil (CA2-Q1), la migration en base ; sinon le dernier réglage de la ligne, comme hier. */}
+          {auteurDeChaqueSeuilPrevu()
+            ? phrasesDesSeuilsEtDeLeurReglage(lecture.seuil, moi, lecture.equipe ?? new Map()).map((p) => <p key={p}>{p}</p>)
+            : <p>{phraseDesSeuilsDuDossier(lecture.seuil, moi)}</p>}
           {SENS_DES_SEUILS.map((sens) => {
             const etat = etatDuSeuil(sens)
             const champ = `${racine}-${sens}`
