@@ -490,7 +490,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `arrivee_et_depart_des_acces` (P1T-Q2), la trace nomme l'accès ouvert ou retiré même sans case
   (`ACCES_DANS_LA_TRACE_PREVU` et `ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE` levés) → « P1T-Q2 EN PRODUCTION ». Sans migration, derrière les drapeaux
   des achats et des notes de frais : B8-Q1, B4RS-Q2, B4R-Q1 → « B4R-Q1, B4RS-Q2 ET B8-Q1 ».
-- **Préparées le 15/11/2026, par l'outil, derrière leurs drapeaux baissés** : la garde de ce que reçoit la pièce citée
+- **En production le 16/11/2026 (229)** : `reglements_de_la_piece_citee` (A8Q5Q3Q2-Q2), par l'outil, `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS`
+  levé → « A8Q5Q3Q2-Q2 EN PRODUCTION, ET QUINZE RÉPONSES DU CABINET ».
+- **Préparées le 15/11/2026, par l'outil, derrière leurs drapeaux baissés** (la première appliquée le 16/11) : la garde de ce que reçoit la pièce citée
   d'une facture reprise, différée à la fin de la transaction sur les trois sources du reçu, qui refuse ce que la citation
   refuserait, aussi quand une ligne qui défaisait ce reçu (un rejet, une part négative) cesse de le défaire — corrigée par
   la relecture adverse du jour → « LA RELECTURE ADVERSE DE CINQ MIGRATIONS PRÉPARÉES » (`reglements_de_la_piece_citee`, A8Q5Q3Q2-Q2, `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS`) ; l'exonération de
