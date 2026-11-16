@@ -89,6 +89,10 @@ et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉE
   quittée ne déplace rien. **Le rapprochement d'un mouvement** (`FicheMouvement.tsx`) justifie la pièce proposée par les
   signaux mesurés et dit ce que la banque ne confirme pas ; à égalité, aucune proposée ; l'onglet retient l'IDENTIFIANT
   et relit la ligne ; le choix à la main ne part qu'au clic sur « Associer ».
+- **La fiche d'un document** (`FicheDocument.tsx`, onglet Documents administratifs, 16/11/2026) : le clic sur une ligne
+  l'ouvre dans le volet, au lieu du fichier ; elle suit la liste affichée, est clée par document, n'offre que les gestes
+  de la ligne, chacun la fonction de l'onglet, et se ferme quand son document part. L'aperçu d'un fichier, commun aux
+  deux fiches : `components/ApercuDuFichier.tsx` → « LA FICHE D'UN DOCUMENT DANS LE PANNEAU DE DROITE ».
 - **Une page ne se remonte pas d'un dossier à l'autre** (`DossierDetail` reste monté) : sous `AnneeProvider key={id}`,
   ou clé par dossier, ou gardant ce qu'il lit AVEC l'identifiant lu. Côté client, `<Outlet key>` dans la coque → « LA
   BARRE LATÉRALE A ROUVERT UNE COURSE ».
@@ -390,6 +394,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     trente jours ; illisible, une ligne discrète, jamais le silence → « L'AVIS D'UN CHANGEMENT DE RIB, À L'ÉCRAN ». Les
     RIB à confirmer, en tête du tableau de bord, hors de la grille → « LES RIB À CONFIRMER, SUR LE TABLEAU DE BORD ». Le
     logo : son empreinte recalculée AVANT toute image → « LE LOGO DES FACTURES, À L'ÉCRAN ».
+  - « Mes pièces » et « Mes derniers envois » ouvrent le fichier d'un envoi, et lui seul : chemin jugé contre son dossier
+    avant le stockage (`lib/ouvertureDeMesPieces.ts`), `ouvrirApercu` sous verrou, échec dit d'après la `cause`
+    d'`ApercuRefuse` → « LE CLIENT OUVRE LE FICHIER DE SES ENVOIS ».
   - Les pièces jointes écartées, dites au client : jour, raison et poids sur 90 jours, jamais l'identifiant → « LE
     CLIENT VOIT UNE PIÈCE JOINTE ÉCARTÉE DANS « MES PIÈCES » ».
 - **Secrets** côté Supabase, jamais au bundle ni dans un journal ; les tables de connexions n'ont aucune policy ; la clé
@@ -931,6 +938,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Un lot d'insertion nomme l'UNION des clés de ses lignes** (NULL dans ce qu'une ligne omet) : la restauration
   n'envoie que des lots de même forme (`lotsDEcriture`) → « UN LOT D'INSERTION NE MÊLE PLUS DES LIGNES DE FORMES
   DIFFÉRENTES ».
+- **Deux clés étrangères entre deux tables : l'embarquement nomme la sienne** (`factures_emises!facture_lignes_facture_id_fkey!inner(…)`,
+  `embarquementsNommes.test.ts`) ; sinon PostgREST refuse, et les faux clients des tests ne le voient pas → « LES LIGNES
+  D'UNE FACTURE EMBARQUENT LEUR FACTURE PAR UNE RELATION NOMMÉE ».
 - **Qui prend `data` prend `error`** ; un échec tombe du côté FERMÉ. **Le vide est une AFFIRMATION** : il ne se dit que
   d'une liste lue en entier et revenue ; avant, « Chargement… », et ce qui s'en calcule attend ; une clé qui change
   repart en chargement (`ecransAvantLecture.test.tsx`, `clientRetenu.ts`) → « AUCUN ÉCRAN N'AFFIRME LE VIDE AVANT
