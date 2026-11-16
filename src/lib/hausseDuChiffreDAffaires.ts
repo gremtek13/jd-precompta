@@ -41,7 +41,7 @@ import type { VentesFacturees } from './ventesFacturees'
 
 /** La migration `hausse_du_chiffre_d_affaires` (supabase/preparees/20261115140000_hausse_du_chiffre_d_affaires.sql) est-elle
  *  en base ? Baissé : aucune lecture, aucun écran, aucune table au plan de sauvegarde. */
-export const HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE = false
+export const HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE = true
 
 /** Les deux sens d'un seuil : une colonne chacun en base (`seuil_de_hausse`, `seuil_de_baisse`), réglés à part. */
 export type SensDuSeuil = 'hausse' | 'baisse'
