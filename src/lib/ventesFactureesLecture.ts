@@ -51,7 +51,7 @@ import {
 export const COLONNES_FACTURES =
   'id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation'
 export const COLONNES_LIGNES =
-  'id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id, source_de_la_vente)'
+  'id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!facture_lignes_facture_id_fkey!inner(dossier_id, source_de_la_vente)'
 export const COLONNES_ENCAISSEMENTS =
   'id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le'
 export const COLONNES_PARTS = 'encaissement_id, dossier_id, taux, montant'
@@ -62,7 +62,7 @@ export const COLONNES_PARTS = 'encaissement_id, dossier_id, taux, montant'
 export const COLONNES_FACTURES_ACOMPTES =
   'id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, acompte'
 export const COLONNES_LIGNES_ACOMPTES =
-  'id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, reprise_facture_id, factures_emises!inner(dossier_id, source_de_la_vente)'
+  'id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, reprise_facture_id, factures_emises!facture_lignes_facture_id_fkey!inner(dossier_id, source_de_la_vente)'
 export const COLONNES_EXEMPLAIRES = 'id, dossier_id, facture_id, statut, type_piece'
 // Les factures reprises (étape A8c, le drapeau `FACTURES_IMPORTEES_PREVUES` levé) : leur ligne de `factures_importees`, et
 // la TVA déclarée de chaque document repris, qui dit la règle de ses montants par taux.

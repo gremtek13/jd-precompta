@@ -89,7 +89,7 @@ export async function lireLEreporting(dossierId: string): Promise<LectureDeLErep
     // refait les montants depuis elles.
     lireTout<LigneLue>((debut, fin) =>
       supabase.from('facture_lignes')
-        .select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id)', { count: 'exact' })
+        .select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!facture_lignes_facture_id_fkey!inner(dossier_id)', { count: 'exact' })
         .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('ordre').order('id').range(debut, fin),
     ),
     // Le registre ENTIER des encaissements, retirés et contre-passations compris : c'est le contenu des paiements qui décide

@@ -53081,3 +53081,17 @@ juge contre le dossier de la ligne (`cheminDuDossier`) : hors du dossier ou vide
 `cause` (chemin, lien, bloquée, téléchargement) : l'échec se dit au client à ses mots, sans relire la phrase du cabinet.
 Rien d'autre de la pièce n'est montré. Tests : le module, « Mes pièces », la liste de l'accueil (deux touchers dans le même
 `act` : une fenêtre ; le verrou retiré, les deux tests rougissent). Banc : 0 débordement à 390 et 1 440 px, passe du client.
+
+### 16/11/2026 — LES LIGNES D'UNE FACTURE EMBARQUENT LEUR FACTURE PAR UNE RELATION NOMMÉE
+
+Constaté par le cabinet sur le dossier de démonstration, en production : « Les ventes facturées du dossier n'ont pas pu
+être lues en entier (… Could not embed because more than one relationship was found for 'facture_lignes' and
+'factures_emises') », et la 2035 ne se calculait plus, pour tout dossier. Cause : depuis l'acompte d'un devis (06/11/2026),
+`facture_lignes` porte deux clés vers `factures_emises` (`facture_id`, `reprise_facture_id`), et PostgREST refuse un
+embarquement qui ne nomme pas la sienne. Les faux clients des tests ne connaissent pas cette règle, la réplique n'a pas de
+PostgREST : rien ne l'avait vu. Correction : les cinq lectures (`ventesFactureesLecture.ts` deux fois,
+`ventesLecture.ts`, `ereportingLecture.ts`, `analyseClient.ts`) écrivent
+`factures_emises!facture_lignes_facture_id_fkey!inner(…)` ; `embarquementsNommes.test.ts` garde la règle (plancher de
+cinq sites). Relevé des paires de tables à deux clés en production : aussi `cabinets`/`dossiers` et
+`factures_importees`/`factures_emises`, qu'aucune lecture n'embarque aujourd'hui. Pas vérifié contre un vrai PostgREST
+avant la mise en ligne : à confirmer par l'écran du cabinet.
