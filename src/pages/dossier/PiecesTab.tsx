@@ -18,6 +18,9 @@ import { piecesAuPaiementRejete } from '../../lib/rejetDuPaiement'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { EnTeteTriable, SelecteurDeTri } from '../../components/EnTeteTriable'
+import { trierLignes, type ColonneTriable } from '../../lib/triDesTableaux'
+import { useTriDuTableau } from '../../lib/useTriDuTableau'
 import type { Categorie, Piece, PieceCommentaire, PieceEcarteeEreporting, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
 import { chargerCommentaires, commentairesParCible, dernierCommentaire } from '../../lib/commentaires'
 import FichePiece from './FichePiece'
@@ -91,6 +94,8 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // une date), donc rien à unifier avec l'en-tête pour ce cas précis. Mutuellement exclusif avec
   // l'exercice sélectionné : cocher "Sans date" met de côté le filtre d'exercice, comme avant.
   const { annee: anneeFilter } = useAnnee()
+  // Le tri choisi d'un clic sur un en-tête (16/11/2026) : un état d'écran, remis à l'ordre d'origine au changement de dossier.
+  const { tri, trierPar, choisirTri } = useTriDuTableau(dossierId)
   // Sert à mémoriser aussi la règle au niveau cabinet quand la catégorie est globale — une mutuelle
   // ou une banque reviennent d'un dossier à l'autre (voir CategoriserTiersModal).
   const { monCabinetId } = useAuth()
@@ -596,6 +601,25 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
 
   const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
 
+  // LE TRI CHOISI PAR UN CLIC SUR UN EN-TÊTE (16/11/2026). L'ordre d'origine est celui d'au-dessus — sous « À valider »,
+  // la pièce non lue et les impossibilités démontrées en tête (`prioriteDe`) — ; un tri choisi le remplace tant qu'il est
+  // actif, et le troisième clic le rétablit. Il ne fait qu'ORDONNER : la sélection, « Tout sélectionner » et le compteur
+  // de la recherche restent sur `filtered`, les mêmes lignes quel que soit le tri ; la fiche suit `affichees`.
+  const statutDuTri = (p: Piece) => p.statut !== 'validee' ? 'a_valider'
+    : piecesRejetees.has(p.id) && !payeesEnEspeces.has(p.id) ? 'rejete'
+      : piecesRapprochees.has(p.id) ? 'rapprochee'
+        : payeesEnEspeces.has(p.id) ? 'especes' : 'non_rapprochee'
+  const colonnesTri: ColonneTriable<Piece>[] = [
+    { cle: 'date', libelle: 'Date', type: 'date', valeur: (p) => p.date_piece },
+    { cle: 'tiers', libelle: 'Tiers', type: 'texte', valeur: (p) => p.tiers },
+    { cle: 'categorie', libelle: 'Catégorie', type: 'texte', valeur: (p) => p.categorie_id ? categorieLabel(p.categorie_id) : null },
+    { cle: 'sousDossier', libelle: 'Sous-dossier', type: 'texte', valeur: (p) => p.sous_dossier_id ? sousDossierLabel(p.sous_dossier_id) : null },
+    { cle: 'montant', libelle: 'Montant TTC', type: 'montant', valeur: (p) => p.montant_ttc },
+    { cle: 'confiance', libelle: 'Confiance', type: 'rang', valeur: (p) => p.confiance, ordre: ['basse', 'moyenne', 'haute'] },
+    { cle: 'statut', libelle: 'Statut', type: 'rang', valeur: statutDuTri, ordre: ['a_valider', 'rejete', 'non_rapprochee', 'especes', 'rapprochee'] },
+  ]
+  const affichees = trierLignes(filtered, colonnesTri, tri)
+
   function afficherPiece(p: Piece | null) {
     pieceOuverte.current = p?.id ?? null
     ficheModifiee.current = false
@@ -620,8 +644,8 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // l'enregistrement : la réponse arrive alors pour une fiche qui n'est plus là.
   function apresValidation(pieceId: string) {
     if (pieceOuverte.current !== pieceId) return
-    const i = filtered.findIndex((p) => p.id === pieceId)
-    const ordre = i === -1 ? filtered : [...filtered.slice(i + 1), ...filtered.slice(0, i)]
+    const i = affichees.findIndex((p) => p.id === pieceId)
+    const ordre = i === -1 ? affichees : [...affichees.slice(i + 1), ...affichees.slice(0, i)]
     const suivante = ordre.find((p) => p.id !== pieceId && p.statut === 'a_valider')
     if (suivante) afficherPiece(suivante)
     else fermerFiche()
@@ -631,11 +655,11 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // chose possible maintenant que la liste reste cliquable à côté —, elle ne pourrait plus
   // s'enregistrer, et une mise à jour qui ne touche aucune ligne ne lève rien.
   const ficheVisible = editing !== null && panneauPiece.ouvert && pieces.some((p) => p.id === editing.id)
-  const rangOuvert = editing ? filtered.findIndex((p) => p.id === editing.id) : -1
+  const rangOuvert = editing ? affichees.findIndex((p) => p.id === editing.id) : -1
   const navigationFiche = {
-    position: rangOuvert === -1 ? 'Justificatif hors de la liste affichée' : `Justificatif ${rangOuvert + 1} sur ${filtered.length}`,
-    precedente: rangOuvert > 0 ? () => ouvrirPiece(filtered[rangOuvert - 1]) : null,
-    suivante: rangOuvert !== -1 && rangOuvert < filtered.length - 1 ? () => ouvrirPiece(filtered[rangOuvert + 1]) : null,
+    position: rangOuvert === -1 ? 'Justificatif hors de la liste affichée' : `Justificatif ${rangOuvert + 1} sur ${affichees.length}`,
+    precedente: rangOuvert > 0 ? () => ouvrirPiece(affichees[rangOuvert - 1]) : null,
+    suivante: rangOuvert !== -1 && rangOuvert < affichees.length - 1 ? () => ouvrirPiece(affichees[rangOuvert + 1]) : null,
   }
 
   // Le texte lu ne se charge qu'au clic : garder les quatre-vingts textes d'un dossier en mémoire
@@ -1176,21 +1200,22 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
           </div>
         ) : (
           <div className="tableau-adaptable">
+            <SelecteurDeTri colonnes={colonnesTri} etat={tri} onChoisir={choisirTri} etroite />
             <table className="table-empilable-etroite">
               <thead>
                 <tr>
                   <th className="col-checkbox"></th>
-                  <th>Date</th>
-                  <th>Tiers</th>
-                  <th className="hide-mobile hide-tres-etroit">Catégorie</th>
-                  <th className="hide-mobile hide-etroit">Sous-dossier</th>
-                  <th>Montant TTC</th>
-                  <th className="hide-mobile hide-etroit">Confiance</th>
-                  <th>Statut</th>
+                  <EnTeteTriable colonne="date" etat={tri} onTrier={trierPar}>Date</EnTeteTriable>
+                  <EnTeteTriable colonne="tiers" etat={tri} onTrier={trierPar}>Tiers</EnTeteTriable>
+                  <EnTeteTriable colonne="categorie" etat={tri} onTrier={trierPar} className="hide-mobile hide-tres-etroit">Catégorie</EnTeteTriable>
+                  <EnTeteTriable colonne="sousDossier" etat={tri} onTrier={trierPar} className="hide-mobile hide-etroit">Sous-dossier</EnTeteTriable>
+                  <EnTeteTriable colonne="montant" etat={tri} onTrier={trierPar}>Montant TTC</EnTeteTriable>
+                  <EnTeteTriable colonne="confiance" etat={tri} onTrier={trierPar} className="hide-mobile hide-etroit">Confiance</EnTeteTriable>
+                  <EnTeteTriable colonne="statut" etat={tri} onTrier={trierPar}>Statut</EnTeteTriable>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => (
+                {affichees.map((p) => (
                   <Fragment key={p.id}>
                   <tr className={`clickable${ficheVisible && editing?.id === p.id ? ' ligne-ouverte' : ''}`}>
                     <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>

@@ -2299,3 +2299,97 @@ describe('relecture C9b — supprimer une sélection qui porte une pièce payée
     }
   })
 })
+
+// LE TRI PAR UN CLIC SUR L'EN-TÊTE (demande du cabinet du 16/11/2026, lib/triDesTableaux.ts).
+describe('PiecesTab — le tri par un clic sur l’en-tête', () => {
+  const tiersAffiches = () => [...document.querySelectorAll('tbody tr.clickable')]
+    .map((tr) => tr.querySelector('td[data-libelle="Tiers"]')!.firstChild!.textContent)
+  const enTete = (nom: string) => screen.getByRole('button', { name: new RegExp(`^${nom}`) })
+  const th = (nom: string) => enTete(nom).closest('th')!
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  const titreFiche = () => within(volet()).queryByRole('heading', { level: 2 })?.textContent ?? null
+  const trois = () => [
+    piece({ id: 'p1', tiers: 'ALPHA', montant_ttc: 300, date_piece: '2026-03-01' }),
+    piece({ id: 'p2', tiers: 'BETA', montant_ttc: 100, date_piece: '2026-03-02' }),
+    piece({ id: 'p3', tiers: 'GAMMA', montant_ttc: 200, date_piece: '2026-03-03' }),
+  ]
+
+  it('croissant, puis décroissant, puis l’ordre d’origine, et aria-sort le dit', async () => {
+    poser(trois())
+    monter('toutes')
+    await screen.findByText('ALPHA', { selector: 'td' })
+    const origine = tiersAffiches()
+    expect(th('Montant TTC').getAttribute('aria-sort')).toBe('none')
+
+    await act(async () => { fireEvent.click(enTete('Montant TTC')) })
+    expect(tiersAffiches()).toEqual(['BETA', 'GAMMA', 'ALPHA'])
+    expect(th('Montant TTC').getAttribute('aria-sort')).toBe('ascending')
+
+    await act(async () => { fireEvent.click(enTete('Montant TTC')) })
+    expect(tiersAffiches()).toEqual(['ALPHA', 'GAMMA', 'BETA'])
+    expect(th('Montant TTC').getAttribute('aria-sort')).toBe('descending')
+
+    await act(async () => { fireEvent.click(enTete('Montant TTC')) })
+    expect(tiersAffiches()).toEqual(origine)
+    expect(th('Montant TTC').getAttribute('aria-sort')).toBe('none')
+
+    await act(async () => { fireEvent.click(enTete('Tiers')) })
+    expect(tiersAffiches()).toEqual(['ALPHA', 'BETA', 'GAMMA'])
+    expect(th('Tiers').getAttribute('aria-sort')).toBe('ascending')
+    expect(th('Montant TTC').getAttribute('aria-sort')).toBe('none')
+  })
+
+  it('la fiche suit l’ordre TRIÉ : sa place et « suivant »', async () => {
+    poser(trois())
+    monter('toutes')
+    await screen.findByText('ALPHA', { selector: 'td' })
+    await act(async () => { fireEvent.click(enTete('Montant TTC')) })
+    await act(async () => { fireEvent.click(screen.getByText('BETA', { selector: 'td' })) })
+    expect(titreFiche()).toBe('Justificatif 1 sur 3')
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Justificatif suivant' })) })
+    expect(titreFiche()).toBe('Justificatif 2 sur 3')
+    expect(within(volet()).getByText('GAMMA')).toBeTruthy()
+  })
+
+  it('« Tout sélectionner » prend les mêmes lignes quel que soit le tri', async () => {
+    poser(trois())
+    monter('toutes')
+    await screen.findByText('ALPHA', { selector: 'td' })
+    await act(async () => { fireEvent.click(enTete('Tiers')) })
+    await act(async () => { fireEvent.click(enTete('Tiers')) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tout sélectionner' })) })
+    const cochees = [...document.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')].filter((c) => c.checked)
+    expect(cochees).toHaveLength(3)
+  })
+
+  it('sous « À valider », la pièce non lue en tête est l’ORIGINE : un tri la remplace, le troisième clic la rétablit', async () => {
+    poser([
+      piece({ id: 'p1', tiers: 'ALPHA', montant_ttc: 300 }),
+      piece({ id: 'p2', tiers: 'ZETA', montant_ttc: null }),
+      piece({ id: 'p3', tiers: 'BETA', montant_ttc: 100 }),
+    ])
+    monter('toutes')
+    await screen.findByText('ALPHA', { selector: 'td' })
+    await act(async () => { screen.getByRole('button', { name: 'À valider' }).click() })
+    expect(tiersAffiches()[0]).toBe('ZETA')
+    const origine = tiersAffiches()
+    await act(async () => { fireEvent.click(enTete('Tiers')) })
+    expect(tiersAffiches()).toEqual(['ALPHA', 'BETA', 'ZETA'])
+    await act(async () => { fireEvent.click(enTete('Tiers')) })
+    await act(async () => { fireEvent.click(enTete('Tiers')) })
+    expect(tiersAffiches()).toEqual(origine)
+  })
+
+  it('le sélecteur « Trier par » du tableau replié trie de même, et revient à l’origine', async () => {
+    poser(trois())
+    monter('toutes')
+    await screen.findByText('ALPHA', { selector: 'td' })
+    const origine = tiersAffiches()
+    const selecteur = screen.getByLabelText('Trier par') as HTMLSelectElement
+    await act(async () => { fireEvent.change(selecteur, { target: { value: 'montant:decroissant' } }) })
+    expect(tiersAffiches()).toEqual(['ALPHA', 'GAMMA', 'BETA'])
+    expect(th('Montant TTC').getAttribute('aria-sort')).toBe('descending')
+    await act(async () => { fireEvent.change(selecteur, { target: { value: '' } }) })
+    expect(tiersAffiches()).toEqual(origine)
+  })
+})
