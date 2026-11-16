@@ -2,6 +2,7 @@ import type { AdresseRetenue } from './adressesDesAccesRetires'
 import { estLeClient, type AccesDuDossier } from './auteursVentes'
 import { definitionDe, type Domaine } from './droitsAcces'
 import type { LectureComplete } from './lectureComplete'
+import { adresseDeLAuteurAtteste, type OuverturesAttestees } from './ouverturesAttestees'
 import { jourEtHeureAParis } from './parametresFacturation'
 import { ACCES_DANS_LA_TRACE_PREVU } from './traceDesDroits'
 import type { TraceDesDroits } from './types'
@@ -140,6 +141,41 @@ export function auteurDuGeste(
   if (ligne.auteurId === ligne.clientId || estLeClient(acces, ligne.auteurId)) return 'client'
   return 'cabinet'
 }
+
+/** Ce que dit le survol d'une ouverture attestée (P1TQ2-Q1). */
+export const TITRE_DE_L_OUVERTURE_ATTESTEE =
+  'Ouvert depuis l’application : le compte du cabinet qui a ouvert cet accès l’a attesté sous sa session. Son adresse ne se lit '
+  + 'que par le chef du cabinet et par ce compte lui-même.'
+
+/** L'auteur d'une ligne tel que l'écran le montre : la mention, l'adresse d'un compte du cabinet quand il se nomme, le survol. */
+export interface AuteurMontre {
+  mention: string
+  adresse: string | null
+  titre: string
+}
+
+/**
+ * L'auteur d'une ligne, sur ce que la ligne PROUVE (`auteurDuGeste`) ; et, pour l'arrivée d'un accès écrite sans session
+ * qu'un compte du cabinet a attestée (P1TQ2-Q1, lib/ouverturesAttestees.ts), « Le cabinet », nommé par son adresse quand la
+ * session de qui regarde la lit dans l'équipe. Sans attestation, ou ses lectures absentes (`null` : le drapeau baissé),
+ * « Sans session », ce que la base sait. Aucun identifiant ne s'affiche.
+ */
+export function auteurMontre(
+  acces: AccesDuDossier, ligne: Pick<LigneDeTrace, 'id' | 'auteurId' | 'clientId' | 'droit' | 'geste'>,
+  ouvertures: OuverturesAttestees | null, equipe: ReadonlyMap<string, string> | null,
+): AuteurMontre {
+  const auteur = auteurDuGeste(acces, ligne)
+  if (auteur === 'sans_session' && ligne.droit === ACCES && ligne.geste === 'creation') {
+    const attestee = adresseDeLAuteurAtteste(ligne.id, ouvertures, equipe)
+    if (attestee.atteste) return { mention: MENTIONS_DE_L_AUTEUR.cabinet, adresse: attestee.adresse, titre: TITRE_DE_L_OUVERTURE_ATTESTEE }
+  }
+  return { mention: MENTIONS_DE_L_AUTEUR[auteur], adresse: null, titre: TITRES_DE_L_AUTEUR[auteur] }
+}
+
+/** Ce que l'onglet dit de l'auteur d'une ouverture, l'attestation en base (P1TQ2-Q1, sous `OUVERTURES_ATTESTEES_PREVUES`). */
+export const CE_QUE_DIT_L_OUVERTURE_ATTESTEE =
+  'Un accès ouvert depuis l’application se dit ouvert par le cabinet ; le chef du cabinet, et le compte qui l’a ouvert, y '
+  + 'lisent aussi l’adresse de ce compte. Les accès ouverts avant cette mise en base restent « sans session ».'
 
 /** L'instant à Paris, « 07/11/2026 à 10:12 » : la base date à Paris, quel que soit le fuseau de qui regarde. */
 export function quandADitLaTrace(instant: string): string {

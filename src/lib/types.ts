@@ -1144,6 +1144,19 @@ export interface AdresseDUnAccesRetire {
   retire_le: string
 }
 
+// QUI A OUVERT UN ACCÈS CLIENT (P1TQ2-Q1 ; migration PRÉPARÉE `auteur_des_ouvertures_d_acces` — voir
+// lib/ouverturesAttestees.ts) : le compte du cabinet du dossier qui a attesté, sous sa session, l'arrivée d'un accès que la
+// trace a écrite sans session ; écrite par `attester_ouverture_d_acces` seule, immuable, partie avec son dossier, lue par le
+// cabinet du dossier. Ni l'accès, ni la ligne de la trace, ni le compte n'ont de clé ; aucune colonne n'est nulle.
+export interface AuteurDUneOuverture {
+  id: string
+  dossier_id: string
+  acces_id: string
+  trace_id: string
+  auteur_id: string
+  atteste_le: string
+}
+
 // LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, en production depuis le 07/11/2026,
 // relevée dans information_schema.columns — voir lib/saisies2035.ts) : une ligne par dossier, exercice et case, écrite par
 // `enregistrer_saisies_2035` seule. `code` est un texte, comme le générateur de Supabase le rend : sa contrainte

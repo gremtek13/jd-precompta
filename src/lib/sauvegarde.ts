@@ -29,6 +29,7 @@ import { PIECE_D_UNE_FACTURE_REPRISE_PREVUE, TABLES_DE_LA_PIECE_D_UNE_FACTURE_RE
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { TRACE_DES_DROITS_PREVUE } from './traceDesDroits'
 import { ADRESSES_DES_ACCES_RETIRES_PREVUES, TABLES_DES_ADRESSES_DES_ACCES_RETIRES } from './adressesDesAccesRetires'
+import { OUVERTURES_ATTESTEES_PREVUES, TABLES_DES_OUVERTURES_ATTESTEES } from './ouverturesAttestees'
 import { SAISIES_2035_EN_BASE } from './saisies2035'
 import { SAISIES_2035E_PREVUES, TABLES_DES_SAISIES_2035E } from './saisies2035E'
 import { MODELE_DU_CABINET_PREVU, TABLES_DU_MODELE_DU_CABINET } from './modeleDuCabinet'
@@ -182,6 +183,21 @@ export function auPlanDeLaTraceDesDroits(table: string, tracePrevue: boolean): b
 /** Une table au plan, côté adresses des accès retirés : toutes, sauf la sienne tant que sa migration n'est pas exportée. */
 export function auPlanDesAdressesDesAccesRetires(table: string, prevues: boolean): boolean {
   return prevues || !TABLES_DES_ADRESSES_DES_ACCES_RETIRES.includes(table)
+}
+
+// QUI A OUVERT UN ACCÈS CLIENT (P1TQ2-Q1 ; migration `auteur_des_ouvertures_d_acces`, PRÉPARÉE le 16/11/2026,
+// supabase/preparees/20261116120000_auteur_des_ouvertures_d_acces.sql) : le compte du cabinet qui a attesté l'arrivée d'un
+// accès écrite sans session. Sous le drapeau de la migration (`OUVERTURES_ATTESTEES_PREVUES`, src/lib/ouverturesAttestees.ts),
+// baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde. Le patron de l'adresse d'un accès
+// retiré : sa relation (le dossier en cascade ; ni l'accès, ni la ligne de la trace, ni le compte n'ont de clé), son rang
+// (juste après l'adresse des accès retirés, donc après la trace qu'elle nomme), son chemin ; aucune vague ; sa clé est la
+// commune, `id`. La restauration la réinsère par la porte que sa garde et sa policy ouvrent au super-administrateur ; la
+// réinsertion des accès n'en écrit aucune (seule l'attestation d'une arrivée sans session en écrit une), l'auteur restauré
+// est celui de la sauvegarde. sauvegardeOuverturesAttestees.test.ts éprouve le plan prévu et le plan du jour, sous chaque
+// état du drapeau.
+/** Une table au plan, côté auteurs des ouvertures : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDesOuverturesAttestees(table: string, prevues: boolean): boolean {
+  return prevues || !TABLES_DES_OUVERTURES_ATTESTEES.includes(table)
 }
 
 // LES SITUATIONS PUBLIÉES (espace client, étape C4a ; migration `situations_publiees`, en production depuis le 07/11/2026 :
@@ -599,6 +615,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
     && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
     && auPlanDesAdressesDesAccesRetires(table, ADRESSES_DES_ACCES_RETIRES_PREVUES)
+    && auPlanDesOuverturesAttestees(table, OUVERTURES_ATTESTEES_PREVUES)
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
     && auPlanDesPrevisionsPubliees(table, PREVISIONS_PUBLIEES_PREVUES)
     && auPlanDeLaHausseDuChiffreDAffaires(table, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE)
@@ -804,6 +821,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'plan_comptable_cabinet', parent: 'roles_comptables', colonne: 'role', aLaSuppression: 'bloque' },
   { enfant: 'trace_des_droits', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'adresses_des_acces_retires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'auteurs_des_ouvertures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'situations_publiees', parent: 'situations_publiees', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   // La prévision de trésorerie publiée (C8-Q2, préparée) : son dossier, et la chaîne de ses remplacements et retraits.
@@ -1212,6 +1230,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'trace_des_droits',
   // L'adresse d'un accès retiré (P1T-E2) : juste après la trace, qu'elle nomme.
   'adresses_des_acces_retires',
+  // Qui a ouvert un accès (P1TQ2-Q1, préparée) : juste après l'adresse des accès retirés, donc après la trace qu'elle nomme.
+  'auteurs_des_ouvertures',
   'natures_immobilisation',
   'packs',
   'previsionnels_bancaires',
@@ -1807,6 +1827,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   memberships: { acces: 'direct' },
   trace_des_droits: { acces: 'direct' },
   adresses_des_acces_retires: { acces: 'direct' },
+  auteurs_des_ouvertures: { acces: 'direct' },
   situations_publiees: { acces: 'direct' },
   previsions_publiees: { acces: 'direct' },
   seuils_du_chiffre_d_affaires: { acces: 'direct' },

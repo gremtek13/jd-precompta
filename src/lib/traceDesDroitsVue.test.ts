@@ -3,13 +3,15 @@ import { ACCES_EN_COURS, ACCES_SANS_OBJET, type AccesDuDossier } from './auteurs
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  ACCES, AUCUN_CHANGEMENT_TRACE, GESTES, INTITULE_SANS_ADRESSE, LIBELLE_DE_L_ACCES, MENTIONS_DE_L_AUTEUR, auteurDuGeste,
+  ACCES, AUCUN_CHANGEMENT_TRACE, GESTES, INTITULE_SANS_ADRESSE, LIBELLE_DE_L_ACCES, MENTIONS_DE_L_AUTEUR, TITRES_DE_L_AUTEUR,
+  TITRE_DE_L_OUVERTURE_ATTESTEE, auteurDuGeste, auteurMontre,
   groupesDeLaTrace, ligneDeTrace, nombreDeChangements, ordreDeLaTrace, phraseDeLaTrace, quandADitLaTrace, traceDeLaLecture,
   type LigneDeTrace,
 } from './traceDesDroitsVue'
 import { ACCES_DANS_LA_TRACE_PREVU, ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE } from './traceDesDroits'
 import { DOMAINES, definitionDe, type Domaine } from './droitsAcces'
 import type { TraceDesDroits } from './types'
+import { ouverturesDeLaLecture } from './ouverturesAttestees'
 import { fichiersDuSchema } from '../test/schema'
 
 // LA RÈGLE D'AFFICHAGE DE LA TRACE DES DROITS (étape P1-trace) : ses mots, son auteur, ses regroupements. Aucun client ici.
@@ -279,3 +281,39 @@ describe('l’accès lui-même dans la trace (P1T-Q2)', () => {
   })
 })
 
+// QUI A OUVERT UN ACCÈS (P1TQ2-Q1) : seule l'ARRIVÉE d'un accès écrite sans session s'attribue, par l'attestation du cabinet,
+// et son compte ne se nomme que par l'adresse que la session de qui regarde lit dans l'équipe ; tout le reste, comme P1T-E1.
+describe('l’auteur montré, l’attestation d’une ouverture lue', () => {
+  const arrivee = ligne({ id: 't-a', droit: ACCES, geste: 'creation', coche: true, auteur_id: null })
+  const attestee = ouverturesDeLaLecture({
+    lignes: [{ id: 'a1', dossier_id: 'd1', acces_id: 'm1', trace_id: 't-a', auteur_id: 'u-chef', atteste_le: '2026-11-16T09:00:00Z' }],
+    complete: true, motif: null,
+  })
+
+  it('l’arrivée attestée : « Le cabinet », son adresse si la session la lit, et ce que le survol dit', () => {
+    expect(auteurMontre(lus(), arrivee, attestee, new Map([['u-chef', 'chef@cabinet.example']])))
+      .toEqual({ mention: MENTIONS_DE_L_AUTEUR.cabinet, adresse: 'chef@cabinet.example', titre: TITRE_DE_L_OUVERTURE_ATTESTEE })
+    expect(auteurMontre(lus(), arrivee, attestee, new Map()))
+      .toEqual({ mention: MENTIONS_DE_L_AUTEUR.cabinet, adresse: null, titre: TITRE_DE_L_OUVERTURE_ATTESTEE })
+  })
+
+  it('sans attestation, ou sans lecture, l’arrivée reste « Sans session »', () => {
+    const sansSession = { mention: MENTIONS_DE_L_AUTEUR.sans_session, adresse: null, titre: TITRES_DE_L_AUTEUR.sans_session }
+    expect(auteurMontre(lus(), arrivee, null, null)).toEqual(sansSession)
+    expect(auteurMontre(lus(), { ...arrivee, id: 't-autre' }, attestee, new Map([['u-chef', 'chef@cabinet.example']]))).toEqual(sansSession)
+  })
+
+  it('une case, un départ, ou une arrivée écrite sous une session ne s’attribuent jamais par l’attestation', () => {
+    const equipe = new Map([['u-chef', 'chef@cabinet.example']])
+    for (const autre of [
+      ligne({ id: 't-a', droit: 'banque', geste: 'creation', coche: true, auteur_id: null }),
+      ligne({ id: 't-a', droit: ACCES, geste: 'retrait', coche: false, auteur_id: null }),
+    ]) {
+      expect(auteurMontre(lus(), autre, attestee, equipe).adresse).toBeNull()
+      expect(auteurMontre(lus(), autre, attestee, equipe).mention).toBe(MENTIONS_DE_L_AUTEUR.sans_session)
+    }
+    const sousSession = ligne({ id: 't-a', droit: ACCES, geste: 'creation', coche: true, auteur_id: 'u-collegue' })
+    expect(auteurMontre(lus(), sousSession, attestee, equipe))
+      .toEqual({ mention: MENTIONS_DE_L_AUTEUR.cabinet, adresse: null, titre: TITRES_DE_L_AUTEUR.cabinet })
+  })
+})
