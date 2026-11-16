@@ -39,7 +39,7 @@ export type LigneDeProvenance = Pick<FactureLigne,
   & { article_id: string | null; reference: string | null }
 
 export const COLONNES_DE_LA_PROVENANCE =
-  'id, facture_id, ordre, designation, quantite, prix_unitaire_ht, article_id, reference, reprise_facture_id, factures_emises!inner(dossier_id)'
+  'id, facture_id, ordre, designation, quantite, prix_unitaire_ht, article_id, reference, reprise_facture_id, factures_emises!facture_lignes_facture_id_fkey!inner(dossier_id)'
 
 export type ControleDuSolde = Pick<ControleReleveBancaire, 'id' | 'solde_final' | 'coherent' | 'periode_fin' | 'created_at'>
 export const COLONNES_DU_CONTROLE = 'id, solde_final, coherent, periode_fin, created_at'

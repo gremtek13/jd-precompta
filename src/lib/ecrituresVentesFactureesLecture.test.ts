@@ -183,7 +183,7 @@ describe('lireLesSourcesDesEcrituresDeVente', () => {
     expect(s.exemplaires).toEqual([{ id: 'p-hier', dossier_id: 'd1', facture_id: 'f-hier', statut: 'a_valider', type_piece: 'vente' }])
     expect(faux.demandes).toEqual([
       'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, tiers_siret, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, montant_ttc',
-      'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id, source_de_la_vente)',
+      'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!facture_lignes_facture_id_fkey!inner(dossier_id, source_de_la_vente)',
       'encaissements_factures: id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie, cree_par',
       'encaissements_factures_taux: encaissement_id, dossier_id, taux, montant',
       'lignes_bancaires: id, dossier_id, date, montant, libelle, source_fichier, encaissements_de_factures, statut, piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, ventilee, reglement_groupe, prelevement_personnel',

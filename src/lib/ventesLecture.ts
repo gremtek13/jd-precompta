@@ -32,7 +32,7 @@ export async function lireLesVentesDuDossier(dossierId: string): Promise<ListesD
   const [lignes, encaisses, parts, declares, evenements, statuts] = await Promise.all([
     lireTout<LigneDeFacture & { id: string }>((debut, fin) =>
       supabase.from('facture_lignes')
-        .select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!inner(dossier_id)', { count: 'exact' })
+        .select('id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!facture_lignes_facture_id_fkey!inner(dossier_id)', { count: 'exact' })
         .eq('factures_emises.dossier_id', dossierId).order('facture_id').order('ordre').order('id').range(debut, fin),
     ),
     lireTout<EncaissementDesVentes>((debut, fin) =>

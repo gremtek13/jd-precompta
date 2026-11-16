@@ -194,7 +194,7 @@ describe('lireLesVentesFacturees', () => {
     // Le drapeau levé : la marque d'acompte et la reprise d'une ligne avec le reste (baissé, le cas « baissé » plus bas).
     expect(faux.demandes).toEqual([
       'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, acompte',
-      'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, reprise_facture_id, factures_emises!inner(dossier_id, source_de_la_vente)',
+      'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, reprise_facture_id, factures_emises!facture_lignes_facture_id_fkey!inner(dossier_id, source_de_la_vente)',
       'encaissements_factures: id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le',
       'encaissements_factures_taux: encaissement_id, dossier_id, taux, montant',
       'pieces: id, dossier_id, facture_id, statut, type_piece',
@@ -337,7 +337,7 @@ describe('l’acompte d’un devis (étape P5b3), dans les deux états de `ACOMP
     const v = lue(await lireLesVentesFacturees('d1'))
     expect(faux.demandes.slice(0, 2)).toEqual([
       'factures_emises: id, dossier_id, statut, type, numero, date_emission, tiers_nom, facture_origine_id, source_de_la_vente, nature_operation, option_debits, date_prestation, acompte',
-      'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, reprise_facture_id, factures_emises!inner(dossier_id, source_de_la_vente)',
+      'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, reprise_facture_id, factures_emises!facture_lignes_facture_id_fkey!inner(dossier_id, source_de_la_vente)',
     ])
     expect(exigibilitesDeLAcompte(v)).toEqual([['encaissement', '2027-01-15', 3000], ['livraison', '2027-03-05', 3000]])
   })
