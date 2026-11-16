@@ -124,8 +124,18 @@ function interdits(nom: string): { motif: string; gabarit: RegExp }[] {
   ]
 }
 
+// LE TRI D'UN TABLEAU SUIT LA MÊME RÈGLE (16/11/2026, `lib/triDesTableaux.ts`) : il ordonne l'AFFICHAGE. L'ensemble
+// que rend `trierLignes(` ne sert qu'à dessiner les lignes et à donner à une fiche son « précédent / suivant » ; un
+// total, un sous-compte ou le M du compteur se prennent sur la liste d'avant le tri. Un total sur des lignes triées
+// serait juste aujourd'hui — l'ordre ne change pas une somme —, mais l'ensemble trié est celui d'après la recherche :
+// le laisser servir de source à un chiffre, c'est rouvrir la porte que ce fichier ferme.
+export function lireTris(texte: string): string[] {
+  const noms = [...sansCommentaires(texte).matchAll(/^\s*const\s+(\w+)\s*=\s*trierLignes\s*\(/gm)].map((m) => m[1])
+  return [...new Set(noms)]
+}
+
 export function fautes(texte: string): string[] {
-  const { ensembles } = lireRecherches(texte)
+  const ensembles = [...new Set([...lireRecherches(texte).ensembles, ...lireTris(texte)])]
   const corps = sansCommentaires(texte)
   return ensembles.flatMap((nom) =>
     interdits(nom).filter(({ gabarit }) => gabarit.test(corps)).map(({ motif }) => `${nom} : ${motif}`),
@@ -176,6 +186,24 @@ describe('une recherche filtre l’affichage, jamais un total', () => {
       '  const nbAvecAlerte = lignes.filter(alerte).length',
       '  const trie = [...affichees].sort((a, b) => a.date.localeCompare(b.date))',
       '  return <BarreRecherche affiches={affichees.length} total={lignes.length} />',
+    ].join('\n')
+    expect(fautes(correct)).toEqual([])
+  })
+
+  it('et l’ensemble d’un tri ne porte aucun chiffre non plus — défaut PLANTÉ', () => {
+    const synthetique = [
+      '  const affichees = trierLignes(filtrees, COLONNES, tri)',
+      '  const total = affichees.reduce((s, l) => s + l.montant, 0)',
+      '  const nb = affichees.filter(alerte).length',
+      '  return <BarreRecherche affiches={affichees.length} total={affichees.length} />',
+    ].join('\n')
+    expect(lireTris(synthetique)).toEqual(['affichees'])
+    expect(fautes(synthetique)).toHaveLength(3)
+    const correct = [
+      '  const affichees = trierLignes(filtrees, COLONNES, tri)',
+      '  const total = filtrees.reduce((s, l) => s + l.montant, 0)',
+      '  const rang = affichees.findIndex((l) => l.id === ouverte)',
+      '  return affichees.map((l) => <Ligne l={l} />)',
     ].join('\n')
     expect(fautes(correct)).toEqual([])
   })

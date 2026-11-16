@@ -236,6 +236,25 @@ th {
   border-bottom: 1px solid var(--color-border);
 }
 td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); font-variant-numeric: tabular-nums; }
+/* L'EN-TÊTE D'UNE COLONNE TRIABLE (16/11/2026, `EnTeteTriable`) : un vrai bouton dans le `th`, qui en garde l'allure — la
+   casse, la graisse et la couleur de l'en-tête —, et une flèche discrète. L'état se lit à `aria-sort` ; la flèche d'une
+   colonne qui ne trie pas reste pâle. Le sélecteur « Trier par » d'un tableau replié en fiches (`SelecteurDeTri`) ne paraît
+   que replié, dans les deux blocs `@container tableau` plus bas. */
+.tri-en-tete {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 0; margin: 0; border: 0; background: none; cursor: pointer;
+  color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; text-align: inherit;
+  border-radius: var(--radius-sm);
+  transition: color var(--duree) var(--ease);
+}
+.tri-en-tete:hover { color: var(--color-text); }
+.tri-en-tete:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+th[aria-sort="ascending"] .tri-en-tete, th[aria-sort="descending"] .tri-en-tete { color: var(--color-text); }
+.tri-fleche { font-size: 0.65rem; line-height: 1; }
+.tri-fleche-inactive { color: color-mix(in srgb, var(--color-text-light) 55%, transparent); }
+.tri-replie { display: none; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 12px 0; }
+.tri-replie label { font-size: 0.85rem; color: var(--color-text-light); }
+.tri-replie select { flex: 1 1 12rem; min-width: 0; font-size: 16px; }
 tr:last-child td { border-bottom: none; }
 tbody tr { transition: background-color var(--duree) var(--ease); }
 tbody tr:hover { background: var(--color-surface-2); }
@@ -934,6 +953,7 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    tableauxFormulaires.test.ts le vérifie : sans elle, il ne se replierait plus, même sur téléphone. */
 .tableau-adaptable { container-type: inline-size; container-name: tableau; }
 @container tableau (max-width: 860px) {
+  .tri-replie:not(.tri-replie-etroite) { display: flex; }
   .table-empilable thead { display: none; }
   .table-empilable,
   .table-empilable tbody,
@@ -1035,6 +1055,7 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    règles que le bloc précédent — une requête de conteneur ne prend pas son seuil dans une variable, d'où ce second
    bloc. Le tableau a du jeu autour de ses fiches : la carte qui le porte n'a pas de marge intérieure. */
 @container tableau (max-width: 520px) {
+  .tri-replie-etroite { display: flex; }
   .table-empilable-etroite thead { display: none; }
   .table-empilable-etroite,
   .table-empilable-etroite tbody,
