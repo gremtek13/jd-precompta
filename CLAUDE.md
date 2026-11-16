@@ -206,6 +206,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   en fiches (`table-empilable`, `data-libelle`) vit dans `.tableau-adaptable` (`tableauxFormulaires.test.ts`) ; le
   téléphone ne comprime jamais un tableau ; un nom de fichier porte `.nom-fichier`, une adresse électronique `.courriel`
   → « UN MOT NE SE COUPE PLUS AU MILIEU », « L'ADRESSE D'UN CLIENT NE SE COUPE PLUS AU MILIEU D'UN MOT ».
+- **Un tableau de liste se trie par un clic sur l'en-tête** (`lib/triDesTableaux.ts`, `EnTeteTriable`, `SelecteurDeTri` pour
+  le tableau replié, `useTriDuTableau` remis à l'origine au changement de dossier, 16/11/2026) : un type déclaré par
+  colonne, les vides en fin, un tri stable sur l'ordre d'origine de l'écran ; il ordonne l'AFFICHAGE et la fiche
+  « précédent / suivant », jamais une sélection, un total, un export ni un lot (`recherchesEtTotaux.test.ts`) → « LE TRI
+  DES TABLEAUX PAR UN CLIC SUR L'EN-TÊTE ».
 - **Vérification visuelle** : `outils/captures/` après toute modification de `index.css` ou de la coque ;
   `debordements.mjs` rend 0 aux quatre largeurs de référence, à 720 px et aux volets extrêmes ; un bouton de fenêtre
   qu'aucune position ne dégage est une faute ; la passe du client : `debordements.mjs <largeur> client` (ou
