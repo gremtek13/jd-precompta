@@ -53302,3 +53302,19 @@ avec le membre d'équipe d'essai, ESSAIS-Q1, dont le texte a été remis au cabi
 citait l'empreinte de la version d'avant (`1b797dca…`) : la version appliquée ajoute `seuil_de_baisse`, ce que la réponse
 du cabinet à CA-Q2 demandait. Questions ouvertes : CA2-Q1 (qui a réglé chaque seuil), CA3-Q1 (les douze mois à chaque
 trimestre ou chaque mois).
+
+### 16/11/2026 — ESSAIS-Q1 : LE MEMBRE D'ESSAI POSÉ EN PRODUCTION, LES ESSAIS REJOUÉS
+
+Le cabinet a collé `outils/membre-d-essai/creer.sql` le 16/11/2026 ; `verifier.sql` rejoué par la session : un compte,
+sans mot de passe, non confirmé, banni, ni identité ni session ni facteur, « comptable » du cabinet, affecté à `test`
+seul. Demande n° 375 fusionnée et en ligne le même jour (l'alerte du chiffre d'affaires à l'écran). Rejoués ensuite en
+production, par `execute_sql`, les textes recopiés du dépôt (seuls des commentaires hors des corps omis), 230
+migrations, rien resté en base : `repriseEtModeleComptable` 8 sur 8 (le comptable assigné compris, qui manquait le
+15/11) ; `accesAvantLesGardes` 24 sur 24 — la porte devant les gardes éprouvée en production pour la première fois (32
+tables sur 32, 64 refus sur 64, les quatre corps plantés vus) ; `hausseDuChiffreDAffaires` 52 sur 52 ;
+`reglementsDeLaPieceCitee` 36 sur 36 (ses rangs 22 et 27 dans la branche d'avant `piece_d_un_paiement_dans_son_dossier`,
+préparée) ; de `rls.sql`, les blocs SM (21 sur 21, 3 mutations sur 3) et TO (13 sur 13, 2 sur 2), RT EN ATTENTE de sa
+migration. NON JOUÉS : les blocs MV (missions d'un client) et LM6 (lettres du client) de `rls.sql`, qui nomment en dur
+le cabinet de la réplique (`cab10000-…`), absent de la production — le jeu ne se construit pas (23503), MV7 seul, au
+catalogue, est juste ; ce n'est pas un défaut des migrations, mais ces deux blocs sont à récrire sur le cabinet du
+dossier `test` pour se jouer en production. Les autres blocs de `rls.sql` ne sont toujours pas rejoués en production.
