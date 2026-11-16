@@ -6987,3 +6987,49 @@ describe('BanqueTab — le virement entre deux comptes du dossier (MCB3)', () =>
     await waitFor(() => expect(ecrits().map((r) => r.args.p_ligne_bancaire_id)).toEqual(['deb', 'cre', 'cre']))
   })
 })
+
+// LE TRI PAR UN CLIC SUR L'EN-TÊTE (demande du cabinet du 16/11/2026, lib/triDesTableaux.ts).
+describe('BanqueTab — le tri des mouvements par un clic sur l’en-tête', () => {
+  const LIBELLES = ['PRLV ALPHA', 'PRLV BETA', 'PRLV GAMMA']
+  const ordre = () => [...document.querySelectorAll('tbody tr.clickable')]
+    .map((tr) => LIBELLES.find((l) => tr.textContent!.includes(l)))
+    .filter((l): l is string => !!l)
+  const enTete = (nom: string) => screen.getByRole('button', { name: new RegExp(`^${nom}`) })
+  const poserTrois = () => {
+    reinitialiser()
+    faux.lignes = [
+      ligneDeTest({ id: 'l1', libelle: 'PRLV ALPHA', montant: -300, date: '2025-06-01' }),
+      ligneDeTest({ id: 'l2', libelle: 'PRLV BETA', montant: -100, date: '2025-06-03' }),
+      ligneDeTest({ id: 'l3', libelle: 'PRLV GAMMA', montant: -200, date: '2025-06-02' }),
+    ]
+  }
+
+  it('croissant, décroissant, puis l’ordre d’origine, et aria-sort le dit', async () => {
+    poserTrois()
+    rendre()
+    await screen.findAllByText('PRLV ALPHA')
+    const origine = ordre()
+    await act(async () => { fireEvent.click(enTete('Montant')) })
+    expect(ordre()).toEqual(['PRLV ALPHA', 'PRLV GAMMA', 'PRLV BETA'])
+    expect(enTete('Montant').closest('th')!.getAttribute('aria-sort')).toBe('ascending')
+    await act(async () => { fireEvent.click(enTete('Montant')) })
+    expect(ordre()).toEqual(['PRLV BETA', 'PRLV GAMMA', 'PRLV ALPHA'])
+    expect(enTete('Montant').closest('th')!.getAttribute('aria-sort')).toBe('descending')
+    await act(async () => { fireEvent.click(enTete('Montant')) })
+    expect(ordre()).toEqual(origine)
+    expect(enTete('Montant').closest('th')!.getAttribute('aria-sort')).toBe('none')
+  })
+
+  it('la fiche d’un mouvement suit l’ordre TRIÉ', async () => {
+    poserTrois()
+    rendre()
+    await screen.findAllByText('PRLV ALPHA')
+    await act(async () => { fireEvent.click(enTete('Date')) })
+    expect(ordre()).toEqual(['PRLV ALPHA', 'PRLV GAMMA', 'PRLV BETA'])
+    await ouvrir('PRLV GAMMA')
+    expect(within(volet()).getByText('Mouvement 2 sur 3')).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Mouvement suivant' }).click() })
+    expect(within(volet()).getByText('Mouvement 3 sur 3')).toBeTruthy()
+    expect(within(volet()).getAllByText('PRLV BETA').length).toBeGreaterThan(0)
+  })
+})
