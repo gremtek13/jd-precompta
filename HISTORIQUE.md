@@ -53288,3 +53288,17 @@ un défaut d'hier). Éprouvé : l'essai, 52 verdicts justes (et EN ATTENTE sans 
 du leurre SÛR ; la restauration IDENTIQUE (98 tables, les deux seuils et la marque compris) ; le retour se refuse sur une ligne
 vivante et rend la signature d'avant (neuf familles) ; 10 mutations du module et de la carte sur 10. Migration `721abf66…` (sans
 le dernier saut de ligne), par l'outil ; retour `8505e0f3…`, à coller.
+
+### 16/11/2026 — L'ALERTE DU CHIFFRE D'AFFAIRES EN PRODUCTION
+
+Sur l'accord du cabinet (CA-migration (A), « après CA-Q2 et CA-Q4 », ses réponses intégrées le jour même : le seuil de
+baisse réglé à part, les douze mois glissants), `hausse_du_chiffre_d_affaires` est partie par l'outil, texte inchangé :
+version `20261116151848`, empreinte de la ligne d'historique `6767316c2ee67d52eb405ce956956ddc`, égale à celle du fichier,
+entré dans `supabase/schema/` sous cette version ; `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` levé. Les trois contrôles de
+l'export, égaux des deux côtés à 230 migrations : dérive `fcf2a218905a55741b05316a12599772` ; socle 83 instructions
+`d02e468d124c948803d3e9b831092ca3` ; inventaire 3 184 objets `f93815320360154cec75625d0a8bb0d4`. Suite entière, drapeau
+levé : 895 fichiers, 22 778 tests verts. Pas rejoués en production : `hausseDuChiffreDAffaires.sql` et `rls.sql` (à faire
+avec le membre d'équipe d'essai, ESSAIS-Q1, dont le texte a été remis au cabinet le même jour). La fiche CA-migration
+citait l'empreinte de la version d'avant (`1b797dca…`) : la version appliquée ajoute `seuil_de_baisse`, ce que la réponse
+du cabinet à CA-Q2 demandait. Questions ouvertes : CA2-Q1 (qui a réglé chaque seuil), CA3-Q1 (les douze mois à chaque
+trimestre ou chaque mois).
