@@ -53122,3 +53122,18 @@ l'application ; jamais vers `/retour-banque` ni un fragment de lien d'authentifi
 connexion (la coque se remonte). Un `<button>`, « Retour » à l'écran, « Retour à Banque » pour l'accessibilité quand c'est
 simple. Deux places, une visible : la barre du haut du téléphone, la tête du panneau central sur ordinateur. Comme la barre
 latérale, il ne consulte pas la garde du panneau de droite (`HashRouter` n'a pas de bloqueur). Banc : huit passes à 0.
+
+### 16/11/2026 — L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS DE L'ASSURANCE MALADIE : LA CONCEPTION
+
+Demande du cabinet : « l'import NOEMIE et le rapprochement des remboursements sécu » ; sa décision du même jour : « on
+récupère que les chiffres et on stocke pas de données patients ». Conception : `docs/conceptions/53-import-noemie-et-remboursements.md`.
+Le fichier se lit dans le navigateur du praticien (espace client), n'en sortent que des agrégats par journée comptable,
+organisme et part (obligatoire, complémentaire, forfait) : montant net, régularisations, nombre de factures. Ni numéro de
+facture ni de lot (pseudonymes d'un patient par le logiciel du praticien, RGPD cons. 26), ni référence complète du virement,
+ni empreinte du fichier ; la table n'a aucune colonne de texte. Le paiement ne compte dans aucun moteur (il justifie et
+contrôle le crédit du relevé, sinon la recette entrerait deux fois) ; trois signaux (montant, les six derniers chiffres de la
+référence égaux à la journée comptable, la date), rien d'associé sans clic. Établi par ameli.fr (le contenu du retour, les
+deux avis de crédit, la date AAMMJJ, les références 576 et 580) — pages refusées en lecture automatique (403), à relire à la
+main ; non établi : la disposition des zones (le cahier NOEMIE PS de 2004 est publié chiffré, copie interdite, non
+déchiffré), la forme des exports des logiciels, l'écart journée comptable → crédit. Huit lots NOE1 à NOE8 ; NOE1 (le
+logiciel du praticien et les en-têtes de son export) d'abord ; NOE-Q1 à Q7 au cabinet, NOE-E1 à E3 à l'expert-comptable.
