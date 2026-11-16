@@ -53270,3 +53270,21 @@ et de fin. **Écartée** : l'écran Équipe, qui ne crée qu'un compte à mot de
 `creer.sql` sur un talon des colonnes du service, ils rendent mot pour mot ce qu'ils rendent avec le semis (8, 24, 402 lignes) ;
 gardes de `creer.sql` et `retirer.sql` éprouvées. **Non éprouvé** : la forme exacte de `auth.users` en production (requête 1,
 puis la liste du tableau de bord). Retrait avec `test` (MVP-D8), MVP-D9 n'y change rien.
+
+### 16/11/2026 — L'ALERTE DU CHIFFRE D'AFFAIRES REPRISE : LA BAISSE ET LES DOUZE MOIS (CA-Q1 À CA-Q5, CA-MIGRATION)
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 228 par P1T-Q2, puis supprimée.) Les réponses du
+cabinet : CA-Q1 (A), CA-Q4 (A), CA-Q5 (A), déjà ainsi ; CA-Q2 (C) et CA-Q3 (C), contre la recommandation ; CA-migration (A). La
+baisse : `seuil_de_baisse`, une colonne de la même ligne (de 1 à 100 : au-delà, le chiffre serait sous zéro), réglée à part
+— `regler_seuil_du_chiffre_d_affaires(dossier, sens, lu, seuil)` n'écrit et ne juge que le seuil de son sens ; le dernier réglage
+de la ligne reste celui de la base (CA2-Q1 posée : l'auteur de chaque seuil). Les douze mois : ceux qui finissent avec le
+trimestre clos, contre les douze d'avant — le rythme reste trimestriel et la marque d'un trimestre vaut pour les trois
+comparaisons, dans les deux sens (CA3-Q1 posée : les recalculer chaque mois) ; au 4e trimestre ils sont le cumul et ne se
+comptent pas ; muets tant que les deux ans ne sont pas au
+relevé. Les noms gardent « hausse » ; les mots disent les deux sens, un titre « Variation » quand deux comparaisons divergent ;
+les mois manquants se disent par suites (« d'octobre 2024 à décembre 2024 »), la préposition élidée (« le relevé de août » était
+un défaut d'hier). Éprouvé : l'essai, 52 verdicts justes (et EN ATTENTE sans la migration), 52 aussi avec la restrictive
+`deux_facteurs` posée ; son compagnon, 5 ; 19 mutations de la migration sur 19 mordent ; `rls.sql` 254/0, 148 sur 148 ; le banc
+du leurre SÛR ; la restauration IDENTIQUE (98 tables, les deux seuils et la marque compris) ; le retour se refuse sur une ligne
+vivante et rend la signature d'avant (neuf familles) ; 10 mutations du module et de la carte sur 10. Migration `721abf66…` (sans
+le dernier saut de ligne), par l'outil ; retour `8505e0f3…`, à coller.

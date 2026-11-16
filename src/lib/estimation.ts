@@ -160,9 +160,9 @@ export function totauxPourAnnee(
 /**
  * LE CHIFFRE D'AFFAIRES D'UNE PÉRIODE, en euros : les pièces de vente à la date de leur encaissement, les recettes affectées
  * du relevé, les ventes facturées et les recettes de caisse — LE calcul de l'estimation (`totauxPourAnnee`, `projectionAnnuelle`),
- * sorti d'eux pour qu'un autre écran compte comme eux sans le recopier : l'alerte de hausse du chiffre d'affaires d'un trimestre
- * (lib/hausseDuChiffreDAffaires.ts, docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md). Les quatre termes s'ajoutent
- * dans l'ordre d'hier : un flottant ne bouge pas d'un caractère. Les ventes facturées se comptent au mois près
+ * sorti d'eux pour qu'un autre écran compte comme eux sans le recopier : l'alerte du chiffre d'affaires d'un trimestre, de son
+ * cumul et de ses douze mois (lib/hausseDuChiffreDAffaires.ts, docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md). Les
+ * quatre termes s'ajoutent dans l'ordre d'hier : un flottant ne bouge pas d'un caractère. Les ventes facturées se comptent au mois près
  * (`recettesFactureesDesMois`) : une période qui ne commence pas un 1er et ne finit pas un dernier du mois les compte en entier.
  * Sans valeur par défaut, comme ses deux appelants.
  */

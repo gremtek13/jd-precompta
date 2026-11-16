@@ -4,26 +4,27 @@ import { aujourdHuiAParis } from '../lib/format'
 import {
   HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE, LIBELLE_OUVRIR_LA_VUE_D_ENSEMBLE, PLAFOND_DU_TABLEAU_DE_BORD, SEUILS_ILLISIBLES,
   TITRE_DU_TABLEAU_DE_BORD, alerteAVoir, dossiersACalculer, phraseDesIllisibles, phraseDesNonCalcules, phraseDuTableauDeBord,
-  phraseDuTitre, type HausseDuChiffreDAffaires,
+  phraseDuTitre, type HausseJugee,
 } from '../lib/hausseDuChiffreDAffaires'
 import { lireLaHausseDuDossier, lireLesSeuilsDesDossiers, type DossierDeLaHausse } from '../lib/hausseDuChiffreDAffairesLecture'
 import { TITRE_MON_CABINET } from '../lib/dossierDuCabinet'
 
-// LES DOSSIERS DONT LE CHIFFRE D'AFFAIRES MONTE AU-DELÀ DE LEUR SEUIL, SUR LE TABLEAU DE BORD DU CABINET (la demande du cabinet du
-// 15/11/2026 ; la conception : docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md, § 4). Le pendant, pour les dossiers que
-// le compte suit, de l'alerte de la Vue d'ensemble — le même jugement (lib/hausseDuChiffreDAffaires.ts), sur la même lecture
+// LES DOSSIERS DONT LE CHIFFRE D'AFFAIRES ATTEINT L'UN DE LEURS SEUILS — À LA HAUSSE OU À LA BAISSE —, SUR LE TABLEAU DE BORD DU
+// CABINET (la demande du cabinet du 15/11/2026 ; ses réponses du 16/11/2026, dont CA-Q4 (A) : tout le cabinet du dossier ; la
+// conception : docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md, § 4). Le pendant, pour les dossiers que le compte
+// suit, de l'alerte de la Vue d'ensemble — le même jugement (lib/hausseDuChiffreDAffaires.ts), sur la même lecture
 // (lib/hausseDuChiffreDAffairesLecture.ts, `lireLaHausseDuDossier`) : les seuils d'abord, d'une lecture ; puis, pour les seuls
-// dossiers réglés, l'un après l'autre, au plus `PLAFOND_DU_TABLEAU_DE_BORD`, et ce qui reste se dit. Une ligne par alerte que
-// personne n'a marquée vue avec le client, qui MÈNE à la Vue d'ensemble de son dossier, où se pose la marque : rien ne s'écrit
-// d'ici, aucune fenêtre ne s'ouvre (le tableau de bord est une grille). Rien avant le retour des lectures ; rien quand rien
-// n'attend le cabinet ; une lecture ratée, une ligne discrète — jamais le silence qu'on prendrait pour « aucune hausse ».
+// dossiers qui en ont un, l'un après l'autre, au plus `PLAFOND_DU_TABLEAU_DE_BORD`, et ce qui reste se dit. Une ligne par alerte
+// que personne n'a marquée vue avec le client, qui MÈNE à la Vue d'ensemble de son dossier, où se pose la marque : rien ne
+// s'écrit d'ici, aucune fenêtre ne s'ouvre (le tableau de bord est une grille). Rien avant le retour des lectures ; rien quand
+// rien n'attend le cabinet ; une lecture ratée, une ligne discrète — jamais le silence qu'on prendrait pour « aucune alerte ».
 // Le drapeau `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` baissé, rien ne se rend et rien ne se lit.
 
 export type DossierDuTableauDeBord = DossierDeLaHausse & { nom: string; archive?: boolean }
 
 type Releve =
   | { etat: 'illisible'; motif: string }
-  | { etat: 'lu'; alertes: { dossier: DossierDuTableauDeBord; hausse: Extract<HausseDuChiffreDAffaires, { etat: 'jugee' }> }[]; illisibles: number; nonCalcules: number }
+  | { etat: 'lu'; alertes: { dossier: DossierDuTableauDeBord; hausse: HausseJugee }[]; illisibles: number; nonCalcules: number }
 
 /** Les alertes des dossiers suivis, pour CETTE clé : `null` sans clé ou drapeau baissé, « en cours » tant qu'elles ne sont pas revenues. */
 function useHaussesDesDossiers(dossiers: readonly DossierDuTableauDeBord[], cle: string | null): Releve | { etat: 'en_cours' } | null {

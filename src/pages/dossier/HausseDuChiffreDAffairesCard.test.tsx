@@ -1,17 +1,19 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import HausseDuChiffreDAffairesCard from './HausseDuChiffreDAffairesCard'
-import { REGLAGE_ILLISIBLE, SEUIL_HORS_BORNES, SEUIL_VIDE } from '../../lib/hausseDuChiffreDAffaires'
+import { LIBELLES_DES_SEUILS, REGLAGE_ILLISIBLE, SEUILS_HORS_BORNES, SEUILS_VIDES, type SensDuSeuil } from '../../lib/hausseDuChiffreDAffaires'
 import type { LectureDuReglage } from '../../lib/hausseDuChiffreDAffairesLecture'
 
-// LA CARTE DU SEUIL DE L'ALERTE DE HAUSSE, À L'ÉCRAN (onglet Informations). Ce que le module ne voit pas : rien avant la lecture,
-// aucun formulaire sur une lecture ratée, le drapeau dans ses deux états, le refus dit avant le clic, une seule écriture pour
-// deux clics du même rendu, contre la valeur LUE, puis relue. La lecture et l'écriture sont doublées. Données FICTIVES.
+// LA CARTE DES DEUX SEUILS DE L'ALERTE DU CHIFFRE D'AFFAIRES, À L'ÉCRAN (onglet Informations). Ce que le module ne voit pas : rien
+// avant la lecture, aucun formulaire sur une lecture ratée, le drapeau dans ses deux états, le refus de chaque seuil dit avant le
+// clic sous ses bornes à lui, une seule écriture pour deux clics du même rendu, celle du seul sens réglé, contre SA valeur LUE,
+// puis relue — la saisie de l'autre seuil restant telle qu'elle est tapée. La lecture et l'écriture sont doublées. Données
+// FICTIVES.
 const faux = vi.hoisted(() => ({
   prevue: true,
   lectures: {} as Record<string, LectureDuReglage>,
   lues: [] as string[],
-  ecritures: [] as { dossierId: string; lu: number | null; seuil: number | null }[],
+  ecritures: [] as { dossierId: string; sens: string; lu: number | null; seuil: number | null }[],
   porteEcriture: null as Promise<void> | null,
   refus: null as string | null,
 }))
@@ -26,21 +28,33 @@ vi.mock('../../lib/hausseDuChiffreDAffairesLecture', () => ({
     faux.lues.push(dossierId)
     return faux.lectures[dossierId]
   },
-  reglerLeSeuilDeLaHausse: async (dossierId: string, lu: number | null, seuil: number | null) => {
-    faux.ecritures.push({ dossierId, lu, seuil })
+  reglerLeSeuil: async (dossierId: string, sens: 'hausse' | 'baisse', lu: number | null, seuil: number | null) => {
+    faux.ecritures.push({ dossierId, sens, lu, seuil })
     await faux.porteEcriture
     if (faux.refus) return { ok: false, erreur: faux.refus }
-    faux.lectures[dossierId] = lu$(dossierId, seuil)
+    const avant = faux.lectures[dossierId]
+    const ligne = avant?.etat === 'lu' ? avant.seuil : null
+    faux.lectures[dossierId] = lu$(dossierId, sens === 'hausse' ? seuil : ligne?.seuil_de_hausse ?? null,
+      sens === 'baisse' ? seuil : ligne?.seuil_de_baisse ?? null)
     return { ok: true, seuil }
   },
 }))
 
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ session: { user: { id: 'u-chef' } } }) }))
 
-function lu$(dossierId: string, seuil: number | null): LectureDuReglage {
+function lu$(dossierId: string, hausse: number | null, baisse: number | null = null): LectureDuReglage {
   return {
     dossierId, etat: 'lu', vues: [],
-    seuil: { dossier_id: dossierId, seuil_de_hausse: seuil, regle_par: 'u-chef', regle_le: '2026-11-15T10:00:00Z' },
+    seuil: { dossier_id: dossierId, seuil_de_hausse: hausse, seuil_de_baisse: baisse, regle_par: 'u-chef', regle_le: '2026-11-15T10:00:00Z' },
+  }
+}
+
+/** Le formulaire d'un seuil : son champ et son bouton. */
+function formulaire(sens: SensDuSeuil) {
+  const form = screen.getByRole('form', { name: LIBELLES_DES_SEUILS[sens] })
+  return {
+    champ: within(form).getByRole('textbox') as HTMLInputElement,
+    bouton: within(form).getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement,
   }
 }
 
@@ -53,7 +67,7 @@ beforeEach(() => {
   faux.refus = null
 })
 
-describe('la carte du seuil', () => {
+describe('la carte des seuils', () => {
   it('drapeau baissé : rien, et rien de lu', async () => {
     faux.prevue = false
     const { container } = render(<HausseDuChiffreDAffairesCard dossierId="d1" />)
@@ -71,34 +85,46 @@ describe('la carte du seuil', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
-  it('sans seuil, le dit ; le refus se dit avant le clic et retient le bouton', async () => {
+  it('sans seuil, le dit ; deux formulaires, chacun refusant avant le clic ce que ses bornes refusent', async () => {
     faux.lectures.d1 = { dossierId: 'd1', etat: 'lu', seuil: null, vues: [] }
     render(<HausseDuChiffreDAffairesCard dossierId="d1" />)
-    expect(await screen.findByText(SEUIL_VIDE)).toBeTruthy()
-    const bouton = screen.getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement
-    expect(bouton.disabled).toBe(true)
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '0' } })
-    expect(screen.getByText(SEUIL_HORS_BORNES)).toBeTruthy()
-    expect(bouton.disabled).toBe(true)
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '20' } })
-    expect(screen.queryByText(SEUIL_HORS_BORNES)).toBeNull()
-    expect(bouton.disabled).toBe(false)
+    expect(await screen.findByText(SEUILS_VIDES)).toBeTruthy()
+    const hausse = formulaire('hausse')
+    const baisse = formulaire('baisse')
+    expect([hausse.bouton.disabled, baisse.bouton.disabled]).toEqual([true, true])
+    // 101 % : une hausse permise, une baisse refusée (au-delà de 100 %, le chiffre serait sous zéro).
+    fireEvent.change(hausse.champ, { target: { value: '101' } })
+    fireEvent.change(baisse.champ, { target: { value: '101' } })
+    expect(screen.queryByText(SEUILS_HORS_BORNES.hausse)).toBeNull()
+    expect(screen.getByText(SEUILS_HORS_BORNES.baisse)).toBeTruthy()
+    expect([hausse.bouton.disabled, baisse.bouton.disabled]).toEqual([false, true])
+    fireEvent.change(baisse.champ, { target: { value: '100' } })
+    expect(screen.queryByText(SEUILS_HORS_BORNES.baisse)).toBeNull()
+    expect(baisse.bouton.disabled).toBe(false)
+    fireEvent.change(hausse.champ, { target: { value: '0' } })
+    expect(screen.getByText(SEUILS_HORS_BORNES.hausse)).toBeTruthy()
+    expect(hausse.bouton.disabled).toBe(true)
   })
 
-  it('deux clics du même rendu : une seule écriture, contre la valeur lue ; puis relue', async () => {
-    faux.lectures.d1 = lu$('d1', 15)
+  it('deux clics du même rendu : une seule écriture, du seul seuil réglé, contre SA valeur lue ; puis relue, l’autre saisie gardée', async () => {
+    faux.lectures.d1 = lu$('d1', 15, 10)
     render(<HausseDuChiffreDAffairesCard dossierId="d1" />)
-    const champ = await screen.findByDisplayValue('15')
-    fireEvent.change(champ, { target: { value: '25' } })
+    await screen.findByDisplayValue('15')
+    const baisse = formulaire('baisse')
+    const hausse = formulaire('hausse')
+    expect(baisse.champ.value).toBe('10')
+    fireEvent.change(hausse.champ, { target: { value: '30' } })
+    fireEvent.change(baisse.champ, { target: { value: '25' } })
     let ouvrir!: () => void
     faux.porteEcriture = new Promise<void>((r) => { ouvrir = r })
-    const bouton = screen.getByRole('button', { name: 'Enregistrer' })
-    act(() => { fireEvent.click(bouton); fireEvent.click(bouton) })
+    act(() => { fireEvent.click(baisse.bouton); fireEvent.click(baisse.bouton) })
     await act(async () => { ouvrir() })
-    expect(faux.ecritures).toEqual([{ dossierId: 'd1', lu: 15, seuil: 25 }])
-    expect(await screen.findByText('Seuil enregistré : 25 % ✓')).toBeTruthy()
+    expect(faux.ecritures).toEqual([{ dossierId: 'd1', sens: 'baisse', lu: 10, seuil: 25 }])
+    expect(await screen.findByText('Seuil de baisse enregistré : 25 % ✓')).toBeTruthy()
     expect(faux.lues.filter((d) => d === 'd1')).toHaveLength(2)
-    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('25')
+    expect(formulaire('baisse').champ.value).toBe('25')
+    // La hausse tapée et pas encore enregistrée reste dans son champ.
+    expect(formulaire('hausse').champ.value).toBe('30')
   })
 
   it('un refus de la base se dit, et la valeur relue reste', async () => {
@@ -106,8 +132,9 @@ describe('la carte du seuil', () => {
     faux.refus = 'Le seuil de hausse a changé depuis sa lecture : relis-le avant de l\'enregistrer.'
     render(<HausseDuChiffreDAffairesCard dossierId="d1" />)
     fireEvent.change(await screen.findByDisplayValue('15'), { target: { value: '30' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' })) })
+    await act(async () => { fireEvent.click(formulaire('hausse').bouton) })
     expect(await screen.findByText(faux.refus)).toBeTruthy()
-    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('15')
+    expect(faux.ecritures).toEqual([{ dossierId: 'd1', sens: 'hausse', lu: 15, seuil: 30 }])
+    expect(formulaire('hausse').champ.value).toBe('15')
   })
 })

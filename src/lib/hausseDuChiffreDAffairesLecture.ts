@@ -4,19 +4,22 @@ import { messageErreur } from './messageErreur'
 import { lireLaCaisse } from './caisseLecture'
 import { lireLesVentesFacturees } from './ventesFactureesLecture'
 import {
-  COLONNES_DES_VUES, COLONNES_DU_SEUIL, MARQUE_NON_ENREGISTREE, SEUIL_NON_ENREGISTRE, chiffreDAffairesDesSources, jugerLaHausse,
-  type HausseVue, type LectureDeLaHausse, type SeuilDuDossier, type SourcesDuChiffreDAffaires, type Trimestre,
+  COLONNES_DES_VUES, COLONNES_DU_SEUIL, MARQUE_NON_ENREGISTREE, SEUIL_NON_ENREGISTRE, aUnSeuil, chiffreDAffairesDesSources,
+  jugerLaHausse, seuilsDeLaLigne, type HausseVue, type LectureDeLaHausse, type SensDuSeuil, type SeuilDuDossier,
+  type SeuilsDeLAlerte, type SourcesDuChiffreDAffaires, type Trimestre,
 } from './hausseDuChiffreDAffaires'
 import type { Categorie, Dossier, LigneBancaire, Piece, ReglementGroupe, VentilationBancaire } from './types'
 
-// CE QUE L'ALERTE DE HAUSSE DU CHIFFRE D'AFFAIRES LIT ET ÉCRIT EN BASE (docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md).
-// Le jugement est celui du module pur (lib/hausseDuChiffreDAffaires.ts) ; ici, les lectures — le réglage du dossier (son seuil et
-// ses marques), les entrées du chiffre d'affaires (celles de l'onglet Estimation), les seuils de tous les dossiers que le compte
-// suit — et les deux écritures, chacune par sa fonction SQL, son erreur lue et dite.
+// CE QUE L'ALERTE DU CHIFFRE D'AFFAIRES — À LA HAUSSE ET À LA BAISSE — LIT ET ÉCRIT EN BASE
+// (docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md). Le jugement est celui du module pur
+// (lib/hausseDuChiffreDAffaires.ts) ; ici, les lectures — le réglage du dossier (ses deux seuils, sur une ligne, et ses
+// marques), les entrées du chiffre d'affaires (celles de l'onglet Estimation), les seuils de tous les dossiers que le compte
+// suit — et les deux écritures, chacune par sa fonction SQL, son erreur lue et dite : un seuil se règle à part, sens par sens.
 //
 // Aucune lecture ne REJETTE : refusée, partielle ou d'un autre dossier, elle revient « illisible », avec son motif, et rien ne
-// se juge — jamais un « pas de hausse » sur ce qu'on n'a pas lu en entier. Les entrées du chiffre d'affaires ne se lisent que
-// pour un dossier qui a un seuil : sans seuil, rien ne se calcule, et le dossier ne paie aucune lecture de plus.
+// se juge — jamais un « pas de hausse » ni un « pas de baisse » sur ce qu'on n'a pas lu en entier. Les entrées du chiffre
+// d'affaires ne se lisent que pour un dossier qui a au moins un seuil : sans aucun, rien ne se calcule, et le dossier ne paie
+// aucune lecture de plus.
 //
 // Drapeau `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` baissé, les écrans n'appellent rien d'ici : les tables n'existent pas.
 
@@ -24,7 +27,7 @@ export type LectureDuReglage =
   | { dossierId: string; etat: 'lu'; seuil: SeuilDuDossier | null; vues: HausseVue[] }
   | { dossierId: string; etat: 'illisible'; motif: string }
 
-/** Le seuil du dossier et ses marques « vue avec le client », lus en entier ; ou « illisible ». */
+/** Les seuils du dossier et ses marques « vue avec le client », lus en entier ; ou « illisible ». */
 export async function lireLeReglageDeLaHausse(dossierId: string): Promise<LectureDuReglage> {
   try {
     const [seuils, vues] = await Promise.all([
@@ -102,8 +105,8 @@ export async function lireLaHausseDuDossier(dossier: DossierDeLaHausse, aujourdH
   Promise<{ dossierId: string; reglage: LectureDuReglage; lecture: Exclude<LectureDeLaHausse, { etat: 'sans_objet' | 'en_cours' }> }> {
   const reglage = await lireLeReglageDeLaHausse(dossier.id)
   if (reglage.etat === 'illisible') return { dossierId: dossier.id, reglage, lecture: { etat: 'illisible', motif: reglage.motif } }
-  const seuil = reglage.seuil?.seuil_de_hausse ?? null
-  if (seuil === null) {
+  const seuils = seuilsDeLaLigne(reglage.seuil)
+  if (!aUnSeuil(seuils)) {
     return { dossierId: dossier.id, reglage, lecture: { etat: 'lue', hausse: { etat: 'sans_seuil' } } }
   }
   const sources = await lireLesSourcesDuChiffreDAffaires(dossier.id)
@@ -116,36 +119,45 @@ export async function lireLaHausseDuDossier(dossier: DossierDeLaHausse, aujourdH
     lecture: {
       etat: 'lue',
       hausse: jugerLaHausse({
-        seuil, aujourdHui, releve: sources.sources.lignes, chiffreDAffaires: chiffre.chiffreDAffaires, vues: reglage.vues,
+        seuils, aujourdHui, releve: sources.sources.lignes, chiffreDAffaires: chiffre.chiffreDAffaires, vues: reglage.vues,
       }),
     },
   }
 }
 
-/** Les seuils non nuls de tous les dossiers que la base ouvre au compte (la RLS : le cabinet du dossier), lus en entier. */
+/**
+ * Les seuils de tous les dossiers que la base ouvre au compte (la RLS : le cabinet du dossier), lus en entier — une ligne par
+ * dossier au plus ; seuls ceux qui ont au moins un seuil se gardent (une ligne aux deux seuils vidés n'alerte de rien).
+ */
 export async function lireLesSeuilsDesDossiers():
-  Promise<{ etat: 'lus'; seuils: ReadonlyMap<string, number> } | { etat: 'illisible'; motif: string }> {
+  Promise<{ etat: 'lus'; seuils: ReadonlyMap<string, SeuilsDeLAlerte> } | { etat: 'illisible'; motif: string }> {
   try {
-    const lecture = await lireTout<Pick<SeuilDuDossier, 'dossier_id' | 'seuil_de_hausse'>>((debut, fin) =>
-      supabase.from('seuils_du_chiffre_d_affaires').select('id, dossier_id, seuil_de_hausse', { count: 'exact' })
-        .not('seuil_de_hausse', 'is', null).order('dossier_id').order('id').range(debut, fin),
+    const lecture = await lireTout<Pick<SeuilDuDossier, 'dossier_id' | 'seuil_de_hausse' | 'seuil_de_baisse'>>((debut, fin) =>
+      supabase.from('seuils_du_chiffre_d_affaires').select('id, dossier_id, seuil_de_hausse, seuil_de_baisse', { count: 'exact' })
+        .order('dossier_id').order('id').range(debut, fin),
     )
     if (!lecture.complete) return { etat: 'illisible', motif: lecture.motif ?? 'lecture incomplète' }
     return {
       etat: 'lus',
-      seuils: new Map(lecture.lignes.flatMap((l) => (l.seuil_de_hausse === null ? [] : [[l.dossier_id, l.seuil_de_hausse] as const]))),
+      seuils: new Map(lecture.lignes.flatMap((l) => {
+        const seuils = seuilsDeLaLigne(l)
+        return aUnSeuil(seuils) ? [[l.dossier_id, seuils] as const] : []
+      })),
     }
   } catch (erreur) {
     return { etat: 'illisible', motif: messageErreur(erreur, 'la lecture des seuils a échoué') }
   }
 }
 
-/** Le seuil du dossier, contre la valeur lue qu'il remplace (`regler_seuil_du_chiffre_d_affaires`). Ne rejette jamais. */
-export async function reglerLeSeuilDeLaHausse(dossierId: string, lu: number | null, seuil: number | null):
+/**
+ * Le seuil d'un sens, contre la valeur lue qu'il remplace (`regler_seuil_du_chiffre_d_affaires`) : l'autre seuil n'en est pas
+ * touché. Ne rejette jamais.
+ */
+export async function reglerLeSeuil(dossierId: string, sens: SensDuSeuil, lu: number | null, seuil: number | null):
   Promise<{ ok: true; seuil: number | null } | { ok: false; erreur: string }> {
   try {
     const { data, error } = await supabase.rpc('regler_seuil_du_chiffre_d_affaires', {
-      p_dossier_id: dossierId, p_seuil_lu: lu, p_seuil: seuil,
+      p_dossier_id: dossierId, p_sens: sens, p_seuil_lu: lu, p_seuil: seuil,
     })
     if (error) return { ok: false, erreur: messageErreur(error, SEUIL_NON_ENREGISTRE) }
     if (data !== null && typeof data !== 'number') return { ok: false, erreur: SEUIL_NON_ENREGISTRE }

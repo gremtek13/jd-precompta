@@ -4,18 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import HaussesDuChiffreDAffaires, { type DossierDuTableauDeBord } from './HaussesDuChiffreDAffaires'
 import {
   LIBELLE_OUVRIR_LA_VUE_D_ENSEMBLE, SEUILS_ILLISIBLES, phraseDesIllisibles, phraseDesNonCalcules, phraseDuTitre,
-  type HausseDuChiffreDAffaires, type LectureDeLaHausse,
+  type HausseDuChiffreDAffaires, type LectureDeLaHausse, type SeuilsDeLAlerte,
 } from '../lib/hausseDuChiffreDAffaires'
 
-// LES ALERTES DE HAUSSE SUR LE TABLEAU DE BORD DU CABINET, À L'ÉCRAN. Ce que le module ne voit pas : rien sans clé ni avant les
-// lectures, le drapeau dans ses deux états, les seuils lus d'abord et les seuls dossiers réglés calculés, l'un après l'autre, au
-// plus le plafond ; une ligne par alerte non vue, qui mène à la Vue d'ensemble de son dossier ; une lecture ratée dite
-// discrètement, jamais tue. Les lectures sont doublées. Données FICTIVES.
+// LES ALERTES DU CHIFFRE D'AFFAIRES SUR LE TABLEAU DE BORD DU CABINET, À L'ÉCRAN. Ce que le module ne voit pas : rien sans clé ni
+// avant les lectures, le drapeau dans ses deux états, les seuils lus d'abord et les seuls dossiers réglés calculés, l'un après
+// l'autre, au plus le plafond ; une ligne par alerte non vue, à la hausse comme à la baisse, qui mène à la Vue d'ensemble de son
+// dossier ; une lecture ratée dite discrètement, jamais tue. Les lectures sont doublées. Données FICTIVES.
 const faux = vi.hoisted(() => ({
   prevue: true,
   plafond: 10,
-  seuils: { etat: 'lus', seuils: new Map<string, number>() } as
-    | { etat: 'lus'; seuils: ReadonlyMap<string, number> } | { etat: 'illisible'; motif: string },
+  seuils: { etat: 'lus', seuils: new Map<string, SeuilsDeLAlerte>() } as
+    | { etat: 'lus'; seuils: ReadonlyMap<string, SeuilsDeLAlerte> } | { etat: 'illisible'; motif: string },
   parDossier: {} as Record<string, LectureDeLaHausse>,
   calcules: [] as string[],
 }))
@@ -37,16 +37,21 @@ vi.mock('../lib/hausseDuChiffreDAffairesLecture', () => ({
   },
 }))
 
-const comparee = (dixiemes: number, atteint: boolean) => ({
+const comparee = (dixiemes: number, franchit: 'hausse' | 'baisse' | null) => ({
   etat: 'comparee' as const,
   comparaison: {
     debut: '2026-07-01', fin: '2026-09-30', debutPrecedent: '2025-07-01', finPrecedent: '2025-09-30', centimes: 1, precedentCentimes: 1,
-    variationDixiemes: dixiemes, atteintLeSeuil: atteint,
+    variationDixiemes: dixiemes, franchit,
   },
 })
 const hausse: HausseDuChiffreDAffaires = {
-  etat: 'jugee', trimestre: { annee: 2026, trimestre: 3 }, seuil: 20, hausse: true, vue: null, duTrimestre: comparee(250, true), duCumul: null,
+  etat: 'jugee', trimestre: { annee: 2026, trimestre: 3 }, seuils: { hausse: 20, baisse: null }, hausse: true, baisse: false, vue: null,
+  duTrimestre: comparee(250, 'hausse'), duCumul: null, surDouzeMois: null,
 }
+const baisse: HausseDuChiffreDAffaires = {
+  ...hausse, seuils: { hausse: null, baisse: 15 }, hausse: false, baisse: true, duTrimestre: comparee(-250, 'baisse'),
+}
+const seuil = (h: number | null, b: number | null = null): SeuilsDeLAlerte => ({ hausse: h, baisse: b })
 const dossier = (id: string, nom: string): DossierDuTableauDeBord => ({ id, nom, assujetti_tva: false, mode_comptable: 'tresorerie' })
 const DOSSIERS = [dossier('d1', 'Cabinet Alpha'), dossier('d2', 'Cabinet Bêta'), dossier('d3', 'Cabinet Gamma'), dossier('d4', 'Mon cabinet')]
 
@@ -61,11 +66,11 @@ function monter(cle: string | null = 'u-chef') {
 beforeEach(() => {
   faux.prevue = true
   faux.plafond = 10
-  faux.seuils = { etat: 'lus', seuils: new Map([['d1', 20], ['d2', 15], ['d4', 30]]) }
+  faux.seuils = { etat: 'lus', seuils: new Map([['d1', seuil(20)], ['d2', seuil(15)], ['d4', seuil(30)]]) }
   faux.parDossier = {
     d1: { etat: 'lue', hausse },
     d2: { etat: 'lue', hausse: { ...hausse, vue: { dossier_id: 'd2', annee: 2026, trimestre: 3, vue_par: 'u', vue_le: '2026-11-16T09:00:00Z' } } },
-    d4: { etat: 'lue', hausse: { ...hausse, hausse: false, duTrimestre: comparee(30, false) } },
+    d4: { etat: 'lue', hausse: { ...hausse, hausse: false, duTrimestre: comparee(30, null) } },
   }
   faux.calcules = []
 })
@@ -96,6 +101,17 @@ describe('les alertes du tableau de bord', () => {
     expect(lien.getAttribute('href')).toBe('/dossiers/d1/checklist')
   })
 
+  it('une baisse se dit aussi, sa ligne disant la variation et le seuil de baisse', async () => {
+    faux.seuils = { etat: 'lus', seuils: new Map([['d1', seuil(20)], ['d3', seuil(null, 15)]]) }
+    faux.parDossier.d3 = { etat: 'lue', hausse: baisse }
+    const { container } = monter()
+    expect(await screen.findByText(phraseDuTitre(2))).toBeTruthy()
+    expect(faux.calcules).toEqual(['d1', 'd3'])
+    expect(container.textContent).toContain('Cabinet Gamma')
+    expect(container.textContent).toContain('trimestre −25,0')
+    expect(container.textContent).toContain('seuil de baisse 15')
+  })
+
   it('rien quand rien n’attend le cabinet', async () => {
     faux.parDossier.d1 = { etat: 'lue', hausse: { etat: 'sans_seuil' } }
     const { container } = monter()
@@ -111,7 +127,7 @@ describe('les alertes du tableau de bord', () => {
     expect(await screen.findByText(SEUILS_ILLISIBLES)).toBeTruthy()
     illisibles.unmount()
 
-    faux.seuils = { etat: 'lus', seuils: new Map([['d1', 20], ['d2', 15], ['d3', 10]]) }
+    faux.seuils = { etat: 'lus', seuils: new Map([['d1', seuil(20)], ['d2', seuil(15)], ['d3', seuil(null, 10)]]) }
     faux.parDossier.d3 = { etat: 'illisible', motif: 'coupée' }
     faux.plafond = 2
     faux.calcules = []

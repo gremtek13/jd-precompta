@@ -259,9 +259,10 @@ export default function DossiersList() {
           chargement, ni panne ne la retardent ou ne la taisent), et ce qu'elle dit vaut pour tous les dossiers. */}
       <RibsAConfirmer lecture={ribsAConfirmer} dossiersDuCabinet={designes} className="ribs-a-confirmer-tete" />
 
-      {/* L'alerte de hausse du chiffre d'affaires des dossiers que le compte suit (la demande du cabinet du 15/11/2026) : hors de la
-          grille aussi, sous le drapeau de sa migration ; lue une fois la liste revenue, ses dossiers seuls — ceux du client et le
-          dossier du cabinet. Sa lecture est la sienne : sa panne ne tait qu'elle. */}
+      {/* L'alerte du chiffre d'affaires, à la hausse et à la baisse, des dossiers que le compte suit (la demande du cabinet du
+          15/11/2026 ; ses réponses du 16/11/2026) : hors de la grille aussi, sous le drapeau de sa migration ; lue une fois la
+          liste revenue, ses dossiers seuls — ceux du client et le dossier du cabinet. Sa lecture est la sienne : sa panne ne tait
+          qu'elle. */}
       <HaussesDuChiffreDAffaires
         dossiers={[...dossiers, ...duCabinet]} dossiersDuCabinet={designes}
         cle={loading || erreurChargement !== null ? null : compte} className="ribs-a-confirmer-tete"
