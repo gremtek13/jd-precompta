@@ -43,6 +43,10 @@ import {
   caisseDeMesPieces, libelleDuGeste, paiementDit, paiementsDeLaPiece, payableParLaCaisse, pieceVueParLeClient, premiereAnneeLue,
 } from '../lib/paiementDeMesPieces'
 import {
+  especesDuClientHorsDesReprisesPrevues, especesRefuseesAvantLeClic, FONCTION_DES_PIECES_HORS_DE_LA_CAISSE, gestesDeLaCaisseOfferts,
+  lireLesPiecesHorsDeLaCaisse, piecesHorsDeLaCaisseSelon, type LectureDesPiecesHorsDeLaCaisse,
+} from '../lib/especesDuClientHorsDesReprises'
+import {
   fichierDeLaPiece, fichierDuDocument, LIBELLE_VOIR, nomAccessibleDuGeste, type FichierDUnEnvoi,
 } from '../lib/ouvertureDeMesPieces'
 import { useOuvertureDeMesPieces } from '../lib/ouvertureDeMesPiecesGeste'
@@ -167,15 +171,31 @@ export default function ClientUpload() {
   const [piecesEntieres, setPiecesEntieres] = useState(false)
   // Le paiement ouvert sous une pièce : une seule à la fois.
   const [paiementOuvert, setPaiementOuvert] = useState<string | null>(null)
+  // LES PIÈCES QUE LA CAISSE DU CLIENT NE RÈGLE PAS (A8Q5Q3Q2Q2-Q1, lib/especesDuClientHorsDesReprises.ts) : l'original d'une
+  // facture reprise, que la base refuse au client sous des mots neutres — le cabinet l'enregistre. Lues avec la caisse, gardées
+  // AVEC la société lue, pour le dire avant le clic ; sans elles (pas revenues, ratées), aucun geste ne s'offre. Le drapeau
+  // `ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES` baissé, rien ne se lit et « Mes pièces » est celle d'hier.
+  const especesHorsDesReprises = especesDuClientHorsDesReprisesPrevues()
+  const [horsDeLaCaisseLue, setHorsDeLaCaisseLue] = useState<{ dossierId: string; lecture: LectureDesPiecesHorsDeLaCaisse } | null>(null)
+  const lireHorsDeLaCaisse = (id: string) =>
+    lireLesPiecesHorsDeLaCaisse(supabase.rpc(FONCTION_DES_PIECES_HORS_DE_LA_CAISSE, { p_dossier_id: id }))
   useEffect(() => {
     if (!dossierId || !caisseOuverte) return
     let annule = false
     lireLaCaisseDuClient(dossierId, premiereAnneeLue(anneeEnCours), anneeEnCours).then((l) => { if (!annule) setCaisseLue(l) })
+    if (especesHorsDesReprises) {
+      lireHorsDeLaCaisse(dossierId).then((lecture) => { if (!annule) setHorsDeLaCaisseLue({ dossierId, lecture }) })
+    }
     return () => { annule = true }
-  }, [dossierId, caisseOuverte, anneeEnCours])
+  }, [dossierId, caisseOuverte, anneeEnCours, especesHorsDesReprises])
   async function relireLaCaisse() {
     if (!dossierId) return
-    setCaisseLue(await lireLaCaisseDuClient(dossierId, premiereAnneeLue(anneeEnCours), anneeEnCours))
+    const [caisseRelue, horsRelue] = await Promise.all([
+      lireLaCaisseDuClient(dossierId, premiereAnneeLue(anneeEnCours), anneeEnCours),
+      especesHorsDesReprises ? lireHorsDeLaCaisse(dossierId) : Promise.resolve(null),
+    ])
+    setCaisseLue(caisseRelue)
+    if (horsRelue !== null) setHorsDeLaCaisseLue({ dossierId, lecture: horsRelue })
   }
   // UN verrou pour tout geste d'écriture sur la caisse (payer, retirer, corriger), de « Mes pièces » entière et non d'un formulaire :
   // celui d'une pièce disparaît quand on en ouvre une autre, et deux paiements partiraient sur une caisse pas encore relue.
@@ -411,6 +431,8 @@ export default function ClientUpload() {
     ouverte: caisseOuverte, lecture: caisseLue, dossierId, anneeEnCours, moi: moi ?? '', aujourdhui,
     piecesLuesEnEntier: !chargement && piecesEntieres,
   })
+  const horsDeLaCaisse = piecesHorsDeLaCaisseSelon(especesHorsDesReprises, horsDeLaCaisseLue, dossierId)
+  const gestesDeLaCaisse = gestesDeLaCaisseOfferts(horsDeLaCaisse)
 
   // La recherche porte aussi sur les précisions : « salle d'attente » est souvent tout ce dont le
   // client se souvient d'un dépôt, bien plus sûrement que le nom du fichier que son téléphone a
@@ -587,6 +609,8 @@ export default function ClientUpload() {
       {ouverture.refus && <p className="error-text" role="alert" style={{ marginBottom: 14 }}>{ouverture.refus}</p>}
       {caisse.etat === 'muette' && <p className="error-text" style={{ marginBottom: 14 }}>{caisse.texte}</p>}
       {caisse.etat === 'lue' && caisse.raison !== null && <p className="muted" style={{ marginBottom: 14 }}>{caisse.raison}</p>}
+      {caisse.etat === 'lue' && caisse.raison === null && gestesDeLaCaisse.raison !== null
+        && <p className="error-text" style={{ marginBottom: 14 }}>{gestesDeLaCaisse.raison}</p>}
       <div style={{ marginBottom: 14 }}>
         <BarreRecherche
           valeur={recherche}
@@ -634,7 +658,7 @@ export default function ClientUpload() {
                   const ouvert = cle !== null && filOuvert === cle
                   // La caisse lue en entier : les paiements de la pièce, et le geste quand la caisse le permet.
                   const paiements = caisse.etat === 'lue' && d.piece ? paiementsDeLaPiece(d.piece.id, caisse.operations) : []
-                  const especes = caisse.etat === 'lue' && caisse.dossier !== null && d.piece !== null
+                  const especes = caisse.etat === 'lue' && caisse.dossier !== null && gestesDeLaCaisse.offerts && d.piece !== null
                     && (payableParLaCaisse(d.piece) || paiements.length > 0) ? d.piece : null
                   const especesOuvertes = especes !== null && paiementOuvert === especes.id
                   return (
@@ -706,6 +730,7 @@ export default function ClientUpload() {
                               moi={moi}
                               anneeEnCours={anneeEnCours}
                               aujourdhui={aujourdhui}
+                              especesRefusees={especesRefuseesAvantLeClic(especes.id, horsDeLaCaisse)}
                               payer={payerParLaCaisse}
                               retirer={retirerDeLaCaisse}
                               corriger={corrigerDansLaCaisse}

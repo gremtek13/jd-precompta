@@ -39,7 +39,7 @@ function sansEnvoi(e: KeyboardEvent<HTMLInputElement>) {
 
 const FORMULAIRE_VIDE: FormulaireDuPaiement = { date: '', montant: '' }
 
-export default function PaiementParMaCaisse({ piece, dossier, operations, jours, moi, anneeEnCours, aujourdhui, payer: payerLaPiece, retirer: retirerOperation, corriger: corrigerOperation, verrou, enVol }: {
+export default function PaiementParMaCaisse({ piece, dossier, operations, jours, moi, anneeEnCours, aujourdhui, especesRefusees, payer: payerLaPiece, retirer: retirerOperation, corriger: corrigerOperation, verrou, enVol }: {
   piece: Pick<Piece, 'id' | 'type_piece' | 'montant_ttc' | 'created_at'>
   /** Le dossier tel que les règles le lisent, sur la caisse rejouée (`caisseDeMesPieces`). */
   dossier: DossierDeLaCaisse
@@ -48,6 +48,13 @@ export default function PaiementParMaCaisse({ piece, dossier, operations, jours,
   moi: string
   anneeEnCours: number
   aujourdhui: string
+  /**
+   * Le refus, avant le clic, de tout paiement neuf de CETTE pièce et de toute correction : l'original d'une facture reprise,
+   * que la base refuse au client sous des mots neutres — son cabinet l'enregistre (A8Q5Q3Q2Q2-Q1,
+   * lib/especesDuClientHorsDesReprises.ts, `especesRefuseesAvantLeClic`). Nul quand la pièce se paie, ou le drapeau baissé :
+   * « Mes pièces » est alors celle d'hier. Le retrait d'un paiement saisi avant reste offert.
+   */
+  especesRefusees: string | null
   /**
    * Paie la pièce, sous le verrou de l'écran : `surIssue` reçoit le refus de la base aux mots du client, ou `null` quand elle a
    * écrit, AVANT la relecture de la caisse ; la promesse ne revient qu'après elle. Rien n'est appelé si un geste est déjà en vol.
@@ -69,7 +76,7 @@ export default function PaiementParMaCaisse({ piece, dossier, operations, jours,
   const vue = pieceVueParLeClient(piece)
   const premiere = premiereAnneeLue(anneeEnCours)
   const paiements = paiementsDeLaPiece(piece.id, operations)
-  const payable = payableParLaCaisse(piece)
+  const payable = payableParLaCaisse(piece) && especesRefusees === null
   const verdict = payable ? verdictDuPaiement(formulaire, vue, dossier, jours, premiere) : null
 
   // L'issue d'un geste : le refus de la base, ou le succès ; dite avant la relecture de la caisse.
@@ -129,7 +136,9 @@ export default function PaiementParMaCaisse({ piece, dossier, operations, jours,
         <ul style={{ margin: '0 0 8px', paddingLeft: 18 }}>
           {paiements.map((o) => {
             const retrait = retraitDuPaiement(o, dossier, jours, moi, premiere)
-            const corrigible = correctionDuPaiementSelon(CORRECTION_DU_PAIEMENT_EXPORTEE, o, dossier, jours, moi, premiere)
+            // L'original d'une facture reprise : sa correction est un paiement neuf, que la base refuse au client.
+            const corrigible = especesRefusees !== null ? { offert: false as const }
+              : correctionDuPaiementSelon(CORRECTION_DU_PAIEMENT_EXPORTEE, o, dossier, jours, moi, premiere)
             const ouverte = correction !== null && enCorrection !== null && enCorrection.id === o.id
             const idDateCorrigee = `correction-caisse-date-${o.id}`
             const idMontantCorrige = `correction-caisse-montant-${o.id}`
@@ -203,6 +212,8 @@ export default function PaiementParMaCaisse({ piece, dossier, operations, jours,
       {paiements.some((o) => retraitDuPaiement(o, dossier, jours, moi, premiere).offert) && (
         <p className="muted" style={{ margin: '0 0 8px' }}>{motsDuRemedeSelon(CORRECTION_DU_PAIEMENT_EXPORTEE).aideDuClient}</p>
       )}
+
+      {especesRefusees !== null && <p className="muted" style={{ margin: '0 0 6px' }}>{especesRefusees}</p>}
 
       {payable && (
         <>
