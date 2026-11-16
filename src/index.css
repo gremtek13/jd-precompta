@@ -1412,6 +1412,20 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 /* ---------- Cockpit du dossier (en-tête DossierDetail) ---------- */
 .retour { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85rem; font-weight: 600; color: var(--color-text-light); text-decoration: none; margin-bottom: 14px; }
 .retour:hover { color: var(--color-primary); }
+
+/* Le bouton « Retour » de la coque (Layout, lib/historiqueNavigation.ts) : rendu à deux places, une seule visible à chaque
+   largeur — en tête du panneau central sur ordinateur, discret comme le lien `.retour` d'un dossier ; dans la barre du
+   haut sur téléphone, où l'application installée n'a pas le bouton retour du navigateur (bloc du téléphone, plus bas). */
+.bouton-retour {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  border: none; border-radius: var(--radius-sm); background: transparent;
+  color: var(--color-text-light); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease);
+}
+.bouton-retour:hover { color: var(--color-primary); background: var(--tint-primary); }
+.bouton-retour:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.bouton-retour-panneau { padding: 4px 10px 4px 4px; margin: -4px 0 10px -4px; }
+.bouton-retour-barre-haut { display: none; }
 .cockpit {
   display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
   padding: 20px 22px; margin-bottom: 18px;
@@ -1773,6 +1787,16 @@ a.btn { text-decoration: none; }
   .sidebar nav a.nav-hors-barre-du-bas { display: none; }
 
   .sidebar-actions-mobile { display: block; position: relative; flex-shrink: 0; margin-left: 10px; }
+
+  /* « Retour » en tête de la barre du haut, le logo à sa suite : le menu « … » reste poussé à droite, et un nom de cabinet
+     long se coupe en points de suspension plutôt que de pousser la barre hors de l'écran. */
+  .bouton-retour-panneau { display: none; }
+  .bouton-retour-barre-haut {
+    display: inline-flex; height: 34px; padding: 0 10px 0 6px; margin-right: 10px;
+    border: 1px solid var(--color-border); background: var(--color-surface);
+  }
+  .bouton-retour-barre-haut ~ .logo { min-width: 0; }
+  .bouton-retour-barre-haut ~ .sidebar-actions-mobile { margin-left: auto; }
 
   .main {
     padding: 16px 16px 84px; max-width: 100%;

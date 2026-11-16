@@ -53109,3 +53109,16 @@ désormais son verrou (`suppressionDUnDocument`, la catégorie « suppression »
 suppression ou une conversion réussie ferme la fiche si elle montre encore ce document. Onze tests d'écran, deux mutations
 qui mordent ; le banc (une visite `documents/fiche`, trois documents fictifs au faux Supabase) : 0 débordement à 1 440,
 1 280, 1 024 et 390 px. Sur téléphone, la carte flottante de l'assistant, sans changer la coque.
+
+### 16/11/2026 — LE BOUTON « RETOUR » DE LA COQUE, DANS LES DEUX ESPACES
+
+Demande du cabinet : un bouton qui ramène à l'onglet ou à l'écran d'avant — l'application installée n'a pas le retour du
+navigateur. `lib/historiqueNavigation.ts`, pur : la coque note chaque emplacement VISITÉ depuis son montage, sous la clé
+d'entrée du routeur (`useLocation`, `useNavigationType`), pendant le rendu ; un PUSH empile, un REPLACE (`<Navigate
+replace>`, l'onglet par défaut d'un dossier, le retour de la banque) remplace, un POP vers une clé vue s'y place (le retour du
+navigateur dépile comme le nôtre), vers une clé inconnue repart d'elle seule. « Retour » fait `navigate(-n)` vers la plus
+proche entrée d'avant au chemin différent (un doublon ne compte pas) ; jamais `history.length`, qui compte ce qui précède
+l'application ; jamais vers `/retour-banque` ni un fragment de lien d'authentification. Absent à l'arrivée et après une
+connexion (la coque se remonte). Un `<button>`, « Retour » à l'écran, « Retour à Banque » pour l'accessibilité quand c'est
+simple. Deux places, une visible : la barre du haut du téléphone, la tête du panneau central sur ordinateur. Comme la barre
+latérale, il ne consulte pas la garde du panneau de droite (`HashRouter` n'a pas de bloqueur). Banc : huit passes à 0.
