@@ -53370,3 +53370,17 @@ de la CARMF, deux hypothèses neuves disent le zéro à l'écran. Contre l'oracl
 moteur compte et la caisse rien (CARMF 6, CARPIMKO 6, CARCDSF 12) ; l'exception du complémentaire de la CARPIMKO passe de
 28 à 26 (deux de ses cas sont désormais avant l'affiliation). Quatre mutations sur quatre mordent. Reste, avec RET2-Q3 (B) :
 la CARCDSF proratise l'année d'installation aux TRIMESTRES d'affiliation, le moteur (et nous) aux JOURS d'activité (RET2Q3-Q2).
+
+### 16/11/2026 — DOCF-Q1 : LE SOUS-DOSSIER D'UN DOCUMENT SE CHOISIT DANS SA FICHE
+
+(Agent architecte ; aucune migration.) Sur « (A) dans la fiche seule », comme la fiche d'une pièce ; DOCF-Q2 (A), pas de
+renommage. La fiche d'un document offre « Sous-dossier » (« — Aucun — » et ceux du dossier) ; la ligne, non. Le geste est
+`changerSousDossier` de l'onglet : verrou `useRef` posé avant le premier `await`, relâché après la relecture ; mutation
+optimiste annulée dès un refus ou une mise à jour qui ne touche aucune ligne (`.select('id').maybeSingle()`), l'un et
+l'autre dits. Le choix ne s'offre que sur la liste des sous-dossiers lue en entier et revenue : lue en partie ou en
+relecture, la fiche dit le sous-dossier et pourquoi elle n'offre rien. **En base** (l'export lu, rien supposé) : la policy
+`documents_divers_admins_all` (`admin_du_dossier`, using et check) ouvre la mise à jour au cabinet ; aucune garde sur la
+colonne hors `_acces_avant_les_gardes` ; mais `sous_dossier_id` n'est qu'une clé étrangère simple vers `sous_dossiers` —
+rien ne lie le sous-dossier au dossier du document (de même pour `pieces`) : l'écran n'offre que ceux lus par
+`.eq('dossier_id', …)` et revérifie le choix (DOCF-Q1-B, question au cabinet). Six tests d'écran ; quatre mutations sur
+cinq mordent, la cinquième (un filtre redondant avec la requête) retirée.

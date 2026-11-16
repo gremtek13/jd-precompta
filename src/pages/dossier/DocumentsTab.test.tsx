@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DocumentsTab from './DocumentsTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
-import type { DocumentDivers } from '../../lib/types'
+import type { DocumentDivers, SousDossier } from '../../lib/types'
 
 // « C'est une facture » recrée une pièce à partir d'un document déjà en stockage, puis supprime le
 // document. Trois façons de s'y tromper en silence, et le verrou est la pire : la détection de
@@ -50,6 +50,14 @@ const faux = vi.hoisted(() => ({
   // La suppression d'un document laissée en attente : la fenêtre où l'on ouvre un autre document.
   suppressionRetenue: false,
   relacherSuppression: null as null | (() => void),
+  // LE SOUS-DOSSIER CHOISI DANS LA FICHE (DOCF-Q1) : les sous-dossiers, lus en entier sauf `sousDossiersRefuses` ; les
+  // mises à jour envoyées ; `majSansEffet`, une mise à jour acceptée qui ne touche aucune ligne (la policy l'écarte).
+  sousDossiers: [] as SousDossier[],
+  sousDossiersRefuses: false,
+  majs: [] as Partial<DocumentDivers>[],
+  majSansEffet: false,
+  // La relecture des documents laissée en attente : la fenêtre entre la réponse d'une écriture et sa relecture.
+  relectureRetenue: false,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -85,10 +93,18 @@ vi.mock('../../lib/supabase', async () => {
         return Promise.resolve(appliquer())
       }
       if (table === 'documents_divers' && operation === 'update') {
+        faux.majs.push(valeurMaj)
         // Refusée, la mise à jour n'applique rien : la relecture montre la catégorie d'avant.
         if (faux.refusMaj) return Promise.resolve({ data: null, error: { message: faux.refusMaj } })
-        faux.documents = faux.documents.map((d) => (filtrer([d], predicats).length > 0 ? { ...d, ...valeurMaj } : d))
-        return Promise.resolve({ data: null, error: null })
+        if (faux.majSansEffet) return Promise.resolve({ data: mode === 'unique' ? null : [], error: null })
+        const touchees = filtrer(faux.documents, predicats)
+        faux.documents = faux.documents.map((d) => (touchees.includes(d) ? { ...d, ...valeurMaj } : d))
+        return Promise.resolve({ data: mode === 'unique' ? (touchees[0] ?? null) : touchees, error: null })
+      }
+      if (table === 'sous_dossiers') {
+        if (faux.sousDossiersRefuses) return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null })
+        const lignes = filtrer(faux.sousDossiers, predicats)
+        return Promise.resolve({ data: lignes.slice(debut, fin + 1), error: null, count: lignes.length })
       }
       if (table === 'piece_textes_ocr' && operation === 'upsert') {
         faux.textesRattaches++
@@ -109,6 +125,7 @@ vi.mock('../../lib/supabase', async () => {
         return Promise.resolve({ data: lignes.slice(debut, fin + 1), error: null, count: lignes.length })
       }
       if (table === 'documents_divers') {
+        if (faux.relectureRetenue) return new Promise(() => {})
         const lignes = filtrer(faux.documents, predicats)
         const demande = fin - debut + 1
         const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
@@ -204,6 +221,11 @@ function reinitialiser() {
   faux.signaturesEnAttente = new Map()
   faux.suppressionRetenue = false
   faux.relacherSuppression = null
+  faux.sousDossiers = []
+  faux.sousDossiersRefuses = false
+  faux.majs = []
+  faux.majSansEffet = false
+  faux.relectureRetenue = false
 }
 
 // Dans la coque du panneau de droite, comme dans l'application : la fiche d'un document s'y ouvre, et `usePanneauDroit`
@@ -975,6 +997,106 @@ describe('DocumentsTab — la fiche d’un document dans le volet', () => {
     expect(await within(volet()).findByText(
       'La catégorie du document n’a pas pu être changée : permission denied for table documents_divers.',
     )).toBeDefined()
+  })
+
+  // LE SOUS-DOSSIER, CHOISI DANS LA FICHE SEULE (DOCF-Q1 (A), 16/11/2026).
+  const sousDossier = (id: string, nom: string, dossier_id = 'dossier-de-test'): SousDossier => ({
+    id, dossier_id, nom, ordre: 0, created_at: '2025-01-01T00:00:00Z',
+  })
+  const choixDuSousDossier = () => within(volet()).getByLabelText('Sous-dossier') as HTMLSelectElement
+
+  it('le sous-dossier se choisit dans la fiche — parmi ceux de ce dossier —, s’écrit, se relit, et la ligne le montre', async () => {
+    reinitialiser()
+    faux.sousDossiers = [sousDossier('sd-banque', 'Banque'), sousDossier('sd-urssaf', 'Urssaf'), sousDossier('sd-ailleurs', 'Autre dossier', 'dossier-voisin')]
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    await within(volet()).findByLabelText('Sous-dossier')
+    // Aucun, puis les deux du dossier : le sous-dossier d'un autre dossier n'est pas offert.
+    expect([...choixDuSousDossier().options].map((o) => o.textContent)).toEqual(['— Aucun —', 'Banque', 'Urssaf'])
+    // La ligne n'offre pas ce geste : un seul choix de sous-dossier à l'écran, celui de la fiche.
+    expect(screen.getAllByLabelText('Sous-dossier')).toHaveLength(1)
+
+    await act(async () => { fireEvent.change(choixDuSousDossier(), { target: { value: 'sd-urssaf' } }) })
+    expect(faux.majs).toEqual([{ sous_dossier_id: 'sd-urssaf' }])
+    expect(faux.documents[0].sous_dossier_id).toBe('sd-urssaf')
+    await vi.waitFor(() => expect(choixDuSousDossier().value).toBe('sd-urssaf'))
+    expect(screen.getByText('facture.pdf', { selector: 'a' }).closest('tr')!.textContent).toContain('Urssaf')
+
+    // « Aucun » le retire : null, jamais une chaîne vide.
+    await act(async () => { fireEvent.change(choixDuSousDossier(), { target: { value: '' } }) })
+    expect(faux.majs[1]).toEqual({ sous_dossier_id: null })
+    expect(faux.documents[0].sous_dossier_id).toBeNull()
+  })
+
+  it('deux choix du même rendu n’envoient qu’une mise à jour', async () => {
+    reinitialiser()
+    faux.sousDossiers = [sousDossier('sd-banque', 'Banque'), sousDossier('sd-urssaf', 'Urssaf')]
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    const choix = await within(volet()).findByLabelText('Sous-dossier')
+    await act(async () => {
+      fireEvent.change(choix, { target: { value: 'sd-banque' } })
+      fireEvent.change(choix, { target: { value: 'sd-urssaf' } })
+      fireEvent.change(choix, { target: { value: 'sd-banque' } })
+    })
+    expect(faux.majs).toHaveLength(1)
+  })
+
+  it('un refus de la base se dit, et le choix revient au sous-dossier d’avant', async () => {
+    reinitialiser()
+    faux.sousDossiers = [sousDossier('sd-banque', 'Banque'), sousDossier('sd-urssaf', 'Urssaf')]
+    faux.documents = [documentDeTest({ sous_dossier_id: 'sd-banque' })]
+    faux.refusMaj = 'permission denied for table documents_divers'
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    await within(volet()).findByLabelText('Sous-dossier')
+    await act(async () => { fireEvent.change(choixDuSousDossier(), { target: { value: 'sd-urssaf' } }) })
+    expect(await within(volet()).findByText(
+      'Le sous-dossier du document n’a pas pu être changé : permission denied for table documents_divers.',
+    )).toBeDefined()
+    expect(choixDuSousDossier().value).toBe('sd-banque')
+    expect(faux.documents[0].sous_dossier_id).toBe('sd-banque')
+  })
+
+  it('le choix optimiste s’annule dès le refus, sans attendre la relecture', async () => {
+    reinitialiser()
+    faux.sousDossiers = [sousDossier('sd-banque', 'Banque'), sousDossier('sd-urssaf', 'Urssaf')]
+    faux.documents = [documentDeTest({ sous_dossier_id: 'sd-banque' })]
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    await within(volet()).findByLabelText('Sous-dossier')
+    faux.refusMaj = 'permission denied for table documents_divers'
+    faux.relectureRetenue = true
+    await act(async () => { fireEvent.change(choixDuSousDossier(), { target: { value: 'sd-urssaf' } }) })
+    expect(within(volet()).getByText(
+      'Le sous-dossier du document n’a pas pu être changé : permission denied for table documents_divers.',
+    )).toBeDefined()
+    // Pendant la relecture, le choix attend (la liste se relit) et la fiche dit le sous-dossier : celui d'avant, déjà rendu.
+    expect(within(volet()).getByText('La liste des sous-dossiers se lit : le sous-dossier se choisira ensuite.')).toBeDefined()
+    expect(within(volet()).getByText('Banque', { selector: 'p' })).toBeDefined()
+    expect(within(volet()).queryByText('Urssaf', { selector: 'p' })).toBeNull()
+  })
+
+  it('une mise à jour qui ne touche aucune ligne se dit, et le choix revient', async () => {
+    reinitialiser()
+    faux.sousDossiers = [sousDossier('sd-banque', 'Banque')]
+    faux.majSansEffet = true
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    await within(volet()).findByLabelText('Sous-dossier')
+    await act(async () => { fireEvent.change(choixDuSousDossier(), { target: { value: 'sd-banque' } }) })
+    expect(await within(volet()).findByText(/la base n’a modifié aucune ligne/)).toBeDefined()
+    expect(choixDuSousDossier().value).toBe('')
+  })
+
+  it('les sous-dossiers lus en partie : le sous-dossier se dit, aucun choix ne s’offre', async () => {
+    reinitialiser()
+    faux.sousDossiersRefuses = true
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    expect(await within(volet()).findByText(/La liste des sous-dossiers n’a pas pu être lue en entier .*ne se change pas d’ici\./)).toBeDefined()
+    expect(within(volet()).queryByRole('combobox', { name: 'Sous-dossier' })).toBeNull()
+    expect(faux.majs).toEqual([])
   })
 
   it('le texte lu se lit dans la fiche, sur un clic', async () => {

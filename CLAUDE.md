@@ -96,7 +96,8 @@ et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉE
   et relit la ligne ; le choix à la main ne part qu'au clic sur « Associer ».
 - **La fiche d'un document** (`FicheDocument.tsx`, onglet Documents administratifs, 16/11/2026) : le clic sur une ligne
   l'ouvre dans le volet, au lieu du fichier ; elle suit la liste affichée, est clée par document, n'offre que les gestes
-  de la ligne, chacun la fonction de l'onglet, et se ferme quand son document part. L'aperçu d'un fichier, commun aux
+  de la ligne, plus le choix du sous-dossier (DOCF-Q1, la fiche seule, parmi les sous-dossiers du dossier lus en entier),
+  chacun la fonction de l'onglet, et se ferme quand son document part. L'aperçu d'un fichier, commun aux
   deux fiches : `components/ApercuDuFichier.tsx` → « LA FICHE D'UN DOCUMENT DANS LE PANNEAU DE DROITE ».
 - **Une page ne se remonte pas d'un dossier à l'autre** (`DossierDetail` reste monté) : sous `AnneeProvider key={id}`,
   ou clé par dossier, ou gardant ce qu'il lit AVEC l'identifiant lu. Côté client, `<Outlet key>` dans la coque → « LA
