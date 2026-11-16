@@ -12,6 +12,8 @@ import { useAuth } from '../../context/AuthContext'
 import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
 import FilCommentaires from '../../components/FilCommentaires'
 import { EntetePanneau } from '../../components/PanneauDroit'
+import ApercuDuFichier from '../../components/ApercuDuFichier'
+import { genreDApercu } from '../../lib/genreDApercu'
 import { IconChevron, IconPrecedent } from '../../components/icons'
 import { messageErreur } from '../../lib/messageErreur'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
@@ -48,13 +50,6 @@ import {
 async function memoriser(quoi: string, requete: PromiseLike<{ error: { message: string } | null }>) {
   const { error } = await requete
   if (error) console.warn(`Mémorisation de ${quoi} impossible (sans conséquence sur la pièce) :`, error.message)
-}
-
-function typeApercu(nom: string): 'image' | 'pdf' | 'autre' {
-  const ext = nom.toLowerCase().split('.').pop() ?? ''
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image'
-  if (ext === 'pdf') return 'pdf'
-  return 'autre'
 }
 
 // La fiche d'une pièce, dans le panneau de droite (voir lib/panneauDroit.ts) — elle était une fenêtre
@@ -202,8 +197,6 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   const [dateDeduiteParLExtraction, setDateDeduiteParLExtraction] = useState<string | null>(null)
   const [suggestionAutre, setSuggestionAutre] = useState<string | null>(null)
   const [lignesBrutes, setLignesBrutes] = useState<string[] | undefined>(undefined)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
   // La catégorie proposée par le modèle, avec le TYPE pour lequel elle a été demandée : le sens de la
   // pièce décide des catégories proposables, donc une proposition faite pour un achat ne vaut plus
   // rien quand l'opérateur repasse la pièce en vente.
@@ -353,43 +346,13 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     setNoteLue({ pour: piece.id, lecture: { etat: 'lue', texte: notes } })
   }
 
-  // Aperçu : le fichier fraîchement choisi se prévisualise localement (pas besoin de l'uploader
-  // d'abord) ; le fichier déjà en storage passe par une URL signée temporaire, le bucket n'étant pas
-  // public. On révoque l'URL locale à chaque changement pour ne pas fuiter de mémoire.
+  // Aperçu (components/ApercuDuFichier.tsx) : le fichier fraîchement choisi se prévisualise localement, celui du stockage
+  // par une adresse signée, son chemin jugé contre le dossier d'abord.
   //
   // Une facture reçue de la plateforme du client en XML se MONTRE par sa version lisible (voir lib/fichiersPiece.ts) :
   // un XML ne se lit pas, et c'est le PDF qu'on regarde avant de valider. L'original reste à portée d'un lien.
   const fichierMontre = piece ? fichierAMontrer(piece) : null
   const cheminApercu = fichierMontre?.chemin ?? null
-  useEffect(() => {
-    if (file) {
-      const url = URL.createObjectURL(file)
-      setPreviewUrl(url)
-      setPreviewError(null)
-      return () => URL.revokeObjectURL(url)
-    }
-    if (cheminApercu) {
-      // Un chemin qu'un client a pu poser hors de ce dossier ne s'ouvre pas aux droits du cabinet (CFCS-Q1).
-      if (!cheminDuDossier(cheminApercu, dossierId)) {
-        setPreviewError(`Aperçu indisponible : ${MOTIF_CHEMIN_HORS_DU_DOSSIER}.`)
-        setPreviewUrl(null)
-        return
-      }
-      let annule = false
-      supabase.storage.from('pieces').createSignedUrl(cheminApercu, 300).then(({ data, error }) => {
-        if (annule) return
-        if (error || !data) {
-          setPreviewError("Aperçu indisponible.")
-          setPreviewUrl(null)
-        } else {
-          setPreviewUrl(data.signedUrl)
-          setPreviewError(null)
-        }
-      })
-      return () => { annule = true }
-    }
-    setPreviewUrl(null)
-  }, [file, cheminApercu, dossierId])
 
   // Si ce tiers a déjà été catégorisé sur une pièce précédente — de ce dossier en priorité, sinon
   // partagée entre tous les dossiers (voir lib/tiersCategories.ts) — on reprend la même catégorie
@@ -884,7 +847,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     }
   }
 
-  const genreApercu = file ? typeApercu(file.name) : fichierMontre?.lisible ? 'pdf' : typeApercu(piece?.nom_fichier ?? '')
+  const genreApercu = file ? genreDApercu(file.name) : fichierMontre?.lisible ? 'pdf' : genreDApercu(piece?.nom_fichier ?? '')
   // Une facture reçue de la plateforme du client : son fichier est l'original transmis — le remplacer romprait le lien
   // entre la pièce et ce que la plateforme a remis —, et ses champs viennent de la facture électronique elle-même, qu'une
   // lecture du document ne ferait que deviner moins bien, et payer.
@@ -989,29 +952,16 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
                 pieceMarquee, exemplaire.factures?.lignes.find((f) => f.id === factureId) ?? null, operationsDeLaCaisse)}
             />
           )}
-          {(previewUrl || previewError) && (
-            <div className="field fiche-piece-apercu">
-              {previewError ? (
-                <p className="muted" style={{ margin: 0 }}>{previewError}</p>
-              ) : (
-                <>
-                  {genreApercu === 'image' && <img src={previewUrl!} alt="Aperçu de la pièce" />}
-                  {genreApercu === 'pdf' && <iframe src={previewUrl!} title="Aperçu de la pièce" />}
-                  <a href={previewUrl!} target="_blank" rel="noreferrer" className="muted">
-                    Ouvrir dans un nouvel onglet ↗
-                  </a>
-                </>
-              )}
-              {!file && fichierMontre?.lisible && piece && (
-                <p className="muted" style={{ margin: 0 }}>
-                  Version lisible rendue par la plateforme.{' '}
-                  <button type="button" className="lien-texte-lu" onClick={() => ouvrirJustificatif(piece.storage_path, dossierId)}>
-                    Voir l’original transmis (XML) ↗
-                  </button>
-                </p>
-              )}
-            </div>
-          )}
+          <ApercuDuFichier dossierId={dossierId} chemin={cheminApercu} fichierLocal={file} genre={genreApercu} libelle="Aperçu de la pièce">
+            {!file && fichierMontre?.lisible && piece && (
+              <p className="muted" style={{ margin: 0 }}>
+                Version lisible rendue par la plateforme.{' '}
+                <button type="button" className="lien-texte-lu" onClick={() => ouvrirJustificatif(piece.storage_path, dossierId)}>
+                  Voir l’original transmis (XML) ↗
+                </button>
+              </p>
+            )}
+          </ApercuDuFichier>
 
           {recuePlateforme && lectureDeLaFactureOfferte(ACHATS_DU_CLIENT_PREVUS, piece, fige) ? (
             <>

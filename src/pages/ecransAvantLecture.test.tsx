@@ -703,6 +703,12 @@ const ECRANS: Ecran[] = [
 // Les fichiers qui parlent à la base sans RIEN lire au montage : ils lisent ou écrivent sur un geste, ou reçoivent leurs
 // données de l'écran qui les ouvre (et qui, lui, est monté ici). Chacun avec sa raison.
 const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
+  'components/ApercuDuFichier.tsx': 'ne lit aucune liste : l’adresse signée du seul fichier que lui donne la fiche qui le monte '
+    + '(FichePiece, montée ici ; FicheDocument), et ne rend RIEN avant son retour — ni cadre vide ni « aucun aperçu » ; refusée, '
+    + '« Aperçu indisponible » ; un chemin hors du dossier, jamais demandé (DocumentsTab.test.tsx)',
+  'pages/dossier/FicheDocument.tsx': 'reçoit de l’onglet Documents (DocumentsTab, monté ici) le document, ce qui le cite et ses '
+    + 'gestes, lus en entier par l’onglet ; ne lit le texte lu qu’au clic, « Chargement… » jusqu’à son retour, et n’écrit rien '
+    + 'elle-même : chaque geste est la fonction de l’onglet (DocumentsTab.test.tsx)',
   'pages/dossier/CategoriesDuDossierCard.tsx': 'drapeau `CATEGORIES_DU_DOSSIER_PREVUES` baissé : ne rend ni ne lit rien ; levé, '
     + 'son propre test (CategoriesDuDossierCard.test.tsx) éprouve « Chargement… » avant la lecture et aucun geste sur une lecture partielle',
   'pages/dossier/ModeleDuCabinetDossierCarte.tsx': 'drapeau `MODELE_DU_CABINET_PREVU` baissé : ne rend ni ne lit rien ; levé, '

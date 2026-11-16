@@ -22,6 +22,9 @@ import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression, type 
 import { lireLesPapiersSignes } from '../../lib/lettresDeMissionLecture'
 import { messageDUneSuppressionRetenue, refusDuPapierSigne, type LectureDesPapiersSignes } from '../../lib/lettresDeMissionVue'
 import { lireLesFacturesProbables, PHRASE_FACTURE_PROBABLE, type LectureDesFacturesProbables } from '../../lib/facturesProbablesLecture'
+import PanneauDroit from '../../components/PanneauDroit'
+import { usePanneauDroit } from '../../lib/panneauDroit'
+import FicheDocument from './FicheDocument'
 
 // « C'est une facture » sur une lecture des citations partielle, ou pas encore revenue : la révision d'un solde parle
 // d'abord, sous les mots d'hier ; le dossier permanent, seul en défaut, se nomme.
@@ -85,6 +88,20 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // ajouté au premier. L'état, lui, ne sert qu'à griser le bouton et à dire où on en est.
   const suppressionEnCours = useRef(false)
   const [suppression, setSuppression] = useState<{ fait: number; total: number } | null>(null)
+  // Verrou de « Supprimer » sur UN document — depuis la ligne ou depuis sa fiche (16/11/2026) : deux clics du même rendu
+  // demandaient deux confirmations et envoyaient deux suppressions, la seconde disant « aucune ligne supprimée » sur un
+  // document bel et bien parti.
+  const suppressionDUnDocument = useRef(false)
+
+  // LA FICHE D'UN DOCUMENT DANS LE PANNEAU DE DROITE (demande du cabinet du 16/11/2026, voir FicheDocument) : un clic sur
+  // une ligne l'ouvre, comme la fiche d'une pièce dans Justificatifs. L'onglet retient l'IDENTIFIANT et relit la ligne dans
+  // la liste à chaque rendu (une catégorie changée s'y voit) ; `documentOuvert` le suit SANS attendre un rendu : une
+  // suppression ou une conversion qui répond après qu'on a changé de document ne ferme pas la fiche du suivant.
+  const panneauDocument = usePanneauDroit('document')
+  const [ouvert, setOuvert] = useState<string | null>(null)
+  const documentOuvert = useRef<string | null>(null)
+  // Le dernier message d'erreur et le document dont un geste l'a fait naître : la fiche ne dit que ce qui la concerne.
+  const [erreurDe, setErreurDe] = useState<string | null>(null)
 
   // Même comportement que dans PiecesTab : on ouvre en affichant « Chargement… » plutôt que de rester
   // muet assez longtemps pour qu'on reclique.
@@ -241,7 +258,39 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     ),
   )
 
+  function afficherDocument(id: string | null) {
+    documentOuvert.current = id
+    setOuvert(id)
+  }
+
+  function ouvrirDocument(doc: DocumentDivers) {
+    if (!panneauDocument.ouvrir()) return
+    afficherDocument(doc.id)
+  }
+
+  function fermerFiche() {
+    if (panneauDocument.fermer()) afficherDocument(null)
+  }
+
+  // Le document est parti (supprimé, ou devenu une pièce) : sa fiche se ferme, comme celle d'une pièce supprimée dans
+  // Justificatifs — seulement si c'est encore lui qu'elle montre.
+  function quitterLaFicheDe(id: string) {
+    if (documentOuvert.current === id) fermerFiche()
+  }
+
+  // La fiche ne montre qu'un document qui existe encore dans la liste lue ; elle suit la liste AFFICHÉE (filtres et
+  // recherche) pour « précédent » et « suivant ».
+  const docOuvert = ouvert ? documents.find((d) => d.id === ouvert) ?? null : null
+  const ficheVisible = docOuvert !== null && panneauDocument.ouvert
+  const rangOuvert = docOuvert ? filtered.findIndex((d) => d.id === docOuvert.id) : -1
+  const navigationFiche = {
+    position: rangOuvert === -1 ? 'Document hors de la liste affichée' : `Document ${rangOuvert + 1} sur ${filtered.length}`,
+    precedent: rangOuvert > 0 ? () => ouvrirDocument(filtered[rangOuvert - 1]) : null,
+    suivant: rangOuvert !== -1 && rangOuvert < filtered.length - 1 ? () => ouvrirDocument(filtered[rangOuvert + 1]) : null,
+  }
+
   async function changerCategorie(doc: DocumentDivers, categorie: CategorieDocument) {
+    setErreurDe(doc.id)
     const { error: erreurCategorie } = await supabase.from('documents_divers').update({ categorie }).eq('id', doc.id)
     // Refusé, le choix se DIT : la relecture remet l'ancienne catégorie dans la liste, et sans un mot l'opérateur
     // croirait son choix pris — puis chercherait le document sous la nouvelle.
@@ -274,6 +323,8 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   }
 
   async function supprimer(doc: DocumentDivers) {
+    if (suppressionDUnDocument.current) return
+    setErreurDe(doc.id)
     // Le bouton n'est pas offert sur un document cité : si la lecture change entre-temps, la phrase de la base se dit
     // ici plutôt qu'une confirmation qui mènerait à son refus.
     const refus = refusDuDocument(doc.id)
@@ -282,9 +333,16 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       return
     }
     if (!window.confirm(`Supprimer définitivement "${doc.nom_fichier}" ?`)) return
-    const motif = await supprimerUnDocument(doc)
-    setError(motif ? messageBilanSuppression({ demandes: 1, supprimes: 0, motifs: [motif] }) : null)
-    load()
+    // Posé AVANT le `try` et avant le premier `await`, relâché après la relecture.
+    suppressionDUnDocument.current = true
+    try {
+      const motif = await supprimerUnDocument(doc)
+      setError(motif ? messageBilanSuppression({ demandes: 1, supprimes: 0, motifs: [motif] }) : null)
+      if (!motif) quitterLaFicheDe(doc.id)
+      await load()
+    } finally {
+      suppressionDUnDocument.current = false
+    }
   }
 
   function toggleSelect(id: string) {
@@ -329,6 +387,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     const citant = !sortes.includes(null) ? citantDe(sortes)
       : sortes.every((s) => s === null) ? 'une lettre de mission' : `${citantDe(sortes)} et une lettre de mission`
     if (cibles.length === 0) {
+      setErreurDe(null)
       setError(cites.length === 1 ? cites[0].refus
         : `Ces ${cites.length} documents sont cités par ${citant} : ils ne se suppriment plus.\n${listeDesCites}`)
       return
@@ -340,13 +399,17 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     // Posé AVANT le `try` et avant le premier `await` : un verrou posé après ne verrouille rien.
     suppressionEnCours.current = true
     setSuppression({ fait: 0, total: cibles.length })
+    setErreurDe(null)
     try {
       let supprimes = 0
       const motifs: string[] = []
       for (const [rang, doc] of cibles.entries()) {
         const motif = await supprimerUnDocument(doc)
         if (motif) motifs.push(motif)
-        else supprimes++
+        else {
+          supprimes++
+          quitterLaFicheDe(doc.id)
+        }
         setSuppression({ fait: rang + 1, total: cibles.length })
       }
       setError(messageBilanSuppression({ demandes: cibles.length, supprimes, motifs }))
@@ -366,6 +429,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   async function convertirEnPiece(doc: DocumentDivers) {
     // Posé AVANT le premier `await` — un verrou posé après ne verrouille rien.
     if (conversionsEnCours.current.has(doc.id)) return
+    setErreurDe(doc.id)
     // AVANT DE CRÉER LA PIÈCE : la conversion supprime le document en dernier, et la base refuse de supprimer un document
     // que la révision cite. Dit après, la pièce serait née et le document resté — le même fichier sous deux lignes, dont
     // la suppression de la pièce retirerait le fichier que la décision cite. Et sur une lecture des citations partielle
@@ -450,6 +514,8 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
         )
       } else {
         setError(null)
+        // Le document est devenu une pièce : sa fiche n'a plus rien à montrer.
+        quitterLaFicheDe(doc.id)
       }
       load()
     } finally {
@@ -606,14 +672,16 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
               <tbody>
                 {filtered.map((d) => (
                   <Fragment key={d.id}>
-                  <tr>
+                  <tr className={`clickable${ficheVisible && docOuvert?.id === d.id ? ' ligne-ouverte' : ''}`}>
                     <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} />
                     </td>
-                    <td data-libelle="Fichier">
+                    <td data-libelle="Fichier" onClick={() => ouvrirDocument(d)}>
                       {/* Une `div` : repliée, la cellule est une rangée flex, et chaque enfant direct y serait une pièce à part. */}
                       <div>
-                        <a href="#" className="nom-fichier" onClick={(e) => { e.preventDefault(); voir(d.storage_path) }}>{d.nom_fichier}</a>
+                        {/* Le nom ouvre la fiche du document dans le volet de droite (16/11/2026) — l'aperçu et les gestes ; le
+                            fichier s'ouvre en grand depuis elle (« Ouvrir dans un onglet »). Le clic remonte à la cellule. */}
+                        <a href="#" className="nom-fichier" onClick={(e) => e.preventDefault()}>{d.nom_fichier}</a>
                         {d.attached_to_cotisation_id && <span className="badge badge-ok" style={{ marginLeft: 8 }}>Rattaché à une échéance</span>}
                         {!d.attached_to_cotisation_id && facturesProbables?.documents.has(d.id) && (
                           <span className="badge badge-warning" style={{ marginLeft: 8, fontSize: '0.7rem' }} title={PHRASE_FACTURE_PROBABLE}>
@@ -639,14 +707,14 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                           <button
                             type="button"
                             className="lien-texte-lu"
-                            onClick={(e) => { e.preventDefault(); basculerTexteOcr(d.id) }}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); basculerTexteOcr(d.id) }}
                           >
                             {ocrOuvert?.documentId === d.id ? '▾ texte lu' : '▸ texte lu'}
                           </button>
                         )}
                       </div>
                     </td>
-                    <td data-libelle="Catégorie" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <td data-libelle="Catégorie" style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={(e) => e.stopPropagation()}>
                       <select
                         style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px' }}
                         value={d.categorie}
@@ -657,8 +725,8 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                         ))}
                       </select>
                     </td>
-                    <td className="hide-mobile" data-libelle="Sous-dossier">{sousDossierLabel(d.sous_dossier_id)}</td>
-                    <td className="hide-mobile" data-libelle="Ajouté le">{formatDate(d.created_at)}</td>
+                    <td className="hide-mobile" data-libelle="Sous-dossier" onClick={() => ouvrirDocument(d)}>{sousDossierLabel(d.sous_dossier_id)}</td>
+                    <td className="hide-mobile" data-libelle="Ajouté le" onClick={() => ouvrirDocument(d)}>{formatDate(d.created_at)}</td>
                     <td className="td-actions" onClick={(e) => e.stopPropagation()}>
                       {refusDuDocument(d.id) ? (
                         // Ni supprimer, ni transformer en pièce, qui le supprime : la phrase de la base, avant le clic.
@@ -704,6 +772,35 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           </div>
         )}
       </div>
+
+      {docOuvert && ficheVisible && (
+        <PanneauDroit nom="document">
+          <FicheDocument
+            key={docOuvert.id}
+            dossierId={dossierId}
+            document={docOuvert}
+            libellesCategories={LABEL_CATEGORIE}
+            sousDossier={sousDossierLabel(docOuvert.sous_dossier_id)}
+            avecTexteLu={avecTexteOcr.has(docOuvert.id)}
+            factureProbable={facturesProbables?.documents.has(docOuvert.id) ?? false}
+            doublon={doublonParDocument.get(docOuvert.id) ?? null}
+            citation={refusDuDocument(docOuvert.id) === null ? null
+              : quiCite({ documentId: docOuvert.id }, citations) === 'dossier-permanent' ? 'Cité par le dossier permanent'
+                : quiCite({ documentId: docOuvert.id }, citations) === 'revision' ? 'Cité par la révision' : 'Papier signé d’une lettre de mission'}
+            refus={refusDuDocument(docOuvert.id)}
+            conversionSuspendue={citations === null || citations.motif !== null ? conversionSuspendue(citations) : null}
+            erreur={erreurDe === docOuvert.id ? error : null}
+            navigation={navigationFiche}
+            gestes={{
+              changerCategorie: (categorie) => changerCategorie(docOuvert, categorie),
+              convertir: () => convertirEnPiece(docOuvert),
+              supprimer: () => supprimer(docOuvert),
+              ouvrir: () => voir(docOuvert.storage_path),
+            }}
+            onFermer={fermerFiche}
+          />
+        </PanneauDroit>
+      )}
 
       {ajoutOuvert && (
         <AjouterDocumentsModal

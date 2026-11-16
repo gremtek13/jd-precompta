@@ -53095,3 +53095,17 @@ PostgREST : rien ne l'avait vu. Correction : les cinq lectures (`ventesFacturees
 cinq sites). Relevé des paires de tables à deux clés en production : aussi `cabinets`/`dossiers` et
 `factures_importees`/`factures_emises`, qu'aucune lecture n'embarque aujourd'hui. Pas vérifié contre un vrai PostgREST
 avant la mise en ligne : à confirmer par l'écran du cabinet.
+
+### 16/11/2026 — LA FICHE D'UN DOCUMENT DANS LE PANNEAU DE DROITE (ONGLET DOCUMENTS ADMINISTRATIFS)
+
+Demande du cabinet : un clic sur un document ouvrait le fichier dans un autre onglet, sans le volet de droite qu'offre
+Justificatifs. Désormais la ligne ouvre `FicheDocument` (nom `document` du panneau), qui suit la liste AFFICHÉE (« Document 2
+sur 3 », précédent et suivant), clée par document, l'identifiant retenu et la ligne relue à chaque rendu. L'aperçu vivait
+enfoui dans FichePiece : sorti tel quel dans `components/ApercuDuFichier.tsx` (chemin jugé par `cheminDuDossier` avant la
+signature, réponse d'un fichier quitté jamais écrite) et `lib/genreDApercu.ts` ; un fichier ni image ni PDF le dit
+désormais, dans les deux fiches. Gestes repris, les fonctions de l'onglet elles-mêmes : catégorie, « C'est une facture »,
+« Supprimer », texte lu, « Ouvrir dans un onglet » (lib/apercu.ts) ; aucun de plus. « Supprimer » d'un document porte
+désormais son verrou (`suppressionDUnDocument`, la catégorie « suppression » de `verrousEcritures.test.ts` passe à 17) ; une
+suppression ou une conversion réussie ferme la fiche si elle montre encore ce document. Onze tests d'écran, deux mutations
+qui mordent ; le banc (une visite `documents/fiche`, trois documents fictifs au faux Supabase) : 0 débordement à 1 440,
+1 280, 1 024 et 390 px. Sur téléphone, la carte flottante de l'assistant, sans changer la coque.

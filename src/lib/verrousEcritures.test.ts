@@ -231,10 +231,11 @@ const CATEGORIES_AUTOMATIQUES: Record<CategorieAutomatique, { nombre: number; ra
       + 'comme telle : deux envois du même rendu écrivent la même valeur, calculée dans la même fermeture.',
   },
   suppression: {
-    // 20 depuis que `PiecesTab.deleteSelection` porte son verrou (les écritures du navigateur, 09/10/2026) ; 19 depuis
+    // 17 depuis que `DocumentsTab.supprimer` porte le sien (la fiche d'un document dans le volet, 16/11/2026) ; 20 depuis
+    // que `PiecesTab.deleteSelection` porte son verrou (les écritures du navigateur, 09/10/2026) ; 19 depuis
     // que `FacturesTab.supprimer` porte le sien (espace client, étape P2 : la suppression d'un brouillon par la base) ; 18
     // depuis que `SuperPdpModal.retirer` partage le verrou de l'enregistrement (étape P4b).
-    nombre: 18,
+    nombre: 17,
     raison: 'Ne fait que supprimer (ou réécrire par clé) : le second envoi ne trouve plus rien, sans erreur.',
   },
   session: {
