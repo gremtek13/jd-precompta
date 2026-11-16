@@ -513,6 +513,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   neuve à présenter au cabinet (`especes_du_client_hors_des_reprises`, A8Q5Q3Q2Q2-Q1,
   `ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES`, levé APRÈS la migration) → « A8Q5-Q4, A8Q5Q3Q2-Q3 ET A8Q5Q3Q2Q2-Q1 : TROIS
   MIGRATIONS PRÉPARÉES ».
+- **Préparée le 16/11/2026, par l'outil, son drapeau baissé** : qui a ouvert un accès client, attesté sous la session du
+  cabinet (`auteur_des_ouvertures_d_acces`, P1TQ2-Q1 ; `OUVERTURES_ATTESTEES_PREVUES`, `OUVERTURES_ATTESTEES_EN_BASE` de
+  `create-client-access`) ; l'adresse ne se montre qu'à qui la lit déjà dans l'équipe → « P1TQ2-Q1 : QUI A OUVERT UN ACCÈS
+  CLIENT, ATTESTÉ PAR LE CABINET ». `outils/membre-d-essai/` : le membre d'équipe d'essai que trois essais de production
+  supposent (ESSAIS-Q1), `creer.sql` à coller par le cabinet, `verifier.sql` pour la session, `retirer.sql` ; sans mot de
+  passe, banni, affecté à `test` seul, il part avec `test` → « ESSAIS-Q1 : LE MEMBRE D'ÉQUIPE D'ESSAI ».
 - **L'alerte de hausse du chiffre d'affaires** (ligne 29.6, MVP, demande du cabinet du 15/11/2026) : conçue
   (`docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md`), préparée derrière `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`
   baissé — le chiffre de l'estimation (`chiffreDAffairesDeLaPeriode`), le trimestre clos et le cumul contre l'année d'avant,
@@ -563,7 +569,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   générale → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 : ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION »,
   « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF D'UN MILLÉSIME (2035S1, S2 ET S6) »,
   « 2035S-Q5 : LE PDF D'UN MILLÉSIME ABSENT S'IMPRIME AVEC UN AVERTISSEMENT ».
-- **Déclarations TNS** (ligne 27) : les médecins de secteur 1 et 2 estimés depuis le 07/11/2026, contre l'oracle ; le
+- **Déclarations TNS** (ligne 27) : les médecins de secteur 1 et 2 estimés depuis le 07/11/2026, contre l'oracle ; un médecin
+  ne doit rien à la CARMF l'année du début qui précède son affiliation (début d'octobre à décembre ; RET2-Q3, 16/11/2026 ;
+  RET2Q3-Q1 pour les autres caisses) → « RET2-Q3 : L'ANNÉE DU DÉBUT QUI PRÉCÈDE L'AFFILIATION À LA CARMF NE LUI DOIT RIEN » ; le
   début d'activité, l'ACRE et le taux dentiste en production depuis le 07/11/2026 (`parametres_des_cotisations`, deux
   tables hors de `dossiers`, que le client lit ; l'estimation les reçoit en entrée obligatoire, sans début d'activité
   elle se tait ; `PARAMETRES_DES_COTISATIONS_EXPORTES` levé ; TNS-Q1, TNS-Q4) → « LES PARAMÈTRES DES COTISATIONS : LE
