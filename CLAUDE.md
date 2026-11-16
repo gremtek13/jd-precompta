@@ -536,6 +536,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   ni numéro de facture ou de lot ; le paiement justifie et contrôle le crédit du relevé, il ne compte dans aucun moteur ;
   rien d'associé sans clic ; NOE1 à NOE8, NOE-Q1 à Q7, NOE-E1 à E3 → « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES
   PAIEMENTS DE L'ASSURANCE MALADIE : LA CONCEPTION ».
+- **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
+  une OD source du brouillon, écrite par le chef du cabinet seul en base ; en trésorerie, chaque ligne de résultat sous un poste
+  de la 2035 ou « hors de la 2035 » ; EL1 à EL8, EL-Q1 à Q12, EL-E1 à E5 → « L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE : LA CONCEPTION ».
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
   levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la

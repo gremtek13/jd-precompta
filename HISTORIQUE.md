@@ -53384,3 +53384,18 @@ colonne hors `_acces_avant_les_gardes` ; mais `sous_dossier_id` n'est qu'une cl�
 rien ne lie le sous-dossier au dossier du document (de même pour `pieces`) : l'écran n'offre que ceux lus par
 `.eq('dossier_id', …)` et revérifie le choix (DOCF-Q1-B, question au cabinet). Six tests d'écran ; quatre mutations sur
 cinq mordent, la cinquième (un filtre redondant avec la requête) retirée.
+
+### 16/11/2026 — L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE : LA CONCEPTION
+
+(Agent architecte ; rien en production, aucun code.) Décision du cabinet du jour : « une vraie ecriture libre reservé a
+l'expert comptable », son exemple une dépense de janvier N+1 passée dans les charges de N. Conception :
+`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`. Une table source, `ecritures_libres` (lignes en jsonb, le poste
+de la 2035 de chacune), citée par `ecritures_brouillon.ecriture_libre_id`, écrite par deux fonctions qui vérifient
+`est_chef_du_cabinet` avant toute lecture ; OD, une date, PieceRef « EL<année>-<numéro> », l'état des écritures libres pour
+pièce. Banque et caisse refusées, comptes tenus par l'application avertis. En trésorerie, la 2035 reste tirée des sources :
+chaque ligne de résultat est comptée sous le poste que l'expert choisit, ou « hors de la 2035 », écart déclaré qui ne
+retient pas la validation (EL-Q6) ; l'exemple du cabinet est contraire à la règle (CGI, art. 93 ; BOI-BNC-BASE-40-10 § 260),
+permis, proposé hors de la 2035 avec son extourne, compté seulement sur désignation explicite. `valider_exercice` n'est pas
+remplacée. Relevé en concevant : la policy du brouillon laisse un membre insérer par l'API une ligne sans source (EL2b,
+EL-Q11) ; les gardes de tête de INV2, LIA2, AFF2 et MCB5g refuseraient la colonne neuve (EL2 les met à jour). Questions :
+EL-Q1 à Q12, EL-E1 à E5.
