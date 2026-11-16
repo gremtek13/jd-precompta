@@ -465,7 +465,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Vingt-neuf le 16/11/2026 : `pieceDUnPaiementDansSonDossier` (A8Q5-Q4), `plancherALEcartDAlignement` (A8Q5Q3Q2-Q3) et
     // `especesDuClientHorsDesReprises` (A8Q5Q3Q2Q2-Q1) entrés dans la famille « apres », après leurs migrations préparées ;
     // SÛRS au banc, sur une copie de la réplique à 229 (228, puis `reglements_de_la_piece_citee`).
-    expect(cas.length).toBe(29)
+    // Trente le même jour : `auteurDesOuvertures` (P1TQ2-Q1, `auteur_des_ouvertures_d_acces`) entré dans la famille
+    // « apres », après sa migration préparée ; SÛR au banc, sur une copie de la réplique à 228.
+    expect(cas.length).toBe(30)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

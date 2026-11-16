@@ -1,6 +1,7 @@
 import { INVENTAIRE_PREVU } from './inventaire'
 import { describe, expect, it } from 'vitest'
 import { ADRESSES_DES_ACCES_RETIRES_PREVUES } from './adressesDesAccesRetires'
+import { OUVERTURES_ATTESTEES_PREVUES } from './ouverturesAttestees'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
@@ -44,6 +45,7 @@ import {
   auPlanDeLaNumerotationContinue, auPlanDeLaPieceDUneFactureReprise,
   auPlanDeLaTraceDesDroits,
   auPlanDesAdressesDesAccesRetires,
+  auPlanDesOuverturesAttestees,
   auPlanDesFacturesImportees,
   auPlanDesSituationsPubliees,
   auPlanDesPrevisionsPubliees,
@@ -118,7 +120,8 @@ describe('le filtre du plan', () => {
     // depuis B2, celui des documents et des demandes du cabinet (sauvegardeDocumentsEtDemandes.test.ts) ; depuis B4, celui
     // des achats du client (sauvegardeAchatsDuClient.test.ts) ; depuis C8-Q2, celui des prévisions publiées
     // (sauvegardePrevisionsPubliees.test.ts) ; depuis le 15/11/2026, celui de l'alerte de hausse du chiffre d'affaires
-    // (sauvegardeHausseDuChiffreDAffaires.test.ts).
+    // (sauvegardeHausseDuChiffreDAffaires.test.ts) ; depuis P1TQ2-Q1, celui des auteurs des ouvertures d'accès
+    // (sauvegardeOuverturesAttestees.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -126,6 +129,7 @@ describe('le filtre du plan', () => {
         && auPlanDuJournalDesDesignations(table, JUMELLE_INVERSEE_EXPORTEE) && auPlanDeLaCaisse(table, CAISSE_EXPORTEE)
         && auPlanDeLaTraceDesDroits(table, TRACE_DES_DROITS_PREVUE)
         && auPlanDesAdressesDesAccesRetires(table, ADRESSES_DES_ACCES_RETIRES_PREVUES)
+        && auPlanDesOuverturesAttestees(table, OUVERTURES_ATTESTEES_PREVUES)
         && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES) && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
         && auPlanDesPrevisionsPubliees(table, PREVISIONS_PUBLIEES_PREVUES)
         && auPlanDeLaHausseDuChiffreDAffaires(table, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE)

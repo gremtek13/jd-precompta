@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { ADRESSES_DES_ACCES_RETIRES_PREVUES } from '../../lib/adressesDesAccesRetires'
 import type { AccesDuDossier } from '../../lib/auteursVentes'
+import { OUVERTURES_ATTESTEES_PREVUES } from '../../lib/ouverturesAttestees'
 import { ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE, TRACE_DES_DROITS_PREVUE } from '../../lib/traceDesDroits'
 import {
-  lireLaTraceDuDossier, lireLesAdressesDesAccesRetires, type LectureDeLaTrace, type LectureDesAdresses,
+  lireLaTraceDuDossier, lireLesAdressesDesAccesRetires, lireLesOuverturesAttestees, type LectureDeLaTrace,
+  type LectureDesAdresses, type LectureDesOuvertures,
 } from '../../lib/traceDesDroitsLecture'
 import {
-  AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE, CE_QUE_DIT_LA_TRACE_DES_ACCES, CE_QUE_DIT_L_ADRESSE_RETENUE, MENTIONS_DE_L_AUTEUR, TITRES_DE_L_AUTEUR, auteurDuGeste, groupesDeLaTrace,
-  nombreDeChangements, phraseDeLaTrace, quandADitLaTrace, type AccesNomme,
+  AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE, CE_QUE_DIT_LA_TRACE_DES_ACCES, CE_QUE_DIT_L_ADRESSE_RETENUE,
+  CE_QUE_DIT_L_OUVERTURE_ATTESTEE, auteurMontre, groupesDeLaTrace, nombreDeChangements, phraseDeLaTrace, quandADitLaTrace,
+  type AccesNomme,
 } from '../../lib/traceDesDroitsVue'
 
 // « DROITS CHANGÉS » : LA TRACE DES CASES D'UN ACCÈS, SOUS LA LISTE DE L'ONGLET ACCÈS (étape P1-trace, ligne 51.5). Côté cabinet
@@ -23,6 +26,12 @@ import {
 // L'ADRESSE D'UN ACCÈS RETIRÉ (P1T-E2), sous `ADRESSES_DES_ACCES_RETIRES_PREVUES` : lue avec la trace, gardée avec son dossier ;
 // rien ne s'affiche avant que les deux soient revenues, et une lecture partielle des adresses se dit à part — un accès parti
 // garde alors « Accès retiré depuis », jamais un nom deviné.
+//
+// QUI A OUVERT UN ACCÈS (P1TQ2-Q1), sous `OUVERTURES_ATTESTEES_PREVUES` : les attestations du cabinet et, pour leurs seuls
+// comptes, les adresses que la session de qui regarde lit dans l'équipe (lib/ouverturesAttestees.ts), lues avec la trace et
+// gardées avec leur dossier ; rien ne s'affiche avant leur retour. Une arrivée attestée se dit « Le cabinet », suivie de
+// l'adresse du compte quand cette session la lit ; lues en partie, le bandeau le dit, et une arrivée sans attestation lue
+// reste « Sans session ».
 export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, accesDuDossier, lectureNo }: {
   dossierId: string
   /** Les accès lus aujourd'hui (leur identifiant ne sert qu'à retrouver leur trace). */
@@ -37,6 +46,7 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
   // La lecture est gardée AVEC son dossier : une réponse pour un autre dossier ne vaut pas pour celui-ci.
   const [lecture, setLecture] = useState<LectureDeLaTrace | null>(null)
   const [lectureDesAdresses, setLectureDesAdresses] = useState<LectureDesAdresses | null>(null)
+  const [lectureDesOuvertures, setLectureDesOuvertures] = useState<LectureDesOuvertures | null>(null)
 
   useEffect(() => {
     if (!TRACE_DES_DROITS_PREVUE) return
@@ -46,13 +56,18 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
     if (ADRESSES_DES_ACCES_RETIRES_PREVUES) {
       void lireLesAdressesDesAccesRetires(dossierId).then((lues) => { if (!annulee) setLectureDesAdresses(lues) })
     }
+    if (OUVERTURES_ATTESTEES_PREVUES) {
+      void lireLesOuverturesAttestees(dossierId).then((lues) => { if (!annulee) setLectureDesOuvertures(lues) })
+    }
     return () => { annulee = true }
   }, [dossierId, lectureNo])
 
   if (!TRACE_DES_DROITS_PREVUE) return null
 
   const adressesLues = lectureDesAdresses !== null && lectureDesAdresses.dossierId === dossierId ? lectureDesAdresses : null
+  const ouverturesLues = lectureDesOuvertures !== null && lectureDesOuvertures.dossierId === dossierId ? lectureDesOuvertures : null
   const lue = lecture !== null && lecture.dossierId === dossierId && (!ADRESSES_DES_ACCES_RETIRES_PREVUES || adressesLues !== null)
+    && (!OUVERTURES_ATTESTEES_PREVUES || ouverturesLues !== null)
     ? lecture : null
   const groupes = lue === null ? [] : groupesDeLaTrace(lue.lignes, acces, listeLue, adressesLues?.parAcces ?? null)
 
@@ -62,6 +77,7 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
       {/* Ce que la carte dit de la base suit la base : l'accès lui-même tracé, sous la migration de P1T-Q2 seulement. */}
       <p className="muted" style={{ marginTop: -8 }}>{ARRIVEE_ET_DEPART_DES_ACCES_EXPORTEE ? CE_QUE_DIT_LA_TRACE_DES_ACCES : CE_QUE_DIT_LA_TRACE}</p>
       {ADRESSES_DES_ACCES_RETIRES_PREVUES && <p className="muted">{CE_QUE_DIT_L_ADRESSE_RETENUE}</p>}
+      {OUVERTURES_ATTESTEES_PREVUES && <p className="muted">{CE_QUE_DIT_L_OUVERTURE_ATTESTEE}</p>}
       {lue === null ? (
         <p className="muted">Chargement de la trace des droits…</p>
       ) : (
@@ -74,6 +90,12 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
             <BandeauLecturePartielle
               quoi="Les adresses des accès retirés" accord="lues" motif={adressesLues.motif}
               consequence="Un accès retiré dont l’adresse n’a pas été lue se dit « Accès retiré depuis », sans nom. Recharge la page."
+            />
+          )}
+          {ouverturesLues !== null && (
+            <BandeauLecturePartielle
+              quoi="Les auteurs des ouvertures d’accès" accord="lus" motif={ouverturesLues.motif}
+              consequence="Un accès ouvert dont l’attestation n’a pas été lue se dit « Sans session », et un compte dont l’adresse n’a pas été lue, « Le cabinet ». Recharge la page."
             />
           )}
           {groupes.length === 0 && lue.motif === null && (
@@ -94,13 +116,16 @@ export default function TraceDesDroitsDesAcces({ dossierId, acces, listeLue, acc
                     <tbody>
                       {g.lignes.map((l) => {
                         const phrase = phraseDeLaTrace(l)
-                        const auteur = auteurDuGeste(accesDuDossier, l)
+                        const auteur = auteurMontre(accesDuDossier, l, ouverturesLues, ouverturesLues?.equipe ?? null)
                         return (
                           <tr key={l.id}>
                             <td data-libelle="Date et heure (Paris)">{quandADitLaTrace(l.instant)}</td>
                             <td data-libelle="Case">{phrase.libelle}</td>
                             <td data-libelle="Devenue">{phrase.etat}</td>
-                            <td data-libelle="Par"><span title={TITRES_DE_L_AUTEUR[auteur]}>{MENTIONS_DE_L_AUTEUR[auteur]}</span></td>
+                            <td data-libelle="Par">
+                              <span title={auteur.titre}>{auteur.mention}</span>
+                              {auteur.adresse !== null && <> — <span className="courriel">{auteur.adresse}</span></>}
+                            </td>
                           </tr>
                         )
                       })}

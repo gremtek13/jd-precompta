@@ -606,6 +606,23 @@ begin
   end if;
 end $$;
 
+-- ══ Qui a ouvert un accès (P1TQ2-Q1, préparée) ══ Au plan du code quand `OUVERTURES_ATTESTEES_PREVUES` est levé — sa migration
+-- (`auteur_des_ouvertures_d_acces`) en base : sa table, juste après l'adresse des accès retirés (en production), donc après la
+-- trace qu'elle nomme ; les tables qui suivent reculent d'un rang ; son chemin. Aucune vague. Absente de la base, rien
+-- n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.auteurs_des_ouvertures') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'adresses_des_acces_retires';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'auteurs_des_ouvertures');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('auteurs_des_ouvertures','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les situations publiées (espace client, étape C4a) ══ Au plan du code quand `SITUATIONS_PUBLIEES_EXPORTEES` est levé —
 -- c'est-à-dire quand sa migration est en base : le script l'y met dès que sa table existe, juste après `memberships` —
 -- joué après le bloc de la trace des droits, il la précède donc (ORDRE_RESTAURATION_PREVU) ; les tables qui suivent

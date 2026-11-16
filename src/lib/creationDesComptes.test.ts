@@ -29,6 +29,11 @@ describe('le compte, lu dans la réponse de la fonction', () => {
     expect(compteDeLaReponse({ ok: true, compte: 'cree' })).toBe('cree')
   })
 
+  it('la réponse de create-client-access qui atteste l’ouverture (P1TQ2-Q1, constante levée) se lit de même', () => {
+    expect(compteDeLaReponse({ ok: true, compte: 'cree', ouvertureAttestee: true })).toBe('cree')
+    expect(compteDeLaReponse({ ok: true, compte: 'existant', ouvertureAttestee: false })).toBe('existant')
+  })
+
   it('sans le champ, une fonction d’avant le 10/10/2026 : elle avait posé le mot de passe saisi, comme pour un compte créé', () => {
     expect(compteDeLaReponse({ ok: true })).toBe('cree')
   })

@@ -2,8 +2,9 @@ import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { adressesDeLaLecture, type AdressesRetenues } from './adressesDesAccesRetires'
+import { equipeNommable, ouverturesDeLaLecture, type MembreLu, type OuverturesAttestees } from './ouverturesAttestees'
 import { traceDeLaLecture, type TraceLue } from './traceDesDroitsVue'
-import type { AdresseDUnAccesRetire, TraceDesDroits } from './types'
+import type { AdresseDUnAccesRetire, AuteurDUneOuverture, TraceDesDroits } from './types'
 
 // LA TRACE DES DROITS D'UN DOSSIER, LUE POUR L'ONGLET ACCÈS (espace client, étape P1-trace). La policy de lecture n'ouvre la
 // table qu'au cabinet du dossier (`admin_du_dossier`) : le client n'en lit rien, et cette lecture n'est jamais faite de son
@@ -39,6 +40,49 @@ export interface LectureDesAdresses extends AdressesRetenues {
 }
 
 const COLONNES_DES_ADRESSES = 'id, dossier_id, acces_id, adresse, retire_le'
+
+// QUI A OUVERT UN ACCÈS (P1TQ2-Q1 ; lib/ouverturesAttestees.ts), lu pour nommer l'auteur attesté d'une arrivée : la même policy
+// que la trace (le cabinet du dossier seul), le même tri TOTAL, la même garde du dossier lu. Puis, pour les seuls comptes
+// attestés, leur ligne d'équipe — SOUS LA SESSION de qui regarde : la policy de `cabinet_admins` ne rend l'adresse qu'au chef
+// du cabinet, au super-administrateur et au membre lui-même, et ce qui ne revient pas se dit « Le cabinet ». Une requête qui
+// lève tombe du côté signalé. Le composant ne l'appelle que sous `OUVERTURES_ATTESTEES_PREVUES` : avant sa migration, la table
+// n'existe pas.
+export interface LectureDesOuvertures extends OuverturesAttestees {
+  dossierId: string
+  /** Les adresses que la session lit, par compte attesté ; vide si elle n'en lit aucune. */
+  equipe: ReadonlyMap<string, string>
+}
+
+const COLONNES_DES_OUVERTURES = 'id, dossier_id, acces_id, trace_id, auteur_id, atteste_le'
+
+export async function lireLesOuverturesAttestees(dossierId: string): Promise<LectureDesOuvertures> {
+  let ouvertures: OuverturesAttestees
+  try {
+    const lecture = await lireTout<AuteurDUneOuverture>((debut, fin) =>
+      supabase.from('auteurs_des_ouvertures').select(COLONNES_DES_OUVERTURES, { count: 'exact' })
+        .eq('dossier_id', dossierId).order('atteste_le', { ascending: false }).order('id').range(debut, fin),
+    )
+    // Le drapeau `complete` est lu ICI : une attestation absente d'une lecture partielle laisserait « Sans session ».
+    ouvertures = ouverturesDeLaLecture({ lignes: lecture.lignes, complete: lecture.complete, motif: lecture.motif })
+  } catch (e) {
+    return { dossierId, parTrace: new Map(), equipe: new Map(), motif: messageErreur(e, 'la lecture a échoué') }
+  }
+  const auteurs = [...new Set(ouvertures.parTrace.values())].sort()
+  if (auteurs.length === 0) return { dossierId, ...ouvertures, equipe: new Map() }
+  try {
+    const equipe = await lireTout<MembreLu>((debut, fin) =>
+      supabase.from('cabinet_admins').select('user_id, email', { count: 'exact' })
+        .in('user_id', auteurs).order('user_id').range(debut, fin),
+    )
+    const motifs = [ouvertures.motif, equipe.complete ? null : `l’équipe : ${equipe.motif ?? 'lecture incomplète'}`].filter((m) => m !== null)
+    return { dossierId, parTrace: ouvertures.parTrace, equipe: equipeNommable(equipe.lignes), motif: motifs.length === 0 ? null : motifs.join(' ; ') }
+  } catch (e) {
+    return {
+      dossierId, parTrace: ouvertures.parTrace, equipe: new Map(),
+      motif: [ouvertures.motif, `l’équipe : ${messageErreur(e, 'la lecture a échoué')}`].filter((m) => m !== null).join(' ; '),
+    }
+  }
+}
 
 export async function lireLesAdressesDesAccesRetires(dossierId: string): Promise<LectureDesAdresses> {
   try {

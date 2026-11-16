@@ -4096,6 +4096,64 @@ const COMPTES_DU_CABINET: { quoi: string; email: string; preparer?: (m: Monde) =
   },
 ]
 
+// ── QUI A OUVERT L'ACCÈS (create-client-access, P1TQ2-Q1, la migration PRÉPARÉE `auteur_des_ouvertures_d_acces`) ──────────
+// Joués sur la source servie, `OUVERTURES_ATTESTEES_EN_BASE` LEVÉE en mémoire (src/lib/ouverturesAttesteesHttp.test.ts) :
+// l'accès s'écrit sous la clé secrète, PUIS l'ouverture s'atteste sous la session de l'appelant — une fois, avec l'accès que
+// la base a rendu ; la base nomme elle-même le compte. Une attestation en panne ne défait pas l'accès : la réponse le dit. Un
+// refus d'avant l'écriture n'atteste rien. Aucun identifiant de compte dans la réponse.
+const attestationsDOuverture = (m: Monde) => m.journal.filter((e) => e.genre === 'rpc' && e.nom === 'attester_ouverture_d_acces')
+const reponseAttestee = (compte: 'cree' | 'existant', ouvertureAttestee: boolean) => (r: Resultat) => {
+  const attendue = JSON.stringify({ ok: true, compte, ouvertureAttestee })
+  return JSON.stringify(r.json) === attendue ? [] : [`réponse ${r.texte.slice(0, 160)} au lieu de ${attendue}`]
+}
+
+export const SCENARIOS_OUVERTURES_ATTESTEES: readonly Scenario[] = [
+  ...ADMIS_DU_DOSSIER.map((personne): Scenario => ({
+    nom: `${personne} : l’accès écrit sous la clé secrète, puis l’ouverture attestée sous SA session ; la base le nomme`,
+    preparer: motDePasseSecret,
+    requete: (s) => requeteDe(s, { personne, corps: ACCES }),
+    attendu: {
+      statut: 200, depenses: ['comptes createUser', 'écriture insert memberships', 'écriture insert auteurs_des_ouvertures'],
+      verifier: (r, m) => {
+        const fautes: string[] = [...reponseAttestee('cree', true)(r)]
+        const attestations = attestationsDOuverture(m)
+        if (attestations.length !== 1 || attestations[0]?.genre !== 'rpc' || attestations[0].role !== 'authentifie') {
+          fautes.push(`attestations : ${JSON.stringify(attestations)}`)
+        }
+        const acces = accesDe(m, NOUVEL_EMAIL)
+        const auteurs = lignes(m, 'auteurs_des_ouvertures')
+        if (acces.length !== 1 || auteurs.length !== 1 || auteurs[0].acces_id !== acces[0].id || auteurs[0].auteur_id !== PERSONNES[personne].id) {
+          fautes.push(`l’auteur n’est pas ${personne} sur l’accès écrit : ${JSON.stringify(auteurs)}`)
+        }
+        if (r.texte.includes(PERSONNES[personne].id)) fautes.push('la réponse nomme le compte de l’auteur')
+        return fautes
+      },
+    },
+  })),
+  {
+    nom: 'le chef, l’attestation en panne : l’accès reste écrit, sans auteur, et la réponse le dit',
+    preparer: (m) => { motDePasseSecret(m); m.pannes.push({ rpc: 'attester_ouverture_d_acces', erreur: { message: 'délai dépassé' } }) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ACCES }),
+    attendu: {
+      statut: 200, depenses: ['comptes createUser', 'écriture insert memberships'],
+      verifier: (r, m) => [
+        ...reponseAttestee('cree', false)(r),
+        ...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']),
+        ...(lignes(m, 'auteurs_des_ouvertures').length === 0 ? [] : ['une attestation écrite malgré la panne']),
+      ],
+    },
+  },
+  ...HORS_DU_DOSSIER.map((personne): Scenario => ({
+    nom: `${personne} : refusé (404) avant l’écriture, rien d’attesté`,
+    preparer: motDePasseSecret,
+    requete: (s) => requeteDe(s, { personne, corps: ACCES }),
+    attendu: {
+      statut: 404, refusEnFrancais: true, aucuneDepense: true,
+      verifier: (_r, m) => (attestationsDOuverture(m).length === 0 ? [] : ['une attestation tentée après un refus']),
+    },
+  })),
+]
+
 // ── LE RATTACHEMENT CONFIRMÉ D'UN COMPTE QUE CE CABINET NE CONNAÎT PAS, OU PLUS (create-client-access, 23-Q2) ───────────
 // Décision du cabinet du 18/10/2026 : « rattacher après une confirmation qui nomme l'adresse et ce qu'elle ouvre ». Le
 // PREMIER appel — sans confirmation, ou `false`, ou nulle — refuse comme avant et n'en dit pas plus : la même phrase pour

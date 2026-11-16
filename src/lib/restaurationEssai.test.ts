@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ADRESSES_DES_ACCES_RETIRES_PREVUES, TABLES_DES_ADRESSES_DES_ACCES_RETIRES } from './adressesDesAccesRetires'
+import { OUVERTURES_ATTESTEES_PREVUES, TABLES_DES_OUVERTURES_ATTESTEES } from './ouverturesAttestees'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
@@ -413,6 +414,29 @@ function blocDesAdressesRetirees(texte: string): BlocDesArticles {
 
 /** Le plan que le script joue quand la table des adresses existe : la sienne après la trace. */
 const avecLesAdressesRetirees = avecLesArticles
+
+// QUI A OUVERT UN ACCÈS (P1TQ2-Q1, préparée) : un bloc à part, joué juste après celui de l'adresse des accès retirés, met sa
+// table juste après elle (donc après la trace qu'elle nomme), les rangs qui suivent reculant d'un ; son chemin ; aucune vague.
+const MARQUE_DES_OUVERTURES_ATTESTEES = '-- ══ Qui a ouvert un accès (P1TQ2-Q1, préparée) ══'
+
+function blocDesOuverturesAttestees(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_OUVERTURES_ATTESTEES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables: [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2]),
+    chemins,
+    recule: corps.includes('set rang = -(rang + 1) where rang > v_rang;') && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.auteurs_des_ouvertures') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des auteurs des ouvertures existe : la sienne après l'adresse des accès retirés. */
+const avecLesOuverturesAttestees = avecLesArticles
 
 // LES SITUATIONS PUBLIÉES (espace client, étape C4a) : un neuvième bloc à part les met au plan quand leur table existe,
 // juste après la table qu'il nomme (`memberships` : joué après la trace, il la précède), avec leur chemin et leur vague
@@ -1048,9 +1072,9 @@ const avecLesAchatsDuClient = avecLesArticles
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
 const avecLesBlocs = (texte: string): PlanDeLEssai => avecLaHausse(avecLesExercices(avecLInventaire(avecLInventaire(avecLInventaire(avecLesStocks(avecLAffectation(avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesCopiesDesFichiers(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
-  avecLesPrevisionsPubliees(avecLesSituations(avecLesDevis(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
+  avecLesPrevisionsPubliees(avecLesSituations(avecLesDevis(avecLesOuverturesAttestees(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
-  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesPrevisionsPubliees(texte)), blocDesSaisies2035(texte)),
+  blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesOuverturesAttestees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesPrevisionsPubliees(texte)), blocDesSaisies2035(texte)),
   blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesCopiesDesFichiers(texte)), blocDesOriginauxLiberes(texte)), blocDuModeleDuCabinet(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDesHonorairesDeposes(texte)), blocDuDepart(texte)), blocDesNotesDeFrais(texte)), blocDesAchatsDuClient(texte)), blocDesDocumentsEtDemandes(texte)), blocDesSaisies2035E(texte)), blocDeLAffectation(texte)), blocDesStocks(texte)), blocDeLInventaire(texte)), blocDesProvisions(texte)), blocDesDeclarations(texte)), blocDesExercices(texte)), blocDeLaHausse(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
@@ -1126,8 +1150,11 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const adressesRetirees = blocDesAdressesRetirees(texteDeLEssai)
   const avecLesAdressesRetireesDuJour = ADRESSES_DES_ACCES_RETIRES_PREVUES
     ? avecLesAdressesRetirees(avecLaTraceDuJour, adressesRetirees) : avecLaTraceDuJour
+  const ouverturesAttestees = blocDesOuverturesAttestees(texteDeLEssai)
+  const avecLesOuverturesDuJour = OUVERTURES_ATTESTEES_PREVUES
+    ? avecLesOuverturesAttestees(avecLesAdressesRetireesDuJour, ouverturesAttestees) : avecLesAdressesRetireesDuJour
   const situations = blocDesSituations(texteDeLEssai)
-  const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLesAdressesRetireesDuJour, devis) : avecLesAdressesRetireesDuJour
+  const avecLesDevisDuJour = DEVIS_EXPORTES ? avecLesDevis(avecLesOuverturesDuJour, devis) : avecLesOuverturesDuJour
   const avecLesSituationsDuJour = SITUATIONS_PUBLIEES_EXPORTEES ? avecLesSituations(avecLesDevisDuJour, situations) : avecLesDevisDuJour
   const previsionsPubliees = blocDesPrevisionsPubliees(texteDeLEssai)
   const avecLesPrevisionsDuJour = PREVISIONS_PUBLIEES_PREVUES
@@ -1485,6 +1512,17 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(texteDeLEssai.indexOf(MARQUE_DES_ADRESSES_RETIREES)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_DEVIS))
   })
 
+  it('le bloc de qui a ouvert un accès a été lu : sa table, après l’adresse des accès retirés, conditionné, son chemin (P1TQ2-Q1)', () => {
+    expect(ouverturesAttestees).toEqual({
+      ancre: 'adresses_des_acces_retires', tables: [...TABLES_DES_OUVERTURES_ATTESTEES], recule: true, conditionne: true,
+      chemins: { auteurs_des_ouvertures: { acces: 'direct', parent: null, colonne: null } },
+    })
+    expect(ORDRE_RESTAURATION_PREVU[ORDRE_RESTAURATION_PREVU.indexOf(TABLES_DES_OUVERTURES_ATTESTEES[0]) - 1])
+      .toBe(TABLES_DES_ADRESSES_DES_ACCES_RETIRES[0])
+    expect(texteDeLEssai.indexOf(MARQUE_DES_OUVERTURES_ATTESTEES)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_ADRESSES_RETIREES))
+    expect(texteDeLEssai.indexOf(MARQUE_DES_OUVERTURES_ATTESTEES)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_DEVIS))
+  })
+
   it('le bloc de la trace des droits a été lu : sa table, son ancre, son chemin, les rangs qui suivent reculés', () => {
     expect(trace.tables).toEqual([...TABLES_DE_LA_TRACE_DES_DROITS])
     // Les situations publiées (étape C4a), jouées après elle sur la même ancre, s'intercalent : l'ancre se lit sans elles.
@@ -1564,6 +1602,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DE_LA_CAISSE.includes(t) && !TABLES_DE_LA_TRACE_DES_DROITS.includes(t) && !TABLES_DES_SITUATIONS_PUBLIEES.includes(t)
       && !TABLES_DES_PREVISIONS_PUBLIEES.includes(t)
       && !TABLES_DES_ADRESSES_DES_ACCES_RETIRES.includes(t)
+      && !TABLES_DES_OUVERTURES_ATTESTEES.includes(t)
       && !TABLES_DES_SAISIES_2035.includes(t) && !TABLES_DES_PARAMETRES_DES_COTISATIONS.includes(t)
       && !TABLES_DES_FACTURES_IMPORTEES.includes(t) && !TABLES_DE_LA_NUMEROTATION_CONTINUE.includes(t)
       && !TABLES_DE_LA_PIECE_D_UNE_FACTURE_REPRISE.includes(t) && !TABLES_DES_COMPTES_BANCAIRES.includes(t)

@@ -106,6 +106,19 @@ export function auteurDesConnexionsBaissee(source: string): string {
   return muter(source, [[AUTEUR_DES_CONNEXIONS_LEVE, AUTEUR_DES_CONNEXIONS_BAISSE]])
 }
 
+/** La constante de create-client-access qui atteste l'ouverture d'un accès (P1TQ2-Q1), telle qu'elle est servie : baissée. */
+export const OUVERTURES_ATTESTEES_BAISSEES = 'const OUVERTURES_ATTESTEES_EN_BASE = false'
+/** La même, levée : la source du jour où la migration `auteur_des_ouvertures_d_acces` sera en base. */
+export const OUVERTURES_ATTESTEES_LEVEES = 'const OUVERTURES_ATTESTEES_EN_BASE = true'
+
+/**
+ * La source de create-client-access telle qu'elle se servira APRÈS la migration `auteur_des_ouvertures_d_acces` : la constante
+ * levée, en mémoire, rien d'autre de changé. Une occurrence exactement de la constante baissée, sinon `muter` lève.
+ */
+export function ouverturesAttesteesLevees(source: string): string {
+  return muter(source, [[OUVERTURES_ATTESTEES_BAISSEES, OUVERTURES_ATTESTEES_LEVEES]])
+}
+
 /** La constante de send-email qui admet la relance d'une facture (étape C5), baissée : la source d'avant sa migration. */
 export const RELANCES_BAISSEES = 'const RELANCES_EN_BASE = false'
 /** La même, levée, telle qu'elle est servie depuis la migration `relances_des_factures` (en production le 07/11/2026). */
@@ -517,6 +530,34 @@ const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Rec
     connexion.ecrite_par = utilisateur
     connexion.ecrite_le = le
     monde.journal.push({ genre: 'ecriture', table: 'connexions_plateformes', operation: 'update', role })
+    return le
+  },
+  // `attester_ouverture_d_acces(p_dossier_id, p_acces_id)` (migration PRÉPARÉE `auteur_des_ouvertures_d_acces`, P1TQ2-Q1) :
+  // exécutable par authenticated, jamais par l'anonyme ; le cabinet du dossier seul (`admin_du_dossier`, sous la session),
+  // sinon 42501 avant toute lecture ; l'accès encore dans ce dossier, une fois, sinon 22023 ; l'auteur est le compte de la
+  // session, jamais un paramètre. Le monde ne porte pas la trace : l'arrivée se lit à l'accès, l'attestation dans le journal.
+  attester_ouverture_d_acces: (monde, { utilisateur, role }, args) => {
+    if (Object.keys(args).sort().join() !== 'p_acces_id,p_dossier_id') {
+      throw new Error(`Faux PostgREST : attester_ouverture_d_acces(${JSON.stringify(args)}) n'est pas modélisé`)
+    }
+    if (role === 'anonyme') {
+      throw new ErreurPostgrest({ code: '42501', message: 'permission denied for function attester_ouverture_d_acces', status: 403 })
+    }
+    if (!utilisateur || !adminDuDossier(monde, utilisateur, args.p_dossier_id)) {
+      throw new ErreurPostgrest({ code: '42501', message: 'Accès refusé à ce dossier.', status: 403 })
+    }
+    const acces = (monde.base.memberships ?? []).find((m) => m.id === args.p_acces_id && m.dossier_id === args.p_dossier_id)
+    const deja = (monde.base.auteurs_des_ouvertures ?? []).some((a) => a.acces_id === args.p_acces_id)
+    if (!acces || acces.user_id === utilisateur || deja) {
+      throw new ErreurPostgrest({
+        code: '22023', status: 400,
+        message: 'Cette ouverture d\'accès ne s\'atteste pas : aucune arrivée de cet accès dans ce dossier, écrite sans session dans les cinq dernières minutes et pas encore attestée.',
+      })
+    }
+    const le = new Date().toISOString()
+    monde.base.auteurs_des_ouvertures = [...(monde.base.auteurs_des_ouvertures ?? []),
+      { id: identifiantGenere(), dossier_id: args.p_dossier_id, acces_id: args.p_acces_id, trace_id: identifiantGenere(), auteur_id: utilisateur, atteste_le: le }]
+    monde.journal.push({ genre: 'ecriture', table: 'auteurs_des_ouvertures', operation: 'insert', role })
     return le
   },
   // `plan_du_dossier(p_dossier_id)` (migration `plan_comptable_des_dossiers`, ligne 43) : AUX DROITS DE L'APPELANT

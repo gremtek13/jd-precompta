@@ -53235,3 +53235,22 @@ confrontable à l'oracle** : le moteur de l'Urssaf ignore l'affiliation ; ses si
 une seconde exception comptée (`AVANT_L_AFFILIATION_ATTENDUS`), reconnue sur la date seule, le moteur y comptant quelque chose et
 nous rien. Six mutations sur six mordent. Hors de ce lot : le prorata de la première année d'affiliation (RET2-Q3 (B), avec
 l'expert-comptable) et la même règle pour la CARPIMKO et la CARCDSF (RET2Q3-Q1).
+
+### 16/11/2026 — P1TQ2-Q1 : QUI A OUVERT UN ACCÈS CLIENT, ATTESTÉ PAR LE CABINET (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production ; une copie de la réplique à 227, portée à 228.) Sur « (A) Nommer le compte du cabinet »,
+contre la recommandation. **La règle** : `create-client-access` écrit l'accès sous la clé secrète (la trace en note l'arrivée
+sans auteur), puis, sous la session de l'appelant, `attester_ouverture_d_acces(dossier, accès)` : la base n'en croit que le cabinet
+du dossier, et écrit dans `auteurs_des_ouvertures` le compte de la session (`auth.uid()`) pour l'arrivée de CET accès, écrite
+sans session dans les cinq dernières minutes, encore là, pas attestée, dont il n'est pas le titulaire (42501, 22023). La trace
+reste immuable ; les ouvertures d'avant, « sans session ». **Le risque borné** (P1T-E1 : montrer les adresses de l'équipe) : la
+table ne garde qu'un identifiant, lu par le cabinet du dossier ; l'onglet Accès nomme le compte par l'adresse de sa ligne
+d'équipe lue SOUS LA SESSION de qui regarde — la policy de `cabinet_admins` ne la rend qu'au chef, au super-administrateur et au
+membre lui-même (le patron des marques d'une pièce) ; les autres lisent « Le cabinet » ; le client, rien. Un collègue du même
+dossier pourrait attester avant l'Edge Function dans la fenêtre : il ne nommerait que lui. **Preuves** :
+`auteurDesOuvertures.sql` 39/39, EN ATTENTE sans elle ; 12 mutations sur 12 ; course à deux sessions (23505, une ligne) ;
+suppression du dossier en cascade, retrait direct refusé ; retour (signature d'avant), refusé sous une ligne ; avec
+`deux_facteurs_exiges` et B1 dans les deux ordres ; `rls.sql` 1 179 vérifications, 0 en faute, 148/148 ; `restauration.sql`
+IDENTIQUE, une attestation semée ; banc SÛR. Écran, lecture, plan de sauvegarde derrière `OUVERTURES_ATTESTEES_PREVUES`
+baissé ; l'Edge Function derrière `OUVERTURES_ATTESTEES_EN_BASE` baissée, ses scénarios levés en mémoire. Questions :
+P1TQ2Q1-Q1 (nommer aussi l'auteur d'un changement de case).

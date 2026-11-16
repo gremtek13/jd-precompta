@@ -256,6 +256,30 @@ async function refusDesDeuxFacteurs(appelant: AppelantDesDeuxFacteurs): Promise<
 }
 // ── FIN DEUX FACTEURS ────────────────────────────────────────────────────────────────────────────────────────────────
 
+// QUI A OUVERT L'ACCÈS (P1TQ2-Q1, tranchée par le cabinet le 16/11/2026 : « (A) Nommer le compte du cabinet » ; la migration
+// PRÉPARÉE `auteur_des_ouvertures_d_acces`). L'accès s'écrit ici sous la clé secrète, sans session : la trace des droits en
+// note l'arrivée sans auteur. Juste après, SOUS LA SESSION DE L'APPELANT, `attester_ouverture_d_acces(dossier, accès)` : la base
+// n'en croit que le cabinet du dossier, et nomme elle-même le compte de la session (jamais un paramètre). Une attestation
+// refusée ou en panne ne défait pas l'accès, déjà écrit : la réponse le dit (`ouvertureAttestee: false`), et la trace reste
+// « sans session », comme hier. La constante reste baissée tant que la migration n'est pas en base : la fonction SQL
+// n'existerait pas, et chaque ouverture le dirait ; baissée, la fonction écrit et répond comme hier, mot pour mot.
+const OUVERTURES_ATTESTEES_EN_BASE = false
+
+interface AppelantDeLAttestation {
+  rpc: (fonction: "attester_ouverture_d_acces", args: { p_dossier_id: string; p_acces_id: string }) => PromiseLike<{ error: unknown }>
+}
+
+/** L'attestation de l'ouverture, sous la session de l'appelant ; vraie si la base l'a écrite. Ne lève jamais. */
+async function attesterLOuverture(appelant: AppelantDeLAttestation, dossierId: string, accesId: unknown): Promise<boolean> {
+  if (typeof accesId !== "string" || accesId === "") return false
+  try {
+    const { error } = await appelant.rpc("attester_ouverture_d_acces", { p_dossier_id: dossierId, p_acces_id: accesId })
+    return !error
+  } catch {
+    return false
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -455,9 +479,13 @@ Deno.serve(async (req: Request) => {
     return json({ error: createError?.message ?? "Création du compte échouée." }, 500)
   }
 
-  const { error: membershipError } = await supabaseAdmin
+  // L'identifiant de l'accès écrit n'est relu que pour l'attestation (constante levée) : baissée, l'écriture est celle d'hier.
+  const insertion = supabaseAdmin
     .from("memberships")
     .insert({ user_id: clientUserId, dossier_id: dossierId, role: "client", email })
+  const { data: accesEcrit, error: membershipError } = OUVERTURES_ATTESTEES_EN_BASE
+    ? await insertion.select("id").single()
+    : { ...(await insertion), data: null }
   if (membershipError) {
     // La garde de la base, si le dossier a été désigné entre la lecture ci-dessus et l'insertion : ses mots, en 409.
     if (membershipError.code === "23514" && membershipError.message === REFUS_ACCES_DOSSIER_DU_CABINET) {
@@ -471,5 +499,9 @@ Deno.serve(async (req: Request) => {
     return json({ error: membershipError.message }, 500)
   }
 
+  if (OUVERTURES_ATTESTEES_EN_BASE) {
+    const ouvertureAttestee = await attesterLOuverture(supabaseAsCaller, dossierId, (accesEcrit as { id?: unknown } | null)?.id)
+    return json({ ok: true, compte, ouvertureAttestee })
+  }
   return json({ ok: true, compte })
 })
