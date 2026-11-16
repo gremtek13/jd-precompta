@@ -294,7 +294,7 @@ export default function ClientHome() {
 
       <section className="client-hero">
         <span className="client-hero-date">{aujourdhui}</span>
-        <h1>{prenom ? `Bonjour ${prenom} 👋` : 'Bonjour 👋'}</h1>
+        <h1>{prenom ? `Bonjour ${prenom}` : 'Bonjour'}</h1>
         <p className="client-hero-sous">{dossier ? `Ton espace pour ${dossier.nom}` : 'Ton espace'} — dépose, on s'occupe du reste.</p>
       </section>
 
