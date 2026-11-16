@@ -114,25 +114,41 @@ export function couvertureDUnCompte(
  * La banque du client, compte par compte. Les mouvements et les contrôles sont ceux que l'écran a lus, avec leur drapeau
  * d'entièreté : lus en partie, le solde (`soldeAuReleve`) et les mois se taisent comme hier, compte par compte.
  */
-export function banqueParCompte(
-  lecture: ComptesDuClient,
-  mouvements: LectureComplete<MouvementLu>,
-  controles: LectureComplete<ControleLu>,
-): BanqueParCompte {
+/**
+ * Le partage seul : `un` (le drapeau baissé, ou un seul compte), `retenue` (les comptes illisibles, ou une ligne d'un compte
+ * que la lecture n'a pas rendu), ou les comptes dans l'ordre de l'écran. La règle de « Ma banque » ET du solde de l'accueil
+ * (lib/soldeDeLAccueil.ts, qui ne lit que les relevés contrôlés) : écrite une fois.
+ */
+export type PartageDesComptes =
+  | { etat: 'un' }
+  | { etat: 'retenue'; raison: string }
+  | { etat: 'comptes'; comptes: CompteDuClient[] }
+
+export function partageDesComptes(lecture: ComptesDuClient, lignes: readonly AvecCompte[]): PartageDesComptes {
   if (lecture.etat === 'sans_objet') return { etat: 'un' }
   if (lecture.etat === 'illisible') return { etat: 'retenue', raison: `tes comptes bancaires n’ont pas pu être lus en entier (${lecture.motif})` }
   const comptes = ordreDesComptes(lecture.comptes)
   const connus = new Set(comptes.map((c) => c.id))
   // Une ligne sans compte (la base n'en accepte plus dès la migration) ou d'un compte que la lecture n'a pas rendu : la RLS
   // a pu changer entre deux lectures de la même vague. Rien ne se partage alors.
-  const etrangere = [...mouvements.lignes, ...controles.lignes].find((l) => l.compte_bancaire_id == null || !connus.has(l.compte_bancaire_id))
+  const etrangere = lignes.find((l) => l.compte_bancaire_id == null || !connus.has(l.compte_bancaire_id))
   if (etrangere !== undefined) {
     return { etat: 'retenue', raison: 'un mouvement ou un relevé est d’un compte bancaire que la lecture de tes comptes n’a pas rendu' }
   }
   if (comptes.length <= 1) return { etat: 'un' }
+  return { etat: 'comptes', comptes }
+}
+
+export function banqueParCompte(
+  lecture: ComptesDuClient,
+  mouvements: LectureComplete<MouvementLu>,
+  controles: LectureComplete<ControleLu>,
+): BanqueParCompte {
+  const partage = partageDesComptes(lecture, [...mouvements.lignes, ...controles.lignes])
+  if (partage.etat !== 'comptes') return partage
   return {
     etat: 'comptes',
-    comptes: comptes.map((compte) => {
+    comptes: partage.comptes.map((compte) => {
       const lignes = mouvements.lignes.filter((l) => l.compte_bancaire_id === compte.id)
       return {
         compte,

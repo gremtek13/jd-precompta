@@ -16,12 +16,13 @@ import {
   soldeAuReleve, ventesLues, type EncaissementDuClient, type EtatDuMouvement, type FactureDuClient, type FiltreEtat,
   type MouvementDuClient, type PieceDuClient, type SituationDuMouvement, type VentesDuClient,
 } from '../lib/banqueClient'
-import type { ControleReleveBancaire, JustificatifPropose, PrecisionMouvement, ReglementGroupe } from '../lib/types'
+import type { JustificatifPropose, PrecisionMouvement, ReglementGroupe } from '../lib/types'
 import { COMPTES_BANCAIRES_PREVUS } from '../lib/comptesBancaires'
 import {
-  banqueParCompte, COLONNES_DES_COMPTES_DU_CLIENT, correspondAuCompte, filtreDeCompteValide, finDuNumero,
+  banqueParCompte, correspondAuCompte, filtreDeCompteValide, finDuNumero,
   type ComptesDuClient, type CompteDuClient, type CouvertureDUnCompte, type FiltreDeCompte,
 } from '../lib/banqueClientParCompte'
+import { lireLesComptesDuClient, lireLesControlesDuClient, type ControleDuClient } from '../lib/banqueClientLecture'
 import BarreRecherche from '../components/BarreRecherche'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 
@@ -71,8 +72,6 @@ type Lecture = {
   comptes: ComptesDuClient
 }
 
-type ControleDuClient = Pick<ControleReleveBancaire, 'id' | 'solde_final' | 'coherent' | 'periode_fin' | 'created_at' | 'compte_bancaire_id'>
-
 type Etat =
   | { etat: 'chargement' }
   | { etat: 'echec'; motif: string }
@@ -116,20 +115,6 @@ async function lireLesVentesDuClient(dossierId: string): Promise<VentesDuClient>
   }
 }
 
-// Les comptes bancaires du dossier (MCB7), les colonnes que l'écran montre et rien de plus ; ne rejette jamais — une
-// requête qui lève, ou une lecture partielle, rendent `illisible`.
-async function lireLesComptesDuClient(dossierId: string): Promise<ComptesDuClient> {
-  try {
-    const lecture = await lireTout<CompteDuClient>((debut, fin) =>
-      supabase.from('comptes_bancaires').select(COLONNES_DES_COMPTES_DU_CLIENT, { count: 'exact' })
-        .eq('dossier_id', dossierId).order('id').range(debut, fin),
-    )
-    return lecture.complete ? { etat: 'lus', comptes: lecture.lignes } : { etat: 'illisible', motif: lecture.motif ?? 'lecture incomplète' }
-  } catch (erreur) {
-    return { etat: 'illisible', motif: messageErreur(erreur, 'lecture impossible') }
-  }
-}
-
 // Les gestes se retiennent quand les comptes ne se partagent pas (MCB7) : seconde ligne, l'écran ne les offre pas.
 function gestesRetenusParLesComptes(etat: Etat): boolean {
   return etat.etat === 'lu' && banqueParCompte(etat.lecture.comptes, etat.lecture.mouvements, etat.lecture.controles).etat === 'retenue'
@@ -167,13 +152,8 @@ async function lireLaBanque(dossierId: string): Promise<Etat> {
         supabase.from('pieces').select(COLONNES_DE_LA_PIECE, { count: 'exact' })
           .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
       ),
-      lireTout<ControleDuClient>((debut, fin) =>
-        parCompte
-          ? supabase.from('controles_releves_bancaires').select('id, solde_final, coherent, periode_fin, created_at, compte_bancaire_id', { count: 'exact' })
-            .eq('dossier_id', dossierId).order('id').range(debut, fin)
-          : supabase.from('controles_releves_bancaires').select('id, solde_final, coherent, periode_fin, created_at', { count: 'exact' })
-            .eq('dossier_id', dossierId).order('id').range(debut, fin),
-      ),
+      // Les relevés contrôlés et les comptes : la lecture que le solde de l'accueil fait aussi (lib/banqueClientLecture.ts).
+      lireLesControlesDuClient(dossierId, parCompte),
       parCompte ? lireLesComptesDuClient(dossierId) : Promise.resolve<ComptesDuClient>({ etat: 'sans_objet' }),
     ])
     if (droits.motif !== null) return { etat: 'echec', motif: `ton accès à ta banque n’a pas pu être vérifié (${droits.motif})` }

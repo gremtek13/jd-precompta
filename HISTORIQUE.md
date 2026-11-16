@@ -53040,3 +53040,17 @@ d'attention au-dessus des tuiles de la Vue d'ensemble (hors des anomalies, de la
 une ligne sur le tableau de bord pour les dossiers réglés que le compte suit, au plus dix calculés par ouverture. La suite
 entière : 22 525 tests, les onze rouges trois attendus à suivre (l'essai de restauration, le classement des essais, le plan
 filtré), corrigés et rejoués. Questions : CA-Q1 à CA-Q5 et CA-migration.
+
+### 16/11/2026 — LE SOLDE DU COMPTE ET SA COURBE SUR L'ACCUEIL DU CLIENT
+
+Demande du cabinet : sur l'accueil de l'espace client, le montant qu'il y a sur le compte et une petite courbe. La carte « Mon
+compte en banque » (`pages/SoldeAccueil.tsx`) ne paraît que sous la garde de l'entrée « Ma banque » (`maBanqueOuverte`), la case
+« Banque » relue à la base dans la même vague que les relevés : sans elle, pas de carte. Le montant est celui de « Ma banque »
+(`soldeAuReleve`, le dernier relevé contrôlé, cohérent et daté), jamais une somme de mouvements — aucun mouvement n'est lu. La
+courbe (`lib/soldeDeLAccueil.ts`) ne porte que des soldes LUS : un point par fin de période (le dernier contrôle enregistré,
+la retenue de `soldeAuReleve`), sur les douze mois qui finissent au dernier relevé ; sous deux points, une phrase. Lue en
+partie, refusée ou pas revenue : squelette puis une ligne discrète, jamais « 0,00 € ». Plusieurs comptes (drapeau baissé) : la
+règle du partage de « Ma banque », extraite en `partageDesComptes`, chaque compte son solde, jamais une somme. La lecture des
+relevés contrôlés et des comptes, écrite une fois (`lib/banqueClientLecture.ts`), sert « Ma banque » et l'accueil. Le banc :
+trois relevés de plus pour l'atelier (d7) ; à 390 px, les trois débordements de la passe `client-banque` (« Ma simulation »
+dans la barre du bas, l'adresse de réception) existaient avant ce changement, à l'identique.

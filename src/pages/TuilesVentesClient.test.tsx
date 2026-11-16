@@ -117,6 +117,9 @@ vi.mock('../context/AuthContext', () => ({
 }))
 // Le dépôt de l'accueil n'est pas atteint ici.
 vi.mock('../lib/depot', () => ({ deposerFichier: async () => { throw new Error('dépôt non attendu') } }))
+// Le solde du compte (16/11/2026) relit la case « Banque » par `droits_sur_le_dossier` : ses tests sont ailleurs
+// (ClientHome.solde.test.tsx) ; ici, la lecture des droits que comptent les ventes, seule.
+vi.mock('./SoldeAccueil', () => ({ default: () => null }))
 
 // ── Le jeu d'essai ───────────────────────────────────────────────────────────────────────────────────────────────────
 const HOTE = 'flux.plateforme-fictive.fr'

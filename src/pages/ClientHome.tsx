@@ -20,6 +20,7 @@ import { droitsSur } from '../lib/droitsAcces'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import AccueilVentesClient from './AccueilVentesClient'
+import SoldeAccueil from './SoldeAccueil'
 import { maBanqueOuverte } from '../lib/banqueClient'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { maTresorerieOuverte, TRESORERIE_A_90_JOURS_OFFERTE } from '../lib/tresorerieClient'
@@ -55,7 +56,8 @@ interface Depot {
 // les grandes tuiles d'action d'abord (le geste le plus fréquent est de déposer une facture), puis ce
 // que le client a intérêt à savoir sans le demander à son comptable — ce qui est bien arrivé, ce qui
 // est en cours de vérification, ce qu'il reste à envoyer. Volontairement limité aux chiffres qu'un
-// non-comptable comprend : jamais de solde, de TVA ni de résultat ici.
+// non-comptable comprend : ni TVA ni résultat ici. Un solde, un seul : celui du compte en banque, LU au
+// dernier relevé contrôlé, pour un accès « Banque » (SoldeAccueil, demande du cabinet du 16/11/2026).
 export default function ClientHome() {
   const { dossierActifId, droitsParDossier } = useAuth()
   const dossierId = dossierActifId
@@ -420,6 +422,9 @@ export default function ClientHome() {
               onClick={() => navigate('/mes-pieces')}
             />
           </div>
+          {/* Le solde du compte et sa courbe (demande du cabinet du 16/11/2026) : sous la même garde que l'entrée « Ma banque »,
+              sa propre lecture, clée par société ; sans « Banque », pas de carte du tout. */}
+          {banqueOuverte && <SoldeAccueil key={dossierId} dossierId={dossierId} />}
           {/* « À encaisser » et « À déclarer » (étape P4b) et l'encart « Facture électronique » (étape A6b2), d'après UNE lecture
               des ventes : seulement si « Mes ventes » est ouvert sur la société affichée. */}
           {ventesOuvertes && <AccueilVentesClient key={dossierId} dossierId={dossierId} />}

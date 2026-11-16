@@ -1320,6 +1320,20 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 .sparkline-actuel { fill: none; stroke: var(--color-primary); stroke-width: 2; stroke-linecap: round; }
 .sparkline-point { fill: var(--color-primary); stroke: var(--color-surface); stroke-width: 2; }
 
+/* ---------- Le solde du compte sur l'accueil du client (SoldeAccueil) ----------
+   Le montant à gauche, la courbe à droite ; sous 480 px de carte, la courbe passe sous le montant (flex-wrap) plutôt que de
+   le serrer. Le montant ne se coupe jamais : `formatMoney` lie ses chiffres, `nowrap` le reste. */
+.solde-accueil-corps { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.solde-accueil-montant-bloc { min-width: 0; }
+.solde-accueil-montant { font-size: 2rem; font-weight: 800; letter-spacing: -0.035em; line-height: 1.05; font-variant-numeric: proportional-nums; white-space: nowrap; }
+.solde-accueil-date { margin-top: 4px; font-size: 0.85rem; color: var(--color-text-light); }
+.solde-accueil-courbe { margin: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 100%; }
+.solde-accueil-courbe figcaption { font-size: 0.75rem; color: var(--color-text-light); text-align: right; }
+.solde-accueil-note { margin: 0; font-size: 0.85rem; color: var(--color-text-light); }
+.solde-accueil-comptes { display: flex; flex-direction: column; gap: 14px; }
+.solde-accueil-compte + .solde-accueil-compte { padding-top: 14px; border-top: 1px solid var(--color-border); }
+.solde-accueil-compte-nom { font-weight: 700; margin-bottom: 6px; overflow-wrap: anywhere; }
+
 /* ---------- Anneau (ProgressRing) ---------- */
 .ring { position: relative; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .ring svg { display: block; }
