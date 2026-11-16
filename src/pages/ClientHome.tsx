@@ -3,10 +3,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois, dateRelative } from '../lib/format'
+import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois } from '../lib/format'
 import { lireAnneesCloturees } from '../lib/clotureExercice'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
-import { IconBanque, IconCaisse, IconCamera, IconDocuments, IconEcheancier, IconEstimation, IconTresorerie, IconInformations, IconPieces } from '../components/icons'
+import { IconBanque, IconCaisse, IconCamera, IconDocuments, IconEcheancier, IconEstimation, IconTresorerie, IconInformations } from '../components/icons'
 import EcheancierAccueil from './EcheancierAccueil'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -29,6 +29,8 @@ import PiecesJointesEcarteesAccueil from './PiecesJointesEcarteesAccueil'
 import AvisChangementDeRib from '../components/AvisChangementDeRib'
 import { destinataireDuClient } from '../lib/changementDeRib'
 import { useDernierChangementDeRib } from '../lib/changementDeRibLecture'
+import { fichierDeLaPiece, fichierDuDocument } from '../lib/ouvertureDeMesPieces'
+import DerniersEnvoisAccueil, { type EnvoiDeLAccueil } from './DerniersEnvoisAccueil'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -45,12 +47,8 @@ const LABEL_CATEGORIE: Record<DocumentDivers['categorie'], string> = {
 // Un dépôt fusionne pieces (factures/reçus) et documents_divers (relevés, cotisations, attestations) —
 // même logique que "Mes pièces" (ClientUpload) : le client dépose un fichier, peu importe où il finit
 // rangé en base.
-interface Depot {
-  id: string
-  nomFichier: string
-  createdAt: string
-  label: string
-}
+// Le fichier qu'il désigne est celui que « Mes derniers envois » ouvre (16/11/2026, DerniersEnvoisAccueil).
+type Depot = EnvoiDeLAccueil
 
 // Page d'accueil du client — un point d'entrée doublé d'un petit tableau de bord : la salutation et
 // les grandes tuiles d'action d'abord (le geste le plus fréquent est de déposer une facture), puis ce
@@ -214,9 +212,11 @@ export default function ClientHome() {
       nomFichier: p.nom_fichier,
       createdAt: p.created_at,
       label: p.statut === 'validee' ? 'Facture traitée' : 'Facture en cours de vérification',
+      fichier: fichierDeLaPiece(p),
     })),
     ...documents.map((d): Depot => ({
       id: `doc-${d.id}`, nomFichier: d.nom_fichier, createdAt: d.created_at, label: LABEL_CATEGORIE[d.categorie],
+      fichier: fichierDuDocument(d),
     })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 
@@ -476,18 +476,7 @@ export default function ClientHome() {
                 Rien d'envoyé pour l'instant — commence par une photo d'une facture.
               </p>
             ) : (
-              <div className="feed">
-                {depots.slice(0, NB_DERNIERS_DEPOTS).map((d) => (
-                  <Link key={d.id} to="/mes-pieces" className="feed-item">
-                    <span className="feed-icone"><IconPieces width={16} height={16} /></span>
-                    <div className="feed-texte">
-                      <strong>{d.label}</strong>
-                      <span className="feed-fichier">{d.nomFichier}</span>
-                    </div>
-                    <span className="feed-date">{dateRelative(d.createdAt)}</span>
-                  </Link>
-                ))}
-              </div>
+              <DerniersEnvoisAccueil envois={depots.slice(0, NB_DERNIERS_DEPOTS)} />
             )}
           </Widget>
           <CarteEtatDuDossier key={dossierId} dossierId={dossierId} />

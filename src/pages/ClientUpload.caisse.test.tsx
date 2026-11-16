@@ -174,7 +174,8 @@ describe('sans la case « Caisse »', () => {
   it('« Mes pièces » est celle d’hier : rien de la caisse ne se lit ni ne s’affiche', async () => {
     faux.avecCaisse = false
     await monter()
-    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Fichier', 'Déposé le', 'Statut', 'Précisions'])
+    // « Gestes » sans la caisse aussi : « Voir » s'y tient depuis le 16/11/2026.
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Fichier', 'Déposé le', 'Statut', 'Gestes'])
     expect(screen.queryByText(/espèces/i)).toBeNull()
     expect(faux.lectures.filter((l) => ['droits_sur_le_dossier', 'caisse_du_client', 'operations_caisse'].includes(l))).toEqual([])
     expect(screen.getAllByRole('button', { name: '+ Préciser' })).toHaveLength(3)

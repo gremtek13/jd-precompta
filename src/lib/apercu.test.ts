@@ -68,6 +68,7 @@ describe('ouvrirApercu', () => {
       const r = await ouvrirApercu('pieces', chemin, 300, 'd1')
       expect(r.ok).toBe(false)
       if (!r.ok) expect(r.message).not.toContain('facture.pdf')
+      if (!r.ok) expect(r.cause).toBe('chemin')
     }
     expect(faux.appels).toEqual([])
     expect(ouvert.urls).toEqual([])
@@ -84,6 +85,7 @@ describe('ouvrirApercu', () => {
     expect(r.ok === false && r.message).toMatch(/bloquée par le navigateur/)
     // Le message nomme la SORTIE, sinon il dit seulement qu'on a perdu.
     expect(r.ok === false && r.message).toMatch(/le fichier, lui, est bien là/)
+    expect(r.ok === false && r.cause).toBe('bloquee')
   })
 
   it('rend la RAISON quand l’URL signée échoue, jamais « indisponible » tout court', async () => {
@@ -93,6 +95,7 @@ describe('ouvrirApercu', () => {
     const r = await ouvrirApercu('packs', 'd1/p/pack.zip', 60, 'd1')
     expect(r.ok).toBe(false)
     expect(r.ok === false && r.message).toMatch(/Object not found/)
+    expect(r.ok === false && r.cause).toBe('lien')
     // Et surtout : on n'ouvre rien.
     expect(ouvert.urls).toEqual([])
   })

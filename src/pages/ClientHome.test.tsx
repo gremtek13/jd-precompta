@@ -272,3 +272,25 @@ describe('ClientHome — les bornes du seau', () => {
       .toBe('IMG_0001.jpg : il pèse 31 Mo, au-delà des 20 Mo qu’une pièce peut peser.')
   })
 })
+
+// « MES DERNIERS ENVOIS » OUVRE LE FICHIER DE CHAQUE LIGNE (16/11/2026) : l'accueil passe à la liste le fichier que chaque
+// envoi désigne ; le geste lui-même (verrou, stockage, échecs) est gardé par DerniersEnvoisAccueil.test.tsx.
+describe('ClientHome — « Mes derniers envois »', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-09-25T09:00:00Z')) })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('chaque envoi est un bouton qui ouvre son fichier, la pièce comme le document', async () => {
+    poser()
+    faux.parTable.pieces = [{
+      id: 'p1', dossier_id: 'dossier-de-test', nom_fichier: 'facture.pdf', storage_path: 'dossier-de-test/facture.pdf',
+      lisible_path: null, statut: 'validee', created_at: '2026-09-10T09:00:00Z',
+    }]
+    faux.parTable.documents_divers = [{
+      id: 'd1', dossier_id: 'dossier-de-test', nom_fichier: 'releve.pdf', storage_path: 'dossier-de-test/releve.pdf',
+      categorie: 'releve_bancaire', created_at: '2026-09-02T09:00:00Z',
+    }]
+    monter()
+    expect(await screen.findByRole('button', { name: 'Voir le fichier facture.pdf (Facture traitée)' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Voir le fichier releve.pdf (Relevé bancaire)' })).toBeTruthy()
+  })
+})
