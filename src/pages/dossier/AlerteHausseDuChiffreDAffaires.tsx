@@ -2,19 +2,20 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { aujourdHuiAParis } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import {
-  HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE, LIBELLE_MARQUER_VUE, MARQUE_NON_ENREGISTREE, SOURCE_DU_CHIFFRE, ceQueDitLaVue,
+  HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE, LIBELLE_MARQUER_VUE, MARQUE_NON_ENREGISTREE, NOM_DE_L_ALERTE, SOURCE_DU_CHIFFRE, ceQueDitLaVue,
   confirmationDeLaMarque, type LectureDeLaHausse, type Trimestre,
 } from '../../lib/hausseDuChiffreDAffaires'
 import { lireLaHausseDuDossier, marquerLaHausseVue, type DossierDeLaHausse } from '../../lib/hausseDuChiffreDAffairesLecture'
 
-// L'ALERTE DE HAUSSE DU CHIFFRE D'AFFAIRES DANS LA VUE D'ENSEMBLE (la demande du cabinet du 15/11/2026 ; la conception :
-// docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md, § 4). Un point d'ATTENTION, au-dessus des tuiles comme l'avis d'un
-// changement de RIB — et non une ligne de « Travail à effectuer » : ce n'est pas une anomalie du dossier, la tuile « Anomalies »
-// ne la compte pas, la validation d'un exercice ne la lit pas, et la révision ne la range dans aucun cycle. Elle dit le constat,
-// les deux chiffres comparés et le seuil du dossier, et rien de ce qu'il faudrait en faire. Son seul geste : la marquer vue avec
-// le client, pour CE trimestre (une confirmation qui nomme le trimestre, la fonction de la base seule, un verrou relâché après
-// la relecture). Sa lecture est la sienne : sa panne ne tait qu'elle, jamais la Vue d'ensemble, qui ne l'attend pas. Rien avant
-// le retour de la lecture ; une lecture ratée, un trimestre en attente de son relevé ou sans comparaison : une ligne discrète.
+// L'ALERTE DU CHIFFRE D'AFFAIRES DANS LA VUE D'ENSEMBLE, À LA HAUSSE ET À LA BAISSE (la demande du cabinet du 15/11/2026 ; ses
+// réponses du 16/11/2026 ; la conception : docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md, § 4). Un point
+// d'ATTENTION, au-dessus des tuiles comme l'avis d'un changement de RIB — et non une ligne de « Travail à effectuer » : ce n'est
+// pas une anomalie du dossier, la tuile « Anomalies » ne la compte pas, la validation d'un exercice ne la lit pas, et la révision
+// ne la range dans aucun cycle. Elle dit le constat, les chiffres comparés (le trimestre, le cumul, les douze mois) et les seuils
+// du dossier, et rien de ce qu'il faudrait en faire. Son seul geste : la marquer vue avec le client, pour CE trimestre, dans les
+// deux sens (une confirmation qui nomme le trimestre, la fonction de la base seule, un verrou relâché après la relecture). Sa
+// lecture est la sienne : sa panne ne tait qu'elle, jamais la Vue d'ensemble, qui ne l'attend pas. Rien avant le retour de la
+// lecture ; une lecture ratée, un trimestre en attente de son relevé ou sans comparaison : une ligne discrète.
 // Le drapeau `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` baissé, rien ne se rend et rien ne se lit.
 
 type Lue = Awaited<ReturnType<typeof lireLaHausseDuDossier>>
@@ -71,7 +72,7 @@ export default function AlerteHausseDuChiffreDAffaires({ dossier, className }: {
   const classes = (suite: string) => `avis-rib${suite}${className ? ` ${className}` : ''}`
   if (dit.genre === 'discret') {
     return (
-      <section className={classes(' avis-rib-discret')} aria-label="Alerte de hausse du chiffre d’affaires">
+      <section className={classes(' avis-rib-discret')} aria-label={NOM_DE_L_ALERTE}>
         <span className="check-dot check-neutre" aria-hidden="true" />
         <p className="avis-rib-phrase muted" title={lecture.etat === 'illisible' ? lecture.motif : undefined}>{dit.phrase}</p>
       </section>

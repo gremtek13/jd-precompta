@@ -460,9 +460,10 @@ export default function InformationsTab({
         base depuis le 10/11/2026). La carte lit et écrit seule. */}
     <NumerotationDesFacturesCard dossierId={dossierId} />
 
-    {/* L'alerte de hausse du chiffre d'affaires (la demande du cabinet du 15/11/2026) : le seuil du dossier, que le cabinet décide
-        dossier par dossier, et les trimestres vus avec le client ; derrière `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`, baissé : la
-        carte ne rend rien. Elle lit et écrit seule (HausseDuChiffreDAffairesCard.tsx). */}
+    {/* L'alerte du chiffre d'affaires (la demande du cabinet du 15/11/2026 ; ses réponses du 16/11/2026) : les seuils de hausse
+        et de baisse du dossier, que le cabinet décide dossier par dossier et règle chacun à part, et les trimestres vus avec le
+        client ; derrière `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`, baissé : la carte ne rend rien. Elle lit et écrit seule
+        (HausseDuChiffreDAffairesCard.tsx). */}
     <HausseDuChiffreDAffairesCard dossierId={dossierId} />
 
     {/* Les comptes bancaires du dossier (ligne 26.6, MCB6), derrière `COMPTES_BANCAIRES_PREVUS` : baissé, la carte ne rend rien.

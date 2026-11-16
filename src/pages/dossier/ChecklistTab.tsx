@@ -254,9 +254,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
             attend le cabinet tant qu'il n'est ni confirmé ni remplacé, le reste trente jours. Rien d'écrit, aucune fenêtre ; son
             bouton mène à l'onglet Factures. Muet tant que la lecture n'est pas revenue et sur « aucun changement ». */}
         <AvisChangementDeRib espace="cabinet" lecture={changementDuRib} className="span-12" onNavigate={onNavigate} />
-        {/* L'alerte de hausse du chiffre d'affaires (la demande du cabinet du 15/11/2026) : un point d'attention au-dessus des tuiles,
-            hors des anomalies — la tuile « Anomalies » ne la compte pas, la validation ne la lit pas. Sa lecture est la sienne ; son
-            seul geste, la marquer vue avec le client. Derrière `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`, baissé : rien. */}
+        {/* L'alerte du chiffre d'affaires, à la hausse et à la baisse (la demande du cabinet du 15/11/2026 ; ses réponses du
+            16/11/2026) : un point d'attention au-dessus des tuiles, hors des anomalies — la tuile « Anomalies » ne la compte pas, la
+            validation ne la lit pas. Sa lecture est la sienne ; son seul geste, la marquer vue avec le client. Derrière
+            `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`, baissé : rien. */}
         <AlerteHausseDuChiffreDAffaires
           dossier={{ id: dossierId, assujetti_tva: assujettiTva, mode_comptable: modele.mode }} className="span-12"
         />

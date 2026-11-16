@@ -2,12 +2,14 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AlerteHausseDuChiffreDAffaires from './AlerteHausseDuChiffreDAffaires'
 import {
-  ILLISIBLE_DANS_LA_VUE, LIBELLE_MARQUER_VUE, TITRE_DE_L_ALERTE, type HausseDuChiffreDAffaires, type LectureDeLaHausse, type Trimestre,
+  ILLISIBLE_DANS_LA_VUE, LIBELLE_MARQUER_VUE, NOM_DE_L_ALERTE, TITRE_DE_L_ALERTE, TITRE_DE_L_ALERTE_DE_BAISSE, type HausseDuChiffreDAffaires,
+  type LectureDeLaHausse, type Trimestre,
 } from '../../lib/hausseDuChiffreDAffaires'
 
-// L'ALERTE DE HAUSSE DANS LA VUE D'ENSEMBLE, À L'ÉCRAN. Ce que le module ne voit pas : le silence avant la lecture, le drapeau dans
-// ses deux états, une ligne discrète sur une lecture ratée (sans geste), la confirmation AVANT l'écriture, une seule marque pour
-// deux clics du même rendu, la relecture qui tait l'alerte, un refus dit. La lecture et l'écriture sont doublées. Données FICTIVES.
+// L'ALERTE DU CHIFFRE D'AFFAIRES DANS LA VUE D'ENSEMBLE, À L'ÉCRAN. Ce que le module ne voit pas : le silence avant la lecture, le
+// drapeau dans ses deux états, une ligne discrète sur une lecture ratée (sans geste), la confirmation AVANT l'écriture, une seule
+// marque pour deux clics du même rendu, la relecture qui tait l'alerte, un refus dit ; une baisse sous son titre. La lecture et
+// l'écriture sont doublées. Données FICTIVES.
 const faux = vi.hoisted(() => ({
   prevue: true,
   lectures: [] as LectureDeLaHausse[],
@@ -36,17 +38,24 @@ vi.mock('../../lib/hausseDuChiffreDAffairesLecture', () => ({
 }))
 
 const T3: Trimestre = { annee: 2026, trimestre: 3 }
-const comparee = (centimes: number, precedentCentimes: number, dixiemes: number, atteint: boolean, debut: string) => ({
+const comparee = (centimes: number, precedentCentimes: number, dixiemes: number, franchit: 'hausse' | 'baisse' | null, debut: string) => ({
   etat: 'comparee' as const,
   comparaison: {
     debut, fin: '2026-09-30', debutPrecedent: debut.replace('2026', '2025'), finPrecedent: '2025-09-30', centimes, precedentCentimes,
-    variationDixiemes: dixiemes, atteintLeSeuil: atteint,
+    variationDixiemes: dixiemes, franchit,
   },
 })
 const hausse: HausseDuChiffreDAffaires = {
-  etat: 'jugee', trimestre: T3, seuil: 20, hausse: true, vue: null,
-  duTrimestre: comparee(3_750_000, 3_000_000, 250, true, '2026-07-01'),
-  duCumul: comparee(9_750_000, 9_000_000, 83, false, '2026-01-01'),
+  etat: 'jugee', trimestre: T3, seuils: { hausse: 20, baisse: null }, hausse: true, baisse: false, vue: null,
+  duTrimestre: comparee(3_750_000, 3_000_000, 250, 'hausse', '2026-07-01'),
+  duCumul: comparee(9_750_000, 9_000_000, 83, null, '2026-01-01'),
+  surDouzeMois: { etat: 'non_comparable', raison: 'releve_manquant', mois: ['2024-10', '2024-11', '2024-12'] },
+}
+const baisse: HausseDuChiffreDAffaires = {
+  etat: 'jugee', trimestre: T3, seuils: { hausse: null, baisse: 20 }, hausse: false, baisse: true, vue: null,
+  duTrimestre: comparee(2_250_000, 3_000_000, -250, 'baisse', '2026-07-01'),
+  duCumul: comparee(8_250_000, 9_000_000, -83, null, '2026-01-01'),
+  surDouzeMois: comparee(11_250_000, 12_000_000, -63, null, '2025-10-01'),
 }
 const vue: HausseDuChiffreDAffaires = { ...hausse, vue: { dossier_id: 'd1', annee: 2026, trimestre: 3, vue_par: 'u', vue_le: '2026-11-16T09:00:00Z' } }
 const DOSSIER = { id: 'd1', assujetti_tva: false, mode_comptable: 'tresorerie' as const }
@@ -75,7 +84,18 @@ describe('l’alerte de la Vue d’ensemble', () => {
     expect(container.textContent).toBe('')
     expect(await screen.findByText(TITRE_DE_L_ALERTE)).toBeTruthy()
     expect(container.textContent).toContain('3e trimestre 2026 (juillet à septembre)')
-    expect(container.textContent).toContain('Le seuil de ce dossier est de 20')
+    expect(container.textContent).toContain('Les douze mois glissants ne se comparent pas')
+    expect(container.textContent).toContain('Le seuil de hausse de ce dossier est de 20')
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([LIBELLE_MARQUER_VUE])
+  })
+
+  it('une baisse se dit sous son titre, avec ses chiffres, son seuil et le même geste', async () => {
+    faux.lectures = [{ etat: 'lue', hausse: baisse }]
+    const { container } = render(<AlerteHausseDuChiffreDAffaires dossier={DOSSIER} />)
+    expect(await screen.findByText(TITRE_DE_L_ALERTE_DE_BAISSE)).toBeTruthy()
+    expect(screen.queryByText(TITRE_DE_L_ALERTE)).toBeNull()
+    expect(container.textContent).toContain('Sur douze mois, d’octobre 2025 à septembre 2026')
+    expect(container.textContent).toContain('Le seuil de baisse de ce dossier est de 20')
     expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([LIBELLE_MARQUER_VUE])
   })
 
@@ -83,6 +103,7 @@ describe('l’alerte de la Vue d’ensemble', () => {
     faux.lectures = [{ etat: 'illisible', motif: 'coupée' }]
     render(<AlerteHausseDuChiffreDAffaires dossier={DOSSIER} />)
     expect(await screen.findByText(ILLISIBLE_DANS_LA_VUE)).toBeTruthy()
+    expect(screen.getByRole('region', { name: NOM_DE_L_ALERTE })).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
   })
 

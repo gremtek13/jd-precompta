@@ -21,7 +21,8 @@ import {
   violationsOrdre,
 } from './sauvegarde'
 
-// L'ALERTE DE HAUSSE DU CHIFFRE D'AFFAIRES AU PLAN DE SAUVEGARDE (la demande du cabinet du 15/11/2026). Sa migration,
+// L'ALERTE DU CHIFFRE D'AFFAIRES AU PLAN DE SAUVEGARDE (la demande du cabinet du 15/11/2026 ; le seuil de baisse, CA-Q2, le
+// 16/11/2026, une colonne de la même table : le plan ne change pas). Sa migration,
 // `hausse_du_chiffre_d_affaires`, est préparée (supabase/preparees/20261115140000_hausse_du_chiffre_d_affaires.sql) et le
 // drapeau baissé : le plan effectif ne dit RIEN des deux tables — une sauvegarde lirait des tables absentes et échouerait ; le
 // plan PRÉVU les porte, et les deux états du drapeau se jouent (`vi.doMock`, plus bas).
@@ -97,19 +98,22 @@ describe('l’alerte dans les deux états du drapeau : la réinsertion', () => {
   const contenu = {
     dossiers: [{ id: 'd1' }],
     seuils_du_chiffre_d_affaires: [
-      { id: 's1', dossier_id: 'd1', seuil_de_hausse: 20, regle_par: 'u1', regle_le: '2026-11-15T08:00:00Z' },
+      { id: 's1', dossier_id: 'd1', seuil_de_hausse: 20, seuil_de_baisse: 15, regle_par: 'u1', regle_le: '2026-11-15T08:00:00Z' },
     ],
     hausses_vues_avec_le_client: [
       { id: 'v1', dossier_id: 'd1', annee: 2026, trimestre: 3, vue_par: 'u1', vue_le: '2026-11-16T08:00:00Z' },
     ],
   }
 
-  it('levé : le seuil et la marque se réinsèrent après leur dossier, sans lien perdu', async () => {
+  it('levé : les seuils et la marque se réinsèrent après leur dossier, sans lien perdu', async () => {
     const s = await sauvegardeSous(true)
     const etapes = s.planReinsertion(contenu).etapes
     const rang = (t: string) => etapes.findIndex((e) => e.table === t)
     for (const t of TABLES) expect(rang(t)).toBeGreaterThan(rang('dossiers'))
     expect(etapes.find((e) => e.table === 'hausses_vues_avec_le_client')?.lignes.map((l) => l.id)).toEqual(['v1'])
+    // Les deux seuils partent sur leur ligne, tels qu'ils ont été lus.
+    expect(etapes.find((e) => e.table === 'seuils_du_chiffre_d_affaires')?.lignes)
+      .toEqual([expect.objectContaining({ seuil_de_hausse: 20, seuil_de_baisse: 15 })])
     expect(s.liensPerdus(contenu)).toEqual([])
   })
 
