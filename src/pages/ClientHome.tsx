@@ -300,6 +300,15 @@ export default function ClientHome() {
         <p className="client-hero-sous">{dossier ? `Ton espace pour ${dossier.nom}` : 'Ton espace'} — dépose, on s'occupe du reste.</p>
       </section>
 
+      {/* Le solde du compte et sa courbe, juste sous la salutation (demandes du cabinet du 16/11/2026) : sous la même garde que
+          l'entrée « Ma banque », sa propre lecture, clée par société ; sans « Banque », pas de carte du tout. Dans sa propre
+          grille : elle n'attend pas le chargement des autres cartes. */}
+      {banqueOuverte && (
+        <div className="bento">
+          <SoldeAccueil key={dossierId} dossierId={dossierId} />
+        </div>
+      )}
+
       {/* Au-dessus des tuiles, sous la salutation : une pièce attendue qui n'est pas arrivée se voit d'abord. Rien de plus
           que cette ligne ; « Mes pièces » dit le reste. Drapeau baissé : la lecture reste nulle, donc ni appel ni ligne. */}
       <PiecesJointesEcarteesAccueil lecture={ecartees} />
@@ -422,9 +431,6 @@ export default function ClientHome() {
               onClick={() => navigate('/mes-pieces')}
             />
           </div>
-          {/* Le solde du compte et sa courbe (demande du cabinet du 16/11/2026) : sous la même garde que l'entrée « Ma banque »,
-              sa propre lecture, clée par société ; sans « Banque », pas de carte du tout. */}
-          {banqueOuverte && <SoldeAccueil key={dossierId} dossierId={dossierId} />}
           {/* « À encaisser » et « À déclarer » (étape P4b) et l'encart « Facture électronique » (étape A6b2), d'après UNE lecture
               des ventes : seulement si « Mes ventes » est ouvert sur la société affichée. */}
           {ventesOuvertes && <AccueilVentesClient key={dossierId} dossierId={dossierId} />}
