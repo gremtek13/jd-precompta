@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import ClientBanque from './ClientBanque'
 import { motsDuCabinet } from '../lib/espaceVentes'
 import type { MouvementDuClient } from '../lib/banqueClient'
@@ -203,6 +203,26 @@ describe('le drapeau levé', () => {
     expect(libelles()).toHaveLength(5)
   })
 
+  // « Mon année » (16/11/2026) : chaque compte a son année, à ses seuls relevés contrôlés ; aucun total des comptes — le
+  // client ne lit pas ce qui marque un virement d'un compte à l'autre, qui compterait deux fois.
+  it('« Mon année » : un compte à la fois, à ses relevés ; jamais le total des comptes', async () => {
+    // L'année offerte d'abord est l'année en cours : le jour se fixe, pour que le cas ne change pas de sens en 2027.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-16T10:00:00Z'))
+    onTestFinished(() => { vi.useRealTimers() })
+    await monter()
+    const annee = screen.getByRole('heading', { name: 'Mon année' }).closest('section') as HTMLElement
+    const mois = (nom: string) => espaces(within(annee).getByText(nom).closest('tr')?.textContent)
+    expect(espaces(annee.textContent)).toContain('Chaque compte a son année : elles ne s’additionnent pas')
+    const choix = within(annee).getByLabelText('Compte analysé') as HTMLSelectElement
+    expect([...choix.options].map((o) => o.textContent)).toEqual(['Compte principal', 'Livret fictif'])
+    expect(mois('août 2026')).toBe('août 20260,00 €39,99 €-39,99 €couvert')
+    expect(mois('septembre 2026')).toBe('septembre 2026———non couvert')
+    await act(async () => { fireEvent.change(choix, { target: { value: 'B' } }) })
+    expect(mois('juillet 2026')).toBe('juillet 2026———non couvert')
+    expect(mois('septembre 2026')).toBe('septembre 2026500,00 €0,00 €500,00 €couvert')
+  })
+
   it('les comptes lus en partie : l’écran le dit, ni solde ni mois, et aucun geste', async () => {
     faux.muetApres = { comptes_bancaires: 1 }
     await monter()
@@ -221,5 +241,8 @@ describe('le drapeau levé', () => {
     await monter()
     expect(texte()).toContain('Ni le solde ni les mois de tes comptes ne s’affichent')
     expect(texte()).not.toMatch(/Solde au relevé/)
+    // « Mon année » se tait de même : aucun chiffre d'un compte ne passe pour celui de la banque.
+    expect(texte()).toContain('Ton année ne s’affiche pas : tes comptes bancaires n’ont pas pu être lus en entier.')
+    expect(screen.queryByRole('table', { name: /Mois par mois/ })).toBeNull()
   })
 })

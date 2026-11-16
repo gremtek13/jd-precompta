@@ -1333,6 +1333,22 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 .solde-accueil-date { margin-top: 4px; font-size: 0.85rem; color: var(--color-text-light); }
 .solde-accueil-courbe { margin: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 100%; }
 .solde-accueil-courbe figcaption { font-size: 0.75rem; color: var(--color-text-light); text-align: right; }
+
+/* « MON ANNÉE » DANS « MA BANQUE » (16/11/2026) : les entrées et les sorties de chaque mois en barres côte à côte. Le graphe
+   suit la largeur de sa carte (viewBox), plafonné pour ne pas grossir sur un grand écran ; un mois non couvert n'a pas de
+   barre — un cadre en pointillé, jamais une barre à zéro. Les nuances viennent de la charte (`--color-primary`). */
+.annee-banque-graphe { display: block; width: 100%; max-width: 640px; height: auto; margin: 4px 0 8px; }
+.annee-banque-entrees { fill: var(--color-primary); }
+.annee-banque-sorties { fill: color-mix(in srgb, var(--color-primary) 35%, var(--color-surface)); }
+.annee-banque-choix { max-width: 220px; }
+.annee-banque-absent { fill: none; stroke: var(--color-border-strong); stroke-dasharray: 3 3; }
+.annee-banque-axe { stroke: var(--color-border-strong); stroke-width: 1; }
+.annee-banque-mois { fill: var(--color-text-light); font-size: 11px; }
+.annee-banque-legende { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.8rem; color: var(--color-text-light); margin: 0 0 8px; }
+.annee-banque-legende span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.annee-banque-legende .entrees::before { background: var(--color-primary); }
+.annee-banque-legende .sorties::before { background: color-mix(in srgb, var(--color-primary) 35%, var(--color-surface)); }
+.annee-banque-legende .absent::before { border: 1px dashed var(--color-border-strong); }
 .solde-accueil-note { margin: 0; font-size: 0.85rem; color: var(--color-text-light); }
 .solde-accueil-comptes { display: flex; flex-direction: column; gap: 14px; }
 .solde-accueil-compte + .solde-accueil-compte { padding-top: 14px; border-top: 1px solid var(--color-border); }

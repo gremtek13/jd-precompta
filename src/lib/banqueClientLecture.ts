@@ -12,8 +12,9 @@ import { supabase } from './supabase'
 // bancaires — écrits une fois, pour que la page et l'accueil disent le même solde au même moment (le patron de
 // `lib/echeancierClientLecture.ts`). Rien ne s'écrit.
 
-/** Un contrôle de relevé, tel que le client le lit : le solde final, sa cohérence et sa période ; son compte, le drapeau levé. */
-export type ControleDuClient = ControleDeLAccueil
+/** Un contrôle de relevé, tel que le client le lit : le solde final, sa cohérence et sa période ; son compte, le drapeau levé.
+ *  Le début de la période sert à « Mon année » (lib/analyseDeMaBanque.ts) : les jours qu'un relevé contrôlé couvre. */
+export type ControleDuClient = ControleDeLAccueil & { periode_debut: string | null }
 
 /**
  * Les contrôles des relevés du dossier, EN ENTIER (tri total par la clé primaire), leur drapeau rendu tel quel à l'appelant,
@@ -24,9 +25,9 @@ export async function lireLesControlesDuClient(dossierId: string, parCompte: boo
   const controles = await lireTout<ControleDuClient>((debut, fin) =>
     // Deux chaînes littérales, deux requêtes : supabase-js lit le type de chacune.
     parCompte
-      ? supabase.from('controles_releves_bancaires').select('id, solde_final, coherent, periode_fin, created_at, compte_bancaire_id', { count: 'exact' })
+      ? supabase.from('controles_releves_bancaires').select('id, solde_final, coherent, periode_debut, periode_fin, created_at, compte_bancaire_id', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin)
-      : supabase.from('controles_releves_bancaires').select('id, solde_final, coherent, periode_fin, created_at', { count: 'exact' })
+      : supabase.from('controles_releves_bancaires').select('id, solde_final, coherent, periode_debut, periode_fin, created_at', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
   )
   // Lue en partie, la lecture garde son motif : `soldeAuReleve` se tait, et l'écran le dit.
