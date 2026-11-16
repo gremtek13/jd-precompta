@@ -72,3 +72,12 @@ de 2025, sa concordance et les préalables de la validation.
 Onglet « Informations » du dossier, carte « Zone dangereuse », « Supprimer ce dossier définitivement », puis taper le nom
 `Dossier fictif de démonstration` (sans ponctuation, pour un iPhone). La base emporte tout en cascade ; aucune catégorie
 commune n'est touchée. Restaurer de nouveau le fichier redonne le dossier tel qu'au premier jour.
+
+## Constaté à la restauration en production (16/11/2026)
+
+Le fichier ne porte pas les natures d'immobilisation communes (`dossier_id` nul), qu'une vraie sauvegarde embarque
+(accès `partage`). La relecture les lit donc « en trop » : l'écran dit « Restauration terminée mais INCOMPLÈTE : 8
+écart(s) », alors que le dossier est entier (compté en base : 35 pièces, 211 mouvements, 491 écritures). Ce n'est pas
+un défaut de la relecture : c'est ce fichier qui diffère d'une sauvegarde. La copie de la réplique n'avait aucune
+nature commune, d'où l'essai sans écart. À faire si le fichier est refait : y joindre les natures communes lues en
+production, que la restauration laisse telles quelles.
