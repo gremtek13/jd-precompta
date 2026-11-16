@@ -715,3 +715,85 @@ describe('les gestes, par les trois fonctions et sous un verrou', () => {
     expect(faux.rpcs).toHaveLength(1)
   })
 })
+
+// « MON ANNÉE » (demande du cabinet du 16/11/2026, lib/analyseDeMaBanque.ts) : les entrées et les sorties mois par mois, la
+// comparaison à l'année d'avant. Un mois que nul relevé contrôlé cohérent ne couvre se dit « non couvert », jamais 0 ; une
+// lecture partielle tait toute la section. Rien de plus n'est lu que la vague de l'écran.
+describe('« Mon année »', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-16T10:00:00Z'))
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  const section = () => screen.getByRole('heading', { name: 'Mon année' }).closest('section') as HTMLElement
+  // Les espaces insécables de `formatMoney` (U+00A0, U+202F), que `\s` attrape, ramenés à l'espace.
+  const enTexte = (e: Element | null) => (e?.textContent ?? '').replace(/\s/g, ' ')
+  const moisDuTableau = (nom: string) => enTexte(within(section()).getByText(nom).closest('tr'))
+
+  it('août couvert se compte ; un mois sans relevé contrôlé cohérent ne porte aucun chiffre ; la comparaison se tait et dit pourquoi', async () => {
+    await monter()
+    expect(new Set(faux.lectures)).toEqual(new Set(['lignes_bancaires', 'justificatifs_proposes', 'precisions_mouvements',
+      'reglements_groupes', 'pieces', 'controles_releves_bancaires']))
+    expect((within(section()).getByLabelText('Année') as HTMLSelectElement).value).toBe('2026')
+    expect(moisDuTableau('août 2026')).toBe('août 20261 850,40 €84,20 €1 766,20 €couvert')
+    // Septembre porte des mouvements, mais son seul relevé est incohérent : non couvert, aucun montant.
+    expect(moisDuTableau('septembre 2026')).toBe('septembre 2026———non couvert')
+    expect(moisDuTableau('décembre 2026')).toBe('décembre 2026———à venir')
+    expect(enTexte(within(section()).getByTestId('totaux-de-l-annee')))
+      .toBe('Sur les mois couverts de 2026 : entrées 1 850,40 €, sorties 84,20 €, différence 1 766,20 €.')
+    expect(enTexte(within(section()).getByTestId('comparaison-de-l-annee')))
+      .toBe('Pas de comparaison : le 1er janvier 2026 n’est couvert par aucun relevé contrôlé.')
+    expect(enTexte(section())).toContain('Année incomplète : 1 mois sur 12 couverts en entier.')
+    expect(enTexte(section())).not.toMatch(/0,00/)
+    expect(motsDuCabinet(texte())).toEqual([])
+  })
+
+  it('le cumul à date contre la même période de l’année d’avant, en montants et en pourcentage ; l’année d’avant se choisit', async () => {
+    faux.tables.controles_releves_bancaires = nues([
+      controle({ id: 'k1', periode_debut: '2025-01-01', periode_fin: '2025-12-31', created_at: '2026-01-05T08:00:00Z' }),
+      controle({ id: 'k2', periode_debut: '2026-01-01', periode_fin: '2026-11-10', created_at: '2026-11-12T08:00:00Z' }),
+    ])
+    faux.tables.lignes_bancaires = nues([
+      mouvement({ id: 'a1', date: '2025-02-10', libelle: 'VIR FICTIF A', montant: 1000 }),
+      mouvement({ id: 'a2', date: '2025-06-10', libelle: 'PRLV FICTIF A', montant: -400 }),
+      mouvement({ id: 'a3', date: '2025-12-10', libelle: 'VIR FICTIF DECEMBRE', montant: 999 }),
+      mouvement({ id: 'b1', date: '2026-02-10', libelle: 'VIR FICTIF B', montant: 1200 }),
+      mouvement({ id: 'b2', date: '2026-06-10', libelle: 'PRLV FICTIF B', montant: -300 }),
+    ])
+    await monter()
+    expect(enTexte(within(section()).getByTestId('comparaison-de-l-annee'))).toBe('Comparée à 2025'
+      + 'Du 01/01/2026 au 10/11/2026, contre la même période de 2025 (du 01/01/2025 au 10/11/2025).'
+      + 'Entrées : 1 200,00 €, contre 1 000,00 € en 2025 (+20 %)'
+      + 'Sorties : 300,00 €, contre 400,00 € en 2025 (−25 %)'
+      + 'Différence : 900,00 €, contre 600,00 € en 2025')
+    expect(moisDuTableau('novembre 2026')).toBe('novembre 20260,00 €0,00 €0,00 €jusqu’au 10/11/2026')
+    await act(async () => { fireEvent.change(within(section()).getByLabelText('Année'), { target: { value: '2025' } }) })
+    expect(enTexte(within(section()).getByTestId('totaux-de-l-annee')))
+      .toBe('Sur l’année 2025 : entrées 1 999,00 €, sorties 400,00 €, différence 1 599,00 €.')
+    expect(enTexte(section())).toContain('Toute l’année 2025 est couverte par des relevés contrôlés.')
+    expect(enTexte(within(section()).getByTestId('comparaison-de-l-annee')))
+      .toBe('Pas de comparaison avec 2024 : ton relevé n’y est pas couvert sans interruption du 01/01/2024 au 31/12/2024.')
+    // La période de la liste des mouvements n'a pas bougé : les deux choix sont indépendants.
+    expect((screen.getByLabelText('Période') as HTMLSelectElement).value).toBe('2026')
+  })
+
+  it.each([
+    ['lignes_bancaires', 'Ton année ne s’affiche pas : tes mouvements n’ont pas pu être lus en entier. Recharge la page.'],
+    ['controles_releves_bancaires', 'Ton année ne s’affiche pas : tes relevés contrôlés n’ont pas pu être lus en entier. Recharge la page.'],
+  ])('%s lu en partie : la section le dit, et ne montre aucun chiffre', async (table, phrase) => {
+    faux.muetApres = { [table]: 1 }
+    await monter()
+    expect(enTexte(section())).toBe(`Mon année${phrase}`)
+    expect(within(section()).queryByRole('table')).toBeNull()
+    expect(within(section()).queryByRole('combobox')).toBeNull()
+  })
+
+  it('aucun relevé contrôlé : rien à analyser, aucun chiffre', async () => {
+    faux.tables.controles_releves_bancaires = []
+    await monter()
+    expect(enTexte(section())).toContain('Rien à analyser pour l’instant : ton cabinet n’a encore contrôlé le solde d’aucun relevé daté.')
+    expect(within(section()).queryByRole('table')).toBeNull()
+    expect(enTexte(section())).not.toMatch(/€/)
+  })
+})

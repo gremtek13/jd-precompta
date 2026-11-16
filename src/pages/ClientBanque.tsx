@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
-import { formatDate, formatMoney } from '../lib/format'
+import { aujourdHuiAParis, formatDate, formatMoney } from '../lib/format'
 import { lireTout, type LectureComplete } from '../lib/lectureComplete'
 import { lireLesDroitsVentes } from '../lib/espaceVentes'
 import { correspondALaRecherche } from '../lib/recherche'
@@ -23,6 +23,11 @@ import {
   type ComptesDuClient, type CompteDuClient, type CouvertureDUnCompte, type FiltreDeCompte,
 } from '../lib/banqueClientParCompte'
 import { lireLesComptesDuClient, lireLesControlesDuClient, type ControleDuClient } from '../lib/banqueClientLecture'
+import {
+  A_VENIR, analyseDeMaBanque, ANALYSE_SANS_RELEVE, ANALYSE_SANS_TOTAL_DES_COMPTES, anneeDeMaBanque, INTRODUCTION_DE_L_ANALYSE,
+  libelleDeLaCouverture, motsDeLAnnee, NON_COUVERT, TITRE_DE_L_ANALYSE, variationEnPourcent,
+  type AnneeDeMaBanque, type EtatDuMois, type Totaux,
+} from '../lib/analyseDeMaBanque'
 import BarreRecherche from '../components/BarreRecherche'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 
@@ -60,6 +65,12 @@ import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 // deux comptes, chacun dit son solde LU au dernier relevé contrôlé de CE compte et ses mois sans mouvement, et les mouvements
 // se filtrent par compte (lib/banqueClientParCompte.ts). Les comptes illisibles, ou un mouvement d'un compte que la lecture
 // n'a pas rendu : ni solde ni mois ne se disent, et aucun geste ne s'offre. Baissé, rien de cela n'est lu : l'écran d'hier.
+//
+// « MON ANNÉE » (demande du cabinet du 16/11/2026) : les entrées, les sorties et leur différence, année par année et mois par
+// mois, et la comparaison à la même période de l'année d'avant (lib/analyseDeMaBanque.ts). Rien de plus n'est lu : les
+// mouvements et les relevés contrôlés de cette même vague, le début de la période de chaque relevé compris. Un mois qu'aucun
+// relevé contrôlé ne couvre se dit « non couvert », jamais 0 ; une lecture partielle tait toute la section ; plusieurs
+// comptes : chacun son année, jamais leur total.
 
 type Lecture = {
   mouvements: LectureComplete<MouvementDuClient>
@@ -502,6 +513,8 @@ function Releve(p: ProprietesReleve) {
         </div>
       )}
 
+      <MonAnnee lecture={lecture} />
+
       {lecture.mouvements.complete && (
         <>
           <h3>Tes mouvements</h3>
@@ -635,6 +648,190 @@ function Releve(p: ProprietesReleve) {
           </div>
         </>
       )}
+    </>
+  )
+}
+
+// ── « Mon année » ──────────────────────────────────────────────────────────────────────────────────────────────────────
+function MonAnnee({ lecture }: { lecture: Lecture }) {
+  const [choixAnnee, setChoixAnnee] = useState<number | null>(null)
+  const [choixCompte, setChoixCompte] = useState<string | null>(null)
+  // Le jour de Paris, lu au rendu (jamais au chargement du module) : il borne le mois en cours et le cumul à date.
+  const aujourdHui = aujourdHuiAParis()
+  const analyse = analyseDeMaBanque({ mouvements: lecture.mouvements, controles: lecture.controles, comptes: lecture.comptes, aujourdHui })
+  const titre = <h3 id="mon-annee-titre" style={{ marginTop: 0 }}>{TITRE_DE_L_ANALYSE}</h3>
+  if (analyse.etat === 'muette') {
+    return (
+      <section className="card" aria-labelledby="mon-annee-titre" style={{ marginBottom: 20 }}>
+        {titre}
+        <p className="error-text" style={{ margin: 0 }}>{analyse.raison}</p>
+      </section>
+    )
+  }
+  const comptes = analyse.etat === 'comptes' ? analyse.comptes : null
+  const choisi = comptes === null ? null : comptes.find((c) => c.compte.id === choixCompte) ?? comptes[0]
+  const source = choisi === null ? (analyse.etat === 'un' ? analyse.source : null) : choisi.source
+  if (source === null) return null
+  const annee = source.etat === 'lue' ? (choixAnnee !== null && source.annees.includes(choixAnnee) ? choixAnnee : source.annees[0]) : null
+  const a = source.etat === 'lue' && annee !== null ? anneeDeMaBanque(source, annee, aujourdHui) : null
+  return (
+    <section className="card" aria-labelledby="mon-annee-titre" style={{ marginBottom: 20 }}>
+      {titre}
+      <p className="muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>{INTRODUCTION_DE_L_ANALYSE}</p>
+      {comptes !== null && <p className="muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>{ANALYSE_SANS_TOTAL_DES_COMPTES}</p>}
+      <div className="field-row" style={{ marginBottom: 6 }}>
+        {source.etat === 'lue' && annee !== null && (
+          <div className="field annee-banque-choix">
+            <label htmlFor="banque-annee-analyse">Année</label>
+            <select id="banque-annee-analyse" value={String(annee)} onChange={(e) => setChoixAnnee(Number(e.target.value))}>
+              {source.annees.map((x) => <option key={x} value={String(x)}>{x}</option>)}
+            </select>
+          </div>
+        )}
+        {comptes !== null && choisi !== null && (
+          <div className="field annee-banque-choix">
+            <label htmlFor="banque-annee-compte">Compte analysé</label>
+            <select id="banque-annee-compte" value={choisi.compte.id} onChange={(e) => setChoixCompte(e.target.value)}>
+              {comptes.map((c) => <option key={c.compte.id} value={c.compte.id}>{c.compte.libelle}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+      {a === null ? <p className="muted" style={{ margin: 0 }}>{ANALYSE_SANS_RELEVE}</p> : <DetailDeLAnnee a={a} />}
+    </section>
+  )
+}
+
+const seCompte = (m: EtatDuMois): m is Extract<EtatDuMois, { etat: 'couvert' | 'en_partie' }> => m.etat === 'couvert' || m.etat === 'en_partie'
+const euros = (centimes: number) => formatMoney(centimes / 100)
+const INITIALES_DES_MOIS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
+
+function DetailDeLAnnee({ a }: { a: AnneeDeMaBanque }) {
+  const comptes = a.mois.filter(seCompte)
+  return (
+    <>
+      <p style={{ margin: '0 0 8px' }}>{motsDeLAnnee(a)}</p>
+      {comptes.length === 0 ? (
+        <p className="muted" style={{ margin: '0 0 8px' }}>Aucun mois de {a.annee} n’est couvert : rien ne s’y compte.</p>
+      ) : (
+        <p style={{ margin: '0 0 8px' }} data-testid="totaux-de-l-annee">
+          <strong>{a.complete ? `Sur l’année ${a.annee}` : `Sur les mois couverts de ${a.annee}`}</strong> : entrées{' '}
+          <span style={{ whiteSpace: 'nowrap' }}>{euros(a.totaux.entrees)}</span>, sorties{' '}
+          <span style={{ whiteSpace: 'nowrap' }}>{euros(a.totaux.sorties)}</span>, différence{' '}
+          <strong style={{ whiteSpace: 'nowrap' }}>{euros(a.totaux.difference)}</strong>.
+        </p>
+      )}
+      <ComparaisonDeLAnnee a={a} />
+      <GrapheDeLAnnee a={a} />
+      <div className="table-scroll">
+        <div className="tableau-adaptable">
+          <table className="table-empilable" aria-label={`Mois par mois, ${a.annee}`}>
+            <thead>
+              <tr><th>Mois</th><th>Entrées</th><th>Sorties</th><th>Différence</th><th>Relevé</th></tr>
+            </thead>
+            <tbody>
+              {a.mois.map((m) => (
+                <tr key={m.mois}>
+                  <td data-libelle="Mois">{libelleDuMois(m.mois)}</td>
+                  <td data-libelle="Entrées" style={{ whiteSpace: 'nowrap' }}>{seCompte(m) ? euros(m.entrees) : '—'}</td>
+                  <td data-libelle="Sorties" style={{ whiteSpace: 'nowrap' }}>{seCompte(m) ? euros(m.sorties) : '—'}</td>
+                  <td data-libelle="Différence" style={{ whiteSpace: 'nowrap' }}>{seCompte(m) ? euros(m.difference) : '—'}</td>
+                  <td data-libelle="Relevé">
+                    {m.etat === 'non_couvert'
+                      ? <span className="badge badge-une-ligne badge-warning">{NON_COUVERT}</span>
+                      : <span className={m.etat === 'a_venir' ? 'muted' : undefined}>{libelleDeLaCouverture(m)}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {comptes.length > 0 && (
+              <tfoot>
+                <tr>
+                  <td data-libelle="Mois"><strong>{a.complete ? 'Année' : 'Mois couverts'}</strong></td>
+                  <td data-libelle="Entrées" style={{ whiteSpace: 'nowrap' }}>{euros(a.totaux.entrees)}</td>
+                  <td data-libelle="Sorties" style={{ whiteSpace: 'nowrap' }}>{euros(a.totaux.sorties)}</td>
+                  <td data-libelle="Différence" style={{ whiteSpace: 'nowrap' }}><strong>{euros(a.totaux.difference)}</strong></td>
+                  <td data-libelle="Relevé">{a.complete ? 'couverte' : `${a.moisCouvertsEnEntier} sur 12 en entier`}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function ComparaisonDeLAnnee({ a }: { a: AnneeDeMaBanque }) {
+  const c = a.comparaison
+  const avant = a.annee - 1
+  if (c.etat === 'tue') return <p className="muted" style={{ margin: '0 0 8px' }} data-testid="comparaison-de-l-annee">{c.raison}</p>
+  const ligne = (nom: string, n: number, n1: number, enPourcent: boolean) => {
+    const v = enPourcent ? variationEnPourcent(n, n1) : null
+    return (
+      <li>
+        {nom} : <strong style={{ whiteSpace: 'nowrap' }}>{euros(n)}</strong>, contre <span style={{ whiteSpace: 'nowrap' }}>{euros(n1)}</span> en {avant}
+        {v !== null && <> (<span style={{ whiteSpace: 'nowrap' }}>{v}</span>)</>}
+      </li>
+    )
+  }
+  const parties = (t: Totaux, u: Totaux) => (
+    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+      {ligne('Entrées', t.entrees, u.entrees, true)}
+      {ligne('Sorties', t.sorties, u.sorties, true)}
+      {ligne('Différence', t.difference, u.difference, false)}
+    </ul>
+  )
+  return (
+    <div style={{ margin: '0 0 12px' }} data-testid="comparaison-de-l-annee">
+      <h4 style={{ margin: '4px 0 0' }}>Comparée à {avant}</h4>
+      <p className="muted" style={{ margin: '2px 0 0', fontSize: '0.85rem' }}>
+        Du 01/01/{a.annee} au {formatDate(c.jusquAu)}, contre la même période de {avant} (du 01/01/{avant} au {formatDate(c.jusquAuN1)}).
+        {c.interrompue && ' Elle s’arrête là : la suite de l’année n’est pas couverte sans interruption.'}
+      </p>
+      {parties(c.n, c.n1)}
+    </div>
+  )
+}
+
+// Les barres des entrées et des sorties de chaque mois ; un mois non couvert : un cadre en pointillé, jamais une barre à zéro.
+function GrapheDeLAnnee({ a }: { a: AnneeDeMaBanque }) {
+  const haut = 8
+  const bas = 132
+  const largeurMois = 30
+  const maximum = Math.max(1, ...a.mois.filter(seCompte).flatMap((m) => [m.entrees, m.sorties]))
+  const hauteur = (c: number) => (c / maximum) * (bas - haut)
+  return (
+    <>
+      <svg className="annee-banque-graphe" viewBox={`0 0 ${12 * largeurMois + 12} 152`} role="img" aria-label={`Entrées et sorties de chaque mois de ${a.annee}`}>
+        <line className="annee-banque-axe" x1={4} x2={12 * largeurMois + 8} y1={bas} y2={bas} />
+        {a.mois.map((m, i) => {
+          const x = 6 + i * largeurMois
+          return (
+            <g key={m.mois}>
+              {seCompte(m) ? (
+                <>
+                  <rect className="annee-banque-entrees" x={x + 3} width={11} y={bas - hauteur(m.entrees)} height={hauteur(m.entrees)}>
+                    <title>{`${libelleDuMois(m.mois)}, entrées : ${euros(m.entrees)}`}</title>
+                  </rect>
+                  <rect className="annee-banque-sorties" x={x + 15} width={11} y={bas - hauteur(m.sorties)} height={hauteur(m.sorties)}>
+                    <title>{`${libelleDuMois(m.mois)}, sorties : ${euros(m.sorties)}`}</title>
+                  </rect>
+                </>
+              ) : m.etat === 'non_couvert' ? (
+                <rect className="annee-banque-absent" x={x + 3} width={23} y={haut} height={bas - haut}>
+                  <title>{`${libelleDuMois(m.mois)} : ${NON_COUVERT}`}</title>
+                </rect>
+              ) : null}
+              <text className="annee-banque-mois" x={x + 15} y={bas + 15} textAnchor="middle">{INITIALES_DES_MOIS[i]}</text>
+            </g>
+          )
+        })}
+      </svg>
+      <p className="annee-banque-legende" aria-hidden="true">
+        <span className="entrees">Entrées</span><span className="sorties">Sorties</span><span className="absent">{NON_COUVERT}</span>
+        {a.mois.some((m) => m.etat === 'a_venir') && <span>{A_VENIR} : sans barre</span>}
+      </p>
     </>
   )
 }

@@ -53137,3 +53137,18 @@ deux avis de crédit, la date AAMMJJ, les références 576 et 580) — pages ref
 main ; non établi : la disposition des zones (le cahier NOEMIE PS de 2004 est publié chiffré, copie interdite, non
 déchiffré), la forme des exports des logiciels, l'écart journée comptable → crédit. Huit lots NOE1 à NOE8 ; NOE1 (le
 logiciel du praticien et les en-têtes de son export) d'abord ; NOE-Q1 à Q7 au cabinet, NOE-E1 à E3 à l'expert-comptable.
+
+### 16/11/2026 — « MON ANNÉE » DANS « MA BANQUE » : L'ANNÉE ET LES ANNÉES D'AVANT, MOIS PAR MOIS
+
+Demande du cabinet : une analyse sur l'année et les années précédentes dans « Ma banque ». Une section « Mon année »
+(`ClientBanque.tsx`), calcul dans `lib/analyseDeMaBanque.ts`, pur, en centimes entiers : entrées, sorties et différence de
+chaque mois et de l'année, un graphe en barres (SVG maison), le tableau replié en fiches sur téléphone, et la comparaison au
+cumul à date (du 1er janvier au dernier jour couvert sans interruption) contre la même période de l'année d'avant. Aucune
+lecture neuve : la vague de l'écran, la lecture des relevés contrôlés demandant en plus `periode_debut` (la policy ouvre la
+table entière ; `lib/banqueClientLecture.ts`, que l'accueil partage). Un mois ne se compte que si chaque jour tombe dans la
+période d'un relevé contrôlé COHÉRENT (qui porte alors tous ses mouvements) ; sinon « non couvert », jamais 0 ; un mois couvert
+du 1er à J se compte jusqu'à J et le dit ; un mois pas commencé est « à venir ». La comparaison se tait, en disant pourquoi,
+si le 1er janvier n'est pas couvert ou si l'année d'avant ne l'est pas sur la même période. Lecture partielle (mouvements,
+relevés, comptes) : la section le dit, aucun chiffre. Plusieurs comptes (MCB7) : un compte à la fois, JAMAIS de total — le
+client ne lit pas ce qui marque un virement d'un compte à l'autre. Tests : `analyseDeMaBanque.test.ts`, `ClientBanque.test.tsx`,
+`ClientBanque.comptes.test.tsx`. Banc : `client-banque` à 0 à 390 et 1 440 px.
