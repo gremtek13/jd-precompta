@@ -3419,3 +3419,46 @@ describe('EcrituresTab — la caisse dans le FEC', () => {
     expect(telecharge.fichiers[0].contenu.split('\r\n')).toHaveLength(1)
   })
 })
+
+// LE TRI PAR UN CLIC SUR L'EN-TÊTE (demande du cabinet du 16/11/2026, lib/triDesTableaux.ts) : il ordonne les lignes
+// dessinées, jamais le FEC.
+describe('EcrituresTab — le tri par un clic sur l’en-tête', () => {
+  const comptes = () => [...document.querySelectorAll('tbody td[data-libelle="Compte"] > div')].map((d) => d.firstChild!.textContent)
+  const enTete = (nom: string) => screen.getByRole('button', { name: new RegExp(`^${nom}`) })
+  const poserTrois = () => poser({
+    pieces: [piece()],
+    ecritures_brouillon: [
+      ecriture({ id: 'e1', compte: '606100', montant: 100 }),
+      ecriture({ id: 'e2', compte: '445660', montant: 20 }),
+      ecriture({ id: 'e3', compte: '512000', montant: 120, sens: 'credit' }),
+    ],
+  })
+
+  it('croissant, décroissant, puis l’ordre d’origine, et aria-sort le dit', async () => {
+    poserTrois()
+    monter()
+    await screen.findByText('606100')
+    const origine = comptes()
+    await act(async () => { fireEvent.click(enTete('Compte')) })
+    expect(comptes()).toEqual(['445660', '512000', '606100'])
+    expect(enTete('Compte').closest('th')!.getAttribute('aria-sort')).toBe('ascending')
+    await act(async () => { fireEvent.click(enTete('Compte')) })
+    expect(comptes()).toEqual(['606100', '512000', '445660'])
+    expect(enTete('Compte').closest('th')!.getAttribute('aria-sort')).toBe('descending')
+    await act(async () => { fireEvent.click(enTete('Compte')) })
+    expect(comptes()).toEqual(origine)
+    expect(enTete('Compte').closest('th')!.getAttribute('aria-sort')).toBe('none')
+  })
+
+  it('le FEC exporté est le même, trié ou non', async () => {
+    poserTrois()
+    monter()
+    await screen.findByText('606100')
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    await act(async () => { fireEvent.click(enTete('Montant')) })
+    await act(async () => { fireEvent.click(enTete('Montant')) })
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    expect(telecharge.fichiers).toHaveLength(2)
+    expect(telecharge.fichiers[1].contenu).toBe(telecharge.fichiers[0].contenu)
+  })
+})

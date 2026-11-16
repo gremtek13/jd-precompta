@@ -57,6 +57,9 @@ import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { EnTeteTriable, SelecteurDeTri } from '../../components/EnTeteTriable'
+import { trierLignes, type ColonneTriable } from '../../lib/triDesTableaux'
+import { useTriDuTableau } from '../../lib/useTriDuTableau'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { useAuth } from '../../context/AuthContext'
@@ -154,6 +157,15 @@ function phraseDeLOuverture(etat: EtatDeLOuverture, annee: number, ouverture: re
   }
 }
 
+// Les colonnes triables du brouillon (16/11/2026) : le compte en texte, ses chiffres dans l'ordre des nombres.
+const COLONNES_DES_ECRITURES: ColonneTriable<EcritureBrouillon>[] = [
+  { cle: 'date', libelle: 'Date', type: 'date', valeur: (e) => e.date },
+  { cle: 'compte', libelle: 'Compte', type: 'texte', valeur: (e) => e.compte },
+  { cle: 'libelle', libelle: 'Libellé', type: 'texte', valeur: (e) => e.libelle },
+  { cle: 'montant', libelle: 'Montant', type: 'montant', valeur: (e) => e.montant },
+  { cle: 'sens', libelle: 'Sens', type: 'rang', valeur: (e) => e.sens, ordre: ['debit', 'credit'] },
+]
+
 export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assujettiTva, modele, ventesParLesFactures, onModeleUpdated }: {
   dossierId: string
   dossierNom: string
@@ -197,6 +209,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Une catégorie commune à tous les cabinets ne se règle que par le super-administrateur (lib/categoriesCommunes.ts).
   const { isSuperAdmin } = useAuth()
   const [recherche, setRecherche] = useState('')
+  // Le tri choisi d'un clic sur un en-tête (16/11/2026) : l'affichage seul, remis à l'ordre d'origine au changement de dossier.
+  const { tri, trierPar, choisirTri } = useTriDuTableau(dossierId)
   // Exercice partagé avec Pièces/Banque/Statistiques/Clôture, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
@@ -573,6 +587,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const ecrituresAffichees = ecrituresFiltrees.filter((e) =>
     correspondALaRecherche([e.date, formatDate(e.date), e.compte, e.libelle, e.sens, e.montant], recherche),
   )
+  // LE TRI CHOISI PAR UN CLIC SUR UN EN-TÊTE (16/11/2026) : il n'ordonne que les lignes dessinées. Le FEC, la piste d'audit et les
+  // totaux de TVA restent sur `ecrituresFiltrees`, dans l'ordre du brouillon.
+  const ecrituresTriees = trierLignes(ecrituresAffichees, COLONNES_DES_ECRITURES, tri)
 
   // Sur les biens et services (445660) ET sur les immobilisations (445620) : la TVA de l'acquisition d'un bien
   // se déduit comme l'autre — en ligne 19 de la CA3 plutôt qu'en ligne 20.
@@ -2153,18 +2170,19 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           </div>
         ) : (
           <div className="tableau-adaptable">
+            <SelecteurDeTri colonnes={COLONNES_DES_ECRITURES} etat={tri} onChoisir={choisirTri} etroite />
             <table className="table-empilable-etroite">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Compte</th>
-                  <th>Libellé</th>
-                  <th>Montant</th>
-                  <th>Sens</th>
+                  <EnTeteTriable colonne="date" etat={tri} onTrier={trierPar}>Date</EnTeteTriable>
+                  <EnTeteTriable colonne="compte" etat={tri} onTrier={trierPar}>Compte</EnTeteTriable>
+                  <EnTeteTriable colonne="libelle" etat={tri} onTrier={trierPar}>Libellé</EnTeteTriable>
+                  <EnTeteTriable colonne="montant" etat={tri} onTrier={trierPar}>Montant</EnTeteTriable>
+                  <EnTeteTriable colonne="sens" etat={tri} onTrier={trierPar}>Sens</EnTeteTriable>
                 </tr>
               </thead>
               <tbody>
-                {ecrituresAffichees.map((e) => (
+                {ecrituresTriees.map((e) => (
                   <tr key={e.id}>
                     {/* Une `div` par cellule qui porte plusieurs éléments : repliée, la cellule est une rangée flex, et chaque
                         enfant direct y serait une pièce à part — la date et sa pastille écartées au bout de la rangée. */}

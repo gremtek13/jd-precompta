@@ -10,6 +10,9 @@ import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { EnTeteTriable, SelecteurDeTri } from '../../components/EnTeteTriable'
+import { trierLignes, type ColonneTriable } from '../../lib/triDesTableaux'
+import { useTriDuTableau } from '../../lib/useTriDuTableau'
 import { messageErreur } from '../../lib/messageErreur'
 // Les taux CSG-CRDS vivaient ici, en dur dans ce composant — donc hors de portée des tests, et
 // invisibles pour le moteur de la 2035, qui déduisait la CSG-CRDS ENTIÈRE. Ils sont désormais au
@@ -121,6 +124,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   const creationEnCours = useRef(false)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [recherche, setRecherche] = useState('')
+  // Le tri choisi d'un clic sur un en-tête (16/11/2026) : l'affichage seul, remis à l'ordre d'origine au changement de dossier.
+  const { tri, trierPar, choisirTri } = useTriDuTableau(dossierId)
   const { frontiere, anneesValidees } = useExercicesValides()
   // L'ouverture d'un dossier repris (la plus ancienne date de ses à-nouveaux) : un paiement d'avant est dans les comptes
   // repris, et la base le refuse. `undefined` tant qu'elle n'a pas été lue EN ENTIER : le geste n'est pas offert.
@@ -759,6 +764,18 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
       recherche,
     ),
   )
+  // LE TRI CHOISI PAR UN CLIC SUR UN EN-TÊTE (16/11/2026) : il n'ordonne que les lignes dessinées ; les totaux ci-dessous restent
+  // sur `cotisationsFiltrees`.
+  const colonnesTri: ColonneTriable<CotisationDeclaree>[] = [
+    { cle: 'echeance', libelle: 'Échéance', type: 'date', valeur: (c) => c.echeance },
+    { cle: 'appele', libelle: 'Appelé', type: 'montant', valeur: (c) => c.montant_appele },
+    { cle: 'verse', libelle: 'Versé', type: 'montant', valeur: (c) => verseDe(c) },
+    { cle: 'csgCrds', libelle: 'dont CSG-CRDS', type: 'montant', valeur: (c) => c.montant_csg_crds },
+    { cle: 'csgDeductible', libelle: 'CSG déductible', type: 'montant', valeur: (c) => csgDeductible(c) },
+    { cle: 'paiement', libelle: 'Paiement', type: 'date', valeur: (c) => c.paiement_personnel_le ?? paiementDe.get(c.id)?.date ?? null },
+    { cle: 'pieceJointe', libelle: 'Pièce jointe', type: 'texte', valeur: (c) => documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)?.nom_fichier },
+  ]
+  const cotisationsTriees = trierLignes(cotisationsAffichees, colonnesTri, tri)
 
   const totalAppele = cotisationsFiltrees.reduce((sum, c) => sum + c.montant_appele, 0)
   const totalVerse = cotisationsFiltrees.reduce((sum, c) => sum + (verseDe(c) ?? 0), 0)
@@ -1068,21 +1085,22 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
           </div>
         ) : (
           <div className="tableau-adaptable">
+            <SelecteurDeTri colonnes={colonnesTri} etat={tri} onChoisir={choisirTri} />
             <table className="table-empilable table-empilable-en-carte">
               <thead>
                 <tr>
-                  <th>Échéance</th>
-                  <th>Appelé</th>
-                  <th>Versé</th>
-                  <th>dont CSG-CRDS</th>
-                  <th>CSG déductible</th>
-                  <th>Paiement</th>
-                  <th>Pièce jointe</th>
+                  <EnTeteTriable colonne="echeance" etat={tri} onTrier={trierPar}>Échéance</EnTeteTriable>
+                  <EnTeteTriable colonne="appele" etat={tri} onTrier={trierPar}>Appelé</EnTeteTriable>
+                  <EnTeteTriable colonne="verse" etat={tri} onTrier={trierPar}>Versé</EnTeteTriable>
+                  <EnTeteTriable colonne="csgCrds" etat={tri} onTrier={trierPar}>dont CSG-CRDS</EnTeteTriable>
+                  <EnTeteTriable colonne="csgDeductible" etat={tri} onTrier={trierPar}>CSG déductible</EnTeteTriable>
+                  <EnTeteTriable colonne="paiement" etat={tri} onTrier={trierPar}>Paiement</EnTeteTriable>
+                  <EnTeteTriable colonne="pieceJointe" etat={tri} onTrier={trierPar}>Pièce jointe</EnTeteTriable>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {cotisationsAffichees.map((c) => {
+                {cotisationsTriees.map((c) => {
                   const documentAttache = documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)
                   const documentsDisponibles = documentsNonRattaches
                   const paiement = paiementDe.get(c.id)
