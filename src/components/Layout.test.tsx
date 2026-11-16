@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from './Layout'
 import PanneauDroit from './PanneauDroit'
@@ -135,6 +135,17 @@ function EcranAvecVolet() {
   )
 }
 
+// Le bouton retour du navigateur, joué depuis un écran : un POP, comme le geste de l'opérateur.
+function EcranAvecPrecedent({ texte }: { texte: string }) {
+  const navigate = useNavigate()
+  return (
+    <>
+      <p>{texte}</p>
+      <button type="button" onClick={() => navigate(-1)}>Précédent du navigateur</button>
+    </>
+  )
+}
+
 async function afficher(chemin: string) {
   await act(async () => {
     render(
@@ -143,13 +154,18 @@ async function afficher(chemin: string) {
           <Route element={<Layout />}>
             <Route path="/dossiers" element={<p>Écran du tableau de bord</p>} />
             <Route path="/dossiers/:id/:tab" element={<p>Écran du dossier</p>} />
+            {/* L'onglet par défaut d'un dossier, posé par une redirection comme dans DossierDetail. */}
+            <Route path="/dossiers/:id" element={<Navigate to="checklist" replace />} />
             {/* Sans elle, choisir « Apparence » démonterait toute la coque — et un menu qui ne se
                 refermerait pas disparaîtrait quand même, pour une raison qui n'est pas la bonne. */}
             <Route path="/apparence" element={<p>Écran de l'apparence</p>} />
             <Route path="/essai-volet" element={<EcranAvecVolet />} />
             {/* L'accueil du client et l'un de ses autres écrans : sa navigation se lit sur les deux. */}
             <Route path="/accueil" element={<p>Écran de l’accueil</p>} />
-            <Route path="/mes-pieces" element={<p>Écran des pièces du client</p>} />
+            <Route path="/mes-pieces" element={<EcranAvecPrecedent texte="Écran des pièces du client" />} />
+            <Route path="/mon-echeancier" element={<p>Écran de l’échéancier du client</p>} />
+            {/* L'arrivée sur la racine, redirigée comme dans App.tsx : une redirection n'empile rien. */}
+            <Route path="/" element={<Navigate to={compte.role === 'client' ? '/accueil' : '/dossiers'} replace />} />
           </Route>
         </Routes>
       </MemoryRouter>,
@@ -657,5 +673,103 @@ describe('Coque — la largeur des volets', () => {
     })
     expect(variable('--largeur-panneau')).toBe('700px')
     expect(localStorage.getItem('jd-precompta-largeur-panneau')).toBe('700')
+  })
+})
+
+describe('Coque — le bouton « Retour »', () => {
+  // Rendu à deux places (barre du haut du téléphone, tête du panneau central), une seule visible à chaque largeur : jsdom
+  // ne lit pas la feuille, les deux sont là ou aucune.
+  const boutons = (nom: string | RegExp = /^Retour/) => screen.queryAllByRole('button', { name: nom })
+  const barre = () => document.querySelector('.sidebar') as HTMLElement
+  const central = () => document.querySelector('.main-contenu') as HTMLElement
+  const lienDuClient = (titre: string) => within(barre()).getAllByRole('link').find((l) => l.getAttribute('title') === titre)!
+
+  it('cabinet : absent à l’arrivée, présent après un changement d’onglet, et un clic ramène à l’onglet d’avant', async () => {
+    await afficher('/dossiers/d1/checklist')
+    expect(boutons()).toHaveLength(0)
+
+    const ouvert = screen.getByRole('region', { name: 'Dossier ouvert' })
+    fireEvent.click(within(ouvert).getByRole('link', { name: 'Banque' }))
+    expect(within(ouvert).getByRole('link', { name: 'Banque' }).getAttribute('aria-current')).toBe('page')
+    // Un vrai bouton, à chaque place, qui dit où il ramène.
+    expect(within(barre()).getByRole('button', { name: "Retour à Vue d'ensemble" })).toBeTruthy()
+    const retour = within(central()).getByRole('button', { name: "Retour à Vue d'ensemble" })
+    expect(retour.tagName).toBe('BUTTON')
+    expect(retour.textContent).toBe('Retour')
+
+    fireEvent.click(retour)
+    expect(within(ouvert).getByRole('link', { name: "Vue d'ensemble" }).getAttribute('aria-current')).toBe('page')
+    // La pile vidée, le bouton disparaît : il ne mène jamais hors de ce qu'on a visité.
+    expect(boutons()).toHaveLength(0)
+  })
+
+  it('cabinet : changer de dossier puis revenir rend le dossier d’avant, à son onglet', async () => {
+    await afficher('/dossiers/d1/banque')
+    fireEvent.click(within(screen.getByRole('region', { name: 'Dossiers' })).getByRole('link', { name: 'Bravo Santé' }))
+    expect(within(screen.getByRole('region', { name: 'Dossier ouvert' })).getByText('Bravo Santé')).toBeTruthy()
+    // L'onglet d'un AUTRE dossier ne se nomme pas.
+    fireEvent.click(within(central()).getByRole('button', { name: 'Retour' }))
+    const ouvert = screen.getByRole('region', { name: 'Dossier ouvert' })
+    expect(within(ouvert).getByText('Cabinet Hélène')).toBeTruthy()
+    expect(within(ouvert).getByRole('link', { name: 'Banque' }).getAttribute('aria-current')).toBe('page')
+  })
+
+  it('une redirection à l’arrivée n’empile rien', async () => {
+    await afficher('/')
+    expect(screen.getByText('Écran du tableau de bord')).toBeTruthy()
+    expect(boutons()).toHaveLength(0)
+  })
+
+  it('rouvrir l’écran affiché n’ajoute pas de retour', async () => {
+    await afficher('/dossiers')
+    fireEvent.click(within(barre()).getAllByRole('link').find((l) => l.getAttribute('title') === 'Tableau de bord')!)
+    expect(boutons()).toHaveLength(0)
+  })
+
+  describe('client', () => {
+    beforeEach(() => { compte.role = 'client' })
+
+    it('absent à l’arrivée, présent après une navigation, un clic ramène à l’écran d’avant, puis il disparaît', async () => {
+      await afficher('/accueil')
+      expect(boutons()).toHaveLength(0)
+
+      fireEvent.click(lienDuClient('Mes pièces'))
+      expect(screen.getByText('Écran des pièces du client')).toBeTruthy()
+      expect(within(barre()).getByRole('button', { name: 'Retour à Accueil' })).toBeTruthy()
+
+      fireEvent.click(within(central()).getByRole('button', { name: 'Retour à Accueil' }))
+      expect(screen.getByText('Écran de l’accueil')).toBeTruthy()
+      expect(boutons()).toHaveLength(0)
+    })
+
+    it('le retour du navigateur dépile aussi', async () => {
+      await afficher('/mon-echeancier')
+      fireEvent.click(lienDuClient('Mes pièces'))
+      expect(boutons('Retour à Mon échéancier')).toHaveLength(2)
+      fireEvent.click(screen.getByRole('button', { name: 'Précédent du navigateur' }))
+      expect(screen.getByText('Écran de l’échéancier du client')).toBeTruthy()
+      expect(boutons()).toHaveLength(0)
+    })
+
+    it('deux clics avant que l’adresse change ne reculent que d’un écran', async () => {
+      await afficher('/accueil')
+      fireEvent.click(lienDuClient('Mon échéancier'))
+      fireEvent.click(lienDuClient('Mes pièces'))
+      const retour = within(central()).getByRole('button', { name: 'Retour à Mon échéancier' })
+      act(() => {
+        fireEvent.click(retour)
+        fireEvent.click(retour)
+      })
+      expect(screen.getByText('Écran de l’échéancier du client')).toBeTruthy()
+      expect(boutons('Retour à Accueil')).toHaveLength(2)
+    })
+  })
+
+  it('index.css : une seule place visible à chaque largeur, la barre du haut au téléphone seulement', () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const debutTelephone = css.indexOf('.bouton-retour-panneau { display: none; }')
+    const blocTelephone = css.lastIndexOf('@media (max-width: 720px) {', debutTelephone)
+    expect(blocTelephone).toBeGreaterThan(css.indexOf('.bouton-retour-barre-haut { display: none; }'))
+    expect(css.slice(blocTelephone)).toMatch(/\.bouton-retour-barre-haut \{\s*display: inline-flex;/)
   })
 })

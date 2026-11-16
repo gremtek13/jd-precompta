@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
-import { Link, NavLink, Outlet, useLocation, useMatch } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate, useNavigationType } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../lib/theme'
 import { useCabinetBranding } from '../lib/branding'
@@ -25,7 +25,7 @@ import {
   IconAccueil, IconApparence, IconBanque, IconBilan, IconCaisse, IconChecklist, IconComptesMaster, IconDocuments, IconDossiers, IconEcheancier,
   IconEcritures, IconEquipe, IconEstimation, IconFactures, IconStatistiques, IconTresorerie,
   IconInformations, IconCadenas, IconLogout, IconMoon, IconPanneauLateral, IconPieces, IconPlus, IconPlusOptions,
-  IconRecherche, IconSun, IconVirements,
+  IconPrecedent, IconRecherche, IconSun, IconVirements,
 } from './icons'
 import Avatar from './widgets/Avatar'
 import BarreDossiers from './BarreDossiers'
@@ -37,6 +37,7 @@ import {
   CLE_LARGEUR_BARRE, CLE_LARGEUR_PANNEAU, LARGEUR_BARRE, LARGEUR_BARRE_REDUITE, LARGEUR_PANNEAU, bornesBarre, bornesPanneau,
   largeurBarre, largeurPanneau, lireLargeur, retenirLargeur,
 } from '../lib/largeurVolets'
+import { HISTORIQUE_VIDE, libelleDuRetour, memeEmplacement, noterNavigation, retourPossible } from '../lib/historiqueNavigation'
 
 // Barre latérale déployée ou réduite à ses icônes — préférence d'affichage de ce navigateur, pas un
 // champ en base : même statut que le thème (voir lib/theme.ts).
@@ -130,7 +131,52 @@ function Coque() {
   const maTresorerie = role === 'client' && maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanque)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
-  const { pathname } = useLocation()
+  const emplacement = useLocation()
+  const { pathname } = emplacement
+
+  // LE BOUTON « RETOUR » (demande du cabinet du 16/11/2026, lib/historiqueNavigation.ts) : les emplacements VISITÉS
+  // depuis le montage de la coque, notés pendant le rendu quand la clé de l'entrée change — comme `cheminPrecedent`
+  // plus bas, sans effet qui ferait un second rendu. Une connexion remonte la coque : l'historique repart vide. Le retour
+  // passe par la même porte que la barre latérale et le bouton du navigateur, un changement d'adresse : la garde de
+  // sortie du panneau de droite (`useGardePanneau`) ne le retient pas plus qu'elle ne retient la barre — `HashRouter`
+  // n'a pas de bloqueur de navigation.
+  const typeDeNavigation = useNavigationType()
+  const navigate = useNavigate()
+  const cheminAffiche = emplacement.pathname + emplacement.search
+  const ici = { cle: emplacement.key, chemin: cheminAffiche }
+  const [historique, setHistorique] = useState(() => noterNavigation(HISTORIQUE_VIDE, typeDeNavigation, ici))
+  if (!memeEmplacement(historique.entrees[historique.position], ici)) {
+    setHistorique(noterNavigation(historique, typeDeNavigation, ici))
+  }
+  const retour = retourPossible(historique)
+  const libelleRetour = retour ? libelleDuRetour(cheminAffiche, retour) : null
+  // Un second clic avant que l'adresse ait changé reculerait d'un écran de trop : un seul retour par emplacement.
+  // L'adresse changée (par ce retour, la barre ou le navigateur), le bouton sert de nouveau.
+  const retourDemandeDepuis = useRef<string | null>(null)
+  const signatureIci = `${emplacement.key} ${cheminAffiche}`
+  useEffect(() => { retourDemandeDepuis.current = null }, [signatureIci])
+  function revenir() {
+    if (!retour || retourDemandeDepuis.current === signatureIci) return
+    retourDemandeDepuis.current = signatureIci
+    navigate(-retour.pas)
+  }
+  // Deux places, une seule visible à chaque largeur (index.css) : la barre du haut du téléphone, la tête du panneau
+  // central de l'ordinateur.
+  function boutonRetour(place: 'barre-haut' | 'panneau') {
+    if (!retour || !libelleRetour) return null
+    return (
+      <button
+        type="button"
+        className={`bouton-retour bouton-retour-${place}`}
+        onClick={revenir}
+        aria-label={libelleRetour}
+        title={libelleRetour}
+      >
+        <IconPrecedent width={16} height={16} />
+        <span className="bouton-retour-libelle">Retour</span>
+      </button>
+    )
+  }
   // Les entrées du menu du compte, les MÊMES dans le menu du bas de la barre (ordinateur) et dans le
   // menu « … » (téléphone) : les écrire deux fois, c'est attendre le jour où l'un gagne une entrée que
   // l'autre n'a pas. L'apparence du cabinet est réservée au chef, comme sa page ; l'installation
@@ -261,6 +307,7 @@ function Coque() {
   return (
     <div className={`app-shell${reduite ? ' barre-reduite' : ''}${glisse ? ' redimensionnement' : ''}`} style={styleCoque}>
       <aside className="sidebar" id="barre-laterale">
+        {boutonRetour('barre-haut')}
         <div className="logo">
           {branding?.logoUrl ? (
             <img src={branding.logoUrl} alt={branding.nom} className="brand-logo" />
@@ -525,6 +572,7 @@ function Coque() {
       </aside>
       <main className="main">
         <div className="main-contenu">
+          {boutonRetour('panneau')}
           {/* Sélecteur de société — un client avec plusieurs dossiers (plusieurs sociétés suivies par
               le même cabinet) n'en voyait jusqu'ici que le premier : dossierIds[0] était utilisé partout
               côté client sans jamais proposer de changer. Dans le contenu plutôt que la barre latérale,
