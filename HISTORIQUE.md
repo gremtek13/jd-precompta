@@ -53336,3 +53336,16 @@ Rejoué en production le même soir, par `execute_sql` (le bloc recopié, ses co
 à MV7 et le jeu construit, la désignation du cabinet rendue), 3 mutations sur 3. LC reste EN ATTENTE de `lettres_du_client`.
 Question posée : ESSAIS-Q2 (récrire de même les blocs DC, LM, HF, HD et FL, qui nomment aussi le cabinet de la réplique
 et lisent le rôle `proprietaire`, propre aux répliques).
+
+### 16/11/2026 — LES BLOCS DC, LM, HF, HD ET FL DE RLS.SQL SUR LE CABINET DU DOSSIER TEST
+
+(Agent architecte ; rien en production.) ESSAIS-Q2 (A), tranchée par le cabinet le même jour : les cinq blocs lisent leur
+cabinet du dossier `test`, comme MV et LC. LM, HF, HD et FL : la désignation remplacée dans la sous-transaction annulée,
+NON JOUÉS (LM1 à LM6, HF1 à HF6, HD1 à HD6, FL1 à FL5 et FL7) si elle ne se remplace plus, « rien n'en est resté » vérifiant
+la désignation rendue. DC, dont la désignation est l'objet : M-DC2 la tente ; verrouillée, DC4 (la garde du verrou tire
+avant `garder_dossier_du_cabinet`, que DC4 éprouve : il ne prouverait rien), DC5 (le contrôle positif) et DC6 se disent NON
+JOUÉS. Les mutations du propriétaire lisent le droit du rôle qui POSSÈDE la fonction (`proowner`, par son identifiant) :
+plus de 42704 sans le rôle `proprietaire`. Copie de `replique_227` portée à 230 : 255 lignes, 0 en faute, 148 sur 148,
+identique à l'avant ; la production simulée (cabinet changé d'identifiant, `proprietaire` renommé, les objets à un autre
+rôle ; l'ancien fichier y tombe en 42704) : sans désignation et libre, 255, 0, 148 sur 148 ; verrouillée, 227, 0, 134 sur
+134, la désignation intacte ; trois mutations plantées dans le code neuf mordent.

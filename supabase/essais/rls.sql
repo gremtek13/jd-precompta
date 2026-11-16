@@ -918,6 +918,12 @@
 -- n'en est resté » vérifie aussi la désignation rendue. DC, LM, HF, HD et FL nomment encore ce cabinet, et le rôle
 -- `proprietaire` de la réplique : non rejouables en production. Ce qu'il rend : HISTORIQUE.md, « 16/11/2026 — LES BLOCS
 -- MV ET LC DE RLS.SQL SUR LE CABINET DU DOSSIER TEST ».
+--
+-- 16/11/2026 — DC, LM, HF, HD ET FL DE MÊME (ESSAIS-Q2 (A)) : leur cabinet lu du dossier `test`, la désignation remplacée
+-- dans la sous-transaction annulée et rendue (vérifié) ; si elle ne se remplace plus, LM1 à LM6, HF1 à HF6, HD1 à HD6,
+-- FL1 à FL5 et FL7, et DC4 à DC6 (DC5, le contrôle positif de la désignation) se disent NON JOUÉS ; leurs mutations du
+-- propriétaire lisent le droit du rôle qui POSSÈDE la fonction (`proowner`), jamais le rôle `proprietaire` par son nom.
+-- Ce qu'il rend : HISTORIQUE.md, « 16/11/2026 — LES BLOCS DC, LM, HF, HD ET FL DE RLS.SQL SUR LE CABINET DU DOSSIER TEST ».
 drop table if exists rls_verdict;
 create temp table rls_verdict (controle text, cible text, observe text, ok boolean);
 
@@ -2834,7 +2840,9 @@ declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   inconnu uuid := gen_random_uuid();
-  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  -- Le cabinet du dossier `test`, lu de ce dossier, jamais nommé : la production n'a pas le cabinet de la réplique.
+  cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
+  designe_avant uuid; non_joue boolean := false;
   jetable uuid := '1a100000-0000-4000-8000-0000000000dc';
   autre   uuid := '1a100000-0000-4000-8000-0000000000dd';
   n bigint; etat text; message text; erreur text; construit boolean := false;
@@ -2846,6 +2854,7 @@ begin
       'cabinets.dossier_du_cabinet', 'absente : la désignation se juge dès que la migration y est', true);
     return;
   end if;
+  select c0.dossier_du_cabinet into designe_avant from cabinets c0 where c0.id = cabinet;
   begin
     perform set_config('request.jwt.claims', '', true);
     insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais) values
@@ -2876,17 +2885,26 @@ begin
     reset role;
     verdicts := verdicts || jsonb_build_object('controle', 'DC2. inconnu authentifié ne désigne pas le dossier du cabinet', 'cible', 'designer_dossier_du_cabinet',
       'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce cabinet.');
-    -- M-DC2 : DC2 rejoué sous le chef — il désigne (annulé aussitôt).
+    -- M-DC2 : DC2 rejoué sous le chef — il désigne (annulé aussitôt). Le cabinet désigne peut-être déjà un dossier : si
+    -- cette désignation ne se remplace plus (des lettres, des fiches liées, une facture validée), la mutation, DC4 à DC6
+    -- ne se jouent pas ici et se disent NON JOUÉS, sans rien affirmer.
     begin
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
       perform public.designer_dossier_du_cabinet(cabinet, jetable);
       raise exception 'annuler' using errcode = 'P0001';
-    exception when sqlstate 'P0001' then etat := 'acceptée'; when others then etat := sqlstate;
+    exception
+      when sqlstate 'P0001' then etat := 'acceptée';
+      when check_violation then
+        etat := sqlstate;
+        non_joue := designe_avant is not null and sqlerrm like '%: sa désignation ne change plus.';
+      when others then etat := sqlstate;
     end;
     reset role;
-    mutations := mutations || jsonb_build_object('mutation', 'M-DC2 — DC2 rejoué sous le chef du cabinet', 'attendu', 'la désignation acceptée',
-      'observe', etat, 'mord', etat = 'acceptée');
+    if not non_joue then
+      mutations := mutations || jsonb_build_object('mutation', 'M-DC2 — DC2 rejoué sous le chef du cabinet', 'attendu', 'la désignation acceptée',
+        'observe', etat, 'mord', etat = 'acceptée');
+    end if;
     message := null;
     begin
       set local role authenticated;
@@ -2899,49 +2917,53 @@ begin
     verdicts := verdicts || jsonb_build_object('controle', 'DC3. client ne désigne pas le dossier du cabinet', 'cible', 'designer_dossier_du_cabinet',
       'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501' and message = 'Accès refusé à ce cabinet.');
 
-    -- DC4 : la colonne ne s'écrit pas par la policy du cabinet, même du chef.
-    message := null;
-    begin
-      set local role authenticated;
-      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-      update cabinets set dossier_du_cabinet = jetable where id = cabinet;
-      etat := 'acceptée';
-    exception when others then etat := sqlstate; message := sqlerrm;
-    end;
-    reset role;
-    verdicts := verdicts || jsonb_build_object('controle', 'DC4. la colonne de la désignation ne s''écrit pas par cabinets_update, même du chef', 'cible', 'cabinets.dossier_du_cabinet',
-      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501');
+    -- Une désignation qui ne se remplace plus refuserait DC4 par SA garde (23514), qui tire avant celle que DC4 éprouve
+    -- (`garder_dossier_du_cabinet`, 42501) : DC4 ne prouverait rien, et se dit NON JOUÉ avec DC5 et DC6.
+    if not non_joue then
+      -- DC4 : la colonne ne s'écrit pas par la policy du cabinet, même du chef.
+      message := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        update cabinets set dossier_du_cabinet = jetable where id = cabinet;
+        etat := 'acceptée';
+      exception when others then etat := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'DC4. la colonne de la désignation ne s''écrit pas par cabinets_update, même du chef', 'cible', 'cabinets.dossier_du_cabinet',
+        'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '42501');
 
-    -- DC5 : le chef désigne (contrôle positif) ; DC6 : aucun accès client sur le dossier désigné, même par le chef.
-    set local role authenticated;
-    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    perform public.designer_dossier_du_cabinet(cabinet, jetable);
-    reset role;
-    select count(*) into n from cabinets where id = cabinet and dossier_du_cabinet = jetable;
-    verdicts := verdicts || jsonb_build_object('controle', 'DC5. le chef du cabinet désigne le dossier du cabinet (contrôle positif)', 'cible', 'cabinets.dossier_du_cabinet',
-      'observe', n || ' désignation(s)', 'ok', n = 1);
-    message := null;
-    begin
+      -- DC5 : le chef désigne (contrôle positif) ; DC6 : aucun accès client sur le dossier désigné, même par le chef.
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-      insert into memberships (user_id, dossier_id, role, email) values (client, jetable, 'client', 'rls-dc@example.test');
-      etat := 'acceptée';
-    exception when others then etat := sqlstate; message := sqlerrm;
-    end;
-    reset role;
-    verdicts := verdicts || jsonb_build_object('controle', 'DC6. aucun accès client sur le dossier du cabinet, même posé par le chef', 'cible', 'memberships',
-      'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '23514');
-    -- M-DC6 : DC6 rejoué sur un autre dossier du cabinet — l'accès se pose (annulé aussitôt).
-    begin
-      set local role authenticated;
-      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-      insert into memberships (user_id, dossier_id, role, email) values (client, autre, 'client', 'rls-dc@example.test');
-      raise exception 'annuler' using errcode = 'P0001';
-    exception when sqlstate 'P0001' then etat := 'acceptée'; when others then etat := sqlstate;
-    end;
-    reset role;
-    mutations := mutations || jsonb_build_object('mutation', 'M-DC6 — DC6 rejoué sur un dossier qui n''est pas celui du cabinet', 'attendu', 'l''accès posé',
-      'observe', etat, 'mord', etat = 'acceptée');
+      perform public.designer_dossier_du_cabinet(cabinet, jetable);
+      reset role;
+      select count(*) into n from cabinets where id = cabinet and dossier_du_cabinet = jetable;
+      verdicts := verdicts || jsonb_build_object('controle', 'DC5. le chef du cabinet désigne le dossier du cabinet (contrôle positif)', 'cible', 'cabinets.dossier_du_cabinet',
+        'observe', n || ' désignation(s)', 'ok', n = 1);
+      message := null;
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        insert into memberships (user_id, dossier_id, role, email) values (client, jetable, 'client', 'rls-dc@example.test');
+        etat := 'acceptée';
+      exception when others then etat := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object('controle', 'DC6. aucun accès client sur le dossier du cabinet, même posé par le chef', 'cible', 'memberships',
+        'observe', etat || ' ' || coalesce(message, ''), 'ok', etat = '23514');
+      -- M-DC6 : DC6 rejoué sur un autre dossier du cabinet — l'accès se pose (annulé aussitôt).
+      begin
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+        insert into memberships (user_id, dossier_id, role, email) values (client, autre, 'client', 'rls-dc@example.test');
+        raise exception 'annuler' using errcode = 'P0001';
+      exception when sqlstate 'P0001' then etat := 'acceptée'; when others then etat := sqlstate;
+      end;
+      reset role;
+      mutations := mutations || jsonb_build_object('mutation', 'M-DC6 — DC6 rejoué sur un dossier qui n''est pas celui du cabinet', 'attendu', 'l''accès posé',
+        'observe', etat, 'mord', etat = 'acceptée');
+    end if;
     raise exception 'annuler le jeu' using errcode = 'P0001';
   exception
     when sqlstate 'P0001' then null;
@@ -2949,6 +2971,11 @@ begin
   end;
   reset role;
   perform set_config('request.jwt.claims', '', true);
+
+  if non_joue then
+    verdicts := verdicts || jsonb_build_object('controle', 'DC. NON JOUÉS ICI, DC4, DC5 et DC6 (et M-DC2, M-DC6) : le dossier désigné du cabinet du dossier test ne se remplace plus ; ils se jouent sur une réplique',
+      'cible', 'cabinets.dossier_du_cabinet', 'observe', 'non joué, rien d''affirmé', 'ok', true);
+  end if;
 
   -- DC7 : le catalogue.
   select count(*) into n from pg_proc p
@@ -2964,16 +2991,19 @@ begin
      and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
   verdicts := verdicts || jsonb_build_object('controle', 'DC7. la lecture et les gardes de la désignation : aucun rôle de session ne les exécute (lecture du catalogue)',
     'cible', 'est_dossier_du_cabinet et les quatre gardes', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  -- Le droit du rôle qui POSSÈDE la fonction (`proowner`, lu du catalogue, par son identifiant) : `proprietaire` sur une
+  -- réplique, `postgres` en production ; un rôle absent ne lève pas 42704.
   -- M-DC7 : DC7 rejoué en lisant le droit du propriétaire, qui les exécute.
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.proname = 'est_dossier_du_cabinet'
-     and has_function_privilege('proprietaire', p.oid, 'execute');
+     and has_function_privilege(p.proowner, p.oid, 'execute');
   mutations := mutations || jsonb_build_object('mutation', 'M-DC7 — DC7 rejoué pour le propriétaire', 'attendu', 'la lecture exécutable',
     'observe', n || ' exécutable(s)', 'mord', n = 1);
   verdicts := verdicts || jsonb_build_object('controle', 'DC. le jeu d''essai du dossier du cabinet s''est construit, et rien n''en est resté', 'cible', 'le dossier jetable',
     'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
     'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (jetable, autre))
-      and not exists (select 1 from cabinets where dossier_du_cabinet = jetable));
+      and not exists (select 1 from cabinets where dossier_du_cabinet = jetable)
+      and (select c0.dossier_du_cabinet from cabinets c0 where c0.id = cabinet) is not distinct from designe_avant);
 
   insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
     from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
@@ -2997,7 +3027,9 @@ declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   inconnu uuid := gen_random_uuid();
-  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  -- Le cabinet du dossier `test`, lu de ce dossier, jamais nommé : la production n'a pas le cabinet de la réplique.
+  cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
+  designe_avant uuid; non_joue boolean := false;
   k uuid := '1a100000-0000-4000-8000-0000000000e4';
   c uuid := '1a100000-0000-4000-8000-0000000000e5';
   missions jsonb := '{"tenue_comptable": "Tenir la comptabilité."}';
@@ -3009,6 +3041,7 @@ begin
       'lettres_de_mission', 'absente : les lettres se jugent dès que la migration y est', true);
     return;
   end if;
+  select c0.dossier_du_cabinet into designe_avant from cabinets c0 where c0.id = cabinet;
   begin
     perform set_config('request.jwt.claims', '', true);
     insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, siret, adresse) values
@@ -3016,7 +3049,16 @@ begin
       (c, 'RLS CLIENT LM', cabinet, 'tresorerie', '455000', null, 'RLS ADRESSE');
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    perform public.designer_dossier_du_cabinet(cabinet, k);
+    -- Le cabinet désigne peut-être déjà un dossier : le jetable le remplace le temps de la sous-transaction. S'il ne se
+    -- remplace plus (des lettres, des fiches liées, une facture validée), le jeu s'annule et se dit NON JOUÉ, sans rien
+    -- affirmer.
+    begin
+      perform public.designer_dossier_du_cabinet(cabinet, k);
+    exception when check_violation then
+      if designe_avant is null or sqlerrm not like '%: sa désignation ne change plus.' then raise; end if;
+      non_joue := true;
+      raise exception 'annuler le jeu' using errcode = 'P0001';
+    end;
     reset role;
     construit := true;
 
@@ -3110,6 +3152,11 @@ begin
   reset role;
   perform set_config('request.jwt.claims', '', true);
 
+  if non_joue then
+    verdicts := verdicts || jsonb_build_object('controle', 'LM. NON JOUÉS ICI, LM1 à LM6 : le dossier désigné du cabinet du dossier test ne se remplace plus ; ils se jouent sur une réplique',
+      'cible', 'cabinets.dossier_du_cabinet', 'observe', 'non joué, rien d''affirmé', 'ok', true);
+  end if;
+
   -- LM7 : le catalogue.
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.prosecdef
@@ -3125,10 +3172,12 @@ begin
      and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
   verdicts := verdicts || jsonb_build_object('controle', 'LM7. l''empreinte et les gardes des lettres : aucun rôle de session ne les exécute (lecture du catalogue)',
     'cible', 'empreinte_de_la_lettre et les trois gardes', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  -- Le droit du rôle qui POSSÈDE la fonction (`proowner`, lu du catalogue, par son identifiant) : `proprietaire` sur une
+  -- réplique, `postgres` en production ; un rôle absent ne lève pas 42704.
   -- M-LM7 : la même lecture pour le propriétaire, qui les exécute.
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.proname = 'empreinte_de_la_lettre'
-     and has_function_privilege('proprietaire', p.oid, 'execute');
+     and has_function_privilege(p.proowner, p.oid, 'execute');
   mutations := mutations || jsonb_build_object('mutation', 'M-LM7 — LM7 rejoué pour le propriétaire', 'attendu', 'l''empreinte exécutable',
     'observe', n || ' exécutable(s)', 'mord', n = 1);
   verdicts := verdicts || jsonb_build_object('controle', 'LM7. l''acceptation en ligne : le drapeau de la base rend faux', 'cible', 'acceptation_en_ligne_ouverte',
@@ -3158,9 +3207,10 @@ begin
       'attendu', 'LM7 en faute (1/5)', 'observe', coalesce(obs, 'rien vu'), 'mord', coalesce(obs = '1/5', false));
   end;
   verdicts := verdicts || jsonb_build_object('controle', 'LM. le jeu d''essai des lettres de mission s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
-    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
-    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
-      and not exists (select 1 from cabinets where dossier_du_cabinet = k));
+    'observe', case when non_joue and erreur is null then 'non joué' when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', (non_joue or construit) and erreur is null and not exists (select 1 from dossiers where id in (k, c))
+      and not exists (select 1 from cabinets where dossier_du_cabinet = k)
+      and (select c0.dossier_du_cabinet from cabinets c0 where c0.id = cabinet) is not distinct from designe_avant);
 
   insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
     from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
@@ -3186,7 +3236,9 @@ declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   inconnu uuid := gen_random_uuid();
-  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  -- Le cabinet du dossier `test`, lu de ce dossier, jamais nommé : la production n'a pas le cabinet de la réplique.
+  cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
+  designe_avant uuid; non_joue boolean := false;
   k uuid := '1a100000-0000-4000-8000-0000000000e6';
   c uuid := '1a100000-0000-4000-8000-0000000000e7';
   d uuid := '1a100000-0000-4000-8000-0000000000e8';
@@ -3201,6 +3253,7 @@ begin
       'honoraires_factures', 'absente : les liens se jugent dès que la migration y est', true);
     return;
   end if;
+  select c0.dossier_du_cabinet into designe_avant from cabinets c0 where c0.id = cabinet;
   begin
     perform set_config('request.jwt.claims', '', true);
     insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, siret, adresse) values
@@ -3211,7 +3264,16 @@ begin
     insert into memberships (user_id, dossier_id, role, email) values (client, c, 'client', 'rls-hf@example.test');
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    perform public.designer_dossier_du_cabinet(cabinet, k);
+    -- Le cabinet désigne peut-être déjà un dossier : le jetable le remplace le temps de la sous-transaction. S'il ne se
+    -- remplace plus (des lettres, des fiches liées, une facture validée), le jeu s'annule et se dit NON JOUÉ, sans rien
+    -- affirmer.
+    begin
+      perform public.designer_dossier_du_cabinet(cabinet, k);
+    exception when check_violation then
+      if designe_avant is null or sqlerrm not like '%: sa désignation ne change plus.' then raise; end if;
+      non_joue := true;
+      raise exception 'annuler le jeu' using errcode = 'P0001';
+    end;
     reset role;
     perform set_config('request.jwt.claims', '', true);
     insert into lettres_de_mission (id, dossier_id, dossier_client_id, missions, honoraires, date_effet, premier_exercice,
@@ -3317,6 +3379,11 @@ begin
   reset role;
   perform set_config('request.jwt.claims', '', true);
 
+  if non_joue then
+    verdicts := verdicts || jsonb_build_object('controle', 'HF. NON JOUÉS ICI, HF1 à HF6 : le dossier désigné du cabinet du dossier test ne se remplace plus ; ils se jouent sur une réplique',
+      'cible', 'cabinets.dossier_du_cabinet', 'observe', 'non joué, rien d''affirmé', 'ok', true);
+  end if;
+
   -- HF7 : le catalogue.
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.prosecdef and p.proname = 'facturer_honoraires'
@@ -3329,10 +3396,12 @@ begin
      and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
   verdicts := verdicts || jsonb_build_object('controle', 'HF7. la garde des liens : aucun rôle de session ne l''exécute (lecture du catalogue)',
     'cible', 'garder_honoraires_factures', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  -- Le droit du rôle qui POSSÈDE la fonction (`proowner`, lu du catalogue, par son identifiant) : `proprietaire` sur une
+  -- réplique, `postgres` en production ; un rôle absent ne lève pas 42704.
   -- M-HF7 : la même lecture pour le propriétaire, qui l'exécute.
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.proname = 'garder_honoraires_factures'
-     and has_function_privilege('proprietaire', p.oid, 'execute');
+     and has_function_privilege(p.proowner, p.oid, 'execute');
   mutations := mutations || jsonb_build_object('mutation', 'M-HF7 — HF7 rejoué pour le propriétaire', 'attendu', 'la garde exécutable',
     'observe', n || ' exécutable(s)', 'mord', n = 1);
   -- HF7 : les policies hors la restrictive `deux_facteurs` de la double authentification exigée (C7), qu'elles portent
@@ -3360,9 +3429,10 @@ begin
       'attendu', 'HF7 en faute (1/3)', 'observe', coalesce(obs, 'rien vu'), 'mord', coalesce(obs = '1/3', false));
   end;
   verdicts := verdicts || jsonb_build_object('controle', 'HF. le jeu d''essai des factures d''honoraires s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
-    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
-    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
-      and not exists (select 1 from cabinets where dossier_du_cabinet = k));
+    'observe', case when non_joue and erreur is null then 'non joué' when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', (non_joue or construit) and erreur is null and not exists (select 1 from dossiers where id in (k, c))
+      and not exists (select 1 from cabinets where dossier_du_cabinet = k)
+      and (select c0.dossier_du_cabinet from cabinets c0 where c0.id = cabinet) is not distinct from designe_avant);
 
   insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
     from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
@@ -3390,7 +3460,9 @@ declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   inconnu uuid := gen_random_uuid();
-  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  -- Le cabinet du dossier `test`, lu de ce dossier, jamais nommé : la production n'a pas le cabinet de la réplique.
+  cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
+  designe_avant uuid; non_joue boolean := false;
   k uuid := '1a100000-0000-4000-8000-0000000000f6';
   c uuid := '1a100000-0000-4000-8000-0000000000f7';
   d uuid := '1a100000-0000-4000-8000-0000000000f8';
@@ -3408,6 +3480,7 @@ begin
       'honoraires_deposes', 'absente : les dépôts se jugent dès que la migration y est', true);
     return;
   end if;
+  select c0.dossier_du_cabinet into designe_avant from cabinets c0 where c0.id = cabinet;
   begin
     perform set_config('request.jwt.claims', '', true);
     insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, siret, adresse, statut_tva) values
@@ -3419,7 +3492,16 @@ begin
     insert into storage.objects (bucket_id, name, metadata) values ('pieces', chemin, '{"size": 10, "mimetype": "application/pdf"}');
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    perform public.designer_dossier_du_cabinet(cabinet, k);
+    -- Le cabinet désigne peut-être déjà un dossier : le jetable le remplace le temps de la sous-transaction. S'il ne se
+    -- remplace plus (des lettres, des fiches liées, une facture validée), le jeu s'annule et se dit NON JOUÉ, sans rien
+    -- affirmer.
+    begin
+      perform public.designer_dossier_du_cabinet(cabinet, k);
+    exception when check_violation then
+      if designe_avant is null or sqlerrm not like '%: sa désignation ne change plus.' then raise; end if;
+      non_joue := true;
+      raise exception 'annuler le jeu' using errcode = 'P0001';
+    end;
     reset role;
     perform set_config('request.jwt.claims', '', true);
     insert into lettres_de_mission (id, dossier_id, dossier_client_id, missions, honoraires, date_effet, premier_exercice,
@@ -3543,6 +3625,11 @@ begin
   reset role;
   perform set_config('request.jwt.claims', '', true);
 
+  if non_joue then
+    verdicts := verdicts || jsonb_build_object('controle', 'HD. NON JOUÉS ICI, HD1 à HD6 : le dossier désigné du cabinet du dossier test ne se remplace plus ; ils se jouent sur une réplique',
+      'cible', 'cabinets.dossier_du_cabinet', 'observe', 'non joué, rien d''affirmé', 'ok', true);
+  end if;
+
   -- HD7 : le catalogue.
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.prosecdef
@@ -3556,10 +3643,12 @@ begin
      and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
   verdicts := verdicts || jsonb_build_object('controle', 'HD7. la garde des dépôts : aucun rôle de session ne l''exécute (lecture du catalogue)',
     'cible', 'garder_honoraires_deposes', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  -- Le droit du rôle qui POSSÈDE la fonction (`proowner`, lu du catalogue, par son identifiant) : `proprietaire` sur une
+  -- réplique, `postgres` en production ; un rôle absent ne lève pas 42704.
   -- M-HD7 : la même lecture pour le propriétaire, qui l'exécute.
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.proname = 'garder_honoraires_deposes'
-     and has_function_privilege('proprietaire', p.oid, 'execute');
+     and has_function_privilege(p.proowner, p.oid, 'execute');
   mutations := mutations || jsonb_build_object('mutation', 'M-HD7 — HD7 rejoué pour le propriétaire', 'attendu', 'la garde exécutable',
     'observe', n || ' exécutable(s)', 'mord', n = 1);
   -- HD7 : les policies hors la restrictive `deux_facteurs` de la double authentification exigée (C7), qu'elles portent
@@ -3587,9 +3676,10 @@ begin
       'attendu', 'HD7 en faute (1/3)', 'observe', coalesce(obs, 'rien vu'), 'mord', coalesce(obs = '1/3', false));
   end;
   verdicts := verdicts || jsonb_build_object('controle', 'HD. le jeu d''essai des dépôts d''honoraires s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
-    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
-    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
+    'observe', case when non_joue and erreur is null then 'non joué' when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', (non_joue or construit) and erreur is null and not exists (select 1 from dossiers where id in (k, c))
       and not exists (select 1 from cabinets where dossier_du_cabinet = k)
+      and (select c0.dossier_du_cabinet from cabinets c0 where c0.id = cabinet) is not distinct from designe_avant
       and not exists (select 1 from storage.objects where bucket_id = 'pieces' and name = chemin));
 
   insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
@@ -3617,7 +3707,9 @@ declare
   client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   inconnu uuid := gen_random_uuid();
-  cabinet uuid := 'cab10000-0000-4000-8000-000000000001';
+  -- Le cabinet du dossier `test`, lu de ce dossier, jamais nommé : la production n'a pas le cabinet de la réplique.
+  cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
+  designe_avant uuid; non_joue boolean := false;
   k uuid := '1a100000-0000-4000-8000-0000000000fa';
   c uuid := '1a100000-0000-4000-8000-0000000000fb';
   fiche uuid;
@@ -3630,6 +3722,7 @@ begin
       'contacts', 'absente : les fiches liées se jugent dès que la migration y est', true);
     return;
   end if;
+  select c0.dossier_du_cabinet into designe_avant from cabinets c0 where c0.id = cabinet;
   begin
     perform set_config('request.jwt.claims', '', true);
     insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, siret, adresse, statut_tva) values
@@ -3638,7 +3731,16 @@ begin
     insert into memberships (user_id, dossier_id, role, email) values (client, c, 'client', 'rls-fl@example.test');
     set local role authenticated;
     perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
-    perform public.designer_dossier_du_cabinet(cabinet, k);
+    -- Le cabinet désigne peut-être déjà un dossier : le jetable le remplace le temps de la sous-transaction. S'il ne se
+    -- remplace plus (des lettres, des fiches liées, une facture validée), le jeu s'annule et se dit NON JOUÉ, sans rien
+    -- affirmer.
+    begin
+      perform public.designer_dossier_du_cabinet(cabinet, k);
+    exception when check_violation then
+      if designe_avant is null or sqlerrm not like '%: sa désignation ne change plus.' then raise; end if;
+      non_joue := true;
+      raise exception 'annuler le jeu' using errcode = 'P0001';
+    end;
     reset role;
     perform set_config('request.jwt.claims', '', true);
     construit := true;
@@ -3776,6 +3878,11 @@ begin
   reset role;
   perform set_config('request.jwt.claims', '', true);
 
+  if non_joue then
+    verdicts := verdicts || jsonb_build_object('controle', 'FL. NON JOUÉS ICI, FL1 à FL5 et FL7 : le dossier désigné du cabinet du dossier test ne se remplace plus ; ils se jouent sur une réplique',
+      'cible', 'cabinets.dossier_du_cabinet', 'observe', 'non joué, rien d''affirmé', 'ok', true);
+  end if;
+
   -- FL6 : le catalogue.
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.prosecdef and p.proname in ('identites_des_fiches_liees', 'delier_fiche_liee')
@@ -3788,10 +3895,12 @@ begin
      and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'));
   verdicts := verdicts || jsonb_build_object('controle', 'FL6. les gardes des fiches liées : aucun rôle de session ne les exécute (lecture du catalogue)',
     'cible', 'garder_fiche_liee', 'observe', n || ' exécutable(s)', 'ok', n = 0);
+  -- Le droit du rôle qui POSSÈDE la fonction (`proowner`, lu du catalogue, par son identifiant) : `proprietaire` sur une
+  -- réplique, `postgres` en production ; un rôle absent ne lève pas 42704.
   -- M-FL6 : la même lecture pour le propriétaire, qui les exécute.
   select count(*) into n from pg_proc p
    where p.pronamespace = 'public'::regnamespace and p.proname in ('garder_fiche_liee', 'garder_designation_des_fiches_liees')
-     and has_function_privilege('proprietaire', p.oid, 'execute');
+     and has_function_privilege(p.proowner, p.oid, 'execute');
   mutations := mutations || jsonb_build_object('mutation', 'M-FL6 — FL6 rejoué pour le propriétaire', 'attendu', 'les deux gardes exécutables',
     'observe', n || ' exécutable(s)', 'mord', n = 2);
   -- FL6 : les policies hors la restrictive `deux_facteurs` de la double authentification exigée (C7), qu'elles portent
@@ -3819,9 +3928,10 @@ begin
       'attendu', 'FL6 en faute (1/4)', 'observe', coalesce(obs, 'rien vu'), 'mord', coalesce(obs = '1/4', false));
   end;
   verdicts := verdicts || jsonb_build_object('controle', 'FL. le jeu d''essai des fiches liées s''est construit, et rien n''en est resté', 'cible', 'les dossiers jetables',
-    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
-    'ok', construit and erreur is null and not exists (select 1 from dossiers where id in (k, c))
-      and not exists (select 1 from cabinets where dossier_du_cabinet = k));
+    'observe', case when non_joue and erreur is null then 'non joué' when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', (non_joue or construit) and erreur is null and not exists (select 1 from dossiers where id in (k, c))
+      and not exists (select 1 from cabinets where dossier_du_cabinet = k)
+      and (select c0.dossier_du_cabinet from cabinets c0 where c0.id = cabinet) is not distinct from designe_avant);
 
   insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
     from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
