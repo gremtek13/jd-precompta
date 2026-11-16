@@ -15,7 +15,8 @@
 --      reçu dépassent ensemble ce que la facture porte, ou qu'elle porte plusieurs taux ; acceptés juste à ce qu'elle porte ;
 --   3. CE QUI PASSE : le registre vide (et le registre refuse ensuite), le déclaré qui couvre le reçu, le lien retiré, une
 --      pièce jamais citée, ce qui fait baisser le reçu (un rejet) même sur un état déjà fautif, un mouvement d'un autre
---      dossier (A8Q5-Q4, ouverte : il ne compte pas dans le reçu) ; et la correction d'un paiement en espèces, qui écrit le
+--      dossier (A8Q5-Q4 : il ne compte pas dans le reçu ; la migration `piece_d_un_paiement_dans_son_dossier` en base, il se
+--      refuse, sous ses mots) ; et la correction d'un paiement en espèces, qui écrit le
 --      nouveau avant de retirer l'ancien, jugée une fois finie ;
 --   4. LA GARDE DES RÈGLEMENTS garde son rang et ses mots : un paiement du jour de la reprise se refuse à l'écriture, par elle ;
 --   5. CE QUI DÉFAISAIT LE REÇU ET NE LE DÉFAIT PLUS (relecture adverse du 15/11/2026) : un rejet dont le rapprochement
@@ -54,6 +55,10 @@ declare
   -- La migration en base : la garde et ses cinq déclencheurs au catalogue.
   appliquee constant boolean := to_regprocedure('public.garder_recu_d_une_piece_citee()') is not null
     and (select count(*) from pg_trigger t where t.tgname like '%recu_d_une_piece_citee' and not t.tgisinternal) = 5;
+  -- A8Q5-Q4 (`piece_d_un_paiement_dans_son_dossier`, préparée le 16/11/2026) : en base, un mouvement d'un autre dossier ne
+  -- cite plus la pièce — ses mots.
+  piece_dans_son_dossier constant boolean := to_regprocedure('public.garder_piece_dans_son_dossier()') is not null;
+  autre_dossier constant text := 'La pièce d''un mouvement du relevé est une pièce de son dossier.';
   -- La facture de l'ancien logiciel : à un taux, ou à deux ; ce qu'elle déclare encaissé avant la reprise.
   un_taux constant text := '[{"numero": "R-Q2Q2-1", "type": "facture", "date_emission": "{DP}", "tiers_nom": "Client Q2Q2",
     "type_client": "non_assujetti", "nature_operation": "services", "option_debits": false, "montant_ht": 100,
@@ -225,10 +230,11 @@ begin
       (21, '12. ce qui fait baisser le reçu passe toujours : la pièce a reçu 50 € par-dessus 100 € encaissés (posés par le propriétaire, la garde coupée), puis un rejet de 10 € se rapproche d''elle',
         mouvement_fautif, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), fautif,
         replace(replace(replace(rapprocher, '{M}', '{M3}'), '{X}', '-10'), '{PIECE}', '{P}'), recu, 'OK', '4000'),
-      (22, '12b. … et sur cet état fautif, un mouvement d''un autre dossier qui la cite passe aussi (A8Q5-Q4 ne s''aggrave pas)',
+      (22, '12b. … et sur cet état fautif, un mouvement d''un autre dossier qui la cite passe aussi (A8Q5-Q4 ne s''aggrave pas) — sa migration en base (piece_d_un_paiement_dans_son_dossier), il se refuse',
         mouvement_fautif, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), fautif,
         $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{M4}', '{DR}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 AUTRE DOSSIER', 21, 'non_rapprochee');
-           update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M4}';$q$, recu, 'OK', '5000'),
+           update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M4}';$q$, recu,
+        case when piece_dans_son_dossier then '23514' else 'OK' end, case when piece_dans_son_dossier then autre_dossier else '5000' end),
       (23, '12c. … et une part d''un virement groupé qui baisse, sur un état fautif (la part de 40 € posée la garde coupée) : passe',
         $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{M2}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 GROUPE', 45, 'non_rapprochee');$q$,
         replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'),
@@ -249,10 +255,11 @@ begin
       (26, '15. une autre pièce, jamais citée : 120 € rapprochés passent',
         null, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), null,
         replace(replace(replace(rapprocher, '{M}', '{M1}'), '{X}', '120'), '{PIECE}', '{Q}'), $q$recu_par_la_piece('{Q}')::text$q$, 'OK', '12000'),
-      (27, '16. un mouvement d''un autre dossier qui cite la pièce (A8Q5-Q4, ouverte) : il ne compte pas dans ce qu''elle a reçu, et la garde ne le juge pas',
+      (27, '16. un mouvement d''un autre dossier qui cite la pièce (A8Q5-Q4) : il ne compte pas dans ce qu''elle a reçu, et la garde ne le juge pas — sa migration en base (piece_d_un_paiement_dans_son_dossier), il se refuse',
         null, replace(replace(garni, '{E}', '0'), '{MONTANT}', '100'), null,
         $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut) values ('{M4}', '{DR}', '{DM}', 'ESSAI A8Q5Q3Q2Q2 AUTRE DOSSIER', 21, 'non_rapprochee');
-           update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M4}';$q$, recu, 'OK', '0'),
+           update lignes_bancaires set statut = 'rapprochee', piece_id = '{P}' where id = '{M4}';$q$, recu,
+        case when piece_dans_son_dossier then '23514' else 'OK' end, case when piece_dans_son_dossier then autre_dossier else '0' end),
       -- CE QUI DÉFAISAIT LE REÇU ET NE LE DÉFAIT PLUS (relecture adverse du 15/11/2026) : la ligne quitte la pièce, et le
       -- déclencheur de l'image d'avant la juge. La suppression d'un rejet se juge de même (son déclencheur tire aussi sur la
       -- suppression) : éprouvée sur une réplique, elle n'entre pas dans ce fichier, qui n'en contient aucune.

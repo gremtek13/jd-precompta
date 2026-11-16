@@ -11507,6 +11507,200 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $to$;
 
+-- ══ HC. Les pièces hors de la caisse du client (ligne 51.5, A8Q5Q3Q2Q2-Q1 ; migration `especes_du_client_hors_des_reprises`,
+-- PRÉPARÉE) ════════
+-- Une lecture neuve, `security definer`, lit aux droits de son propriétaire les liens des pièces citées par une facture
+-- reprise, que le cabinet lit seul : `pieces_hors_de_la_caisse_du_client` rend au cabinet et à l'accès « Caisse » leurs seuls
+-- identifiants. Et une garde neuve refuse au client le paiement en espèces d'une telle pièce, sous des mots neutres. L'une
+-- contourne la RLS, l'autre parle au client : elles se rejouent, chaque refus jugé à sa RAISON.
+--   HC1. Le client qui porte « Caisse » lit les pièces citées de son dossier (le contrôle POSITIF) ; « Ventes » et « Banque »
+--        sans elle, puis aucune case : « Accès refusé à ce dossier. » (42501).
+--   HC2. L'autre dossier, où il n'a aucun accès, sa case posée : refusé ; l'anonyme bute sur le droit d'exécution, un compte
+--        rattaché à rien sur la raison de la fonction.
+--   HC3. Le client « Caisse » qui paie en espèces la pièce citée : le refus neutre (42501), ni montant, ni nom, ni facture.
+--   HC4. Le catalogue : la lecture `security definer`, stable, son chemin fixé, exécutable par les connectés, ni par
+--        l'anonyme ni par PUBLIC ; la garde exécutable par aucun rôle de session.
+-- Deux mutations, qui doivent mordre : M-HC1 (HC1 rejoué sans « Caisse » : refusé), M-HC2 (l'exécution rendue à l'anonyme :
+-- il lit la raison de la fonction, plus le droit d'exécution). Le jeu : un dossier jetable du cabinet du chef, basculé et
+-- exonéré (la caisse du client ne s'ouvre que là), l'accès « Caisse » du client d'essai, sa date de reprise, une facture
+-- reprise et la pièce de vente qu'elle cite ; tout s'annule. Avant la migration, une ligne dit que le bloc attend. Le récit :
+-- HISTORIQUE.md, « 16/11/2026 — A8Q5-Q4, A8Q5Q3Q2-Q3 ET A8Q5Q3Q2Q2-Q1 : TROIS MIGRATIONS PRÉPARÉES APRÈS LA GARDE DES
+-- RÈGLEMENTS ».
+do $hc$
+declare
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  inconnu uuid := gen_random_uuid();
+  autre_dossier uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
+  dossier uuid := 'a8c30000-0000-4000-8000-0000000000d1';
+  acces uuid := 'a8c30000-0000-4000-8000-0000000000a1';
+  piece uuid := 'a8c30000-0000-4000-8000-0000000000b1';
+  cabinet uuid;
+  reprise constant date := date_trunc('month', now() at time zone 'Europe/Paris')::date;
+  refus constant text := 'Accès refusé à ce dossier.';
+  neutre constant text := 'Le paiement en espèces de cette pièce ne se saisit pas depuis ton espace : ton cabinet l''enregistre.';
+  facture uuid; profil text; n bigint; v jsonb; obs text; motif text; message text; accepte boolean;
+  erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.pieces_hors_de_la_caisse_du_client(uuid)') is null
+     or to_regprocedure('public.garder_especes_du_client_hors_des_reprises()') is null then
+    insert into rls_verdict values ('HC. les pièces hors de la caisse du client : EN ATTENTE de la migration especes_du_client_hors_des_reprises',
+      'pieces_hors_de_la_caisse_du_client, garder_especes_du_client_hors_des_reprises', 'absentes : leurs droits se jugent dès que la migration y est', true);
+    return;
+  end if;
+  select ca.cabinet_id into cabinet from cabinet_admins ca where ca.user_id = chef and ca.role = 'comptable_en_chef'
+   order by ca.cabinet_id limit 1;
+  begin
+    -- ── Le jeu, sans session : le dossier jetable, basculé et exonéré, et l'accès « Caisse » du client ; puis, sous la
+    -- session du chef, la date de reprise, une facture reprise (rien d'encaissé avant la reprise) et la pièce qu'elle cite.
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, compte_notes_de_frais, ventes_par_les_factures, statut_tva,
+                          assujetti_tva, article_exoneration, siret, adresse, forme_juridique, denomination_imprimee) values
+      (dossier, 'ESSAI RLS HC', cabinet, 'tresorerie', '455000', true, 'exonere', false, 'cgi_261_4_1', '12345678200010',
+       'ESSAI RLS HC ADRESSE', '5710', 'ESSAI RLS HC SOCIÉTÉ');
+    insert into memberships (id, user_id, dossier_id, role, email, droit_ventes, droit_banque, droit_caisse) values
+      (acces, client, dossier, 'client', 'essai-rls-hc@example.test', false, false, true);
+    insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut, date_piece, montant_ht, montant_tva, montant_ttc) values
+      (piece, dossier, dossier::text || '/essai-rls-hc.pdf', 'essai-rls-hc.pdf', 'vente', 'a_valider', reprise - 10, 120, 0, 120);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    perform declarer_vente_hors_des_factures(dossier, piece);
+    update pieces set statut = 'validee' where id = piece;
+    perform fixer_reprise_des_factures(dossier, reprise);
+    perform importer_factures(dossier, '{"format": "csv"}'::jsonb, jsonb_build_array(jsonb_build_object(
+      'numero', 'HC-1', 'type', 'facture', 'date_emission', reprise - 10, 'tiers_nom', 'Client HC', 'type_client', 'non_assujetti',
+      'nature_operation', 'services', 'option_debits', false, 'montant_ht', 120, 'montant_tva', 0, 'montant_ttc', 120,
+      'lignes', jsonb_build_array(jsonb_build_object('designation', 'Soins', 'quantite', 1, 'prix_unitaire_ht', 120, 'taux_tva', 0)),
+      'encaisse_avant_reprise', 0, 'encaisse_par_taux', jsonb_build_array(jsonb_build_object('taux', 0, 'encaisse', 0)),
+      'transmise_par', 'pdf')));
+    select f.id into facture from factures_emises f where f.dossier_id = dossier and f.numero = 'HC-1';
+    perform citer_piece_de_facture_reprise(dossier, facture, piece);
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    construit := true;
+
+    -- HC1 : `pieces_hors_de_la_caisse_du_client`, sous chaque case.
+    foreach profil in array array['caisse', 'ventes', 'banque', 'aucune'] loop
+      accepte := false; motif := null; message := null; v := null;
+      begin
+        update memberships set droit_caisse = (profil = 'caisse'), droit_ventes = (profil = 'ventes'), droit_banque = (profil = 'banque') where id = acces;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+        v := pieces_hors_de_la_caisse_du_client(dossier);
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object(
+        'controle', 'HC1. le client « Caisse » lit les pièces citées de son dossier (contrôle positif) ; « Ventes » ou « Banque » sans elle, ou aucune case, non',
+        'cible', profil, 'observe', case when accepte then coalesce(v::text, '∅') else motif || ' ' || message end,
+        'ok', case when profil = 'caisse' then accepte and motif = 'P0001' and v = jsonb_build_array(piece)
+                   else not accepte and motif = '42501' and message = refus end);
+    end loop;
+
+    -- M-HC1 : HC1 rejoué sans « Caisse ».
+    obs := null;
+    begin
+      update memberships set droit_caisse = false, droit_banque = true where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform pieces_hors_de_la_caisse_du_client(dossier);
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-HC1 — HC1 rejoué sans la case « Caisse »',
+      'attendu', 'refusé', 'observe', obs, 'mord', obs = '42501 ' || refus);
+
+    -- HC2 : l'autre dossier, sa case posée ; l'anonyme ; un compte rattaché à rien.
+    foreach profil in array array['autre', 'anon', 'inconnu'] loop
+      accepte := false; motif := null; message := null;
+      begin
+        update memberships set droit_caisse = true where id = acces;
+        execute format('set local role %I', case profil when 'anon' then 'anon' else 'authenticated' end);
+        perform set_config('request.jwt.claims', case profil when 'anon' then '{"role":"anon"}'
+          else json_build_object('sub', case profil when 'inconnu' then inconnu else client end, 'role', 'authenticated')::text end, true);
+        perform pieces_hors_de_la_caisse_du_client(case profil when 'autre' then autre_dossier else dossier end);
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then motif := sqlstate; message := sqlerrm;
+      end;
+      reset role;
+      verdicts := verdicts || jsonb_build_object(
+        'controle', 'HC2. l''autre dossier et un compte rattaché à rien sont refusés ; l''anonyme n''exécute pas la lecture',
+        'cible', profil, 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+        'ok', not accepte and motif = '42501'
+          and message = case profil when 'anon' then 'permission denied for function pieces_hors_de_la_caisse_du_client' else refus end);
+    end loop;
+
+    -- HC3 : le client « Caisse » paie en espèces la pièce citée — le refus neutre.
+    accepte := false; motif := null; message := null;
+    begin
+      update memberships set droit_caisse = true where id = acces;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform regler_piece_par_la_caisse(dossier, piece, reprise - 5, 50);
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then motif := sqlstate; message := sqlerrm;
+    end;
+    reset role;
+    verdicts := verdicts || jsonb_build_object(
+      'controle', 'HC3. le client « Caisse » ne paie pas en espèces l''original d''une facture reprise : le refus neutre, ni montant, ni nom, ni facture',
+      'cible', 'regler_piece_par_la_caisse', 'observe', case when accepte then 'accepté' else motif || ' ' || message end,
+      'ok', not accepte and motif = '42501' and message = neutre);
+
+    -- M-HC2 : l'exécution rendue à l'anonyme — il lit la raison de la fonction, plus le droit d'exécution.
+    obs := null;
+    begin
+      grant execute on function public.pieces_hors_de_la_caisse_du_client(uuid) to anon;
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      perform pieces_hors_de_la_caisse_du_client(dossier);
+      obs := 'accepté';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if obs is null then obs := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    mutations := mutations || jsonb_build_object('mutation', 'M-HC2 — HC2 rejoué, l''exécution rendue à l''anonyme',
+      'attendu', 'un autre refus que le droit d''exécution', 'observe', coalesce(obs, '?'),
+      'mord', obs is distinct from '42501 permission denied for function pieces_hors_de_la_caisse_du_client');
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- HC4 : le catalogue.
+  select count(*) into n from pg_proc p
+   where p.oid = to_regprocedure('public.pieces_hors_de_la_caisse_du_client(uuid)')
+     and p.prosecdef and p.provolatile = 's' and p.proconfig @> array['search_path=public']
+     and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0);
+  select n + count(*) into n from pg_proc p
+   where p.oid = to_regprocedure('public.garder_especes_du_client_hors_des_reprises()')
+     and p.prosecdef and p.proconfig @> array['search_path=public']
+     and not has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+     and not has_function_privilege('service_role', p.oid, 'execute');
+  verdicts := verdicts || jsonb_build_object('controle', 'HC4. la lecture security definer, stable, son chemin fixé, exécutée par les connectés seuls ; la garde, par aucun rôle de session (lecture du catalogue)',
+    'cible', 'pieces_hors_de_la_caisse_du_client, garder_especes_du_client_hors_des_reprises', 'observe', case when n = 2 then 'conformes' else 'NON CONFORMES' end, 'ok', n = 2);
+  verdicts := verdicts || jsonb_build_object('controle', 'HC. le jeu d''essai des pièces hors de la caisse du client s''est construit, et rien n''en est resté', 'cible', 'le dossier jetable',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null and not exists (select 1 from dossiers where id = dossier)
+      and not exists (select 1 from memberships where id = acces));
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $hc$;
+
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des
 -- invariants — le principal — ne s'afficherait jamais. Un harnais dont on ne voit pas la réponse est

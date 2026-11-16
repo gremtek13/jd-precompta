@@ -462,7 +462,10 @@ describe('les essais de la base, rejoués en production', () => {
     // migration préparée ; SÛR au banc, sur une copie de la réplique au niveau de la production (226 migrations).
     // Vingt-six le 15/11/2026 : `hausseDuChiffreDAffaires` (l'alerte de hausse du chiffre d'affaires, `hausse_du_chiffre_d_affaires`)
     // entré dans la famille « apres », après sa migration préparée ; SÛR au banc, sur une copie de la réplique à 228.
-    expect(cas.length).toBe(26)
+    // Vingt-neuf le 16/11/2026 : `pieceDUnPaiementDansSonDossier` (A8Q5-Q4), `plancherALEcartDAlignement` (A8Q5Q3Q2-Q3) et
+    // `especesDuClientHorsDesReprises` (A8Q5Q3Q2Q2-Q1) entrés dans la famille « apres », après leurs migrations préparées ;
+    // SÛRS au banc, sur une copie de la réplique à 229 (228, puis `reglements_de_la_piece_citee`).
+    expect(cas.length).toBe(29)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

@@ -117,10 +117,25 @@ begin
            alter table reglements_groupes enable trigger user; alter table operations_caisse enable trigger user;$q$,
         null, $q$select recu_par_la_piece('{P}')::text$q$, 'postgres', 'OK', '17500'),
       (1, '1b. … de son dossier seulement : un mouvement, la part d''un virement groupé et un paiement par la caisse d''un AUTRE dossier qui la citent n''y entrent pas',
-        $q$insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, piece_id, reglement_groupe) values
+        $q$do $coupe$ begin
+             -- A8Q5-Q4 (`piece_d_un_paiement_dans_son_dossier`, préparée) : en base, sa garde refuserait ce mouvement d'un
+             -- autre dossier qui cite la pièce ; coupée le temps de le poser, l'essai éprouve encore le filtre du reçu.
+             if to_regprocedure('public.garder_piece_dans_son_dossier()') is not null then
+               alter table lignes_bancaires disable trigger lignes_bancaires_dans_son_dossier;
+             end if;
+           end $coupe$;
+           insert into lignes_bancaires (id, dossier_id, date, libelle, montant, statut, piece_id, reglement_groupe) values
              ('{M1}', '{DQ}', '{DM}', 'ESSAI A8Q5Q3Q2 RAPPROCHE', 120, 'rapprochee', '{P}', false),
              ('{M4}', '{DR}', '{DM}', 'ESSAI A8Q5Q3Q2 AUTRE DOSSIER', -120, 'rapprochee', '{P}', false),
              ('{M5}', '{DR}', '{DM}', 'ESSAI A8Q5Q3Q2 AUTRE GROUPE', 75, 'rapprochee', null, true);
+           do $remet$ begin
+             if to_regprocedure('public.garder_piece_dans_son_dossier()') is not null then
+               -- Les évènements différés de ces insertions jugés d'abord : une table qui en attend ne se modifie pas.
+               set constraints all immediate;
+               set constraints all deferred;
+               alter table lignes_bancaires enable trigger lignes_bancaires_dans_son_dossier;
+             end if;
+           end $remet$;
            alter table reglements_groupes disable trigger user; alter table operations_caisse disable trigger user;
            insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant) values ('{DR}', '{M5}', '{P}', 30);
            insert into operations_caisse (id, dossier_id, genre, date, montant, piece_id, origine) values
