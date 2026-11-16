@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CotisationsTab from './CotisationsTab'
+import { formatMoney } from '../../lib/format'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from '../../lib/planComptable'
 import { SECONDES_CASES } from '../../lib/cases2035'
 import type { CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable } from '../../lib/types'
@@ -1166,4 +1167,34 @@ describe('CotisationsTab — le formulaire ne reçoit que les régimes obligatoi
     expect(SECONDES_CASES.get('Cotisations facultatives Madelin')).toEqual({ porteuse: 'BK', aussi: 'BZ' })
     expect(SECONDES_CASES.get("Plan d'épargne retraite")).toEqual({ porteuse: 'BK', aussi: 'BU' })
   })
+})
+
+// LE TRI PAR UN CLIC SUR L'EN-TÊTE (demande du cabinet du 16/11/2026, lib/triDesTableaux.ts) : les lignes, jamais les totaux.
+describe('CotisationsTab — le tri par un clic sur l’en-tête', () => {
+  const appeles = () => [...document.querySelectorAll('tbody td[data-libelle="Appelé"]')].map((td) => td.textContent)
+  const enTete = (nom: string) => screen.getByRole('button', { name: new RegExp(`^${nom}`) })
+
+  it('croissant, décroissant, puis l’ordre d’origine, et aria-sort le dit', async () => {
+    faux.cotisations = [
+      cotisation({ id: 'cot-1', echeance: '2026-03-05', montant_appele: 300 }),
+      cotisation({ id: 'cot-2', echeance: '2026-04-05', montant_appele: 100 }),
+      cotisation({ id: 'cot-3', echeance: '2026-05-05', montant_appele: 200 }),
+    ]
+    monter()
+    await waitForAppeles(3)
+    const origine = appeles()
+    await act(async () => { fireEvent.click(enTete('Appelé')) })
+    expect(appeles()).toEqual([formatMoney(100), formatMoney(200), formatMoney(300)])
+    expect(enTete('Appelé').closest('th')!.getAttribute('aria-sort')).toBe('ascending')
+    await act(async () => { fireEvent.click(enTete('Appelé')) })
+    expect(appeles()).toEqual([formatMoney(300), formatMoney(200), formatMoney(100)])
+    expect(enTete('Appelé').closest('th')!.getAttribute('aria-sort')).toBe('descending')
+    await act(async () => { fireEvent.click(enTete('Appelé')) })
+    expect(appeles()).toEqual(origine)
+    expect(enTete('Appelé').closest('th')!.getAttribute('aria-sort')).toBe('none')
+  })
+
+  async function waitForAppeles(n: number) {
+    await waitFor(() => expect(appeles()).toHaveLength(n))
+  }
 })
