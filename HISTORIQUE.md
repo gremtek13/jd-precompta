@@ -53318,3 +53318,16 @@ migration. NON JOUÉS : les blocs MV (missions d'un client) et LM6 (lettres du c
 le cabinet de la réplique (`cab10000-…`), absent de la production — le jeu ne se construit pas (23503), MV7 seul, au
 catalogue, est juste ; ce n'est pas un défaut des migrations, mais ces deux blocs sont à récrire sur le cabinet du
 dossier `test` pour se jouer en production. Les autres blocs de `rls.sql` ne sont toujours pas rejoués en production.
+
+### 16/11/2026 — LES BLOCS MV ET LC DE RLS.SQL SUR LE CABINET DU DOSSIER TEST
+
+(Agent architecte ; rien en production.) Les blocs MV (missions d'un client) et LC (lettres du client) nommaient le cabinet
+de la réplique (`cab10000-…`) : en production, 23503. Ils lisent désormais le cabinet du dossier `test`, comme
+`repriseEtModeleComptable.sql`. Le jetable y remplace, dans la sous-transaction annulée, un dossier du cabinet déjà désigné ;
+si cette désignation ne se remplace plus (lettres, fiches liées, facture validée : le 23514 « sa désignation ne change
+plus »), MV1 à MV6 et LC1 à LC6 se disent NON JOUÉS sans rien affirmer, MV7 et LC7 se jugent, et « rien n'en est resté »
+vérifie la désignation rendue. Rejoué ENTIER sur une copie de `replique_227` portée à 230 : 255 lignes, 0 en faute, 148
+mutations sur 148, comme avant ; avec B1 et LM6, 265, 0, 153 sur 153 ; le cabinet de la copie changé d'identifiant (celui
+de la réplique supprimé, comme en production) : MV et LC justes, désignation libre puis verrouillée (NON JOUÉS) ; deux
+mutations du nouveau code mordent. DC, LM, HF, HD et FL nomment encore ce cabinet ET le rôle `proprietaire`, propre à la
+réplique : laissés, ils tombent en 23503 sur la copie comme en production.
