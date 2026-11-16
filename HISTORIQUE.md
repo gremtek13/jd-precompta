@@ -53152,3 +53152,20 @@ si le 1er janvier n'est pas couvert ou si l'année d'avant ne l'est pas sur la m
 relevés, comptes) : la section le dit, aucun chiffre. Plusieurs comptes (MCB7) : un compte à la fois, JAMAIS de total — le
 client ne lit pas ce qui marque un virement d'un compte à l'autre. Tests : `analyseDeMaBanque.test.ts`, `ClientBanque.test.tsx`,
 `ClientBanque.comptes.test.tsx`. Banc : `client-banque` à 0 à 390 et 1 440 px.
+
+### 16/11/2026 — « COMPARER LES ANNÉES » DANS « MON ANNÉE » : UNE COURBE PAR ANNÉE COCHÉE
+
+Demande du cabinet : une courbe dans « Ma banque » qui compare les années, cochées et décochées au choix. Sous le détail de
+l'année, dans la section « Mon année » (`ClientBanque.tsx`, `ComparerLesAnnees`) : une case par année offerte (les mêmes que le
+sélecteur), l'année en cours et la précédente cochées d'emblée, aucune limite à deux ; trois boutons « Entrées », « Sorties »,
+« Différence » (entrées par défaut) ; état d'écran seul, sans écriture ni stockage, remis à son défaut quand le compte analysé
+change (le composant est clé par compte ; la société remonte déjà tout l'écran). Le calcul reste dans le module pur
+(`courbesDesAnnees`, `anneesCocheesParDefaut`, `echelleDesCourbes` de `lib/analyseDeMaBanque.ts`), tiré de `anneeDeMaBanque`,
+en centimes : un mois non couvert n'a PAS de point (la courbe se coupe, jamais 0), un mois couvert en partie a un point creux NON
+RELIÉ (une ligne qui y descendrait ferait croire à une chute), un mois à venir n'a rien ; l'échelle contient toujours zéro, sur
+un pas rond, et la ligne de zéro se voit pour une différence négative. Chaque année a une nuance de `--color-primary`
+(`color-mix` avec le texte ou le fond, qui s'inversent en sombre) ET un trait à elle, d'après son rang parmi les années offertes ;
+la légende dit l'année, son trait, son total sur les mois couverts ou « aucun mois couvert ». Le SVG porte titre et description ;
+les valeurs exactes sont dans un tableau mois × années (`.tableau-adaptable`, « — » pour un mois non couvert). Aucune case
+cochée : une phrase. Lecture partielle : la section se tait déjà. Banc : 2024, 2025 sans mars et 2026 de janvier à avril
+contrôlés sur l'atelier (d7) ; `client-banque` à 0 à 390 et 1 440 px.

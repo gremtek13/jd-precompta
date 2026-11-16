@@ -789,6 +789,94 @@ describe('« Mon année »', () => {
     expect(within(section()).queryByRole('combobox')).toBeNull()
   })
 
+  // « Comparer les années » (demande du cabinet du 16/11/2026). 2025 : janvier à juin et août à décembre couverts, juillet non.
+  // 2026 : janvier à octobre couverts, novembre jusqu'au 10. 2024 : un mouvement, aucun relevé.
+  describe('« Comparer les années »', () => {
+    beforeEach(() => {
+      faux.tables.controles_releves_bancaires = nues([
+        controle({ id: 'k1', periode_debut: '2025-01-01', periode_fin: '2025-06-30' }),
+        controle({ id: 'k2', periode_debut: '2025-08-01', periode_fin: '2025-12-31' }),
+        controle({ id: 'k3', periode_debut: '2026-01-01', periode_fin: '2026-11-10' }),
+      ])
+      faux.tables.lignes_bancaires = nues([
+        mouvement({ id: 'z1', date: '2024-05-02', libelle: 'VIR FICTIF ANCIEN', montant: 50 }),
+        mouvement({ id: 'a1', date: '2025-01-10', libelle: 'VIR FICTIF A', montant: 1000 }),
+        mouvement({ id: 'a2', date: '2025-01-20', libelle: 'PRLV FICTIF A', montant: -1500 }),
+        mouvement({ id: 'a3', date: '2025-07-10', libelle: 'VIR FICTIF JUILLET', montant: 777 }),
+        mouvement({ id: 'b1', date: '2026-01-12', libelle: 'VIR FICTIF B', montant: 1200 }),
+        mouvement({ id: 'b2', date: '2026-11-05', libelle: 'VIR FICTIF NOVEMBRE', montant: 300 }),
+      ])
+    })
+    const bloc = () => screen.getByTestId('comparer-les-annees')
+    const caseDe = (annee: number) => within(bloc()).getByRole('checkbox', { name: String(annee) }) as HTMLInputElement
+    const enTetes = () => within(bloc()).getAllByRole('columnheader').map((t) => t.textContent)
+    const moisDeLaComparaison = (nom: string) => enTexte(within(bloc()).getByText(nom, { selector: 'td' }).closest('tr'))
+    const courbes = () => [...bloc().querySelectorAll('svg.annee-banque-courbes g[data-annee]')].map((g) => g.getAttribute('data-annee'))
+
+    it('d’emblée : l’année en cours et la précédente, en entrées ; un mois non couvert n’a ni point ni chiffre', async () => {
+      await monter()
+      expect(caseDe(2026).checked).toBe(true)
+      expect(caseDe(2025).checked).toBe(true)
+      expect(caseDe(2024).checked).toBe(false)
+      expect(within(bloc()).getByRole('button', { name: 'Entrées' }).getAttribute('aria-pressed')).toBe('true')
+      expect(courbes()).toEqual(['2026', '2025'])
+      expect(enTetes()).toEqual(['Mois', '2026', '2025'])
+      expect(moisDeLaComparaison('janvier')).toBe('janvier1 200,00 €1 000,00 €')
+      expect(moisDeLaComparaison('juillet')).toBe('juillet0,00 €—')
+      expect(moisDeLaComparaison('novembre')).toBe('novembre300,00 € (jusqu’au 10/11/2026)0,00 €')
+      expect(moisDeLaComparaison('décembre')).toBe('décembreà venir0,00 €')
+      // Onze points pour 2025 (juillet n'en a pas) ; novembre 2026, couvert en partie, a un point creux.
+      const points = (annee: string) => bloc().querySelectorAll(`g[data-annee="${annee}"] circle`)
+      expect(points('2025')).toHaveLength(11)
+      expect(bloc().querySelectorAll('g[data-annee="2026"] circle.annee-banque-point-creux')).toHaveLength(1)
+      // Le trou de juillet coupe la courbe de 2025 en deux traits.
+      expect(bloc().querySelectorAll('g[data-annee="2025"] polyline')).toHaveLength(2)
+      const svg = bloc().querySelector('svg.annee-banque-courbes') as SVGElement
+      expect(svg.getAttribute('role')).toBe('img')
+      expect(svg.querySelector('title')?.textContent).toContain('entrées de chaque mois, 2026, 2025')
+      expect(svg.querySelector('desc')?.textContent).toContain('n’a pas de point')
+      expect(enTexte(within(bloc()).getByRole('list', { name: 'Légende' })))
+        .toBe('2026 — 1 500,00 € sur 11 mois couverts2025 — 1 000,00 € sur 11 mois couverts')
+      expect(motsDuCabinet(texte())).toEqual([])
+    })
+
+    it('décocher retire la courbe et la colonne ; aucune case : une phrase, ni graphique ni tableau', async () => {
+      await monter()
+      await act(async () => { fireEvent.click(caseDe(2025)) })
+      expect(courbes()).toEqual(['2026'])
+      expect(enTetes()).toEqual(['Mois', '2026'])
+      await act(async () => { fireEvent.click(caseDe(2026)) })
+      expect(bloc().querySelector('svg')).toBeNull()
+      expect(within(bloc()).queryByRole('table')).toBeNull()
+      expect(enTexte(bloc())).toContain('Coche au moins une année pour voir sa courbe.')
+    })
+
+    it('la différence : les mêmes mois, une autre valeur, sous zéro aussi, et la ligne de zéro se voit', async () => {
+      await monter()
+      await act(async () => { fireEvent.click(within(bloc()).getByRole('button', { name: 'Différence' })) })
+      expect(within(bloc()).getByRole('button', { name: 'Différence' }).getAttribute('aria-pressed')).toBe('true')
+      expect(moisDeLaComparaison('janvier')).toBe('janvier1 200,00 €-500,00 €')
+      expect(moisDeLaComparaison('juillet')).toBe('juillet0,00 €—')
+      expect(bloc().querySelector('line.annee-banque-zero')).not.toBeNull()
+      expect(enTexte(within(bloc()).getByRole('list', { name: 'Légende' }))).toContain('2025 — -500,00 € sur 11 mois couverts')
+    })
+
+    it('une année cochée sans aucun mois couvert : dans la légende, « aucun mois couvert », et « — » partout', async () => {
+      await monter()
+      await act(async () => { fireEvent.click(caseDe(2024)) })
+      expect(courbes()).toEqual(['2026', '2025', '2024'])
+      expect(enTexte(within(bloc()).getByRole('list', { name: 'Légende' }))).toContain('2024 — aucun mois couvert')
+      expect(moisDeLaComparaison('mai')).toBe('mai0,00 €0,00 €—')
+      expect(bloc().querySelectorAll('g[data-annee="2024"] circle, g[data-annee="2024"] polyline')).toHaveLength(0)
+    })
+
+    it('une lecture partielle : rien de la comparaison ne s’affiche', async () => {
+      faux.muetApres = { controles_releves_bancaires: 1 }
+      await monter()
+      expect(screen.queryByTestId('comparer-les-annees')).toBeNull()
+    })
+  })
+
   it('aucun relevé contrôlé : rien à analyser, aucun chiffre', async () => {
     faux.tables.controles_releves_bancaires = []
     await monter()
