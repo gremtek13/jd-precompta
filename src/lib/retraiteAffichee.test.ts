@@ -106,6 +106,17 @@ describe('la retraite affichée', () => {
     expect(texte).toMatch(/Les cotisations de l’Urssaf, elles, sont dues dès le début\.$/)
   })
 
+  it('dit l’année du début qui précède l’affiliation à la CARPIMKO et à la CARCDSF (RET2Q3-Q1)', () => {
+    const [carpimko] = hypothesesDeLaRetraite(estimation({ caisse: 'carpimko', hypotheses: ['carpimko-annee-avant-l-affiliation'] }), null)
+    expect(carpimko).toMatch(/^CARPIMKO : rien n’est compté sur cet exercice/)
+    expect(carpimko).toMatch(/premier jour du trimestre civil qui suit le début d’activité libérale, le 1er janvier suivant/)
+    expect(carpimko).toMatch(/Les cotisations de l’Urssaf, elles, sont dues dès le début\.$/)
+    const [carcdsf] = hypothesesDeLaRetraite(estimation({ caisse: 'carcdsf', hypotheses: ['carcdsf-annee-avant-l-affiliation'] }), null)
+    expect(carcdsf).toMatch(/^CARCDSF : rien n’est compté sur cet exercice/)
+    expect(carcdsf).toMatch(/au prorata des trimestres d’affiliation, aucun sur l’année du début/)
+    expect(carcdsf).toMatch(/Les cotisations de l’Urssaf, elles, sont dues dès le début\.$/)
+  })
+
   it('garde ses deux phrases fixes', () => {
     expect(PHRASE_DE_LA_CAISSE).toBe('La caisse appelle ces cotisations sur un revenu antérieur, puis régularise : ce n’est pas l’échéancier de l’année.')
     expect(CE_QUE_L_ESTIMATION_NE_FAIT_PAS).toMatch(/CIPAV/)

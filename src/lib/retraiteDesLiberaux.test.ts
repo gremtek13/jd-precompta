@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anneeDAffiliationALaCarmf, derniereAnneeDeLaDispense, BAREMES_RETRAITE, CAISSE_DE_LA_PROFESSION, MOTIF_EXONERATION_NON_DITE,
+  anneeDAffiliationALaCaisse, derniereAnneeDeLaDispense, BAREMES_RETRAITE, HYPOTHESE_AVANT_L_AFFILIATION, CAISSE_DE_LA_PROFESSION, MOTIF_EXONERATION_NON_DITE,
   estimerRetraite, type EntreeRetraite,
 } from './retraiteDesLiberaux'
 import { CAS_REFERENCE_RETRAITE, MOTEUR_REFERENCE_RETRAITE, type CasReferenceRetraite } from './retraiteDesLiberauxReference'
@@ -41,7 +41,9 @@ function complementaireCarpimkoBorne(c: CasReferenceRetraite): { moteur: number;
     caisse: Math.round(borne * p * 0.087),
   }
 }
-const EXCEPTIONS_ATTENDUES = 28
+// 26 depuis RET2Q3-Q1 (16/11/2026) : deux des vingt-huit d'hier, une auxiliaire installée le 15 octobre 2026, relèvent
+// désormais de l'année qui précède l'affiliation (ci-dessous), où la CARPIMKO n'appelle rien.
+const EXCEPTIONS_ATTENDUES = 26
 
 // LA SECONDE EXCEPTION, ET SON NOMBRE (RET2-Q3, tranchée par le cabinet le 16/11/2026 : « (A) Zéro l'année qui précède
 // l'affiliation »). Un médecin dont l'activité commence en octobre, novembre ou décembre de l'exercice n'est affilié à la
@@ -49,13 +51,17 @@ const EXCEPTIONS_ATTENDUES = 28
 // premier jour du trimestre civil suivant le début de l'exercice non salarié ») : la caisse n'appelle rien sur l'année du
 // début, que le moteur, qui ignore l'affiliation, chiffre comme une autre. L'application suit la caisse. Le cas se reconnaît
 // ICI sur la date seule — le mois du début et son année, celle de l'exercice —, jamais par la fonction du module ; le test
-// exige que le moteur y compte quelque chose, nous rien, sur EXACTEMENT ces cas.
-const avantLAffiliationALaCarmf = (c: CasReferenceRetraite): boolean => {
+// exige que le moteur y compte quelque chose, nous rien, sur EXACTEMENT ces cas. La CARPIMKO (« Mon affiliation ») et la
+// CARCDSF (« Montant des cotisations en début d'activité », 2026) disent la même règle (RET2Q3-Q1, 16/11/2026) : leurs cas
+// d'un début au 15 octobre s'y ajoutent, six chacune (trois en 2025, trois en 2026), le dentiste et la sage-femme compris ;
+// ceux de la CIPAV restent confrontés au moteur.
+const CAISSES_AFFILIEES_AU_TRIMESTRE_SUIVANT = ['carmf', 'carpimko', 'carcdsf']
+const avantLAffiliationALaCaisse = (c: CasReferenceRetraite): boolean => {
   const debut = c.entree.parametres.debutActivite
-  return CAISSE_DE_LA_PROFESSION[c.entree.profession] === 'carmf'
+  return CAISSES_AFFILIEES_AU_TRIMESTRE_SUIVANT.includes(CAISSE_DE_LA_PROFESSION[c.entree.profession])
     && Number(debut.slice(0, 4)) === c.entree.annee && Number(debut.slice(5, 7)) >= 10
 }
-const AVANT_L_AFFILIATION_ATTENDUS = 6
+const AVANT_L_AFFILIATION_ATTENDUS = { carmf: 6, carpimko: 6, carcdsf: 12 }
 
 describe('la retraite des professions libérales, contre le moteur de l’Urssaf', () => {
   it('porte une grille réelle : les deux années, les trois caisses, la création, l’ACRE, le cumul', () => {
@@ -73,21 +79,22 @@ describe('la retraite des professions libérales, contre le moteur de l’Urssaf
 
   it('rend chaque cotisation au centime, sur chaque cas', () => {
     let exceptions = 0
-    let avantLAffiliation = 0
+    const avantLAffiliation: Record<string, number> = { carmf: 0, carpimko: 0, carcdsf: 0 }
     for (const c of CAS_REFERENCE_RETRAITE) {
       const r = estimerRetraite(entreeDe(c))
       if (!r.disponible) throw new Error(`${c.cas} : ${r.motif}`)
       const e = r.estimation
       const a = c.attendu
-      if (avantLAffiliationALaCarmf(c)) {
-        avantLAffiliation++
-        // Le moteur appelle la base, l'invalidité-décès et les PCV ; la CARMF, rien.
+      if (avantLAffiliationALaCaisse(c)) {
+        const caisse = CAISSE_DE_LA_PROFESSION[c.entree.profession]
+        avantLAffiliation[caisse]++
+        // Le moteur appelle la base et l'invalidité-décès (et les PCV) ; la caisse, rien.
         expect(a.total, c.cas).toBeGreaterThan(0)
         expect(a.invaliditeDeces, c.cas).toBeGreaterThan(0)
         expect(e, c.cas).toEqual({
-          caisse: 'carmf', assiette: enCentimes(a.assiette), assietteMinimale: e.assietteMinimale, retraiteDeBase: 0,
+          caisse, assiette: enCentimes(a.assiette), assietteMinimale: e.assietteMinimale, retraiteDeBase: 0,
           priseEnChargeRetraiteDeBase: 0, retraiteComplementaire: 0, invaliditeDeces: 0, pcv: 0, priseEnChargePcv: 0, total: 0,
-          hypotheses: ['carmf-annee-avant-l-affiliation'],
+          hypotheses: [`${caisse}-annee-avant-l-affiliation`],
         })
         continue
       }
@@ -112,7 +119,7 @@ describe('la retraite des professions libérales, contre le moteur de l’Urssaf
       expect(e.total, c.cas).toBe(enCentimes(a.total + ecart))
     }
     expect(exceptions).toBe(EXCEPTIONS_ATTENDUES)
-    expect(avantLAffiliation).toBe(AVANT_L_AFFILIATION_ATTENDUS)
+    expect(avantLAffiliation).toEqual(AVANT_L_AFFILIATION_ATTENDUS)
   })
 })
 
@@ -343,12 +350,12 @@ describe('l’année du début qui précède l’affiliation à la CARMF (RET2-Q
   }
 
   it('l’année d’affiliation : le trimestre civil qui suit le début, le 1er octobre compris', () => {
-    expect(anneeDAffiliationALaCarmf('2026-01-01')).toBe(2026)
-    expect(anneeDAffiliationALaCarmf('2026-09-30')).toBe(2026)
-    expect(anneeDAffiliationALaCarmf('2026-10-01')).toBe(2027)
-    expect(anneeDAffiliationALaCarmf('2026-12-31')).toBe(2027)
-    expect(anneeDAffiliationALaCarmf('2026-00-10')).toBeNull()
-    expect(anneeDAffiliationALaCarmf('15/11/2026')).toBeNull()
+    expect(anneeDAffiliationALaCaisse('2026-01-01')).toBe(2026)
+    expect(anneeDAffiliationALaCaisse('2026-09-30')).toBe(2026)
+    expect(anneeDAffiliationALaCaisse('2026-10-01')).toBe(2027)
+    expect(anneeDAffiliationALaCaisse('2026-12-31')).toBe(2027)
+    expect(anneeDAffiliationALaCaisse('2026-00-10')).toBeNull()
+    expect(anneeDAffiliationALaCaisse('15/11/2026')).toBeNull()
     // La dispense des débuts en dépend toujours : ses deux premières années civiles d'affiliation.
     expect(derniereAnneeDeLaDispense('2026-10-01')).toBe(2028)
   })
@@ -392,18 +399,84 @@ describe('l’année du début qui précède l’affiliation à la CARMF (RET2-Q
     expect(e.hypotheses).not.toContain('carmf-annee-avant-l-affiliation')
   })
 
-  it('les autres caisses, et un médecin sans début d’activité lu, gardent l’estimation d’hier', () => {
-    for (const profession of ['auxiliaire_medical', 'sage_femme', 'liberal_cipav'] as const) {
-      const e = estimee(medecin('2026-11-15', 2026, { profession, cumulEmploiRetraite: null }))
-      expect(e.total, profession).toBeGreaterThan(0)
-      expect(e.hypotheses, profession).not.toContain('carmf-annee-avant-l-affiliation')
-    }
-    const dentiste = estimee(medecin('2026-11-15', 2026, {
-      profession: 'chirurgien_dentiste', cumulEmploiRetraite: null,
-      parametres: { tenus: true, debutActivite: '2026-11-15', acre: false, tauxDentiste: 0.35 },
-    }))
-    expect(dentiste.total).toBeGreaterThan(0)
+  it('la CIPAV, et un médecin sans début d’activité lu, gardent l’estimation d’hier', () => {
+    const cipav = estimee(medecin('2026-11-15', 2026, { profession: 'liberal_cipav', cumulEmploiRetraite: null }))
+    expect(cipav.total).toBeGreaterThan(0)
+    expect(cipav.hypotheses.some((h) => h.endsWith('-annee-avant-l-affiliation'))).toBe(false)
+    expect(HYPOTHESE_AVANT_L_AFFILIATION.cipav).toBeUndefined()
     const sansParametres = estimee(medecin('2026-11-15', 2026, { parametres: { tenus: false }, dispenseDesDebuts: { tenue: false } }))
     expect(sansParametres.total).toBeGreaterThan(0)
+  })
+})
+
+// LA MÊME RÈGLE POUR LA CARPIMKO ET LA CARCDSF (RET2Q3-Q1, tranchée le 16/11/2026) : « L'affiliation prend effet le 1er jour
+// du trimestre civil suivant le début d'activité libérale » (CARPIMKO, « Mon affiliation » ; « octobre, novembre, décembre :
+// date 1er janvier ») ; « L'affiliation prend effet au premier jour du trimestre civil suivant le début d'activité », « les
+// cotisations sont dues au prorata des trimestres d'affiliation » (CARCDSF, « Montant des cotisations en début d'activité »,
+// 2026). Relues le 16/11/2026.
+describe('l’année du début qui précède l’affiliation à la CARPIMKO et à la CARCDSF (RET2Q3-Q1)', () => {
+  const praticien = (profession: 'auxiliaire_medical' | 'sage_femme' | 'chirurgien_dentiste', debutActivite: string, annee = 2026): EntreeRetraite => ({
+    annee, profession, remplacant: false, revenuBrutSocial: 6_000, revenuProfessionnelPositif: true,
+    recettesBrutes: 8_000, honorairesConventionnes: 8_000, depassements: null,
+    parametres: { tenus: true, debutActivite, acre: false, tauxDentiste: profession === 'chirurgien_dentiste' ? 0.35 : null },
+    cumulEmploiRetraite: null, dispenseDesDebuts: { tenue: false }, exonerationEnZonePrioritaire: { tenue: false },
+  })
+  const estimee = (e: EntreeRetraite) => {
+    const r = estimerRetraite(e)
+    if (!r.disponible) throw new Error(r.motif)
+    return r.estimation
+  }
+  const rien = (caisse: 'carpimko' | 'carcdsf') => ({
+    caisse, retraiteDeBase: 0, priseEnChargeRetraiteDeBase: 0, retraiteComplementaire: 0, invaliditeDeces: 0, pcv: 0,
+    priseEnChargePcv: 0, total: 0, hypotheses: [`${caisse}-annee-avant-l-affiliation`],
+  })
+  const PROFESSIONS = [
+    ['auxiliaire_medical', 'carpimko'], ['sage_femme', 'carcdsf'], ['chirurgien_dentiste', 'carcdsf'],
+  ] as const
+
+  it('un début du 1er octobre au 31 décembre ne doit rien à la caisse sur l’année du début, et l’estimation le dit', () => {
+    for (const [profession, caisse] of PROFESSIONS) {
+      for (const d of ['2026-10-01', '2026-11-15', '2026-12-31']) {
+        const e = estimee(praticien(profession, d))
+        expect(e, `${profession} ${d}`).toMatchObject(rien(caisse))
+        // L'assiette reste dite : celle de l'Urssaf, dont les cotisations sont dues dès le début.
+        const urssaf = estimerCotisationsUrssaf(praticien(profession, d))
+        if (!urssaf.disponible) throw new Error(urssaf.motif)
+        expect(e.assiette, `${profession} ${d}`).toBe(Math.round(urssaf.estimation.assiette * 100))
+      }
+    }
+    // En 2025 aussi : la règle tient à la date, pas au barème.
+    for (const [profession, caisse] of PROFESSIONS) expect(estimee(praticien(profession, '2025-11-15', 2025))).toMatchObject(rien(caisse))
+  })
+
+  it('un début au 30 septembre s’affilie le 1er octobre et cotise : l’estimation d’hier, prorata de la CARCDSF compris', () => {
+    for (const [profession] of PROFESSIONS) {
+      const e = estimee(praticien(profession, '2026-09-30'))
+      expect(e.total, profession).toBeGreaterThan(0)
+      expect(e.invaliditeDeces, profession).toBeGreaterThan(0)
+      expect(e.hypotheses.some((h) => h.endsWith('-annee-avant-l-affiliation')), profession).toBe(false)
+    }
+    // La CARCDSF proratise toujours l'année d'installation (le moteur, aux jours d'activité) : un complémentaire réduit.
+    const pleine = estimee(praticien('chirurgien_dentiste', '2015-01-01'))
+    const installation = estimee(praticien('chirurgien_dentiste', '2026-09-30'))
+    expect(installation.retraiteComplementaire).toBeGreaterThan(0)
+    expect(installation.retraiteComplementaire).toBeLessThan(pleine.retraiteComplementaire)
+  })
+
+  it('l’année qui suit, la première d’affiliation, se compte en entier : l’estimation d’un praticien installé avant', () => {
+    for (const [profession] of PROFESSIONS) {
+      const suivante = estimee(praticien(profession, '2025-11-15', 2026))
+      const ancienne = estimee(praticien(profession, '2015-01-01', 2026))
+      expect(suivante, profession).toEqual(ancienne)
+      expect(suivante.total, profession).toBeGreaterThan(0)
+    }
+  })
+
+  it('la table des hypothèses : les trois caisses des praticiens, chacune la sienne', () => {
+    expect(HYPOTHESE_AVANT_L_AFFILIATION).toEqual({
+      carmf: 'carmf-annee-avant-l-affiliation',
+      carpimko: 'carpimko-annee-avant-l-affiliation',
+      carcdsf: 'carcdsf-annee-avant-l-affiliation',
+    })
   })
 })

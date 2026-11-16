@@ -53356,3 +53356,17 @@ soir, par `execute_sql`, un appel par bloc (le texte recopié, ses commentaires 
 s'écrit bien dans la transaction annulée), FL 11 sur 11 et 5 sur 5. La désignation du dossier du cabinet s'est remplacée
 dans chaque bloc : aucune ligne « NON JOUÉS ». Restent non rejoués en production les blocs de `rls.sql` hors de ceux
 nommés dans les entrées du 15 et du 16/11.
+
+### 16/11/2026 — RET2Q3-Q1 : LA CARPIMKO ET LA CARCDSF N'APPELLENT RIEN NON PLUS SUR L'ANNÉE QUI PRÉCÈDE L'AFFILIATION
+
+(Agent architecte ; ni migration, ni écriture en production.) Sur « (A) Relire la notice 2026 de chaque caisse, et étendre
+la règle à celle qui la dit ». **Sources relues le 16/11/2026** : CARPIMKO, « Mon affiliation » (carpimko.com/je-minstalle/
+mon-affiliation) : « L'affiliation prend effet le 1er jour du trimestre civil suivant le début d'activité libérale »,
+« octobre, novembre, décembre : date 1er janvier » — page sans édition, au site qui porte les montants de 2026 ; CARCDSF,
+« Montant des cotisations en début d'activité » (carcdsf.fr/affiliation/presentation-2), datée par ses montants 2026 :
+même règle, et « les cotisations sont dues au prorata des trimestres d'affiliation ». Les deux la disent sans ambiguïté :
+`HYPOTHESE_AVANT_L_AFFILIATION` porte les trois caisses des praticiens, `anneeDAffiliationALaCaisse` remplace la fonction
+de la CARMF, deux hypothèses neuves disent le zéro à l'écran. Contre l'oracle : 24 cas d'un début au 15 octobre où le
+moteur compte et la caisse rien (CARMF 6, CARPIMKO 6, CARCDSF 12) ; l'exception du complémentaire de la CARPIMKO passe de
+28 à 26 (deux de ses cas sont désormais avant l'affiliation). Quatre mutations sur quatre mordent. Reste, avec RET2-Q3 (B) :
+la CARCDSF proratise l'année d'installation aux TRIMESTRES d'affiliation, le moteur (et nous) aux JOURS d'activité (RET2Q3-Q2).

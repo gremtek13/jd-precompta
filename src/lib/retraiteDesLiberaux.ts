@@ -43,7 +43,24 @@
 // nombre). L'estimation rend zéro et le dit (`carmf-annee-avant-l-affiliation`), sans rien demander du cumul, de la
 // dispense ni de l'exonération, qui n'y changeraient rien ; les cotisations de l'Urssaf restent dues dès le début. Le
 // prorata de la PREMIÈRE année d'affiliation (la base et ses forfaits « réduit[s] au prorata de la durée d'affiliation »,
-// RET2-Q3 (B)) n'est pas fait : il reste à voir avec l'expert-comptable. Les autres caisses n'en sont pas touchées.
+// RET2-Q3 (B)) n'est pas fait : il reste à voir avec l'expert-comptable.
+//
+// LA MÊME RÈGLE POUR LA CARPIMKO ET LA CARCDSF (RET2Q3-Q1, tranchée par le cabinet le 16/11/2026 : « relire la notice 2026
+// de chaque caisse, et étendre la règle à celle qui la dit »). Relues le 16/11/2026 :
+//  - CARPIMKO, « Mon affiliation » (carpimko.com/je-minstalle/mon-affiliation) : « L'affiliation prend effet le 1er jour du
+//    trimestre civil suivant le début d'activité libérale », et son tableau : « octobre, novembre, décembre : date
+//    1er janvier ». La page ne porte pas d'édition ; la caisse la tient au même site que ses montants de 2026 (« selon mes
+//    revenus » : 2 091 € et 12 544 € pour 2026), et son avis du 2 juillet 2026 sur l'ACRE compte les douze mois « à compter
+//    de la date de leur affiliation », distincte du début.
+//  - CARCDSF, « Montant des cotisations en début d'activité » (carcdsf.fr/affiliation/presentation-2), datée par ses montants
+//    de 2026 (« 968 € en 2026 », le forfait complémentaire « 3 210,60 € en 2026 ») : « L'affiliation prend effet au premier
+//    jour du trimestre civil suivant le début d'activité », et « les cotisations sont dues au prorata des trimestres
+//    d'affiliation » — un début d'octobre à décembre n'a aucun trimestre d'affiliation sur l'année du début.
+// Les deux caisses disent la règle de la CARMF sans ambiguïté : l'année du début qui précède l'affiliation rend zéro, dit
+// sous l'hypothèse de la caisse (`carpimko-annee-avant-l-affiliation`, `carcdsf-annee-avant-l-affiliation`). Un début de
+// janvier à septembre garde l'estimation d'hier — pour la CARCDSF, le prorata du moteur, aux JOURS d'activité, quand la
+// caisse dit un prorata aux TRIMESTRES d'affiliation : l'écart rejoint RET2-Q3 (B). La CIPAV n'en est pas touchée : ses
+// cotisations, l'Urssaf les recouvre (hors de RET2Q3-Q1).
 //
 // CE QUE LE MODULE NE FAIT PAS, et que l'écran dira : une profession libérale non réglementée encore à la CIPAV ; l'exonération pour incapacité d'exercice (« CNAVPL .
 // exonération incapacité ») ; le conjoint collaborateur ; l'outre-mer ; les cotisations facultatives. La règle de la
@@ -251,17 +268,19 @@ export const MOTIF_EXONERATION_NON_DITE =
  *  - `tenue: true` : la case de l'exercice telle que le cabinet l'a dite, nulle tant qu'il ne l'a pas dite. Elle ne se lit
  *    que dans les deux premières années civiles d'affiliation : nulle là, l'estimation se tait en disant pourquoi ; au-delà,
  *    la règle ne peut plus jouer, et la case ne se lit pas (comme l'ACRE au-delà de sa première année). L'année du début qui
- *    précède l'affiliation ne la lit pas non plus : rien n'y est dû (RET2-Q3, `anneeDAffiliationALaCarmf`).
+ *    précède l'affiliation ne la lit pas non plus : rien n'y est dû (RET2-Q3, `anneeDAffiliationALaCaisse`).
  */
 export type DispenseDesDebuts = { tenue: false } | { tenue: true; dispense: boolean | null }
 
 /**
- * L'année civile où l'affiliation à la CARMF prend effet : « au premier jour du trimestre civil suivant le début de
- * l'exercice non salarié » (CARMF, « Début d'exercice libéral », édition 2026). Le trimestre civil qui SUIT celui du début :
- * un début en octobre, novembre ou décembre — le 1er octobre compris — s'affilie au 1er janvier suivant. Null pour une date
- * illisible.
+ * L'année civile où l'affiliation à la caisse prend effet, la même règle pour les trois caisses des praticiens : « au premier
+ * jour du trimestre civil suivant le début de l'exercice non salarié » (CARMF, « Début d'exercice libéral », édition 2026),
+ * « le 1er jour du trimestre civil suivant le début d'activité libérale » (CARPIMKO, « Mon affiliation »), « au premier jour
+ * du trimestre civil suivant le début d'activité » (CARCDSF, « Montant des cotisations en début d'activité », 2026). Le
+ * trimestre civil qui SUIT celui du début : un début en octobre, novembre ou décembre — le 1er octobre compris — s'affilie au
+ * 1er janvier suivant. Null pour une date illisible.
  */
-export function anneeDAffiliationALaCarmf(debutActivite: string): number | null {
+export function anneeDAffiliationALaCaisse(debutActivite: string): number | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(debutActivite)
   if (m === null) return null
   const annee = Number(m[1])
@@ -275,7 +294,7 @@ export function anneeDAffiliationALaCarmf(debutActivite: string): number | null 
  * l'affiliation prenant effet au premier jour du trimestre civil qui suit le début d'activité. Null pour une date illisible.
  */
 export function derniereAnneeDeLaDispense(debutActivite: string): number | null {
-  const affiliation = anneeDAffiliationALaCarmf(debutActivite)
+  const affiliation = anneeDAffiliationALaCaisse(debutActivite)
   return affiliation === null ? null : affiliation + 1
 }
 
@@ -285,9 +304,21 @@ export type HypotheseRetraite =
   | 'carcdsf-exoneration-des-pcv-supposee-demandee'
   | 'carmf-debut-d-activite-complementaire-suppose-du'
   | 'carmf-annee-avant-l-affiliation'
+  | 'carpimko-annee-avant-l-affiliation'
+  | 'carcdsf-annee-avant-l-affiliation'
   | 'carmf-complementaire-dispense'
   | 'carmf-exoneration-en-zone-prioritaire'
   | 'cipav-invalidite-deces-avant-68-ans-supposee'
+
+/**
+ * Les caisses qui n'appellent rien sur l'année du début quand l'affiliation prend effet l'année suivante, et l'hypothèse qui
+ * le dit (RET2-Q3 pour la CARMF, RET2Q3-Q1 pour la CARPIMKO et la CARCDSF) ; la CIPAV n'y est pas.
+ */
+export const HYPOTHESE_AVANT_L_AFFILIATION: Readonly<Partial<Record<CaisseDeRetraite, HypotheseRetraite>>> = {
+  carmf: 'carmf-annee-avant-l-affiliation',
+  carpimko: 'carpimko-annee-avant-l-affiliation',
+  carcdsf: 'carcdsf-annee-avant-l-affiliation',
+}
 
 export interface EstimationRetraite {
   caisse: CaisseDeRetraite
@@ -335,11 +366,13 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
     if (lue.activite === null) return { disponible: false, motif: lue.motif }
     activite = lue.activite
   }
-  // L'ANNÉE DU DÉBUT QUI PRÉCÈDE L'AFFILIATION À LA CARMF (RET2-Q3) : rien n'est dû à la caisse, quoi que le médecin ait à
-  // dire du cumul, de la dispense ou de l'exonération — l'estimation ne les demande donc pas. Sans début d'activité lu
-  // (les paramètres pas tenus), l'activité est ouverte avant l'exercice : l'estimation d'hier.
-  if (medecin && e.parametres.tenus && e.parametres.debutActivite !== null) {
-    const affiliation = anneeDAffiliationALaCarmf(e.parametres.debutActivite)
+  // L'ANNÉE DU DÉBUT QUI PRÉCÈDE L'AFFILIATION (RET2-Q3 pour la CARMF, RET2Q3-Q1 pour la CARPIMKO et la CARCDSF) : rien
+  // n'est dû à la caisse, quoi que le médecin ait à dire du cumul, de la dispense ou de l'exonération — l'estimation ne les
+  // demande donc pas. Sans début d'activité lu (les paramètres pas tenus), l'activité est ouverte avant l'exercice :
+  // l'estimation d'hier.
+  const avantLAffiliation = HYPOTHESE_AVANT_L_AFFILIATION[caisse]
+  if (avantLAffiliation !== undefined && e.parametres.tenus && e.parametres.debutActivite !== null) {
+    const affiliation = anneeDAffiliationALaCaisse(e.parametres.debutActivite)
     if (affiliation !== null && affiliation > e.annee) {
       return {
         disponible: true,
@@ -354,7 +387,7 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
           pcv: 0,
           priseEnChargePcv: 0,
           total: 0,
-          hypotheses: ['carmf-annee-avant-l-affiliation'],
+          hypotheses: [avantLAffiliation],
         },
       }
     }
