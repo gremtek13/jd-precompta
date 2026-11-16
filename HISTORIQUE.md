@@ -53254,3 +53254,19 @@ suppression du dossier en cascade, retrait direct refusé ; retour (signature d'
 IDENTIQUE, une attestation semée ; banc SÛR. Écran, lecture, plan de sauvegarde derrière `OUVERTURES_ATTESTEES_PREVUES`
 baissé ; l'Edge Function derrière `OUVERTURES_ATTESTEES_EN_BASE` baissée, ses scénarios levés en mémoire. Questions :
 P1TQ2Q1-Q1 (nommer aussi l'auteur d'un changement de case).
+
+### 16/11/2026 — ESSAIS-Q1 : LE MEMBRE D'ÉQUIPE D'ESSAI, UN TEXTE À COLLER (RIEN DE CRÉÉ)
+
+(Agent architecte ; rien en production.) Sur « (A) Créer le compte d'essai en production ». Trois essais joués en production le
+supposent — `repriseEtModeleComptable.sql`, `accesAvantLesGardes.sql`, neuf blocs de `rls.sql` — sous l'identifiant fixe du
+comptable des répliques ; les dix-sept autres qui le nomment sont de réplique seulement. **Voie retenue** :
+`outils/membre-d-essai/creer.sql`, à coller par le cabinet (des lignes, pas un schéma : jamais `apply_migration`, que la reprise
+rejouerait sans le dossier `test`) — le compte à cet identifiant, sans mot de passe, adresse `.invalid` non confirmée, banni
+jusqu'en 2999, ses colonnes de jetons au texte vide comme le service les écrit (nulles, `listUsers` échouerait, et avec lui
+`create-client-access` et `create-team-member`) ; « comptable » du cabinet de `test` ; assigné à `test` seul ; ses gardes de tête
+et de fin. **Écartée** : l'écran Équipe, qui ne crée qu'un compte à mot de passe, confirmé, sous un identifiant tiré au hasard
+(vingt essais à réécrire). `verifier.sql` : les colonnes de `auth.users` avant (la réplique n'a qu'un talon), le membre après.
+**Éprouvé** sur une copie à 228 : le membre du semis ôté, les trois essais tombent (1 faute, 2 erreurs, 3 fautes) ; posé par
+`creer.sql` sur un talon des colonnes du service, ils rendent mot pour mot ce qu'ils rendent avec le semis (8, 24, 402 lignes) ;
+gardes de `creer.sql` et `retirer.sql` éprouvées. **Non éprouvé** : la forme exacte de `auth.users` en production (requête 1,
+puis la liste du tableau de bord). Retrait avec `test` (MVP-D8), MVP-D9 n'y change rien.
