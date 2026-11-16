@@ -99,6 +99,13 @@ describe('la retraite affichée', () => {
     expect(hypothesesDeLaRetraite(estimation(), false)).toEqual([])
   })
 
+  it('dit l’année du début qui précède l’affiliation à la CARMF (RET2-Q3) : rien d’appelé, et pourquoi', () => {
+    const [texte] = hypothesesDeLaRetraite(estimation({ hypotheses: ['carmf-annee-avant-l-affiliation'] }), null)
+    expect(texte).toMatch(/^CARMF : rien n’est compté sur cet exercice/)
+    expect(texte).toMatch(/premier jour du trimestre civil qui suit, le 1er janvier suivant/)
+    expect(texte).toMatch(/Les cotisations de l’Urssaf, elles, sont dues dès le début\.$/)
+  })
+
   it('garde ses deux phrases fixes', () => {
     expect(PHRASE_DE_LA_CAISSE).toBe('La caisse appelle ces cotisations sur un revenu antérieur, puis régularise : ce n’est pas l’échéancier de l’année.')
     expect(CE_QUE_L_ESTIMATION_NE_FAIT_PAS).toMatch(/CIPAV/)

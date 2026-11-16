@@ -221,6 +221,23 @@ describe('la retraite d’un médecin, ses deux cases en base', () => {
       remettre()
     }
   })
+
+  it('l’année du début qui précède l’affiliation (RET2-Q3) : rien d’appelé, dit, sans rien demander du cumul ni de la dispense', async () => {
+    try {
+      await avecLesCases('2025-11-15', { cumulEmploiRetraite: null, dispenseComplementaire: null })
+      expect(retraite().queryByText(/^Dites si/)).toBeNull()
+      expect(ligneDe(/^Régime de base \(CNAVPL\)$/)).toBe(enEuros(0))
+      expect(ligneDe(/^Régime complémentaire$/)).toBe(enEuros(0))
+      expect(ligneDe(/^Invalidité-décès$/)).toBe(enEuros(0))
+      expect(ligneDe(/^Régime des praticiens conventionnés \(PCV\)$/)).toBe(enEuros(0))
+      expect(ligneDe(/^Total de la retraite à la charge du praticien$/)).toBe(enEuros(0))
+      expect(retraite().getByText(/^CARMF : rien n’est compté sur cet exercice/)).toBeTruthy()
+      // Les cotisations de l'Urssaf restent dues dès le début : la carte les montre toujours.
+      expect(screen.getByText('Total à la charge du praticien')).toBeTruthy()
+    } finally {
+      remettre()
+    }
+  })
 })
 
 // L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE EN BASE (RET2-Q2, `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` levé par
