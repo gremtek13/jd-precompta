@@ -147,6 +147,23 @@ export const TITRE_DE_L_OUVERTURE_ATTESTEE =
   'Ouvert depuis l’application : le compte du cabinet qui a ouvert cet accès l’a attesté sous sa session. Son adresse ne se lit '
   + 'que par le chef du cabinet et par ce compte lui-même.'
 
+/** Ce que dit le survol d'un geste du cabinet nommé par l'adresse de son compte (P1TQ2Q1-Q1). */
+export const TITRE_DU_COMPTE_DU_CABINET_NOMME =
+  'Un compte qui gérait ce dossier : la base ne laisse changer ces droits qu’à ceux qui le gèrent. Son adresse ne se lit que '
+  + 'par le chef du cabinet et par ce compte lui-même.'
+
+/**
+ * Les comptes à nommer d'une trace (P1TQ2Q1-Q1) : les auteurs CONNECTÉS de ses gestes, hors du titulaire de la ligne, triés,
+ * sans doublon. Ce n'est pas le jugement de l'auteur (`auteurDuGeste` le fait, sur la liste des accès) : c'est ce que l'écran
+ * demande à l'équipe du cabinet, sous la session de qui regarde — un compte qui n'en est pas n'y revient pas, et un geste du
+ * client ne se nomme jamais par là.
+ */
+export function comptesANommer(lignes: readonly Pick<LigneDeTrace, 'auteurId' | 'clientId'>[]): string[] {
+  const comptes = new Set<string>()
+  for (const l of lignes) if (l.auteurId !== null && l.auteurId !== '' && l.auteurId !== l.clientId) comptes.add(l.auteurId)
+  return [...comptes].sort()
+}
+
 /** L'auteur d'une ligne tel que l'écran le montre : la mention, l'adresse d'un compte du cabinet quand il se nomme, le survol. */
 export interface AuteurMontre {
   mention: string
@@ -158,7 +175,10 @@ export interface AuteurMontre {
  * L'auteur d'une ligne, sur ce que la ligne PROUVE (`auteurDuGeste`) ; et, pour l'arrivée d'un accès écrite sans session
  * qu'un compte du cabinet a attestée (P1TQ2-Q1, lib/ouverturesAttestees.ts), « Le cabinet », nommé par son adresse quand la
  * session de qui regarde la lit dans l'équipe. Sans attestation, ou ses lectures absentes (`null` : le drapeau baissé),
- * « Sans session », ce que la base sait. Aucun identifiant ne s'affiche.
+ * « Sans session », ce que la base sait. Un geste du cabinet sous sa session — une case cochée ou décochée, un accès retiré —
+ * se nomme de même par l'adresse de son compte (P1TQ2Q1-Q1, tranchée par le cabinet le 16/11/2026), sous la même règle :
+ * `equipe` ne porte que ce que la policy de `cabinet_admins` rend à qui regarde, sinon « Le cabinet ». Aucun identifiant ne
+ * s'affiche.
  */
 export function auteurMontre(
   acces: AccesDuDossier, ligne: Pick<LigneDeTrace, 'id' | 'auteurId' | 'clientId' | 'droit' | 'geste'>,
@@ -169,8 +189,17 @@ export function auteurMontre(
     const attestee = adresseDeLAuteurAtteste(ligne.id, ouvertures, equipe)
     if (attestee.atteste) return { mention: MENTIONS_DE_L_AUTEUR.cabinet, adresse: attestee.adresse, titre: TITRE_DE_L_OUVERTURE_ATTESTEE }
   }
+  if (auteur === 'cabinet' && ligne.auteurId !== null) {
+    const adresse = equipe?.get(ligne.auteurId) ?? null
+    if (adresse !== null) return { mention: MENTIONS_DE_L_AUTEUR.cabinet, adresse, titre: TITRE_DU_COMPTE_DU_CABINET_NOMME }
+  }
   return { mention: MENTIONS_DE_L_AUTEUR[auteur], adresse: null, titre: TITRES_DE_L_AUTEUR[auteur] }
 }
+
+/** Ce que l'onglet dit du compte du cabinet derrière un geste (P1TQ2Q1-Q1) : la règle de l'adresse, et pour qui. */
+export const CE_QUE_DIT_LE_COMPTE_DU_CABINET =
+  'Un geste du cabinet se nomme aussi par l’adresse du compte qui l’a fait, pour le chef du cabinet et pour ce compte '
+  + 'lui-même ; les autres membres de l’équipe lisent « Le cabinet ».'
 
 /** Ce que l'onglet dit de l'auteur d'une ouverture, l'attestation en base (P1TQ2-Q1, sous `OUVERTURES_ATTESTEES_PREVUES`). */
 export const CE_QUE_DIT_L_OUVERTURE_ATTESTEE =

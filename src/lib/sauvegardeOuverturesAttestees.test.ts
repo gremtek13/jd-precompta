@@ -20,9 +20,9 @@ import {
 } from './sauvegarde'
 import { TABLES_DES_ADRESSES_DES_ACCES_RETIRES } from './adressesDesAccesRetires'
 
-// QUI A OUVERT UN ACCÈS CLIENT, AU PLAN DE SAUVEGARDE (P1TQ2-Q1). Sa migration, `auteur_des_ouvertures_d_acces`, est
-// PRÉPARÉE, le drapeau baissé : le plan effectif ne doit RIEN dire de la table — une sauvegarde lirait une table absente et
-// échouerait. Le plan prévu la porte, à sa place, juste après l'adresse des accès retirés, donc après la trace qu'elle
+// QUI A OUVERT UN ACCÈS CLIENT, AU PLAN DE SAUVEGARDE (P1TQ2-Q1). Sa migration, `auteur_des_ouvertures_d_acces`, est en
+// production depuis le 16/11/2026, le drapeau levé : le plan effectif porte la table ; baissé (l'état d'avant, gardé tant que
+// son code existe), il n'en dirait RIEN — une sauvegarde lirait une table absente et échouerait. Le plan prévu la porte, à sa place, juste après l'adresse des accès retirés, donc après la trace qu'elle
 // nomme ; ce fichier juge les deux, et le plan du jour sous chaque état du drapeau (`vi.doMock`).
 
 const TABLE = 'auteurs_des_ouvertures'
@@ -73,9 +73,9 @@ describe('le plan du jour, sous chaque état du drapeau', () => {
     vi.resetModules()
   })
 
-  it('le drapeau baissé tant que la migration n’est pas en base : la table n’est pas au plan du jour', () => {
-    expect(OUVERTURES_ATTESTEES_PREVUES).toBe(false)
-    expect(auPlanAujourdHui(TABLE)).toBe(false)
+  it('le drapeau levé depuis que la migration est en base (16/11/2026) : la table est au plan du jour', () => {
+    expect(OUVERTURES_ATTESTEES_PREVUES).toBe(true)
+    expect(auPlanAujourdHui(TABLE)).toBe(true)
   })
 
   it('baissé : le plan effectif ne nomme pas la table, et l’ordre reste juste', async () => {

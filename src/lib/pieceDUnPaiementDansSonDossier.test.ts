@@ -9,8 +9,8 @@ import {
   refusDuMouvement, refusDuMouvementSelon,
 } from './pieceDUnPaiementDansSonDossier'
 
-// A8Q5-Q4 : LA PIÈCE D'UN PAIEMENT, TENUE DANS SON DOSSIER. Le module redit les refus de la migration préparée
-// `piece_d_un_paiement_dans_son_dossier`, confrontés à son texte ; ses trois déclencheurs tirent juste après la porte d'accès
+// A8Q5-Q4 : LA PIÈCE D'UN PAIEMENT, TENUE DANS SON DOSSIER. Le module redit les refus de la migration
+// `piece_d_un_paiement_dans_son_dossier` (en production depuis le 16/11/2026), confrontés à son texte ; ses trois déclencheurs tirent juste après la porte d'accès
 // et avant toute garde BEFORE que l'export pose sur ces tables ; ses empreintes et celles de son retour se tiennent ; le
 // drapeau suit l'export ; l'essai attend les mots du module. Données FICTIVES.
 
@@ -61,8 +61,10 @@ function declencheursBeforeDeLExport(table: string): string[] {
 /** Comparaison octet par octet, comme PostgreSQL range les noms des déclencheurs d'un même évènement. */
 const avant = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffer.from(b)) < 0
 
+// L'état du drapeau au chargement (levé depuis l'application du 16/11/2026) : chaque test qui le force le rend.
+const DRAPEAU_AU_CHARGEMENT = DRAPEAU_DE_LA_PIECE_D_UN_PAIEMENT.PIECE_D_UN_PAIEMENT_DANS_SON_DOSSIER_PREVUE
 afterEach(() => {
-  DRAPEAU_DE_LA_PIECE_D_UN_PAIEMENT.PIECE_D_UN_PAIEMENT_DANS_SON_DOSSIER_PREVUE = false
+  DRAPEAU_DE_LA_PIECE_D_UN_PAIEMENT.PIECE_D_UN_PAIEMENT_DANS_SON_DOSSIER_PREVUE = DRAPEAU_AU_CHARGEMENT
 })
 
 describe('A8Q5-Q4 — la migration, son retour et le module', () => {
@@ -95,7 +97,10 @@ describe('A8Q5-Q4 — la migration, son retour et le module', () => {
 
   it('leur rang : juste après la porte d’accès, avant toute garde BEFORE que l’export pose sur les deux tables des paiements', () => {
     for (const [table, nom] of [['lignes_bancaires', 'lignes_bancaires_dans_son_dossier'], ['reglements_groupes', 'reglements_groupes_dans_son_dossier']]) {
-      const autres = declencheursBeforeDeLExport(table)
+      // Appliquée le 16/11/2026, la neuve est elle-même dans l'export : elle se juge contre les AUTRES.
+      const tous = declencheursBeforeDeLExport(table)
+      expect(tous, table).toContain(nom)
+      const autres = tous.filter((t) => t !== nom)
       expect(autres, table).toContain('_acces_avant_les_gardes')
       // Le plancher : les gardes qui lisent la pièce citée, que la neuve devance.
       expect(autres, table).toContain(`${table}_piece_d_une_facture_reprise`)
@@ -136,8 +141,9 @@ describe('A8Q5-Q4 — la migration, son retour et le module', () => {
     expect(ESSAI).toContain("'La pièce d''un paiement par la caisse est une pièce de son dossier.'")
   })
 
-  it('le drapeau suit l’export : baissé tant que la migration n’y est pas', () => {
-    expect(EXPORTEE).toBe(false)
+  it('le drapeau suit l’export : levé depuis que la migration y est (appliquée le 16/11/2026)', () => {
+    expect(EXPORTEE).toBe(true)
+    expect(DRAPEAU_AU_CHARGEMENT).toBe(EXPORTEE)
     expect(pieceDUnPaiementDansSonDossierPrevue()).toBe(EXPORTEE)
   })
 
@@ -169,6 +175,8 @@ describe('A8Q5-Q4 — le jugement, comme la base', () => {
     const fautif = { dossierId: DA, pieceId: 'p', dossierDeLaPiece: DB }
     expect(refusDuMouvementSelon(false, fautif)).toBeNull()
     expect(refusDuMouvementSelon(true, fautif)?.message).toBe(REFUS_DE_LA_PIECE_D_UN_PAIEMENT[2].modele)
+    DRAPEAU_DE_LA_PIECE_D_UN_PAIEMENT.PIECE_D_UN_PAIEMENT_DANS_SON_DOSSIER_PREVUE = false
+    expect(pieceDUnPaiementDansSonDossierPrevue()).toBe(false)
     DRAPEAU_DE_LA_PIECE_D_UN_PAIEMENT.PIECE_D_UN_PAIEMENT_DANS_SON_DOSSIER_PREVUE = true
     expect(pieceDUnPaiementDansSonDossierPrevue()).toBe(true)
   })

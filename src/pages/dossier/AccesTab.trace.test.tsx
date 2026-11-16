@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccesTab from './AccesTab'
 import { libelleDeLaCase } from '../../lib/droitsAcces'
-import { AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE_DES_ACCES } from '../../lib/traceDesDroitsVue'
+import { AUCUN_CHANGEMENT_TRACE, CE_QUE_DIT_LA_TRACE_DES_ACCES, CE_QUE_DIT_LE_COMPTE_DU_CABINET } from '../../lib/traceDesDroitsVue'
 
 // « DROITS CHANGÉS » DANS L'ONGLET ACCÈS (étape P1-trace, ligne 51.5) : la trace lue en entier, puis lue en partie, refusée,
 // rompue ; qui l'a fait, sans jamais un identifiant ; rien d'affirmé avant le retour ; la relecture avec la liste des accès.
@@ -32,6 +32,12 @@ const faux = vi.hoisted(() => ({
   trace: [] as Record<string, unknown>[],
   // Les adresses des accès retirés (P1T-E2, en base depuis le 11/11/2026), que l'écran lit avec la trace.
   adresses: [] as Record<string, unknown>[],
+  // Les attestations d'ouverture (P1TQ2-Q1, en base depuis le 16/11/2026) : aucune ici.
+  ouvertures: [] as Record<string, unknown>[],
+  // L'équipe telle que la session de qui regarde la lit (P1TQ2Q1-Q1) : la policy n'en rend qu'une partie ; vide par défaut.
+  equipe: [] as Record<string, unknown>[],
+  // Une réponse de l'équipe retenue : la lecture ne revient qu'à sa libération.
+  porteEquipe: null as Promise<void> | null,
   // 'entier' : tout ; 'muet' : la trace s'arrête après `muetApres` ligne(s) ; 'refus' ; 'leve'.
   mode: 'entier' as 'entier' | 'muet' | 'refus' | 'leve',
   muetApres: 1,
@@ -42,7 +48,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn } = await import('../../test/filtresPostgrest')
   return {
     supabase: {
       from: (table: string) => {
@@ -53,23 +59,26 @@ vi.mock('../../lib/supabase', async () => {
         Object.assign(c, {
           select: () => c,
           eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return c },
+          in: (colonne: string, valeurs: readonly unknown[]) => { predicats.push(predicatIn(colonne, valeurs)); return c },
           order: () => c,
           range: (d: number, f: number) => { debut = d; fin = f; return c },
           then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
-            const source = table === 'trace_des_droits' ? faux.trace : table === 'adresses_des_acces_retires' ? faux.adresses : faux.acces
+            const source = table === 'trace_des_droits' ? faux.trace : table === 'adresses_des_acces_retires' ? faux.adresses
+              : table === 'auteurs_des_ouvertures' ? faux.ouvertures : table === 'cabinet_admins' ? faux.equipe : faux.acces
             const repondre = () => {
               if (table === 'trace_des_droits') {
                 faux.lecturesDeLaTrace += 1
                 if (faux.mode === 'leve') throw new Error('réseau coupé')
                 if (faux.mode === 'refus') return { data: null, error: { message: 'accès refusé' }, count: null }
-              } else if (faux.accesRefuses && table !== 'adresses_des_acces_retires') {
+              } else if (faux.accesRefuses && !['adresses_des_acces_retires', 'auteurs_des_ouvertures', 'cabinet_admins'].includes(table)) {
                 return { data: null, error: { message: 'JWT expired' }, count: null }
               }
               const toutes = filtrer(source, predicats)
               const jusqua = table === 'trace_des_droits' && faux.mode === 'muet' ? Math.min(fin + 1, faux.muetApres) : fin + 1
               return { data: toutes.slice(debut, jusqua).map((l) => ({ ...l })), error: null, count: toutes.length }
             }
-            const attente = table === 'trace_des_droits' && faux.porteTrace ? faux.porteTrace : Promise.resolve()
+            const attente = table === 'trace_des_droits' && faux.porteTrace ? faux.porteTrace
+              : table === 'cabinet_admins' && faux.porteEquipe ? faux.porteEquipe : Promise.resolve()
             return attente.then(repondre).then(suite, echec)
           },
         })
@@ -108,6 +117,9 @@ beforeEach(() => {
   faux.accesRefuses = false
   faux.lecturesDeLaTrace = 0
   faux.porteTrace = null
+  faux.porteEquipe = null
+  faux.ouvertures = []
+  faux.equipe = []
   faux.acces = [
     acces({ id: 'm1', email: 'client@exemple.fr', droit_ventes: true }),
     acces({ id: 'm2', email: 'second@exemple.fr' }),
@@ -148,7 +160,7 @@ describe('« Droits changés » — la trace lue en entier', () => {
     expect(screen.getByText(CE_QUE_DIT_LA_TRACE_DES_ACCES)).toBeTruthy()
     await act(async () => { liberer() })
 
-    const m1 = volet('client@exemple.fr')
+    const m1 = await waitFor(() => volet('client@exemple.fr'))
     expect(m1.resume.textContent).toBe('Droits changés — client@exemple.fr — 2 changements')
     // Les plus récents d'abord : la note de frais décochée sans session (09/11 à 15:30 à Paris), puis « Ventes » cochée.
     const lignes = within(m1.volet).getAllByRole('row').slice(1)
@@ -199,6 +211,50 @@ describe('« Droits changés » — la trace lue en entier', () => {
       return v
     })
     expect(within(m2.volet).getByText('10/11/2026 à 13:00')).toBeTruthy()
+  })
+})
+
+// P1TQ2Q1-Q1 (tranchée par le cabinet le 16/11/2026, « (A) ») : le compte du cabinet qui a coché, décoché ou retiré se nomme
+// par l'adresse de sa ligne d'équipe, lue SOUS LA SESSION de qui regarde — la policy ne la rend qu'au chef, au
+// super-administrateur et au membre lui-même ; les autres lisent « Le cabinet ». Rien ne s'affiche avant le retour de l'équipe.
+describe('« Droits changés » — le compte du cabinet derrière un geste', () => {
+  it('la session lit la ligne d’équipe du compte : « Le cabinet », suivi de son adresse ; jamais d’identifiant', async () => {
+    faux.equipe = [{ user_id: 'u-cabinet', email: 'chef@cabinet.example', cabinet_id: 'c1' }]
+    await ouvrir()
+    const m1 = await waitFor(() => volet('client@exemple.fr'))
+    const lignes = within(m1.volet).getAllByRole('row').slice(1)
+    expect(lignes.map((l) => l.textContent)).toEqual([
+      '09/11/2026 à 15:30Notes de fraisdécochéeSans session',
+      '08/11/2026 à 10:12VentescochéeLe cabinet — chef@cabinet.example',
+    ])
+    expect(screen.getByText(CE_QUE_DIT_LE_COMPTE_DU_CABINET)).toBeTruthy()
+    // Le titulaire qui a agi lui-même reste « Le client », même si l'équipe était lue.
+    expect(within(volet('second@exemple.fr').volet).getAllByRole('row').slice(1).map((l) => l.textContent))
+      .toEqual([expect.stringMatching(/Le client$/)])
+    const carte = screen.getByText('Droits changés', { selector: 'h3' }).closest('.card') as HTMLElement
+    expect(carte.textContent).not.toContain('u-cabinet')
+  })
+
+  it('la session ne lit pas la ligne de ce compte (un autre membre) : « Le cabinet », sans adresse ni bandeau', async () => {
+    faux.equipe = [{ user_id: 'u-autre', email: 'autre@cabinet.example', cabinet_id: 'c1' }]
+    await ouvrir()
+    const m1 = await waitFor(() => volet('client@exemple.fr'))
+    expect(within(m1.volet).getAllByRole('row').slice(1).map((l) => l.textContent).at(-1)).toBe('08/11/2026 à 10:12VentescochéeLe cabinet')
+    expect(screen.queryByText(/Les adresses des comptes du cabinet/)).toBeNull()
+    expect(screen.queryByText('autre@cabinet.example')).toBeNull()
+  })
+
+  it('rien avant le retour de l’équipe : la trace revenue seule reste « Chargement… »', async () => {
+    let liberer: () => void = () => {}
+    faux.porteEquipe = new Promise<void>((resolve) => { liberer = resolve })
+    faux.equipe = [{ user_id: 'u-cabinet', email: 'chef@cabinet.example', cabinet_id: 'c1' }]
+    await ouvrir()
+    await waitFor(() => expect(faux.lecturesDeLaTrace).toBe(1))
+    expect(screen.getByText('Chargement de la trace des droits…')).toBeTruthy()
+    expect(screen.queryByText(/Droits changés — /)).toBeNull()
+    await act(async () => { liberer() })
+    // Le geste sur « Ventes » et le retrait de l'accès parti, tous deux du même compte.
+    await waitFor(() => expect(screen.getAllByText('chef@cabinet.example')).toHaveLength(2))
   })
 })
 

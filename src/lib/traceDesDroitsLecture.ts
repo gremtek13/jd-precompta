@@ -84,6 +84,38 @@ export async function lireLesOuverturesAttestees(dossierId: string): Promise<Lec
   }
 }
 
+// LES COMPTES DU CABINET DERRIÈRE LES GESTES DE LA TRACE (P1TQ2Q1-Q1, tranchée par le cabinet le 16/11/2026 : « (A) »), lus
+// pour nommer qui a coché, décoché ou retiré : leur ligne d'équipe, SOUS LA SESSION de qui regarde — la même règle que
+// l'auteur d'une ouverture : la policy de `cabinet_admins` ne rend l'adresse qu'au chef du cabinet, au super-administrateur et
+// au membre lui-même ; ce qui ne revient pas se dit « Le cabinet ». Gardée AVEC le dossier et la liste des comptes demandés
+// (`comptes`, triée) : une réponse pour une autre trace ne se montre pas. Une requête qui lève tombe du côté signalé. Sans
+// migration : la table et la policy sont celles de l'équipe.
+export interface LectureDesComptesDuCabinet {
+  dossierId: string
+  /** Les comptes demandés, joints : la clé de la lecture. */
+  comptes: string
+  /** Les adresses que la session lit, par compte ; vide si elle n'en lit aucune. */
+  equipe: ReadonlyMap<string, string>
+  motif: string | null
+}
+
+export async function lireLesComptesDuCabinet(dossierId: string, comptes: readonly string[]): Promise<LectureDesComptesDuCabinet> {
+  const cle = comptes.join(',')
+  if (comptes.length === 0) return { dossierId, comptes: cle, equipe: new Map(), motif: null }
+  try {
+    const equipe = await lireTout<MembreLu>((debut, fin) =>
+      supabase.from('cabinet_admins').select('user_id, email', { count: 'exact' })
+        .in('user_id', [...comptes]).order('user_id').range(debut, fin),
+    )
+    return {
+      dossierId, comptes: cle, equipe: equipeNommable(equipe.lignes),
+      motif: equipe.complete ? null : `l’équipe : ${equipe.motif ?? 'lecture incomplète'}`,
+    }
+  } catch (e) {
+    return { dossierId, comptes: cle, equipe: new Map(), motif: `l’équipe : ${messageErreur(e, 'la lecture a échoué')}` }
+  }
+}
+
 export async function lireLesAdressesDesAccesRetires(dossierId: string): Promise<LectureDesAdresses> {
   try {
     const lecture = await lireTout<AdresseDUnAccesRetire>((debut, fin) =>

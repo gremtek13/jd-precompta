@@ -1,8 +1,8 @@
 import type { AuteurDUneOuverture } from './types'
 
 // QUI A OUVERT UN ACCÈS CLIENT (espace client, ligne 51.5 ; P1TQ2-Q1, tranchée par le cabinet le 16/11/2026, contre la
-// recommandation : « (A) Nommer le compte du cabinet »). La migration PRÉPARÉE `auteur_des_ouvertures_d_acces`
-// (supabase/preparees/20261116120000_auteur_des_ouvertures_d_acces.sql) pose la table `auteurs_des_ouvertures` : le compte du
+// recommandation : « (A) Nommer le compte du cabinet »). La migration `auteur_des_ouvertures_d_acces`, en production depuis le
+// 16/11/2026 (supabase/schema/20261116174937_auteur_des_ouvertures_d_acces.sql), pose la table `auteurs_des_ouvertures` : le compte du
 // cabinet du dossier qui, SOUS SA SESSION, a attesté l'arrivée d'un accès que la trace des droits a écrite sans session
 // (`create-client-access` l'écrit sous la clé secrète, puis appelle `attester_ouverture_d_acces` sous la session de
 // l'appelant). Le récit : HISTORIQUE.md, « 16/11/2026 — P1TQ2-Q1 : QUI A OUVERT UN ACCÈS CLIENT » ; l'essai :
@@ -15,11 +15,10 @@ import type { AuteurDUneOuverture } from './types'
 // cabinet, au super-administrateur et au membre lui-même. Un autre membre de l'équipe lit « Le cabinet » (P1T-E1), un membre
 // parti aussi. Le client ne lit ni la table, ni la trace, ni l'équipe. Aucun identifiant ne s'affiche jamais.
 //
-// LE DRAPEAU, baissé tant que la migration n'est pas en base : levé, l'onglet LIT la table (une table absente rendrait la
-// lecture en échec) et le plan de sauvegarde la porte (la lire avant sa migration ferait échouer toute sauvegarde). Il se
-// lève le jour où la migration entre dans l'export, avec `create-client-access` redéployée sa constante
-// `OUVERTURES_ATTESTEES_EN_BASE` levée ; il se baisse AVANT tout retour.
-export const OUVERTURES_ATTESTEES_PREVUES: boolean = false
+// LE DRAPEAU, LEVÉ depuis l'application de la migration le 16/11/2026 : l'onglet LIT la table (une table absente rendrait la
+// lecture en échec) et le plan de sauvegarde la porte (la lire avant sa migration ferait échouer toute sauvegarde). Il va avec
+// `create-client-access` redéployée sa constante `OUVERTURES_ATTESTEES_EN_BASE` levée ; il se baisse AVANT tout retour.
+export const OUVERTURES_ATTESTEES_PREVUES: boolean = true
 
 /** La table de la migration, que le plan de sauvegarde ne porte que le drapeau levé. */
 export const TABLES_DES_OUVERTURES_ATTESTEES: readonly string[] = ['auteurs_des_ouvertures']

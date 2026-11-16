@@ -17,7 +17,8 @@ import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
 const RACINE = resolve(process.cwd())
 const lire = (chemin: string) => readFileSync(resolve(RACINE, chemin), 'utf8')
-const MIGRATION = 'supabase/preparees/20261116120000_auteur_des_ouvertures_d_acces.sql'
+// Appliquée le 16/11/2026 : le fichier est entré dans l'export sous sa version, texte inchangé.
+const MIGRATION = 'supabase/schema/20261116174937_auteur_des_ouvertures_d_acces.sql'
 const RETOUR = 'supabase/preparees/retour/20261116120100_retour_auteur_des_ouvertures_d_acces.sql'
 
 const faux = vi.hoisted(() => ({
@@ -76,10 +77,11 @@ beforeEach(() => {
   faux.demandes = []
 })
 
-describe('le drapeau et la migration préparée', () => {
-  it('baissé tant que la migration n’est pas dans l’export ; elle est préparée, avec son retour', () => {
-    expect(OUVERTURES_ATTESTEES_PREVUES).toBe(false)
-    expect(readdirSync(resolve(RACINE, 'supabase/schema')).some((f) => f.endsWith('_auteur_des_ouvertures_d_acces.sql'))).toBe(false)
+describe('le drapeau et la migration', () => {
+  it('levé depuis que la migration est dans l’export (appliquée le 16/11/2026) ; son retour reste préparé', () => {
+    expect(OUVERTURES_ATTESTEES_PREVUES).toBe(true)
+    expect(readdirSync(resolve(RACINE, 'supabase/schema')).filter((f) => f.endsWith('_auteur_des_ouvertures_d_acces.sql'))).toHaveLength(1)
+    expect(readdirSync(resolve(RACINE, 'supabase/preparees')).some((f) => f.endsWith('_auteur_des_ouvertures_d_acces.sql'))).toBe(false)
     expect(lire(MIGRATION)).toContain('create table public.auteurs_des_ouvertures (')
     expect(lire(RETOUR)).toContain('drop table public.auteurs_des_ouvertures;')
     expect(TABLES_DES_OUVERTURES_ATTESTEES).toEqual(['auteurs_des_ouvertures'])

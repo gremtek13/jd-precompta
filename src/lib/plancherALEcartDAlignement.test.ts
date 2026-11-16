@@ -11,7 +11,7 @@ import {
 } from './plancherALEcartDAlignement'
 
 // A8Q5Q3Q2-Q3 : LE PLANCHER PREND LA PIÈCE ENTIÈRE SOUS L'ÉCART D'ALIGNEMENT. Le module redit la règle et les refus de la
-// migration préparée `plancher_a_l_ecart_d_alignement`, confrontés à son texte ; la règle, à celle de la 2035 elle-même
+// migration `plancher_a_l_ecart_d_alignement` (en production depuis le 16/11/2026), confrontés à son texte ; la règle, à celle de la 2035 elle-même
 // (`partsDesPaiements`) sur un balayage ; les trois sources du reçu, à celles de l'export ; le jugement de la garde du montant,
 // à celui de la citation ; ses empreintes, son retour ; le drapeau suit l'export ; l'essai attend les mots du module.
 
@@ -32,6 +32,10 @@ const RETOUR = leFichier(/^\d{14}_retour_plancher_a_l_ecart_d_alignement\.sql$/,
 const REGLEMENTS = leFichier(/^\d{14}_reglements_de_la_piece_citee\.sql$/, ['../../supabase/preparees/', '../../supabase/schema/'])
 const ESSAI = readFileSync(new URL('../../supabase/essais/plancherALEcartDAlignement.sql', import.meta.url), 'utf8')
 const EXPORTEE = fichiersDuSchema().some((f) => /\d{14}_plancher_a_l_ecart_d_alignement\.sql$/.test(f.chemin))
+// Le corps de `recu_par_la_piece` en production le jour du collage : la dernière définition de l'export AVANT la migration
+// (appliquée le 16/11/2026, elle est désormais elle-même la dernière).
+const AVANT = (f: { chemin: string }) => !/\d{14}_plancher_a_l_ecart_d_alignement\.sql$/.test(f.chemin)
+const recuDAvant = () => derniereDefinitionSql('recu_par_la_piece', AVANT)
 const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('hex')
 
 const definition = (texte: string, nom: string) => {
@@ -50,8 +54,10 @@ const sources = (d: string) => {
   return d.slice(debut, d.indexOf("o.retire_le is null)", debut) + "o.retire_le is null)".length).replace(/\s+/g, ' ')
 }
 
+// L'état du drapeau au chargement (levé depuis l'application du 16/11/2026) : chaque test qui le force le rend.
+const DRAPEAU_AU_CHARGEMENT = DRAPEAU_DU_PLANCHER_A_L_ECART.PLANCHER_A_L_ECART_D_ALIGNEMENT_PREVU
 afterEach(() => {
-  DRAPEAU_DU_PLANCHER_A_L_ECART.PLANCHER_A_L_ECART_D_ALIGNEMENT_PREVU = false
+  DRAPEAU_DU_PLANCHER_A_L_ECART.PLANCHER_A_L_ECART_D_ALIGNEMENT_PREVU = DRAPEAU_AU_CHARGEMENT
 })
 
 describe('A8Q5Q3Q2-Q3 — la règle, celle de la 2035', () => {
@@ -94,15 +100,19 @@ describe('A8Q5Q3Q2-Q3 — la règle, celle de la 2035', () => {
   it('selon l’état de la base : baissé, ce que la pièce a reçu ; levé, la pièce entière', () => {
     expect(plancherSelon(false, 11800, 120)).toBe(11800)
     expect(plancherSelon(true, 11800, 120)).toBe(12000)
+    DRAPEAU_DU_PLANCHER_A_L_ECART.PLANCHER_A_L_ECART_D_ALIGNEMENT_PREVU = false
+    expect(plancherALEcartDAlignementPrevu()).toBe(false)
     DRAPEAU_DU_PLANCHER_A_L_ECART.PLANCHER_A_L_ECART_D_ALIGNEMENT_PREVU = true
     expect(plancherALEcartDAlignementPrevu()).toBe(true)
   })
 })
 
 describe('A8Q5Q3Q2-Q3 — la migration, son retour et le module', () => {
-  it('ses trois sources du reçu sont celles de `recu_par_la_piece` dans l’export, au caractère près', () => {
-    expect(sources(definition(MIGRATION, 'recu_par_la_piece_au_montant'))).toBe(sources(derniereDefinitionSql('recu_par_la_piece')))
-    expect(sources(derniereDefinitionSql('recu_par_la_piece')).length).toBeGreaterThan(400)
+  it('ses trois sources du reçu sont celles de `recu_par_la_piece` dans l’export d’avant elle, au caractère près', () => {
+    expect(sources(definition(MIGRATION, 'recu_par_la_piece_au_montant'))).toBe(sources(recuDAvant()))
+    expect(sources(recuDAvant()).length).toBeGreaterThan(400)
+    // Appliquée, elle est la dernière définition de l'export : la base exécute la sienne.
+    expect(derniereDefinitionSql('recu_par_la_piece')).toBe(definition(MIGRATION, 'recu_par_la_piece'))
     // `recu_par_la_piece` lit la neuve à SON montant.
     expect(corps(definition(MIGRATION, 'recu_par_la_piece')))
       .toContain('select public.recu_par_la_piece_au_montant(p_piece_id, (select p.montant_ttc from public.pieces p where p.id = p_piece_id))')
@@ -144,7 +154,7 @@ describe('A8Q5Q3Q2-Q3 — la migration, son retour et le module', () => {
 
   it('la garde de tête nomme le corps de production de `recu_par_la_piece` et celui de la garde des règlements', () => {
     const tete = bloc(MIGRATION, 'garde')
-    expect(tete).toContain(`recu_par_la_piece=${md5(corps(derniereDefinitionSql('recu_par_la_piece')))}`)
+    expect(tete).toContain(`recu_par_la_piece=${md5(corps(recuDAvant()))}`)
     expect(tete).toContain(`garder_recu_d_une_piece_citee=${md5(corps(definition(REGLEMENTS, 'garder_recu_d_une_piece_citee')))}`)
     // Le relevé, sur le plancher neuf, après la pose de la fonction et avant celle de la garde.
     expect(MIGRATION.indexOf('do $releve$')).toBeGreaterThan(indiceSql(MIGRATION, 'create or replace function public.recu_par_la_piece('))
@@ -158,8 +168,8 @@ describe('A8Q5Q3Q2-Q3 — la migration, son retour et le module', () => {
       expect(bloc(MIGRATION, 'fin'), e).toContain(e)
       expect(bloc(RETOUR, 'garde'), e).toContain(e)
     }
-    expect(md5(corps(definition(RETOUR, 'recu_par_la_piece')))).toBe(md5(corps(derniereDefinitionSql('recu_par_la_piece'))))
-    expect(bloc(RETOUR, 'fin')).toContain(`'${md5(corps(derniereDefinitionSql('recu_par_la_piece')))}'`)
+    expect(md5(corps(definition(RETOUR, 'recu_par_la_piece')))).toBe(md5(corps(recuDAvant())))
+    expect(bloc(RETOUR, 'fin')).toContain(`'${md5(corps(recuDAvant()))}'`)
     expect(MIGRATION).not.toMatch(/\b(drop|truncate)\b|delete from/i)
     expect(MIGRATION).not.toContain('\\')
     expect(RETOUR.split('\n').filter((l) => /^drop /.test(l))).toEqual([
@@ -169,8 +179,9 @@ describe('A8Q5Q3Q2-Q3 — la migration, son retour et le module', () => {
     ])
   })
 
-  it('le drapeau suit l’export : baissé tant que la migration n’y est pas', () => {
-    expect(EXPORTEE).toBe(false)
+  it('le drapeau suit l’export : levé depuis que la migration y est (appliquée le 16/11/2026)', () => {
+    expect(EXPORTEE).toBe(true)
+    expect(DRAPEAU_AU_CHARGEMENT).toBe(EXPORTEE)
     expect(plancherALEcartDAlignementPrevu()).toBe(EXPORTEE)
   })
 

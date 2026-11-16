@@ -4096,16 +4096,38 @@ const COMPTES_DU_CABINET: { quoi: string; email: string; preparer?: (m: Monde) =
   },
 ]
 
-// ── QUI A OUVERT L'ACCÈS (create-client-access, P1TQ2-Q1, la migration PRÉPARÉE `auteur_des_ouvertures_d_acces`) ──────────
-// Joués sur la source servie, `OUVERTURES_ATTESTEES_EN_BASE` LEVÉE en mémoire (src/lib/ouverturesAttesteesHttp.test.ts) :
-// l'accès s'écrit sous la clé secrète, PUIS l'ouverture s'atteste sous la session de l'appelant — une fois, avec l'accès que
-// la base a rendu ; la base nomme elle-même le compte. Une attestation en panne ne défait pas l'accès : la réponse le dit. Un
-// refus d'avant l'écriture n'atteste rien. Aucun identifiant de compte dans la réponse.
+// ── QUI A OUVERT L'ACCÈS (create-client-access, P1TQ2-Q1, la migration `auteur_des_ouvertures_d_acces`, en production depuis
+// le 16/11/2026) ──
+// Joués sur la source servie, `OUVERTURES_ATTESTEES_EN_BASE` LEVÉE (src/lib/ouverturesAttesteesHttp.test.ts) : l'accès
+// s'écrit sous la clé secrète, PUIS l'ouverture s'atteste sous la session de l'appelant — une fois, avec l'accès que la base a
+// rendu ; la base nomme elle-même le compte. Une attestation en panne ne défait pas l'accès : la réponse le dit. Un refus
+// d'avant l'écriture n'atteste rien. Aucun identifiant de compte dans la réponse. Le contrat de la fonction
+// (`CREATE_CLIENT_ACCESS`) attend, de tout accès écrit, l'attestation et sa réponse ; l'état d'avant (la constante baissée en
+// mémoire) garde son scénario, `SCENARIOS_OUVERTURES_NON_ATTESTEES`.
 const attestationsDOuverture = (m: Monde) => m.journal.filter((e) => e.genre === 'rpc' && e.nom === 'attester_ouverture_d_acces')
 const reponseAttestee = (compte: 'cree' | 'existant', ouvertureAttestee: boolean) => (r: Resultat) => {
   const attendue = JSON.stringify({ ok: true, compte, ouvertureAttestee })
   return JSON.stringify(r.json) === attendue ? [] : [`réponse ${r.texte.slice(0, 160)} au lieu de ${attendue}`]
 }
+/** La réponse d'un accès écrit, l'ouverture attestée : ce que l'écran lit, et rien d'autre — ni identifiant, ni cabinet. */
+const reponseDeLAcces = (compte: 'cree' | 'existant') => reponseAttestee(compte, true)
+/** L'écriture de l'attestation, sous la session de l'appelant, qui suit celle de l'accès. */
+const ECRITURE_DE_L_ATTESTATION = 'écriture insert auteurs_des_ouvertures'
+
+/** L'état d'avant la migration (la constante baissée en mémoire) : l'accès écrit, rien d'attesté, la réponse d'avant mot pour mot. */
+export const SCENARIOS_OUVERTURES_NON_ATTESTEES: readonly Scenario[] = ADMIS_DU_DOSSIER.map((personne): Scenario => ({
+  nom: `constante baissée — ${personne} : l’accès écrit, rien d’attesté, la réponse d’avant`,
+  preparer: motDePasseSecret,
+  requete: (s) => requeteDe(s, { personne, corps: ACCES }),
+  attendu: {
+    statut: 200, depenses: ['comptes createUser', 'écriture insert memberships'],
+    verifier: (r, m) => [
+      ...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']),
+      ...reponseDeCreation('cree')(r),
+      ...(attestationsDOuverture(m).length === 0 ? [] : ['une attestation tentée, la constante baissée']),
+    ],
+  },
+}))
 
 export const SCENARIOS_OUVERTURES_ATTESTEES: readonly Scenario[] = [
   ...ADMIS_DU_DOSSIER.map((personne): Scenario => ({
@@ -4181,7 +4203,7 @@ const rattacheSurConfirmation = (email: string, userId: string) => (r: Resultat,
   const fautes = acces.length === 1 && acces[0].user_id === userId && acces[0].role === 'client'
     ? [] : [`un accès de ${userId} attendu, et seul : ${JSON.stringify(acces)}`]
   if (acces.some((a) => a.droit_ventes === true || a.droit_banque === true || a.droit_caisse === true)) fautes.push('l’accès rattaché porte un droit')
-  return [...fautes, ...reponseDeCreation('existant')(r), ...compteIntact(r, m)]
+  return [...fautes, ...reponseDeLAcces('existant')(r), ...compteIntact(r, m)]
 }
 
 /**
@@ -4278,7 +4300,7 @@ function rattachementsConfirmes(): Scenario[] {
       preparer: (m) => { motDePasseSecret(m); preparer?.(m) },
       requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(email) }),
       attendu: {
-        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships', ECRITURE_DE_L_ATTESTATION],
         verifier: rattacheSurConfirmation(email, id),
       },
     })),
@@ -4324,7 +4346,7 @@ function rattachementsConfirmes(): Scenario[] {
       preparer: motDePasseSecret,
       requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(PERSONNES.comptableNonAssigne.email) }),
       attendu: {
-        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships', ECRITURE_DE_L_ATTESTATION],
         verifier: rattacheSurConfirmation(PERSONNES.comptableNonAssigne.email, PERSONNES.comptableNonAssigne.id),
       },
     },
@@ -4347,8 +4369,8 @@ function rattachementsConfirmes(): Scenario[] {
       preparer: motDePasseSecret,
       requete: (s) => requeteDe(s, { personne: 'chef', corps: confirme(NOUVEL_EMAIL) }),
       attendu: {
-        statut: 200, depenses: ['comptes createUser', 'écriture insert memberships'],
-        verifier: (r, m) => [...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']), ...reponseDeCreation('cree')(r)],
+        statut: 200, depenses: ['comptes createUser', 'écriture insert memberships', ECRITURE_DE_L_ATTESTATION],
+        verifier: (r, m) => [...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']), ...reponseDeLAcces('cree')(r)],
       },
     },
     // La confirmation ne passe outre aucun contrôle : ni celui du dossier, ni celui du mot de passe.
@@ -4425,8 +4447,8 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
       preparer: motDePasseSecret,
       requete: (s) => requeteDe(s, { personne, corps: ACCES }),
       attendu: {
-        statut: 200, depenses: ['comptes createUser', 'écriture insert memberships'],
-        verifier: (r, m) => [...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']), ...reponseDeCreation('cree')(r)],
+        statut: 200, depenses: ['comptes createUser', 'écriture insert memberships', ECRITURE_DE_L_ATTESTATION],
+        verifier: (r, m) => [...(accesDe(m, NOUVEL_EMAIL).length === 1 ? [] : ['accès absent']), ...reponseDeLAcces('cree')(r)],
       },
     })),
     // LE DOSSIER DU CABINET (ligne 47, LM2) : aucun accès client. Dit avant tout compte créé ou cherché, aux mots de la garde
@@ -4467,10 +4489,10 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
       preparer: (m) => { motDePasseSecret(m); preparer?.(m) },
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...ACCES, email } }),
       attendu: {
-        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships', ECRITURE_DE_L_ATTESTATION],
         verifier: (r, m) => [
           ...(accesDe(m, email).length === 1 ? [] : ['accès absent']),
-          ...reponseDeCreation('existant')(r),
+          ...reponseDeLAcces('existant')(r),
           ...compteIntact(r, m),
         ],
       },
@@ -4513,10 +4535,10 @@ const CREATE_CLIENT_ACCESS: ContratFonction = {
       inscrite: PERSONNES.comptableNonAssigne.email,
       depensesDuRefus: ['comptes createUser'],
       dejaInscrite: {
-        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships'],
+        statut: 200, depenses: ['comptes createUser', 'comptes listUsers', 'écriture insert memberships', ECRITURE_DE_L_ATTESTATION],
         verifier: (r, m) => [
           ...(accesDe(m, PERSONNES.comptableNonAssigne.email).length === 1 ? [] : ['accès absent']),
-          ...reponseDeCreation('existant')(r),
+          ...reponseDeLAcces('existant')(r),
           ...compteIntact(r, m),
         ],
       },

@@ -7,8 +7,8 @@ import type { RefusDeLaBase } from './pieceDUneFactureReprise'
 // Le plancher du registre d'une facture reprise (`recu_par_la_piece`, A8Q5Q3-Q2) était ce que sa pièce citée a REÇU. Sous
 // l'écart d'alignement (lib/alignementBanque.ts, `seuilAlignement` : 2 % du montant, 5 € au plus), la 2035 tient pourtant une
 // pièce pour réglée en entier (lib/rattachement.ts, `partsDesPaiements`) : non réalignée, la pièce laissait le registre
-// recevoir l'écart, compté deux fois. La migration préparée `plancher_a_l_ecart_d_alignement`
-// (supabase/preparees/20261116141000_plancher_a_l_ecart_d_alignement.sql) fait de `recu_par_la_piece` ce que la 2035 compte
+// recevoir l'écart, compté deux fois. La migration `plancher_a_l_ecart_d_alignement`, en production
+// depuis le 16/11/2026 (supabase/schema/20261116174644_plancher_a_l_ecart_d_alignement.sql), fait de `recu_par_la_piece` ce que la 2035 compte
 // de la pièce — la pièce entière quand son reçu la règle à l'écart près —, en entiers, dans la base ; et, le plancher
 // dépendant désormais du montant de la pièce, `garder_plancher_d_une_piece_citee` juge à la fin du geste un montant qui le
 // fait monter, comme la garde des règlements juge un paiement.
@@ -20,11 +20,12 @@ import type { RefusDeLaBase } from './pieceDUneFactureReprise'
 // montant d'une pièce citée en disant ce refus avant le clic : la fiche d'une pièce ne lit pas le lien d'une pièce à sa
 // facture reprise (comme les règlements, lib/reglementsDeLaPieceCitee.ts).
 
-// LE DRAPEAU, BAISSÉ jusqu'à l'application de la migration. Levé le jour de l'application (le fichier entré dans
-// supabase/schema/, texte inchangé). Il se lit À CHAQUE APPEL : les tests jouent ses deux états sur l'objet ci-dessous.
+// LE DRAPEAU, LEVÉ depuis l'application de la migration le 16/11/2026 (le fichier entré dans supabase/schema/ sous la version
+// 20261116174644, texte inchangé) ; il se baisse AVANT tout retour. Il se lit À CHAQUE APPEL : les tests jouent ses deux états sur
+// l'objet ci-dessous.
 export const DRAPEAU_DU_PLANCHER_A_L_ECART = {
-  /** Faux jusqu'à l'application de `plancher_a_l_ecart_d_alignement`, préparée le 16/11/2026. */
-  PLANCHER_A_L_ECART_D_ALIGNEMENT_PREVU: false as boolean,
+  /** Vrai depuis l'application de `plancher_a_l_ecart_d_alignement`, le 16/11/2026. */
+  PLANCHER_A_L_ECART_D_ALIGNEMENT_PREVU: true as boolean,
 }
 
 /** Le drapeau, lu à l'appel. */

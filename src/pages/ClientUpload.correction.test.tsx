@@ -95,6 +95,9 @@ vi.mock('../lib/supabase', async () => {
         if (nom === 'caisse_du_client') return chaine('caisse_du_client', () => faux.jours[args.p_annee as number] ?? [])
         if (nom === 'couverture_du_releve') return Promise.resolve({ data: couvertureDe([]), error: null })
         if (nom === 'pieces_jointes_ecartees_du_client') return Promise.resolve({ data: [], error: null })
+        // Les pièces que la caisse du client ne règle pas (A8Q5Q3Q2Q2-Q1, en production depuis le 16/11/2026) : une lecture,
+        // aucune ici (ClientUpload.especesHorsDesReprises.test.tsx les joue).
+        if (nom === 'pieces_hors_de_la_caisse_du_client') return Promise.resolve({ data: [], error: null })
         // Les honoraires que le cabinet a déposés (ligne 47, LM8, en production depuis le 12/11/2026) : une lecture, aucun ici
         // (ClientUpload.honoraires.test.tsx les joue).
         if (nom === 'honoraires_deposes_au_dossier') return Promise.resolve({ data: [], error: null, count: 0 })

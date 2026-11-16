@@ -44,6 +44,8 @@ vi.mock('../../lib/traceDesDroitsLecture', () => ({
   lireLaTraceDuDossier: async (dossierId: string) => ({ dossierId, lignes: [], motif: null }),
   // Les adresses des accès retirés (P1T-E2, en base depuis le 11/11/2026), lues avec la trace : en entier, et aucune.
   lireLesAdressesDesAccesRetires: async (dossierId: string) => ({ dossierId, parAcces: new Map(), motif: null }),
+  // Qui a ouvert un accès (P1TQ2-Q1, en base depuis le 16/11/2026), lu avec la trace : en entier, et aucune attestation.
+  lireLesOuverturesAttestees: async (dossierId: string) => ({ dossierId, parTrace: new Map(), equipe: new Map(), motif: null }),
 }))
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
