@@ -53399,3 +53399,20 @@ permis, proposé hors de la 2035 avec son extourne, compté seulement sur désig
 remplacée. Relevé en concevant : la policy du brouillon laisse un membre insérer par l'API une ligne sans source (EL2b,
 EL-Q11) ; les gardes de tête de INV2, LIA2, AFF2 et MCB5g refuseraient la colonne neuve (EL2 les met à jour). Questions :
 EL-Q1 à Q12, EL-E1 à E5.
+### 16/11/2026 — QUATRE MIGRATIONS EN PRODUCTION (231 À 234)
+
+Sur l'accord du cabinet du même soir, la session a appliqué par l'outil, textes inchangés, chaque empreinte d'historique égale
+à celle de son fichier : `piece_d_un_paiement_dans_son_dossier` (`20261116174425`, A8Q5-Q4-migration (A)),
+`plancher_a_l_ecart_d_alignement` (`20261116174644`, A8Q5Q3Q2-Q3-migration (A)), `especes_du_client_hors_des_reprises`
+(`20261116174819`, A8Q5Q3Q2Q2-Q1-migration (A), la lecture au client « Caisse » comprise), `auteur_des_ouvertures_d_acces`
+(`20261116174937`, P1TQ2Q1-migration : « L'appliquer, puis lever et redéployer »). Les trois contrôles, égaux des deux côtés à
+234 : dérive `17d67c7a…`, socle 83 `d02e468d…`, inventaire 3 211 `9a97d1ee…`. Levés : les quatre drapeaux et
+`OUVERTURES_ATTESTEES_EN_BASE` (`create-client-access` à redéployer par la session) ; l'état d'avant reste éprouvé (les
+drapeaux d'objet forcés, `OUVERTURES_ATTESTEES_PREVUES` baissé par `vi.mock`, la constante baissée en mémoire,
+`SCENARIOS_OUVERTURES_NON_ATTESTEES`) ; le contrat de `create-client-access` attend de tout accès écrit l'attestation et sa
+réponse. Réponses : P1TQ2Q1-Q1 (A) — l'onglet Accès nomme aussi, sans migration, le compte qui a coché, décoché ou retiré
+(`comptesANommer`, `lireLesComptesDuCabinet` : `cabinet_admins` sous la session de qui regarde, sinon « Le cabinet » ; rien
+avant le retour, une lecture partielle dite) ; A8Q5Q3Q2Q2Q1-Q1 (A) et A8Q5Q3Q2Q3-Q1 (A) : rien à changer (le retrait reste au
+client ; les mots gardés). Vérifié sur une copie de `replique_227` portée à 234 (les trois contrôles égaux à la production) :
+les quatre essais 24/24, 26/26, 21/21, 39/39 ; `rls.sql` 259 lignes, 0 en faute sur 1 205 vérifications, 150 mutations sur
+150 ; la suite entière 895 fichiers, 22 792 tests.

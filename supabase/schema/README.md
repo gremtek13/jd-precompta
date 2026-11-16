@@ -984,6 +984,15 @@ APPLIQUÉE) »). Le jour de l'application : elle, par l'outil, puis les trois co
 `validationDesPaiementsParLaCaisse.sql` et le bloc CQ de `rls.sql` se jouent en production, `caisseSuppression.sql` sur
 une réplique.
 
+**En production le 16/11/2026 au soir, quatre migrations (231 à 234), par l'outil, sur l'accord du cabinet** :
+`20261116174425_piece_d_un_paiement_dans_son_dossier` (A8Q5-Q4, `e7c022ae…`), `20261116174644_plancher_a_l_ecart_d_alignement`
+(A8Q5Q3Q2-Q3, `57d5f5c0…`), `20261116174819_especes_du_client_hors_des_reprises` (A8Q5Q3Q2Q2-Q1, `b67184a6…`),
+`20261116174937_auteur_des_ouvertures_d_acces` (P1TQ2-Q1, `052904f7…`), chacune entrée ici sous sa version, texte inchangé,
+l'empreinte de sa ligne d'historique égale à celle du fichier. Les trois contrôles, égaux des deux côtés : la dérive, 234
+fichiers et 234 migrations, `17d67c7ac6db91e4ffc8dfa60e7180bb` ; le socle, 83 instructions, `d02e468d124c948803d3e9b831092ca3`
+(inchangé) ; l'inventaire, 3 211 objets, `9a97d1ee6165cfe7471bbeaa323a1bd3`. Leurs retours restent dans
+`supabase/preparees/retour/` (HISTORIQUE.md, « QUATRE MIGRATIONS EN PRODUCTION (231 À 234) »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
