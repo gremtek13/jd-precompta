@@ -1359,12 +1359,51 @@ const REVUE_D9 = {
 // ne rien changer à ce que mesurent les passes du cabinet. Trois mouvements à traiter de plus — un abonnement au libellé
 // LONG, sans justificatif ; un repas, pour lequel le client a déjà envoyé une pièce ; le loyer, sur lequel le cabinet a posé
 // une question —, le fil de cette question, et le contrôle de solde du relevé d'août, cohérent : le solde « au relevé ».
+// « COMPARER LES ANNÉES » DANS « MON ANNÉE » (16/11/2026) : 2024 entière, 2025 sans mars (un trou dans sa courbe) et 2026
+// de janvier à avril, chacune sous un relevé contrôlé cohérent dont les soldes s'enchaînent, et trois mouvements par mois aux
+// montants FICTIFS tirés d'une formule fixe : de quoi voir trois courbes, un trou, et une différence qui passe sous zéro.
+function historiqueDuReleveD7(): { lignes: Ligne[]; controles: Ligne[] } {
+  const periodes: [string, string, number[]][] = [
+    ['2024-01-01', '2024-12-31', [2024]], ['2025-01-01', '2025-02-28', [2025]], ['2025-04-01', '2025-12-31', [2025]],
+    ['2026-01-01', '2026-04-30', [2026]],
+  ]
+  const lignes: Ligne[] = []
+  const controles: Ligne[] = []
+  let solde = 4200
+  for (const [debut, fin] of periodes) {
+    const initial = solde
+    const premier = Number(debut.slice(5, 7))
+    const dernier = Number(fin.slice(5, 7))
+    const annee = Number(debut.slice(0, 4))
+    for (let m = premier; m <= dernier; m += 1) {
+      const mm = String(m).padStart(2, '0')
+      const entree = 2600 + ((annee * 7 + m * 131) % 900) + (annee - 2024) * 350 + (m === 8 ? -1500 : 0)
+      const loyer = -1080
+      const divers = -(900 + ((m * 97 + (annee - 2024) * 450) % 1300))
+      for (const [suffixe, jour, libelle, montant] of [
+        ['e', '08', 'VIR SEPA RECU HONORAIRES FICTIFS', entree], ['l', '05', 'VIR SEPA EMIS LOYER BUREAU', loyer],
+        ['d', '21', 'PRLV SEPA FOURNISSEUR FICTIF', divers],
+      ] as const) {
+        lignes.push(paiementTva(`h-${annee}-${mm}-${suffixe}`, `${annee}-${mm}-${jour}`, libelle, montant, null))
+        solde = Math.round((solde + montant) * 100) / 100
+      }
+    }
+    controles.push({
+      id: `cb-h-${debut}`, dossier_id: 'd7', source_fichier: `releve-${debut.slice(0, 7)}.csv`, solde_initial: initial,
+      solde_final: solde, somme_mouvements: Math.round((solde - initial) * 100) / 100, ecart: 0, coherent: true,
+      periode_debut: debut, periode_fin: fin, created_at: MAINTENANT,
+    })
+  }
+  return { lignes, controles }
+}
+
 const BANQUE_DU_CLIENT_D7 = CLIENT_DU_BANC && VENTES_DU_BANC === 'banque'
   ? {
     lignes: [
       { ...paiementTva('t20', '2026-09-26', 'PRLV SEPA ABONNEMENT LOGICIEL DE GESTION COMMERCIALE ET COMPTABLE', -59.9, null), statut: 'non_rapprochee' },
       { ...paiementTva('t21', '2026-09-22', 'CB RESTAURANT LE COMPTOIR DES HALLES', -42.5, null), statut: 'non_rapprochee' },
       { ...paiementTva('t22', '2026-09-05', 'VIR SEPA EMIS LOYER BUREAU SEPTEMBRE', -1080, null), statut: 'non_rapprochee' },
+      ...historiqueDuReleveD7().lignes,
     ],
     propositions: [
       { id: 'jb1', dossier_id: 'd7', ligne_bancaire_id: 't21', piece_id: 'a3', auteur_id: 'u1', origine: 'client', created_at: '2026-09-23T08:00:00Z', retire_le: null, retire_par: null },
@@ -1375,6 +1414,7 @@ const BANQUE_DU_CLIENT_D7 = CLIENT_DU_BANC && VENTES_DU_BANC === 'banque'
     // Trois relevés d'avant, contrôlés, à des soldes différents : la courbe du solde de l'accueil (16/11/2026), qui finit sur
     // celui d'août.
     controles: [
+      ...historiqueDuReleveD7().controles,
       { id: 'cb-05', dossier_id: 'd7', source_fichier: 'releve-2026-05.csv', solde_initial: 8720.4, solde_final: 9870.2, somme_mouvements: 1149.8, ecart: 0, coherent: true, periode_debut: '2026-05-01', periode_fin: '2026-05-31', created_at: MAINTENANT },
       { id: 'cb-06', dossier_id: 'd7', source_fichier: 'releve-2026-06.csv', solde_initial: 9870.2, solde_final: 11215.8, somme_mouvements: 1345.6, ecart: 0, coherent: true, periode_debut: '2026-06-01', periode_fin: '2026-06-30', created_at: MAINTENANT },
       { id: 'cb-07', dossier_id: 'd7', source_fichier: 'releve-2026-07.csv', solde_initial: 11215.8, solde_final: 10000, somme_mouvements: -1215.8, ecart: 0, coherent: true, periode_debut: '2026-07-01', periode_fin: '2026-07-31', created_at: MAINTENANT },

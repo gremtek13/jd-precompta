@@ -238,6 +238,97 @@ export function anneeDeMaBanque(source: Extract<SourceDUnCompte, { etat: 'lue' }
   }
 }
 
+// ── « Comparer les années » : une courbe par année cochée (demande du cabinet du 16/11/2026) ─────────────────────────────
+// Les mêmes mois que l'année (`anneeDeMaBanque`), rien de recalculé : une mesure (entrées, sorties ou différence) lue sur
+// chaque mois. Un mois non couvert n'a PAS de point — la courbe s'interrompt, jamais un 0 ; un mois couvert en partie a un
+// point à part (`en_partie`), qui ne se relie pas à ses voisins : il ne compte qu'une partie du mois, et une ligne qui y
+// descendrait ferait croire à une chute ; un mois à venir n'a rien.
+
+export type MesureDesCourbes = 'entrees' | 'sorties' | 'difference'
+export const MESURES_DES_COURBES: readonly { valeur: MesureDesCourbes; libelle: string }[] = [
+  { valeur: 'entrees', libelle: 'Entrées' },
+  { valeur: 'sorties', libelle: 'Sorties' },
+  { valeur: 'difference', libelle: 'Différence' },
+]
+
+export type PointDeLaCourbe =
+  | { mois: string; etat: 'couvert'; valeur: number }
+  | { mois: string; etat: 'en_partie'; valeur: number; jusquAu: string }
+  | { mois: string; etat: 'non_couvert' }
+  | { mois: string; etat: 'a_venir' }
+
+export interface CourbeDUneAnnee {
+  annee: number
+  /** Les douze mois, de janvier à décembre. */
+  points: PointDeLaCourbe[]
+  /** Les suites de mois couverts EN ENTIER qui se touchent, en index de mois (0 = janvier), bornes comprises : chacune un trait. */
+  troncons: { debut: number; fin: number }[]
+  /** La somme de la mesure sur les mois couverts, en entier ou en partie ; null si aucun ne l'est. */
+  total: number | null
+  /** Les mois couverts, en entier ou en partie. */
+  moisCouverts: number
+}
+
+function courbeDUneAnnee(a: AnneeDeMaBanque, mesure: MesureDesCourbes): CourbeDUneAnnee {
+  const points: PointDeLaCourbe[] = a.mois.map((m) => {
+    switch (m.etat) {
+      case 'couvert': return { mois: m.mois, etat: 'couvert', valeur: m[mesure] }
+      case 'en_partie': return { mois: m.mois, etat: 'en_partie', valeur: m[mesure], jusquAu: m.jusquAu }
+      case 'non_couvert': return { mois: m.mois, etat: 'non_couvert' }
+      case 'a_venir': return { mois: m.mois, etat: 'a_venir' }
+    }
+  })
+  const troncons: { debut: number; fin: number }[] = []
+  points.forEach((p, i) => {
+    if (p.etat !== 'couvert') return
+    const dernier = troncons[troncons.length - 1]
+    if (dernier !== undefined && dernier.fin === i - 1) dernier.fin = i
+    else troncons.push({ debut: i, fin: i })
+  })
+  const comptes = points.filter((p): p is Extract<PointDeLaCourbe, { valeur: number }> => p.etat === 'couvert' || p.etat === 'en_partie')
+  return {
+    annee: a.annee, points, troncons,
+    total: comptes.length === 0 ? null : comptes.reduce((s, p) => s + p.valeur, 0),
+    moisCouverts: comptes.length,
+  }
+}
+
+/** Une courbe par année demandée, dans l'ordre demandé : les mois de `anneeDeMaBanque`, la mesure choisie. */
+export function courbesDesAnnees(
+  source: Extract<SourceDUnCompte, { etat: 'lue' }>, annees: readonly number[], mesure: MesureDesCourbes, aujourdHui: string,
+): CourbeDUneAnnee[] {
+  return annees.map((annee) => courbeDUneAnnee(anneeDeMaBanque(source, annee, aujourdHui), mesure))
+}
+
+/** Les années cochées d'emblée : l'année en cours, et la précédente si le relevé la touche (parmi les années offertes). */
+export function anneesCocheesParDefaut(source: Extract<SourceDUnCompte, { etat: 'lue' }>, aujourdHui: string): number[] {
+  const enCours = Number(aujourdHui.slice(0, 4))
+  return [enCours, enCours - 1].filter((a) => source.annees.includes(a))
+}
+
+/**
+ * L'échelle verticale des courbes, en centimes : elle contient toujours zéro (la différence peut être négative, et la ligne
+ * de zéro se voit), ses bornes tombent sur un pas « rond » (1, 2 ou 5 × 10ⁿ centimes), et ses graduations vont de `bas` à
+ * `haut` par ce pas. Sans aucun point : de 0 à 1 €, sans graduation fausse.
+ */
+export function echelleDesCourbes(courbes: readonly CourbeDUneAnnee[]): { bas: number; haut: number; pas: number; graduations: number[] } {
+  const valeurs = courbes.flatMap((c) => c.points.flatMap((p) => (p.etat === 'couvert' || p.etat === 'en_partie' ? [p.valeur] : [])))
+  const mini = Math.min(0, ...valeurs)
+  const maxi = Math.max(0, ...valeurs)
+  const etendue = maxi - mini
+  if (etendue === 0) return { bas: 0, haut: 100, pas: 100, graduations: [0, 100] }
+  // Quatre intervalles environ.
+  const brut = etendue / 4
+  // Jamais sous le centime : les bornes restent des entiers.
+  const puissance = Math.max(1, 10 ** Math.floor(Math.log10(brut)))
+  const pas = ([1, 2, 5, 10].map((f) => f * puissance).find((p) => p >= brut) as number)
+  const bas = Math.floor(mini / pas) * pas
+  const haut = Math.ceil(maxi / pas) * pas
+  const graduations: number[] = []
+  for (let g = bas; g <= haut; g += pas) graduations.push(g)
+  return { bas, haut, pas, graduations }
+}
+
 /** « +12 % » ou « −5 % » de `n` sur `n1` (la règle de « Mon analyse », `variation`) ; null sans base (rien l'année d'avant). */
 export function variationEnPourcent(n: number, n1: number): string | null {
   return variation({ centimes: n, n1Centimes: n1 })
@@ -254,6 +345,11 @@ export const ANALYSE_MUETTE_COMPTES = 'Ton année ne s’affiche pas : tes compt
 export const ANALYSE_SANS_RELEVE = 'Rien à analyser pour l’instant : ton cabinet n’a encore contrôlé le solde d’aucun relevé daté.'
 export const ANALYSE_SANS_TOTAL_DES_COMPTES = 'Chaque compte a son année : elles ne s’additionnent pas, un virement d’un de '
   + 'tes comptes à l’autre compterait deux fois.'
+export const TITRE_DES_COURBES = 'Comparer les années'
+export const AUCUNE_ANNEE_COCHEE = 'Coche au moins une année pour voir sa courbe.'
+export const AUCUN_MOIS_COUVERT = 'aucun mois couvert'
+export const LEGENDE_DU_MOIS_EN_PARTIE = 'point creux : mois couvert en partie, non relié'
+export const LEGENDE_DU_TROU = 'courbe coupée : mois non couvert'
 export const NON_COUVERT = 'non couvert'
 export const A_VENIR = 'à venir'
 

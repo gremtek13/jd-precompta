@@ -1349,6 +1349,36 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 .annee-banque-legende .entrees::before { background: var(--color-primary); }
 .annee-banque-legende .sorties::before { background: color-mix(in srgb, var(--color-primary) 35%, var(--color-surface)); }
 .annee-banque-legende .absent::before { border: 1px dashed var(--color-border-strong); }
+/* « Comparer les années » (16/11/2026) : une courbe par année cochée. Chaque année a une nuance de la charte (color-mix depuis
+   `--color-primary`, avec le texte ou le fond, qui s'inversent en mode sombre) ET un trait à elle (plein, tirets, pointillé,
+   trait-point, tirets courts) : la couleur seule ne les distingue pas. Un mois en partie : un point creux, au fond de la carte. */
+.annee-banque-comparer { border-top: 1px solid var(--color-border); margin-top: 16px; padding-top: 12px; }
+.annee-banque-cases { border: none; padding: 0; margin: 0 0 4px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.annee-banque-cases legend { float: left; padding: 0; margin-right: 6px; font-size: 0.85rem; font-weight: 600; color: var(--color-text-light); }
+.annee-banque-cases label { display: inline-flex; align-items: center; gap: 4px; font-size: 0.9rem; cursor: pointer; white-space: nowrap; }
+.annee-banque-courbes { display: block; width: 100%; max-width: 560px; height: auto; margin: 4px 0 6px; }
+.annee-banque-grille { stroke: var(--color-border); stroke-width: 1; }
+.annee-banque-zero { stroke: var(--color-text-light); stroke-width: 1.2; }
+.annee-banque-graduation { fill: var(--color-text-light); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.annee-banque-courbe { fill: none; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
+.annee-banque-courbe-0 { stroke: var(--color-primary); }
+.annee-banque-courbe-1 { stroke: color-mix(in srgb, var(--color-primary) 55%, var(--color-text)); stroke-dasharray: 7 4; }
+.annee-banque-courbe-2 { stroke: color-mix(in srgb, var(--color-primary) 62%, var(--color-surface)); stroke-dasharray: 0.5 4.5; stroke-width: 3; }
+.annee-banque-courbe-3 { stroke: color-mix(in srgb, var(--color-primary) 30%, var(--color-text)); stroke-dasharray: 10 3 2 3; }
+.annee-banque-courbe-4 { stroke: color-mix(in srgb, var(--color-primary) 80%, var(--color-surface)); stroke-dasharray: 3 3; }
+/* Les points gardent la nuance de leur courbe, jamais son trait. */
+circle.annee-banque-courbe { stroke-dasharray: none; stroke-width: 1.5; }
+.annee-banque-courbe-0.annee-banque-point { fill: var(--color-primary); }
+.annee-banque-courbe-1.annee-banque-point { fill: color-mix(in srgb, var(--color-primary) 55%, var(--color-text)); }
+.annee-banque-courbe-2.annee-banque-point { fill: color-mix(in srgb, var(--color-primary) 62%, var(--color-surface)); }
+.annee-banque-courbe-3.annee-banque-point { fill: color-mix(in srgb, var(--color-primary) 30%, var(--color-text)); }
+.annee-banque-courbe-4.annee-banque-point { fill: color-mix(in srgb, var(--color-primary) 80%, var(--color-surface)); }
+.annee-banque-point-creux { fill: var(--color-surface); }
+.annee-banque-legende-courbes { list-style: none; padding: 0; margin: 0 0 4px; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 0.85rem; }
+.annee-banque-legende-courbes li { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.annee-banque-legende .courbe-plein::before { border-radius: 50%; background: var(--color-text-light); width: 7px; height: 7px; }
+.annee-banque-legende .courbe-creux::before { border-radius: 50%; border: 1.5px solid var(--color-text-light); width: 6px; height: 6px; }
+.annee-banque-legende .courbe-trou::before { display: none; }
 .solde-accueil-note { margin: 0; font-size: 0.85rem; color: var(--color-text-light); }
 .solde-accueil-comptes { display: flex; flex-direction: column; gap: 14px; }
 .solde-accueil-compte + .solde-accueil-compte { padding-top: 14px; border-top: 1px solid var(--color-border); }

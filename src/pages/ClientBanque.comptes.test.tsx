@@ -223,6 +223,27 @@ describe('le drapeau levé', () => {
     expect(mois('septembre 2026')).toBe('septembre 2026500,00 €0,00 €500,00 €couvert')
   })
 
+  // « Comparer les années » (16/11/2026) : la courbe suit le compte analysé, jamais un total ; un autre compte repart des
+  // années cochées et de la mesure par défaut.
+  it('« Comparer les années » : la courbe du compte analysé ; changer de compte remet les choix à leur défaut', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-16T10:00:00Z'))
+    onTestFinished(() => { vi.useRealTimers() })
+    await monter()
+    const bloc = () => screen.getByTestId('comparer-les-annees')
+    const cellule = (nom: string) => espaces(within(bloc()).getByText(nom, { selector: 'td' }).closest('tr')?.textContent)
+    expect(cellule('août')).toBe('août0,00 €')
+    await act(async () => { fireEvent.click(within(bloc()).getByRole('button', { name: 'Sorties' })) })
+    expect(cellule('août')).toBe('août39,99 €')
+    await act(async () => { fireEvent.click(within(bloc()).getByRole('checkbox', { name: '2026' })) })
+    expect(within(bloc()).queryByRole('table')).toBeNull()
+    await act(async () => { fireEvent.change(screen.getByLabelText('Compte analysé'), { target: { value: 'B' } }) })
+    expect((within(bloc()).getByRole('checkbox', { name: '2026' }) as HTMLInputElement).checked).toBe(true)
+    expect(within(bloc()).getByRole('button', { name: 'Entrées' }).getAttribute('aria-pressed')).toBe('true')
+    expect(cellule('septembre')).toBe('septembre500,00 €')
+    expect(cellule('juillet')).toBe('juillet—')
+  })
+
   it('les comptes lus en partie : l’écran le dit, ni solde ni mois, et aucun geste', async () => {
     faux.muetApres = { comptes_bancaires: 1 }
     await monter()

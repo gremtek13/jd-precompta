@@ -124,6 +124,81 @@ describe('la comparaison à l’année d’avant', () => {
   })
 })
 
+describe('« Comparer les années » : les courbes', () => {
+  // 2025 : janvier à juin couverts, juillet non couvert, août à décembre couverts. 2026 : janvier et février couverts, mars
+  // non couvert, avril à octobre couverts, novembre jusqu'au 10, décembre à venir. 2024 : aucun relevé.
+  const controles = [
+    controle({ id: 'p1', periode_debut: '2025-01-01', periode_fin: '2025-06-30' }),
+    controle({ id: 'p2', periode_debut: '2025-08-01', periode_fin: '2025-12-31' }),
+    controle({ id: 'j', periode_debut: '2026-01-01', periode_fin: '2026-02-28' }),
+    controle({ id: 'a', periode_debut: '2026-04-01', periode_fin: '2026-10-31' }),
+    controle({ id: 'n', periode_debut: '2026-11-01', periode_fin: '2026-11-10' }),
+  ]
+  const mouvements = [
+    mvt('1', '2025-01-10', 1000), mvt('2', '2025-01-20', -1500.01), mvt('3', '2025-07-04', 999), // juillet 2025 : non couvert
+    mvt('4', '2026-01-05', 0.1), mvt('5', '2026-01-06', 0.2), mvt('6', '2026-11-05', 200),
+    mvt('7', '2024-05-01', 50),
+  ]
+  const source = lue(sourceDUnCompte(mouvements, controles, AUJOURD_HUI))
+
+  it('les années cochées d’emblée : l’année en cours et la précédente, si le relevé la touche', () => {
+    expect(module.anneesCocheesParDefaut(source, AUJOURD_HUI)).toEqual([2026, 2025])
+    const seule = lue(sourceDUnCompte([], [controle({})], AUJOURD_HUI))
+    expect(seule.annees).toEqual([2026])
+    expect(module.anneesCocheesParDefaut(seule, AUJOURD_HUI)).toEqual([2026])
+  })
+
+  it('un point par mois couvert, aucun pour un mois non couvert ou à venir ; le mois en partie à part, non relié', () => {
+    const [n, n1] = module.courbesDesAnnees(source, [2026, 2025], 'entrees', AUJOURD_HUI)
+    expect(n.annee).toBe(2026)
+    expect(n.points.map((p) => p.etat)).toEqual(['couvert', 'couvert', 'non_couvert', 'couvert', 'couvert', 'couvert', 'couvert',
+      'couvert', 'couvert', 'couvert', 'en_partie', 'a_venir'])
+    expect(n.points[0]).toEqual({ mois: '2026-01', etat: 'couvert', valeur: 30 })
+    expect(n.points[2]).toEqual({ mois: '2026-03', etat: 'non_couvert' })
+    expect(n.points[10]).toEqual({ mois: '2026-11', etat: 'en_partie', valeur: 20000, jusquAu: '2026-11-10' })
+    expect(n.points[11]).toEqual({ mois: '2026-12', etat: 'a_venir' })
+    // Le trou de mars coupe la courbe ; novembre, en partie, ne prolonge pas le tronçon d'octobre.
+    expect(n.troncons).toEqual([{ debut: 0, fin: 1 }, { debut: 3, fin: 9 }])
+    expect(n.total).toBe(20030)
+    expect(n.moisCouverts).toBe(10)
+    // Juillet 2025 n'est pas couvert : ses 999 € n'entrent nulle part, ni point ni total.
+    expect(n1.points[6]).toEqual({ mois: '2025-07', etat: 'non_couvert' })
+    expect(n1.troncons).toEqual([{ debut: 0, fin: 5 }, { debut: 7, fin: 11 }])
+    expect(n1.total).toBe(100000)
+  })
+
+  it('la différence peut être négative, et l’échelle descend sous zéro en gardant la ligne de zéro', () => {
+    const [n1] = module.courbesDesAnnees(source, [2025], 'difference', AUJOURD_HUI)
+    expect(n1.points[0]).toEqual({ mois: '2025-01', etat: 'couvert', valeur: -50001 })
+    expect(n1.total).toBe(-50001)
+    const e = module.echelleDesCourbes([n1])
+    expect(e.bas).toBeLessThanOrEqual(-50001)
+    expect(e.haut).toBeGreaterThanOrEqual(0)
+    expect(e.graduations).toContain(0)
+    expect(e.graduations[0]).toBe(e.bas)
+    expect(e.graduations[e.graduations.length - 1]).toBe(e.haut)
+    expect(e.graduations.every((g) => Number.isInteger(g))).toBe(true)
+    expect(e).toEqual({ bas: -60000, haut: 0, pas: 20000, graduations: [-60000, -40000, -20000, 0] })
+  })
+
+  it('une année sans aucun mois couvert : aucun point, aucun tronçon, un total nul (pas 0) ; l’échelle sans point : 0 à 1 €', () => {
+    const [vide] = module.courbesDesAnnees(source, [2024], 'entrees', AUJOURD_HUI)
+    expect(vide.points.every((p) => p.etat === 'non_couvert')).toBe(true)
+    expect(vide.troncons).toEqual([])
+    expect(vide.total).toBeNull()
+    expect(vide.moisCouverts).toBe(0)
+    expect(module.echelleDesCourbes([vide])).toEqual({ bas: 0, haut: 100, pas: 100, graduations: [0, 100] })
+    expect(module.echelleDesCourbes([])).toEqual({ bas: 0, haut: 100, pas: 100, graduations: [0, 100] })
+  })
+
+  it('les sorties : la même couverture, une autre valeur', () => {
+    const [n1] = module.courbesDesAnnees(source, [2025], 'sorties', AUJOURD_HUI)
+    expect(n1.points[0]).toEqual({ mois: '2025-01', etat: 'couvert', valeur: 150001 })
+    expect(n1.points[1]).toEqual({ mois: '2025-02', etat: 'couvert', valeur: 0 })
+    expect(module.echelleDesCourbes([n1])).toMatchObject({ bas: 0, haut: 200000, pas: 50000 })
+  })
+})
+
 describe('la lecture', () => {
   const complete = <T,>(lignes: T[]) => ({ complete: true as const, motif: null, lignes })
   const partielle = <T,>(lignes: T[]) => ({ complete: false as const, motif: 'lu en partie', lignes })

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
@@ -26,7 +26,9 @@ import { lireLesComptesDuClient, lireLesControlesDuClient, type ControleDuClient
 import {
   A_VENIR, analyseDeMaBanque, ANALYSE_SANS_RELEVE, ANALYSE_SANS_TOTAL_DES_COMPTES, anneeDeMaBanque, INTRODUCTION_DE_L_ANALYSE,
   libelleDeLaCouverture, motsDeLAnnee, NON_COUVERT, TITRE_DE_L_ANALYSE, variationEnPourcent,
-  type AnneeDeMaBanque, type EtatDuMois, type Totaux,
+  anneesCocheesParDefaut, AUCUN_MOIS_COUVERT, AUCUNE_ANNEE_COCHEE, courbesDesAnnees, echelleDesCourbes, LEGENDE_DU_MOIS_EN_PARTIE,
+  LEGENDE_DU_TROU, MESURES_DES_COURBES, TITRE_DES_COURBES,
+  type AnneeDeMaBanque, type CourbeDUneAnnee, type EtatDuMois, type MesureDesCourbes, type SourceDUnCompte, type Totaux,
 } from '../lib/analyseDeMaBanque'
 import BarreRecherche from '../components/BarreRecherche'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
@@ -698,6 +700,9 @@ function MonAnnee({ lecture }: { lecture: Lecture }) {
         )}
       </div>
       {a === null ? <p className="muted" style={{ margin: 0 }}>{ANALYSE_SANS_RELEVE}</p> : <DetailDeLAnnee a={a} />}
+      {/* Clée par compte : un autre compte analysé repart des années cochées et de la mesure par défaut. La société, elle,
+          remonte tout l'écran (`<Outlet key>` de la coque). */}
+      {source.etat === 'lue' && <ComparerLesAnnees key={choisi?.compte.id ?? 'un'} source={source} aujourdHui={aujourdHui} />}
     </section>
   )
 }
@@ -833,6 +838,167 @@ function GrapheDeLAnnee({ a }: { a: AnneeDeMaBanque }) {
         {a.mois.some((m) => m.etat === 'a_venir') && <span>{A_VENIR} : sans barre</span>}
       </p>
     </>
+  )
+}
+
+// ── « Comparer les années » (demande du cabinet du 16/11/2026) ─────────────────────────────────────────────────────────
+// Une courbe par année cochée, la mesure choisie, les douze mois en abscisse (lib/analyseDeMaBanque.ts, `courbesDesAnnees`).
+// Un mois non couvert n'a pas de point : la courbe s'interrompt ; un mois couvert en partie a un point creux, non relié ; un
+// mois à venir n'a rien. Chaque année garde son style (une nuance de la charte ET un trait) d'après son rang parmi les années
+// offertes — décocher une année ne change pas celui des autres. Les valeurs exactes sont dans le tableau, sans survol.
+const STYLES_DES_COURBES = 5
+const LARGEUR_COURBES = 380
+const HAUTEUR_COURBES = 220
+const MARGE_GAUCHE = 52
+const MARGE_DROITE = 8
+const MARGE_HAUTE = 10
+const MARGE_BASSE = 24
+
+/** Une graduation de l'axe : l'euro entier, sans centimes (le tableau porte les centimes). */
+const eurosEntiers = (centimes: number) => formatMoney(Math.round(centimes / 100)).replace(/,00(?=\s*€)/, '')
+
+function ComparerLesAnnees({ source, aujourdHui }: { source: Extract<SourceDUnCompte, { etat: 'lue' }>; aujourdHui: string }) {
+  const [cochees, setCochees] = useState<number[]>(() => anneesCocheesParDefaut(source, aujourdHui))
+  const [mesure, setMesure] = useState<MesureDesCourbes>('entrees')
+  const ident = useId()
+  const libelleDeLaMesure = MESURES_DES_COURBES.find((m) => m.valeur === mesure)?.libelle ?? ''
+  // De la plus récente à l'ancienne, comme le sélecteur ; une année cochée qui n'est plus offerte ne compte pas.
+  const annees = source.annees.filter((a) => cochees.includes(a))
+  const courbes = courbesDesAnnees(source, annees, mesure, aujourdHui)
+  const style = (annee: number) => `annee-banque-courbe annee-banque-courbe-${source.annees.indexOf(annee) % STYLES_DES_COURBES}`
+  const basculer = (annee: number, coche: boolean) =>
+    setCochees((avant) => (coche ? [...avant.filter((a) => a !== annee), annee] : avant.filter((a) => a !== annee)))
+
+  return (
+    <div className="annee-banque-comparer" data-testid="comparer-les-annees">
+      <h4 style={{ margin: '0 0 6px' }}>{TITRE_DES_COURBES}</h4>
+      <fieldset className="annee-banque-cases">
+        <legend>Années</legend>
+        {source.annees.map((a) => (
+          <label key={a}>
+            <input type="checkbox" checked={cochees.includes(a)} onChange={(e) => basculer(a, e.target.checked)} /> {a}
+          </label>
+        ))}
+      </fieldset>
+      <div className="segmented segmented-a-la-ligne" role="group" aria-label="Mesure" style={{ margin: '4px 0 8px' }}>
+        {MESURES_DES_COURBES.map((m) => (
+          <button key={m.valeur} type="button" className={mesure === m.valeur ? 'active' : undefined}
+            aria-pressed={mesure === m.valeur} onClick={() => setMesure(m.valeur)}>{m.libelle}</button>
+        ))}
+      </div>
+      {courbes.length === 0 ? (
+        <p className="muted" style={{ margin: 0 }}>{AUCUNE_ANNEE_COCHEE}</p>
+      ) : (
+        <>
+          <GrapheDesCourbes courbes={courbes} style={style} ident={ident} libelleDeLaMesure={libelleDeLaMesure} />
+          <ul className="annee-banque-legende-courbes" aria-label="Légende">
+            {courbes.map((c) => (
+              <li key={c.annee}>
+                <svg width="30" height="10" aria-hidden="true" focusable="false">
+                  <line className={style(c.annee)} x1={1} x2={29} y1={5} y2={5} />
+                </svg>
+                <strong>{c.annee}</strong>
+                {c.total === null
+                  ? <span className="muted"> — {AUCUN_MOIS_COUVERT}</span>
+                  : <span> — <span style={{ whiteSpace: 'nowrap' }}>{euros(c.total)}</span> sur {c.moisCouverts} mois couvert{c.moisCouverts > 1 ? 's' : ''}</span>}
+              </li>
+            ))}
+          </ul>
+          <p className="annee-banque-legende" style={{ marginTop: 0 }}>
+            <span className="courbe-plein">mois couvert</span>
+            {courbes.some((c) => c.points.some((p) => p.etat === 'en_partie')) && <span className="courbe-creux">{LEGENDE_DU_MOIS_EN_PARTIE}</span>}
+            {courbes.some((c) => c.points.some((p) => p.etat === 'non_couvert')) && <span className="courbe-trou">{LEGENDE_DU_TROU}</span>}
+          </p>
+          <div className="table-scroll">
+            <div className="tableau-adaptable">
+              <table className="table-empilable" aria-label={`${libelleDeLaMesure}, mois par mois et année par année`}>
+                <thead>
+                  <tr><th>Mois</th>{courbes.map((c) => <th key={c.annee}>{c.annee}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {INITIALES_DES_MOIS.map((_, i) => (
+                    <tr key={i}>
+                      <td data-libelle="Mois">{NOMS_DES_MOIS[i]}</td>
+                      {courbes.map((c) => {
+                        const p = c.points[i]
+                        return (
+                          <td key={c.annee} data-libelle={String(c.annee)} style={{ whiteSpace: 'nowrap' }}>
+                            {p.etat === 'couvert' && euros(p.valeur)}
+                            {p.etat === 'en_partie' && <>{euros(p.valeur)} <span className="muted">(jusqu’au {formatDate(p.jusquAu)})</span></>}
+                            {p.etat === 'non_couvert' && '—'}
+                            {p.etat === 'a_venir' && <span className="muted">{A_VENIR}</span>}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td data-libelle="Mois"><strong>Mois couverts</strong></td>
+                    {courbes.map((c) => (
+                      <td key={c.annee} data-libelle={String(c.annee)} style={{ whiteSpace: 'nowrap' }}>
+                        {c.total === null ? '—' : <strong>{euros(c.total)}</strong>}
+                      </td>
+                    ))}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+const NOMS_DES_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+
+function GrapheDesCourbes({ courbes, style, ident, libelleDeLaMesure }: {
+  courbes: CourbeDUneAnnee[]; style: (annee: number) => string; ident: string; libelleDeLaMesure: string
+}) {
+  const echelle = echelleDesCourbes(courbes)
+  const largeurMois = (LARGEUR_COURBES - MARGE_GAUCHE - MARGE_DROITE) / 12
+  const bas = HAUTEUR_COURBES - MARGE_BASSE
+  const x = (i: number) => MARGE_GAUCHE + (i + 0.5) * largeurMois
+  const y = (c: number) => bas - ((c - echelle.bas) / (echelle.haut - echelle.bas)) * (bas - MARGE_HAUTE)
+  const nommees = courbes.map((c) => c.annee).join(', ')
+  const titre = `${TITRE_DES_COURBES} : ${libelleDeLaMesure.toLowerCase()} de chaque mois, ${nommees}`
+  const description = `Une courbe par année cochée (${nommees}), de janvier à décembre. Un mois non couvert par un relevé `
+    + 'contrôlé n’a pas de point, la courbe s’y interrompt ; un mois couvert en partie a un point creux, non relié. '
+    + 'Les montants exacts sont dans le tableau qui suit.'
+  return (
+    <svg className="annee-banque-courbes" viewBox={`0 0 ${LARGEUR_COURBES} ${HAUTEUR_COURBES}`} role="img"
+      aria-labelledby={`${ident}-titre ${ident}-desc`}>
+      <title id={`${ident}-titre`}>{titre}</title>
+      <desc id={`${ident}-desc`}>{description}</desc>
+      {echelle.graduations.map((g) => (
+        <g key={g}>
+          <line className={g === 0 ? 'annee-banque-zero' : 'annee-banque-grille'} x1={MARGE_GAUCHE} x2={LARGEUR_COURBES - MARGE_DROITE} y1={y(g)} y2={y(g)} />
+          <text className="annee-banque-graduation" x={MARGE_GAUCHE - 6} y={y(g) + 3.5} textAnchor="end">{eurosEntiers(g)}</text>
+        </g>
+      ))}
+      {INITIALES_DES_MOIS.map((initiale, i) => (
+        <text key={i} className="annee-banque-mois" x={x(i)} y={bas + 16} textAnchor="middle">{initiale}</text>
+      ))}
+      {courbes.map((c) => (
+        <g key={c.annee} data-annee={c.annee}>
+          {c.troncons.map((t) => (
+            <polyline key={t.debut} className={style(c.annee)} fill="none"
+              points={Array.from({ length: t.fin - t.debut + 1 }, (_, k) => {
+                const p = c.points[t.debut + k]
+                return p.etat === 'couvert' ? `${x(t.debut + k)},${y(p.valeur)}` : ''
+              }).join(' ')} />
+          ))}
+          {c.points.map((p, i) => (p.etat === 'couvert' || p.etat === 'en_partie') && (
+            <circle key={p.mois} className={`${style(c.annee)} ${p.etat === 'couvert' ? 'annee-banque-point' : 'annee-banque-point-creux'}`}
+              cx={x(i)} cy={y(p.valeur)} r={p.etat === 'couvert' ? 3 : 3.5}>
+              <title>{`${libelleDuMois(p.mois)}${p.etat === 'en_partie' ? ` (jusqu’au ${formatDate(p.jusquAu)})` : ''} : ${euros(p.valeur)}`}</title>
+            </circle>
+          ))}
+        </g>
+      ))}
+    </svg>
   )
 }
 
