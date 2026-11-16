@@ -5,6 +5,9 @@ import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/t
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { EnTeteTriable, SelecteurDeTri } from '../../components/EnTeteTriable'
+import { trierLignes, type ColonneTriable } from '../../lib/triDesTableaux'
+import { useTriDuTableau } from '../../lib/useTriDuTableau'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
 import DocumentsMisADisposition from './DocumentsMisADisposition'
 import DemandesAuClient from './DemandesAuClient'
@@ -47,6 +50,8 @@ const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
 // CotisationsTab). Alimentée automatiquement par le tri de AjouterDocumentsModal (même point d'entrée
 // que Pièces, voir PiecesTab) — reclassable et complétable ici à la main.
 export default function DocumentsTab({ dossierId }: { dossierId: string }) {
+  // Le tri choisi d'un clic sur un en-tête (16/11/2026) : l'affichage seul, remis à l'ordre d'origine au changement de dossier.
+  const { tri, trierPar, choisirTri } = useTriDuTableau(dossierId)
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
   const [sousDossiers, setSousDossiers] = useState<SousDossier[]>([])
   const [loading, setLoading] = useState(true)
@@ -257,6 +262,15 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       recherche,
     ),
   )
+  // LE TRI CHOISI PAR UN CLIC SUR UN EN-TÊTE (16/11/2026) : il ordonne les lignes et le « précédent / suivant » de la fiche ;
+  // la sélection et « Tout sélectionner » restent sur `filtered`, les mêmes lignes quel que soit le tri.
+  const colonnesTri: ColonneTriable<DocumentDivers>[] = [
+    { cle: 'fichier', libelle: 'Fichier', type: 'texte', valeur: (d) => d.nom_fichier },
+    { cle: 'categorie', libelle: 'Catégorie', type: 'texte', valeur: (d) => LABEL_CATEGORIE[d.categorie] },
+    { cle: 'sousDossier', libelle: 'Sous-dossier', type: 'texte', valeur: (d) => d.sous_dossier_id ? sousDossierLabel(d.sous_dossier_id) : null },
+    { cle: 'ajout', libelle: 'Ajouté le', type: 'date', valeur: (d) => d.created_at },
+  ]
+  const affiches = trierLignes(filtered, colonnesTri, tri)
 
   function afficherDocument(id: string | null) {
     documentOuvert.current = id
@@ -282,11 +296,11 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // recherche) pour « précédent » et « suivant ».
   const docOuvert = ouvert ? documents.find((d) => d.id === ouvert) ?? null : null
   const ficheVisible = docOuvert !== null && panneauDocument.ouvert
-  const rangOuvert = docOuvert ? filtered.findIndex((d) => d.id === docOuvert.id) : -1
+  const rangOuvert = docOuvert ? affiches.findIndex((d) => d.id === docOuvert.id) : -1
   const navigationFiche = {
-    position: rangOuvert === -1 ? 'Document hors de la liste affichée' : `Document ${rangOuvert + 1} sur ${filtered.length}`,
-    precedent: rangOuvert > 0 ? () => ouvrirDocument(filtered[rangOuvert - 1]) : null,
-    suivant: rangOuvert !== -1 && rangOuvert < filtered.length - 1 ? () => ouvrirDocument(filtered[rangOuvert + 1]) : null,
+    position: rangOuvert === -1 ? 'Document hors de la liste affichée' : `Document ${rangOuvert + 1} sur ${affiches.length}`,
+    precedent: rangOuvert > 0 ? () => ouvrirDocument(affiches[rangOuvert - 1]) : null,
+    suivant: rangOuvert !== -1 && rangOuvert < affiches.length - 1 ? () => ouvrirDocument(affiches[rangOuvert + 1]) : null,
   }
 
   async function changerCategorie(doc: DocumentDivers, categorie: CategorieDocument) {
@@ -658,19 +672,20 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           </div>
         ) : (
           <div className="tableau-adaptable">
+            <SelecteurDeTri colonnes={colonnesTri} etat={tri} onChoisir={choisirTri} />
             <table className="table-empilable table-empilable-en-carte">
               <thead>
                 <tr>
                   <th className="col-checkbox"></th>
-                  <th>Fichier</th>
-                  <th>Catégorie</th>
-                  <th className="hide-mobile">Sous-dossier</th>
-                  <th className="hide-mobile">Ajouté le</th>
+                  <EnTeteTriable colonne="fichier" etat={tri} onTrier={trierPar}>Fichier</EnTeteTriable>
+                  <EnTeteTriable colonne="categorie" etat={tri} onTrier={trierPar}>Catégorie</EnTeteTriable>
+                  <EnTeteTriable colonne="sousDossier" etat={tri} onTrier={trierPar} className="hide-mobile">Sous-dossier</EnTeteTriable>
+                  <EnTeteTriable colonne="ajout" etat={tri} onTrier={trierPar} className="hide-mobile">Ajouté le</EnTeteTriable>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((d) => (
+                {affiches.map((d) => (
                   <Fragment key={d.id}>
                   <tr className={`clickable${ficheVisible && docOuvert?.id === d.id ? ' ligne-ouverte' : ''}`}>
                     <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>

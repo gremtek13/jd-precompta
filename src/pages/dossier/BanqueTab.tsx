@@ -26,6 +26,9 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee, estFigee } from '../../lib/validationExercice'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { EnTeteTriable, SelecteurDeTri } from '../../components/EnTeteTriable'
+import { trierLignes, type ColonneTriable } from '../../lib/triDesTableaux'
+import { useTriDuTableau } from '../../lib/useTriDuTableau'
 import { controlerSolde, phraseDesSoldes } from '../../lib/soldeReleve'
 import {
   decoderReleve, lireReleveOfxQif, NOM_DU_FORMAT, phraseDesSensDouteux, phraseDuSoldeAnnonce, REGLAGE_OFX_QIF,
@@ -174,6 +177,14 @@ const REMBOURSEMENT_D_UNE_NOTE_FIGEE = 'Une note de frais du même montant, d’
 // (étape VF5a1, lib/mouvementsDesVentes.ts) ; sinon il ne lit rien de plus et ne change en rien.
 // `statutTva` : le statut de TVA du dossier, sans valeur par défaut — la fenêtre des encaissements qu'une fiche de crédit
 // ouvre sur une facture (étape VF5c) en tire l'obligation de déclarer et son échéance, comme depuis l'onglet Factures.
+// Les colonnes triables de la liste des mouvements (16/11/2026) : le statut dans l'ordre du travail — à rapprocher d'abord.
+const COLONNES_DES_MOUVEMENTS: ColonneTriable<LigneBancaire>[] = [
+  { cle: 'date', libelle: 'Date', type: 'date', valeur: (l) => l.date },
+  { cle: 'libelle', libelle: 'Libellé', type: 'texte', valeur: (l) => l.libelle },
+  { cle: 'montant', libelle: 'Montant', type: 'montant', valeur: (l) => l.montant },
+  { cle: 'statut', libelle: 'Statut', type: 'rang', valeur: (l) => l.statut, ordre: ['non_rapprochee', 'rapprochee', 'ignoree'] },
+]
+
 export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLesFactures, statutTva }: {
   dossierId: string; modele: ModeleComptable; assujettiTva: boolean; ventesParLesFactures: boolean; statutTva: StatutTva | null
 }) {
@@ -248,6 +259,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const [moisFilter, setMoisFilter] = useState<'tous' | number>('tous')
   useEffect(() => { setMoisFilter('tous') }, [anneeFilter])
   const [recherche, setRecherche] = useState('')
+  // Le tri choisi d'un clic sur un en-tête (16/11/2026) : l'affichage seul, remis à l'ordre d'origine au changement de dossier.
+  const { tri: triMouvements, trierPar: trierMouvementsPar, choisirTri: choisirTriMouvements } = useTriDuTableau(dossierId)
   const [rapprochementAuto, setRapprochementAuto] = useState(false)
   // Le mouvement ouvert dans le panneau de droite (voir FicheMouvement) — le tableau lui-même reste
   // compact (date/libellé/montant/statut) : sur un dossier de plusieurs centaines de mouvements, les
@@ -666,6 +679,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   const filtered = avantRecherche.filter((l) =>
     correspondALaRecherche([l.libelle, l.montant, l.date, formatDate(l.date)], recherche),
   )
+  // LE TRI CHOISI PAR UN CLIC SUR UN EN-TÊTE (16/11/2026) : il ordonne les lignes dessinées et le « précédent / suivant »
+  // de la fiche d'un mouvement, rien d'autre — les lots, les totaux et le compteur restent sur les listes d'avant.
+  const affiches = trierLignes(filtered, COLONNES_DES_MOUVEMENTS, triMouvements)
 
   // Le critère vit dans lib/appariementBanque.ts, testé, et non plus recopié ici : c'est le même que
   // celui du bouton « Tout rapprocher », qui doit rester le même par construction et pas par
@@ -1797,17 +1813,17 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // « Mouvement N sur M » sur la liste AFFICHÉE, comme la fiche d'une pièce. Un mouvement qui en est
   // sorti — rapproché sous le filtre « Non rapprochés », le cas courant — a laissé sa place à son
   // suivant : « Suivant » mène à celui-là, et on enchaîne sans revenir à la liste.
-  const rangAffiche = ligneOuverte ? filtered.findIndex((l) => l.id === ligneOuverte.id) : -1
+  const rangAffiche = ligneOuverte ? affiches.findIndex((l) => l.id === ligneOuverte.id) : -1
   const rangRepere = rangAffiche !== -1 ? rangAffiche : mouvementOuvert?.rang ?? -1
   const rangPrecedent = rangRepere - 1
   const rangSuivant = rangAffiche !== -1 ? rangAffiche + 1 : rangRepere
   const navigationMouvement = {
-    position: rangAffiche === -1 ? 'Mouvement hors de la liste affichée' : `Mouvement ${rangAffiche + 1} sur ${filtered.length}`,
-    precedent: rangPrecedent >= 0 && rangPrecedent < filtered.length
-      ? () => ouvrirMouvement(filtered[rangPrecedent], rangPrecedent)
+    position: rangAffiche === -1 ? 'Mouvement hors de la liste affichée' : `Mouvement ${rangAffiche + 1} sur ${affiches.length}`,
+    precedent: rangPrecedent >= 0 && rangPrecedent < affiches.length
+      ? () => ouvrirMouvement(affiches[rangPrecedent], rangPrecedent)
       : null,
-    suivant: rangSuivant >= 0 && rangSuivant < filtered.length
-      ? () => ouvrirMouvement(filtered[rangSuivant], rangSuivant)
+    suivant: rangSuivant >= 0 && rangSuivant < affiches.length
+      ? () => ouvrirMouvement(affiches[rangSuivant], rangSuivant)
       : null,
   }
 
@@ -2448,17 +2464,18 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
           </div>
         ) : (
           <div className="tableau-adaptable">
+            <SelecteurDeTri colonnes={COLONNES_DES_MOUVEMENTS} etat={triMouvements} onChoisir={choisirTriMouvements} etroite />
             <table className="table-empilable-etroite">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Libellé</th>
-                  <th>Montant</th>
-                  <th>Statut</th>
+                  <EnTeteTriable colonne="date" etat={triMouvements} onTrier={trierMouvementsPar}>Date</EnTeteTriable>
+                  <EnTeteTriable colonne="libelle" etat={triMouvements} onTrier={trierMouvementsPar}>Libellé</EnTeteTriable>
+                  <EnTeteTriable colonne="montant" etat={triMouvements} onTrier={trierMouvementsPar}>Montant</EnTeteTriable>
+                  <EnTeteTriable colonne="statut" etat={triMouvements} onTrier={trierMouvementsPar}>Statut</EnTeteTriable>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((l, rang) => {
+                {affiches.map((l, rang) => {
                   const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
                   const pastillesPaiement = pastillesDePaiement(piecesPayeesPar(l, reglementsParLigne.get(l.id) ?? []), restesAPayer, payeesEnTrop, l.reglement_groupe)
                   const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null

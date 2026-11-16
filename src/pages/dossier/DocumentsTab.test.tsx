@@ -987,3 +987,45 @@ describe('DocumentsTab — la fiche d’un document dans le volet', () => {
     expect(await within(volet()).findByText('FOUR MICRO-ONDES')).toBeDefined()
   })
 })
+
+// LE TRI PAR UN CLIC SUR L'EN-TÊTE (demande du cabinet du 16/11/2026, lib/triDesTableaux.ts).
+describe('DocumentsTab — le tri par un clic sur l’en-tête', () => {
+  const volet = () => document.getElementById('panneau-droit')!
+  const noms = () => [...document.querySelectorAll('tbody a.nom-fichier')].map((a) => a.textContent)
+  const enTete = (nom: string) => screen.getByRole('button', { name: new RegExp(`^${nom}`) })
+  const trois = () => [
+    documentDeTest({ id: 'd-b', nom_fichier: 'b-releve.pdf', storage_path: 'dossier-de-test/b.pdf', created_at: '2025-03-01T09:00:00Z' }),
+    documentDeTest({ id: 'd-c', nom_fichier: 'C-contrat.pdf', storage_path: 'dossier-de-test/c.pdf', created_at: '2025-02-01T09:00:00Z' }),
+    documentDeTest({ id: 'd-a', nom_fichier: 'a-statuts.pdf', storage_path: 'dossier-de-test/a.pdf', created_at: '2025-01-01T09:00:00Z' }),
+  ]
+
+  it('croissant, décroissant, puis l’ordre d’origine, et aria-sort le dit', async () => {
+    reinitialiser()
+    faux.documents = trois()
+    rendre()
+    await screen.findByText('b-releve.pdf')
+    const origine = noms()
+    fireEvent.click(enTete('Fichier'))
+    expect(noms()).toEqual(['a-statuts.pdf', 'b-releve.pdf', 'C-contrat.pdf'])
+    expect(enTete('Fichier').closest('th')!.getAttribute('aria-sort')).toBe('ascending')
+    fireEvent.click(enTete('Fichier'))
+    expect(noms()).toEqual(['C-contrat.pdf', 'b-releve.pdf', 'a-statuts.pdf'])
+    expect(enTete('Fichier').closest('th')!.getAttribute('aria-sort')).toBe('descending')
+    fireEvent.click(enTete('Fichier'))
+    expect(noms()).toEqual(origine)
+    expect(enTete('Fichier').closest('th')!.getAttribute('aria-sort')).toBe('none')
+  })
+
+  it('la fiche d’un document suit l’ordre TRIÉ', async () => {
+    reinitialiser()
+    faux.documents = trois()
+    rendre()
+    await screen.findByText('b-releve.pdf')
+    fireEvent.click(enTete('Ajouté le'))
+    fireEvent.click(screen.getByText('a-statuts.pdf'))
+    expect(await within(volet()).findByText('Document 1 sur 3')).toBeDefined()
+    fireEvent.click(within(volet()).getByRole('button', { name: 'Document suivant' }))
+    expect(await within(volet()).findByText('Document 2 sur 3')).toBeDefined()
+    expect(within(volet()).getByText('C-contrat.pdf')).toBeDefined()
+  })
+})
