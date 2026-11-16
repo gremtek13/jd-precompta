@@ -53221,3 +53221,17 @@ reprise ; une lecture neuve (les seuls identifiants, au cabinet et à « Caisse 
 `partsDesPaiements` (9 813 cas) ; trois ordres, une signature ; retours à rebours ; relevés de tête ; quatre courses (sans le
 verrou de la facture, la vente compte deux fois) ; `rls.sql` 259/0, 150 sur 150 (le bloc HC) ; 151 essais avant/après
 identiques, hors des neufs, de l'inventaire, de la signature et de trois attendus justes avec ou sans A8Q5-Q4 ; banc SÛR.
+
+### 16/11/2026 — RET2-Q3 : L'ANNÉE DU DÉBUT QUI PRÉCÈDE L'AFFILIATION À LA CARMF NE LUI DOIT RIEN
+
+(Agent architecte ; ni migration, ni écriture en production.) Sur « (A) Zéro l'année qui précède l'affiliation ». **Source** :
+« Début d'exercice libéral », CARMF, édition 2026 (février 2026), relue le 16/11/2026 : « Votre affiliation est prononcée au
+premier jour du trimestre civil suivant le début de l'exercice non salarié ». Un médecin dont l'activité commence du 1er octobre
+au 31 décembre n'est affilié qu'au 1er janvier suivant : `estimerRetraite` rend zéro sur la base, le complémentaire,
+l'invalidité-décès et les PCV, l'assiette dite, et l'hypothèse `carmf-annee-avant-l-affiliation`, sans demander le cumul, la
+dispense ni l'exonération (`anneeDAffiliationALaCarmf`, d'où vient aussi `derniereAnneeDeLaDispense`). Mesuré sur le texte d'hier :
+un secteur 1 installé le 15/11/2026 à 6 000 € de revenu comptait 2 978 € (3 431 € sans dispense), un secteur 2, 7 026 €. **Non
+confrontable à l'oracle** : le moteur de l'Urssaf ignore l'affiliation ; ses six cas d'un médecin créé un 15 octobre deviennent
+une seconde exception comptée (`AVANT_L_AFFILIATION_ATTENDUS`), reconnue sur la date seule, le moteur y comptant quelque chose et
+nous rien. Six mutations sur six mordent. Hors de ce lot : le prorata de la première année d'affiliation (RET2-Q3 (B), avec
+l'expert-comptable) et la même règle pour la CARPIMKO et la CARCDSF (RET2Q3-Q1).

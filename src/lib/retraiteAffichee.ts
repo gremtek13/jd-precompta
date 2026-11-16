@@ -153,6 +153,8 @@ const TEXTE_DE_L_HYPOTHESE: Readonly<Record<HypotheseRetraite, string>> = {
     'CARCDSF : les faibles revenus sont exonérés des PCV ; la caisse ne l’accorde que sur demande, et l’estimation la suppose demandée.',
   'carmf-debut-d-activite-complementaire-suppose-du':
     'CARMF : un médecin installé avant quarante ans est dispensé du complémentaire ses deux premières années ; l’application ne connaît pas l’âge, et l’estimation compte le complémentaire dû.',
+  'carmf-annee-avant-l-affiliation':
+    'CARMF : rien n’est compté sur cet exercice — l’activité a commencé en octobre, novembre ou décembre, et la CARMF n’affilie le médecin qu’au premier jour du trimestre civil qui suit, le 1er janvier suivant : elle n’appelle rien sur l’année du début. L’estimation tient le début d’activité saisi pour celui de l’exercice libéral du médecin : déjà affilié par une activité libérale antérieure, il cotiserait. Les cotisations de l’Urssaf, elles, sont dues dès le début.',
   'carmf-complementaire-dispense':
     'CARMF : le complémentaire n’est pas compté — le cabinet a dit le médecin dispensé cet exercice (ses deux premières années d’affiliation, son activité commencée avant quarante ans).',
   'carmf-exoneration-en-zone-prioritaire':

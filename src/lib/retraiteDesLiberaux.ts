@@ -34,6 +34,17 @@
 // CALCULÉ EN CENTIMES, EN NOMBRES EXACTS : chaque montant est une fraction d'entiers (BigInt), arrondie là où le moteur
 // arrondit — à l'euro, ou au centime pour la CARCDSF —, à la demie supérieure ; jamais une somme de flottants.
 //
+// L'ANNÉE DU DÉBUT QUI PRÉCÈDE L'AFFILIATION À LA CARMF (RET2-Q3, tranchée par le cabinet le 16/11/2026 : « (A) Zéro l'année
+// qui précède l'affiliation »). La CARMF prononce l'affiliation « au premier jour du trimestre civil suivant le début de
+// l'exercice non salarié » (« Début d'exercice libéral », CARMF, édition 2026, février 2026) : un médecin dont l'activité
+// commence en octobre, novembre ou décembre n'est affilié qu'au 1er janvier suivant, et la caisse n'appelle rien sur l'année
+// du début — ni la base, ni le complémentaire, ni l'invalidité-décès, ni les PCV. Le moteur de l'Urssaf, qui ignore
+// l'affiliation, les chiffre comme une autre année (`retraiteDesLiberaux.test.ts` compte ces cas, l'exception et son
+// nombre). L'estimation rend zéro et le dit (`carmf-annee-avant-l-affiliation`), sans rien demander du cumul, de la
+// dispense ni de l'exonération, qui n'y changeraient rien ; les cotisations de l'Urssaf restent dues dès le début. Le
+// prorata de la PREMIÈRE année d'affiliation (la base et ses forfaits « réduit[s] au prorata de la durée d'affiliation »,
+// RET2-Q3 (B)) n'est pas fait : il reste à voir avec l'expert-comptable. Les autres caisses n'en sont pas touchées.
+//
 // CE QUE LE MODULE NE FAIT PAS, et que l'écran dira : une profession libérale non réglementée encore à la CIPAV ; l'exonération pour incapacité d'exercice (« CNAVPL .
 // exonération incapacité ») ; le conjoint collaborateur ; l'outre-mer ; les cotisations facultatives. La règle de la
 // CARMF qui dispense du complémentaire les deux premières années un médecin installé avant quarante ans (le moteur
@@ -179,6 +190,11 @@ const CARMF_PRISE_EN_CHARGE_BASE: readonly (readonly [pourcentDuPlafond: number,
   [Infinity, 112],
 ]
 
+/** Le plancher de la base (« assiette minimale . retraite ») : 450 heures au SMIC, nul sous quatre-vingt-dix jours d'activité. */
+function assietteMinimaleDe(activite: ActiviteDeLExercice, bareme: Bareme): Q {
+  return activite.joursCetteAnnee < JOURS_SANS_PLANCHER ? ZERO : aLEuro(fois(euros(bareme.smicHoraire), q(HEURES_DU_PLANCHER)))
+}
+
 // ── L'estimation ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 export interface EntreeRetraite extends EntreeEstimation {
@@ -233,25 +249,34 @@ export const MOTIF_EXONERATION_NON_DITE =
  *    d'avant le 15/11/2026) — l'estimation d'hier, le complémentaire compté dû et dit
  *    (`carmf-debut-d-activite-complementaire-suppose-du`).
  *  - `tenue: true` : la case de l'exercice telle que le cabinet l'a dite, nulle tant qu'il ne l'a pas dite. Elle ne se lit
- *    que dans les deux premières années civiles d'affiliation (et l'année du début, s'il précède l'affiliation) : nulle là,
- *    l'estimation se tait en disant pourquoi ; au-delà, la règle ne peut plus jouer, et la case ne se lit pas (comme l'ACRE
- *    au-delà de sa première année).
+ *    que dans les deux premières années civiles d'affiliation : nulle là, l'estimation se tait en disant pourquoi ; au-delà,
+ *    la règle ne peut plus jouer, et la case ne se lit pas (comme l'ACRE au-delà de sa première année). L'année du début qui
+ *    précède l'affiliation ne la lit pas non plus : rien n'y est dû (RET2-Q3, `anneeDAffiliationALaCarmf`).
  */
 export type DispenseDesDebuts = { tenue: false } | { tenue: true; dispense: boolean | null }
+
+/**
+ * L'année civile où l'affiliation à la CARMF prend effet : « au premier jour du trimestre civil suivant le début de
+ * l'exercice non salarié » (CARMF, « Début d'exercice libéral », édition 2026). Le trimestre civil qui SUIT celui du début :
+ * un début en octobre, novembre ou décembre — le 1er octobre compris — s'affilie au 1er janvier suivant. Null pour une date
+ * illisible.
+ */
+export function anneeDAffiliationALaCarmf(debutActivite: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(debutActivite)
+  if (m === null) return null
+  const annee = Number(m[1])
+  const mois = Number(m[2])
+  if (!(mois >= 1 && mois <= 12)) return null
+  return mois >= 10 ? annee + 1 : annee
+}
 
 /**
  * La dernière année civile où la CARMF peut dispenser un médecin du complémentaire : la seconde année civile d'affiliation,
  * l'affiliation prenant effet au premier jour du trimestre civil qui suit le début d'activité. Null pour une date illisible.
  */
 export function derniereAnneeDeLaDispense(debutActivite: string): number | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(debutActivite)
-  if (m === null) return null
-  const annee = Number(m[1])
-  const mois = Number(m[2])
-  if (!(mois >= 1 && mois <= 12)) return null
-  // Le trimestre civil qui SUIT celui du début : un début en octobre, novembre ou décembre s'affilie au 1er janvier suivant.
-  const anneeDAffiliation = mois >= 10 ? annee + 1 : annee
-  return anneeDAffiliation + 1
+  const affiliation = anneeDAffiliationALaCarmf(debutActivite)
+  return affiliation === null ? null : affiliation + 1
 }
 
 /** Ce que l'estimation suppose et que l'écran dit. */
@@ -259,6 +284,7 @@ export type HypotheseRetraite =
   | 'carcdsf-reduction-du-forfait-supposee-demandee'
   | 'carcdsf-exoneration-des-pcv-supposee-demandee'
   | 'carmf-debut-d-activite-complementaire-suppose-du'
+  | 'carmf-annee-avant-l-affiliation'
   | 'carmf-complementaire-dispense'
   | 'carmf-exoneration-en-zone-prioritaire'
   | 'cipav-invalidite-deces-avant-68-ans-supposee'
@@ -301,6 +327,38 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
   if (profession === null) return { disponible: false, motif: 'Choisissez la profession pour estimer les cotisations.' }
   const caisse = CAISSE_DE_LA_PROFESSION[profession]
   const medecin = caisse === 'carmf'
+  // L'activité de l'exercice : déjà lue sans faute par le volet de l'Urssaf, quand les paramètres sont tenus (une date
+  // illisible, ou un début après l'exercice, l'y a déjà fait taire).
+  let activite: ActiviteDeLExercice = ACTIVITE_OUVERTE_AVANT
+  if (e.parametres.tenus && e.parametres.debutActivite !== null) {
+    const lue = activiteDeLExercice(e.annee, e.parametres.debutActivite)
+    if (lue.activite === null) return { disponible: false, motif: lue.motif }
+    activite = lue.activite
+  }
+  // L'ANNÉE DU DÉBUT QUI PRÉCÈDE L'AFFILIATION À LA CARMF (RET2-Q3) : rien n'est dû à la caisse, quoi que le médecin ait à
+  // dire du cumul, de la dispense ou de l'exonération — l'estimation ne les demande donc pas. Sans début d'activité lu
+  // (les paramètres pas tenus), l'activité est ouverte avant l'exercice : l'estimation d'hier.
+  if (medecin && e.parametres.tenus && e.parametres.debutActivite !== null) {
+    const affiliation = anneeDAffiliationALaCarmf(e.parametres.debutActivite)
+    if (affiliation !== null && affiliation > e.annee) {
+      return {
+        disponible: true,
+        estimation: {
+          caisse,
+          assiette: centimes(euros(u.assiette)),
+          assietteMinimale: centimes(assietteMinimaleDe(activite, bareme)),
+          retraiteDeBase: 0,
+          priseEnChargeRetraiteDeBase: 0,
+          retraiteComplementaire: 0,
+          invaliditeDeces: 0,
+          pcv: 0,
+          priseEnChargePcv: 0,
+          total: 0,
+          hypotheses: ['carmf-annee-avant-l-affiliation'],
+        },
+      }
+    }
+  }
   if (medecin && e.cumulEmploiRetraite === null) {
     return {
       disponible: false,
@@ -314,13 +372,6 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
   if (medecin && z.tenue && e.annee === EXERCICE_DE_L_EXONERATION_EN_ZONE_PRIORITAIRE && e.cumulEmploiRetraite === true) {
     if (z.exoneration === null) return { disponible: false, motif: MOTIF_EXONERATION_NON_DITE }
     exonere = z.exoneration
-  }
-  // L'activité de l'exercice : déjà lue sans faute par le volet de l'Urssaf, quand les paramètres sont tenus.
-  let activite: ActiviteDeLExercice = ACTIVITE_OUVERTE_AVANT
-  if (e.parametres.tenus && e.parametres.debutActivite !== null) {
-    const lue = activiteDeLExercice(e.annee, e.parametres.debutActivite)
-    if (lue.activite === null) return { disponible: false, motif: lue.motif }
-    activite = lue.activite
   }
   const hypotheses: HypotheseRetraite[] = []
 
@@ -343,8 +394,7 @@ export function estimerRetraite(e: EntreeRetraite): ResultatRetraite {
   }
 
   // ── Le régime de base de la CNAVPL : 8,73 % puis 1,87 %, sur l'assiette portée au plancher.
-  const assietteMinimale =
-    activite.joursCetteAnnee < JOURS_SANS_PLANCHER ? ZERO : aLEuro(fois(euros(bareme.smicHoraire), q(HEURES_DU_PLANCHER)))
+  const assietteMinimale = assietteMinimaleDe(activite, bareme)
   // Exonéré (RET2-Q2) : le régime de base, le complémentaire et les PCV ne sont pas dus, ni donc pris en charge ;
   // l'invalidité-décès non plus, le cumul étant dit (la condition ci-dessus). Les assiettes restent dites.
   if (exonere) {
