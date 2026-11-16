@@ -53331,3 +53331,8 @@ mutations sur 148, comme avant ; avec B1 et LM6, 265, 0, 153 sur 153 ; le cabine
 de la réplique supprimé, comme en production) : MV et LC justes, désignation libre puis verrouillée (NON JOUÉS) ; deux
 mutations du nouveau code mordent. DC, LM, HF, HD et FL nomment encore ce cabinet ET le rôle `proprietaire`, propre à la
 réplique : laissés, ils tombent en 23503 sur la copie comme en production.
+
+Rejoué en production le même soir, par `execute_sql` (le bloc recopié, ses commentaires omis) : MV, 8 verdicts sur 8 (MV1
+à MV7 et le jeu construit, la désignation du cabinet rendue), 3 mutations sur 3. LC reste EN ATTENTE de `lettres_du_client`.
+Question posée : ESSAIS-Q2 (récrire de même les blocs DC, LM, HF, HD et FL, qui nomment aussi le cabinet de la réplique
+et lisent le rôle `proprietaire`, propre aux répliques).
