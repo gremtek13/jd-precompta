@@ -505,21 +505,19 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   une fonction vérifie l'empreinte du corps qu'elle remplace (`remplacementsDesPreparees.test.ts`, REPET-Q2 : la garde
   d'INV3 le faisait déjà) → « A8Q5Q3Q2-Q2 : LA GARDE DES RÈGLEMENTS », « RET2-Q2 : L'EXONÉRATION DE 2025 », chercher
   « C8-Q2 », « REPET-Q2 » au 15/11/2026.
-- **Préparées le 16/11/2026, par l'outil, après `reglements_de_la_piece_citee`, derrière leurs drapeaux baissés** : la pièce
-  d'un mouvement ou d'une part de virement groupé tenue dans son dossier, la garde tirant juste après la porte
-  (`piece_d_un_paiement_dans_son_dossier`, A8Q5-Q4, `PIECE_D_UN_PAIEMENT_DANS_SON_DOSSIER_PREVUE`) ; le plancher du registre
-  d'une facture reprise, ce que la 2035 compte — la pièce entière à l'écart d'alignement près
-  (`plancher_a_l_ecart_d_alignement`, A8Q5Q3Q2-Q3, `PLANCHER_A_L_ECART_D_ALIGNEMENT_PREVU`) ; le client ne paie plus en
-  espèces l'original d'une facture reprise, sous un refus neutre, « Mes pièces » le disant avant le clic par une lecture
-  neuve à présenter au cabinet (`especes_du_client_hors_des_reprises`, A8Q5Q3Q2Q2-Q1,
-  `ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES`, levé APRÈS la migration) → « A8Q5-Q4, A8Q5Q3Q2-Q3 ET A8Q5Q3Q2Q2-Q1 : TROIS
-  MIGRATIONS PRÉPARÉES ».
-- **Préparée le 16/11/2026, par l'outil, son drapeau baissé** : qui a ouvert un accès client, attesté sous la session du
-  cabinet (`auteur_des_ouvertures_d_acces`, P1TQ2-Q1 ; `OUVERTURES_ATTESTEES_PREVUES`, `OUVERTURES_ATTESTEES_EN_BASE` de
-  `create-client-access`) ; l'adresse ne se montre qu'à qui la lit déjà dans l'équipe → « P1TQ2-Q1 : QUI A OUVERT UN ACCÈS
-  CLIENT, ATTESTÉ PAR LE CABINET ». `outils/membre-d-essai/` : le membre d'équipe d'essai que trois essais de production
-  supposent (ESSAIS-Q1), `creer.sql` à coller par le cabinet, `verifier.sql` pour la session, `retirer.sql` ; sans mot de
-  passe, banni, affecté à `test` seul, il part avec `test` → « ESSAIS-Q1 : LE MEMBRE D'ÉQUIPE D'ESSAI ».
+- **En production le 16/11/2026 au soir (231 à 234), par l'outil, leurs drapeaux levés** : la pièce d'un mouvement ou d'une
+  part de virement groupé tenue dans son dossier (`piece_d_un_paiement_dans_son_dossier`, A8Q5-Q4) ; le plancher du registre
+  d'une facture reprise, la pièce entière à l'écart d'alignement près (`plancher_a_l_ecart_d_alignement`, A8Q5Q3Q2-Q3) ; le
+  client ne paie plus en espèces l'original d'une facture reprise, « Mes pièces » le disant avant le clic
+  (`especes_du_client_hors_des_reprises`, A8Q5Q3Q2Q2-Q1, la lecture au client « Caisse » comprise) ; qui a ouvert un accès
+  client, attesté sous la session du cabinet (`auteur_des_ouvertures_d_acces`, P1TQ2-Q1 ; `create-client-access` à
+  redéployer, sa constante `OUVERTURES_ATTESTEES_EN_BASE` levée). L'onglet Accès nomme aussi, sans migration, le compte qui
+  a coché, décoché ou retiré (P1TQ2Q1-Q1 (A)) : l'adresse lue de `cabinet_admins` sous la session de qui regarde, sinon « Le
+  cabinet » → « QUATRE MIGRATIONS EN PRODUCTION (231 À 234) », « A8Q5-Q4, A8Q5Q3Q2-Q3 ET A8Q5Q3Q2Q2-Q1 : TROIS MIGRATIONS
+  PRÉPARÉES », « P1TQ2-Q1 : QUI A OUVERT UN ACCÈS CLIENT, ATTESTÉ PAR LE CABINET ». `outils/membre-d-essai/` : le membre
+  d'équipe d'essai que trois essais de production supposent (ESSAIS-Q1), `creer.sql` à coller par le cabinet,
+  `verifier.sql` pour la session, `retirer.sql` ; sans mot de passe, banni, affecté à `test` seul, il part avec `test`
+  → « ESSAIS-Q1 : LE MEMBRE D'ÉQUIPE D'ESSAI ».
 - **L'alerte de hausse et de baisse du chiffre d'affaires** (ligne 29.6, MVP ; CA-Q1 à Q5 tranchées le 16/11/2026) : en
   production depuis le 16/11/2026 (230 ; `hausse_du_chiffre_d_affaires`, par l'outil ; `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`
   levé, les noms gardant « hausse ») — le chiffre de l'estimation (`chiffreDAffairesDeLaPeriode`), le trimestre clos, le
