@@ -504,6 +504,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   une fonction vérifie l'empreinte du corps qu'elle remplace (`remplacementsDesPreparees.test.ts`, REPET-Q2 : la garde
   d'INV3 le faisait déjà) → « A8Q5Q3Q2-Q2 : LA GARDE DES RÈGLEMENTS », « RET2-Q2 : L'EXONÉRATION DE 2025 », chercher
   « C8-Q2 », « REPET-Q2 » au 15/11/2026.
+- **Préparées le 16/11/2026, par l'outil, après `reglements_de_la_piece_citee`, derrière leurs drapeaux baissés** : la pièce
+  d'un mouvement ou d'une part de virement groupé tenue dans son dossier, la garde tirant juste après la porte
+  (`piece_d_un_paiement_dans_son_dossier`, A8Q5-Q4, `PIECE_D_UN_PAIEMENT_DANS_SON_DOSSIER_PREVUE`) ; le plancher du registre
+  d'une facture reprise, ce que la 2035 compte — la pièce entière à l'écart d'alignement près
+  (`plancher_a_l_ecart_d_alignement`, A8Q5Q3Q2-Q3, `PLANCHER_A_L_ECART_D_ALIGNEMENT_PREVU`) ; le client ne paie plus en
+  espèces l'original d'une facture reprise, sous un refus neutre, « Mes pièces » le disant avant le clic par une lecture
+  neuve à présenter au cabinet (`especes_du_client_hors_des_reprises`, A8Q5Q3Q2Q2-Q1,
+  `ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES`, levé APRÈS la migration) → « A8Q5-Q4, A8Q5Q3Q2-Q3 ET A8Q5Q3Q2Q2-Q1 : TROIS
+  MIGRATIONS PRÉPARÉES ».
 - **L'alerte de hausse du chiffre d'affaires** (ligne 29.6, MVP, demande du cabinet du 15/11/2026) : conçue
   (`docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md`), préparée derrière `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE`
   baissé — le chiffre de l'estimation (`chiffreDAffairesDeLaPeriode`), le trimestre clos et le cumul contre l'année d'avant,
