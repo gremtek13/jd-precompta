@@ -43,8 +43,10 @@ const bloc = (texte: string, etiquette: string) => {
   return texte.slice(debut, texte.indexOf(`$${etiquette}$;`, debut))
 }
 
+// L'état du drapeau au chargement (levé depuis l'application du 16/11/2026) : chaque test qui le force le rend.
+const DRAPEAU_AU_CHARGEMENT = DRAPEAU_DES_REGLEMENTS_DE_LA_PIECE_CITEE.REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS
 afterEach(() => {
-  DRAPEAU_DES_REGLEMENTS_DE_LA_PIECE_CITEE.REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS = false
+  DRAPEAU_DES_REGLEMENTS_DE_LA_PIECE_CITEE.REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS = DRAPEAU_AU_CHARGEMENT
 })
 
 describe('A8Q5Q3Q2-Q2 — la migration, son retour et le module', () => {
@@ -163,8 +165,9 @@ describe('A8Q5Q3Q2-Q2 — la migration, son retour et le module', () => {
     ])
   })
 
-  it('le drapeau suit l’export : baissé tant que la migration n’y est pas', () => {
-    expect(EXPORTEE).toBe(false)
+  it('le drapeau suit l’export : levé depuis que la migration y est (appliquée le 16/11/2026)', () => {
+    expect(EXPORTEE).toBe(true)
+    expect(DRAPEAU_AU_CHARGEMENT).toBe(EXPORTEE)
     expect(reglementsDeLaPieceCiteePrevus()).toBe(EXPORTEE)
   })
 

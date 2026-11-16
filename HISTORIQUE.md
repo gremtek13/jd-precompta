@@ -53187,3 +53187,20 @@ des formulaires). Branchés : Justificatifs, Banque, Documents administratifs, �
 listes d'avant ; la fiche d'une pièce, d'un mouvement et d'un document suit l'ordre trié. Sous « À valider », la pièce non lue
 en tête (`rangSousAValider`) reste l'ordre d'origine. `recherchesEtTotaux.test.ts` lit aussi l'ensemble d'un `trierLignes(`
 (défaut planté, plancher de huit écrans). Banc : `debordements.mjs` aux cinq largeurs et `390 client-banque`.
+
+### 16/11/2026 — A8Q5Q3Q2-Q2 EN PRODUCTION, ET QUINZE RÉPONSES DU CABINET
+
+Le cabinet a répondu le 16/11/2026, sur la page des arbitrages, à quinze fiches. A8Q5Q3Q2-Q2-migration : « L'appliquer ».
+`reglements_de_la_piece_citee` est partie par l'outil, texte inchangé : version `20261116133049`, empreinte de la ligne
+d'historique `5736f57009edc4036289dbc67573827a`, égale à celle du fichier, entré dans `supabase/schema/` sous cette
+version ; cinq déclencheurs différés en base ; `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS` levé (aucun écran ne le lit encore :
+rien ne change à l'écran). Les trois contrôles de l'export, égaux des deux côtés à 229 migrations : dérive
+`5a974e1a58565f398286fc2fecda0bbf` ; socle 83 instructions `d02e468d124c948803d3e9b831092ca3` ; inventaire 3 151 objets
+`41b13abc25575202211de94af1e1f3c6`. Pas rejoué en production : son essai (`reglementsDeLaPieceCitee.sql`), qui attend le
+compte d'essai de l'équipe (ESSAIS-Q1). Les autres réponses, à la recommandation sauf mention : CA-Q1 (A) ; CA-Q2 (C),
+contre — une alerte de baisse, sur un seuil réglé à part ; CA-Q3 (C), contre — en plus, douze mois glissants ; CA-Q4 (A) ;
+CA-Q5 (A) ; CA-migration (A), après CA-Q2 et CA-Q4 ; A8Q5Q3Q2Q2-Q1 (C) ; A8Q5Q3Q2-Q3 (A) ; A8Q5-Q4 (A) ; C8Q2-Q5 (B),
+après le MVP ; ESSAIS-Q1 (A) ; INV3-migration, le jour d'INV8 ; P1TQ2-Q1 (A), contre — nommer le compte du cabinet ;
+RET2-Q3 (A). Trois architectes préparent ce qu'elles demandent (l'alerte du chiffre d'affaires reprise ; les trois suites
+des factures reprises ; RET2-Q3, P1TQ2-Q1 et le compte d'essai). Le même jour, sur une décision donnée en conversation :
+l'import NOEMIE ne garde que des chiffres, aucune donnée de patient (conception 53).

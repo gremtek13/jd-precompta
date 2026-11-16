@@ -27,7 +27,7 @@ import type { RefusDeLaBase } from './pieceDUneFactureReprise'
 // APPEL : les tests jouent ses deux états sur l'objet ci-dessous.
 export const DRAPEAU_DES_REGLEMENTS_DE_LA_PIECE_CITEE = {
   /** Faux jusqu'à l'application de `reglements_de_la_piece_citee`, préparée le 15/11/2026. */
-  REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS: false as boolean,
+  REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS: true as boolean,
 }
 
 /** Le drapeau, lu à l'appel. */
