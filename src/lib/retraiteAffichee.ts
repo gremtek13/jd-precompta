@@ -155,6 +155,10 @@ const TEXTE_DE_L_HYPOTHESE: Readonly<Record<HypotheseRetraite, string>> = {
     'CARMF : un médecin installé avant quarante ans est dispensé du complémentaire ses deux premières années ; l’application ne connaît pas l’âge, et l’estimation compte le complémentaire dû.',
   'carmf-annee-avant-l-affiliation':
     'CARMF : rien n’est compté sur cet exercice — l’activité a commencé en octobre, novembre ou décembre, et la CARMF n’affilie le médecin qu’au premier jour du trimestre civil qui suit, le 1er janvier suivant : elle n’appelle rien sur l’année du début. L’estimation tient le début d’activité saisi pour celui de l’exercice libéral du médecin : déjà affilié par une activité libérale antérieure, il cotiserait. Les cotisations de l’Urssaf, elles, sont dues dès le début.',
+  'carpimko-annee-avant-l-affiliation':
+    'CARPIMKO : rien n’est compté sur cet exercice — l’activité a commencé en octobre, novembre ou décembre, et la CARPIMKO n’affilie qu’au premier jour du trimestre civil qui suit le début d’activité libérale, le 1er janvier suivant : elle n’appelle rien sur l’année du début. L’estimation tient le début d’activité saisi pour celui de l’activité libérale : déjà affilié par une activité libérale antérieure, le praticien cotiserait. Les cotisations de l’Urssaf, elles, sont dues dès le début.',
+  'carcdsf-annee-avant-l-affiliation':
+    'CARCDSF : rien n’est compté sur cet exercice — l’activité a commencé en octobre, novembre ou décembre, et la CARCDSF n’affilie qu’au premier jour du trimestre civil qui suit le début d’activité, le 1er janvier suivant ; ses cotisations sont dues au prorata des trimestres d’affiliation, aucun sur l’année du début. L’estimation tient le début d’activité saisi pour celui de l’activité libérale : déjà affilié par une activité libérale antérieure, le praticien cotiserait. Les cotisations de l’Urssaf, elles, sont dues dès le début.',
   'carmf-complementaire-dispense':
     'CARMF : le complémentaire n’est pas compté — le cabinet a dit le médecin dispensé cet exercice (ses deux premières années d’affiliation, son activité commencée avant quarante ans).',
   'carmf-exoneration-en-zone-prioritaire':

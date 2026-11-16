@@ -571,9 +571,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   générale → « LES TROIS POINTS PLAUSIBLES DE LA RELECTURE DE LA 2035 : ÉTABLIS, ET LA CONCEPTION DE LEUR CORRECTION »,
   « LA 2035 : LES CASES « DONT », LA PRÉVISIONNELLE REMPLACÉE ET LE PDF D'UN MILLÉSIME (2035S1, S2 ET S6) »,
   « 2035S-Q5 : LE PDF D'UN MILLÉSIME ABSENT S'IMPRIME AVEC UN AVERTISSEMENT ».
-- **Déclarations TNS** (ligne 27) : les médecins de secteur 1 et 2 estimés depuis le 07/11/2026, contre l'oracle ; un médecin
-  ne doit rien à la CARMF l'année du début qui précède son affiliation (début d'octobre à décembre ; RET2-Q3, 16/11/2026 ;
-  RET2Q3-Q1 pour les autres caisses) → « RET2-Q3 : L'ANNÉE DU DÉBUT QUI PRÉCÈDE L'AFFILIATION À LA CARMF NE LUI DOIT RIEN » ; le
+- **Déclarations TNS** (ligne 27) : les médecins de secteur 1 et 2 estimés depuis le 07/11/2026, contre l'oracle ; un praticien
+  ne doit rien à la CARMF, la CARPIMKO ou la CARCDSF l'année du début qui précède son affiliation (début d'octobre à
+  décembre ; RET2-Q3 et RET2Q3-Q1, 16/11/2026 ; la CIPAV hors de la règle) → « RET2-Q3 : L'ANNÉE DU DÉBUT QUI PRÉCÈDE
+  L'AFFILIATION À LA CARMF NE LUI DOIT RIEN », « RET2Q3-Q1 : LA CARPIMKO ET LA CARCDSF » ; le
   début d'activité, l'ACRE et le taux dentiste en production depuis le 07/11/2026 (`parametres_des_cotisations`, deux
   tables hors de `dossiers`, que le client lit ; l'estimation les reçoit en entrée obligatoire, sans début d'activité
   elle se tait ; `PARAMETRES_DES_COTISATIONS_EXPORTES` levé ; TNS-Q1, TNS-Q4) → « LES PARAMÈTRES DES COTISATIONS : LE
