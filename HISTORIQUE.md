@@ -53204,3 +53204,20 @@ après le MVP ; ESSAIS-Q1 (A) ; INV3-migration, le jour d'INV8 ; P1TQ2-Q1 (A), c
 RET2-Q3 (A). Trois architectes préparent ce qu'elles demandent (l'alerte du chiffre d'affaires reprise ; les trois suites
 des factures reprises ; RET2-Q3, P1TQ2-Q1 et le compte d'essai). Le même jour, sur une décision donnée en conversation :
 l'import NOEMIE ne garde que des chiffres, aucune donnée de patient (conception 53).
+
+### 16/11/2026 — A8Q5-Q4, A8Q5Q3Q2-Q3 ET A8Q5Q3Q2Q2-Q1 : TROIS MIGRATIONS PRÉPARÉES APRÈS LA GARDE DES RÈGLEMENTS (PRÉPARÉES, PAS APPLIQUÉES)
+
+(Agent architecte ; rien en production ; une copie de la réplique portée à 229 : P1T-Q2, puis `reglements_de_la_piece_citee`
+telle que le dépôt la porte.) Trois réponses du 16/11/2026, à la recommandation ; trois migrations indépendantes, PAR L'OUTIL
+(ordre conseillé : Q4, Q3, Q2Q2-Q1). **A8Q5-Q4** (`piece_d_un_paiement_dans_son_dossier`) : la pièce d'un mouvement est de son
+dossier, celle d'une part, du dossier de la part et du mouvement ; une pièce ainsi citée, un mouvement à parts, ne changent pas
+de dossier. La garde tire juste après la porte d'accès, avant celles qui lisent la pièce citée (l'une nommait le fichier et la
+facture d'un autre dossier) ; la caisse la tenait déjà. **A8Q5Q3Q2-Q3** (`plancher_a_l_ecart_d_alignement`) :
+`recu_par_la_piece` devient ce que la 2035 compte, la pièce entière à 2 % et 5 € près, en entiers ; une garde différée juge le
+montant d'une pièce citée qui fait monter ce plancher. **A8Q5Q3Q2Q2-Q1** (`especes_du_client_hors_des_reprises`) : le paiement
+en espèces d'une pièce citée, saisi par un accès client, se refuse sous des mots neutres, avant toute garde qui parle de la
+reprise ; une lecture neuve (les seuls identifiants, au cabinet et à « Caisse ») le fait dire avant le clic dans « Mes pièces »
+— elle se présente au cabinet. **Preuves** : trois essais neufs justes, 28 mutations sur 28 ; le plancher balayé contre
+`partsDesPaiements` (9 813 cas) ; trois ordres, une signature ; retours à rebours ; relevés de tête ; quatre courses (sans le
+verrou de la facture, la vente compte deux fois) ; `rls.sql` 259/0, 150 sur 150 ; 151 essais avant/après identiques hors de
+trois attendus rendus conditionnels ; banc du leurre SÛR.
