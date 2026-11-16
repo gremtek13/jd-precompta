@@ -756,6 +756,10 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 }
 .fiche-piece-apercu a { display: inline-block; margin-top: 6px; }
 .fiche-piece-rapprochee { margin: 0 0 12px; font-size: 0.85rem; color: var(--color-text-light); }
+/* La fiche d'un document (voir FicheDocument, onglet Documents administratifs) : la charpente de la fiche d'une pièce ;
+   ses pastilles passent à la ligne, ses détails se lisent sous la catégorie. */
+.fiche-document-pastilles { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.fiche-document-details { margin: 0 0 12px; font-size: 0.85rem; overflow-wrap: anywhere; }
 /* Une pièce qu'un exercice validé a figée : dit en tête de la fiche, avant les champs qui ne changent plus. */
 .fiche-piece-figee {
   margin: 0 0 12px; padding: 8px 12px; font-size: 0.85rem; line-height: 1.45; color: var(--color-text-light);

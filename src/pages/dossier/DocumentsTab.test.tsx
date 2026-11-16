@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DocumentsTab from './DocumentsTab'
+import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type { DocumentDivers } from '../../lib/types'
 
 // « C'est une facture » recrée une pièce à partir d'un document déjà en stockage, puis supprime le
@@ -41,6 +42,14 @@ const faux = vi.hoisted(() => ({
   // incomplète, sans toucher à celle de la révision d'un solde.
   entrees: [] as Record<string, unknown>[],
   dossierPermanentRefuse: false,
+  // L'APERÇU DE LA FICHE D'UN DOCUMENT (16/11/2026) : les chemins dont une adresse signée est demandée, et, quand
+  // `signaturesRetenues` est levé, la réponse de chacune laissée en attente — la fenêtre où l'on change de document.
+  signatures: [] as string[],
+  signaturesRetenues: false,
+  signaturesEnAttente: new Map<string, () => void>(),
+  // La suppression d'un document laissée en attente : la fenêtre où l'on ouvre un autre document.
+  suppressionRetenue: false,
+  relacherSuppression: null as null | (() => void),
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -68,8 +77,12 @@ vi.mock('../../lib/supabase', async () => {
         const refus = visees.map((d) => faux.refus[d.id]).find((motif) => motif !== undefined)
         if (refus) return Promise.resolve({ data: null, error: { message: refus } })
         const supprimees = visees.filter((d) => !faux.sansEffet.has(d.id))
-        faux.documents = faux.documents.filter((d) => !supprimees.includes(d))
-        return Promise.resolve({ data: mode === 'unique' ? (supprimees[0] ?? null) : supprimees, error: null })
+        const appliquer = () => {
+          faux.documents = faux.documents.filter((d) => !supprimees.includes(d))
+          return { data: mode === 'unique' ? (supprimees[0] ?? null) : supprimees, error: null }
+        }
+        if (faux.suppressionRetenue) return new Promise((resoudre) => { faux.relacherSuppression = () => resoudre(appliquer()) })
+        return Promise.resolve(appliquer())
       }
       if (table === 'documents_divers' && operation === 'update') {
         // Refusée, la mise à jour n'applique rien : la relecture montre la catégorie d'avant.
@@ -144,6 +157,12 @@ vi.mock('../../lib/supabase', async () => {
       storage: {
         from: () => ({
           remove: (chemins: string[]) => { faux.retraits.push(chemins); return Promise.resolve({ data: [], error: null }) },
+          createSignedUrl: (chemin: string) => {
+            faux.signatures.push(chemin)
+            const reponse = { data: { signedUrl: `https://signee.test/${chemin}` }, error: null }
+            if (!faux.signaturesRetenues) return Promise.resolve(reponse)
+            return new Promise((resoudre) => { faux.signaturesEnAttente.set(chemin, () => resoudre(reponse)) })
+          },
         }),
       },
       auth: { getUser: () => Promise.resolve({ data: { user: { id: 'utilisateur-de-test' } } }) },
@@ -180,6 +199,22 @@ function reinitialiser() {
   faux.revisionRefusee = false
   faux.entrees = []
   faux.dossierPermanentRefuse = false
+  faux.signatures = []
+  faux.signaturesRetenues = false
+  faux.signaturesEnAttente = new Map()
+  faux.suppressionRetenue = false
+  faux.relacherSuppression = null
+}
+
+// Dans la coque du panneau de droite, comme dans l'application : la fiche d'un document s'y ouvre, et `usePanneauDroit`
+// lève hors d'elle.
+function rendre() {
+  return render(
+    <FournisseurPanneauDroit>
+      <DocumentsTab dossierId="dossier-de-test" />
+      <EmplacementPanneauDroit />
+    </FournisseurPanneauDroit>,
+  )
 }
 
 afterEach(() => { vi.restoreAllMocks(); drapeau.documents = false })
@@ -197,12 +232,12 @@ vi.mock('./DemandesAuClient', () => ({ default: ({ dossierId }: { dossierId: str
 describe('DocumentsTab — les documents et les demandes du cabinet (B3a)', () => {
   it('baissé, l’onglet d’hier ; levé, les deux sections, sur ce dossier', async () => {
     reinitialiser()
-    const baisse = render(<DocumentsTab dossierId="dossier-de-test" />)
+    const baisse = rendre()
     await screen.findByRole('button', { name: "C'est une facture" })
     expect(screen.queryByText(/Section des/)).toBeNull()
     baisse.unmount()
     drapeau.documents = true
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByText('Section des documents de dossier-de-test')).toBeTruthy()
     expect(screen.getByText('Section des demandes de dossier-de-test')).toBeTruthy()
   })
@@ -211,7 +246,7 @@ describe('DocumentsTab — les documents et les demandes du cabinet (B3a)', () =
 describe('DocumentsTab — « C\'est une facture »', () => {
   it('ne crée qu\'une pièce quand le bouton est cliqué plusieurs fois de suite', async () => {
     reinitialiser()
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     const bouton = await screen.findByRole('button', { name: "C'est une facture" })
 
     // TROIS clics, et le troisième n'est pas du zèle : c'est lui qui distingue un verrou posé AVANT
@@ -238,7 +273,7 @@ describe('DocumentsTab — « C\'est une facture »', () => {
       { ...documentDeTest(), id: 'doc-1', nom_fichier: 'releve-janvier.pdf' },
       { ...documentDeTest(), id: 'doc-2', nom_fichier: 'releve-fevrier.pdf' },
     ]
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
 
     // Lue d'un coup, la liste n'aurait que janvier — et rien ne l'aurait dit.
     expect(await screen.findByText('releve-janvier.pdf')).toBeDefined()
@@ -251,7 +286,7 @@ describe('DocumentsTab — « C\'est une facture »', () => {
     // existe peut-être : supprimer le document l'effacerait au moment même où le code prend soin de
     // ne pas le perdre.
     faux.lectureTexte = { data: null, error: { message: 'permission denied' } }
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     const bouton = await screen.findByRole('button', { name: "C'est une facture" })
 
     await act(async () => { bouton.click() })
@@ -267,7 +302,7 @@ describe('DocumentsTab — « C\'est une facture »', () => {
     // contraire l'une de l'autre. Sur la seconde, « Retrouver le texte lu » relancerait Textract —
     // facturé — sur des documents dont le texte est peut-être déjà archivé.
     faux.presence = { data: [], error: { message: 'permission denied for table piece_textes_ocr' } }
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     await screen.findByText(/relancer la lecture repaierait Textract/)
 
     expect(screen.queryByRole('button', { name: /Retrouver le texte lu/ })).toBeNull()
@@ -275,7 +310,7 @@ describe('DocumentsTab — « C\'est une facture »', () => {
 
   it('propose la relecture quand la liste, elle, a bien été lue', async () => {
     reinitialiser()
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
 
     // Le même écran, à la seule différence de l'erreur de lecture : sans ce contre-exemple, le test
     // ci-dessus passerait aussi sur un bouton supprimé pour de bon.
@@ -285,7 +320,7 @@ describe('DocumentsTab — « C\'est une facture »', () => {
   it('dit que le document est resté ici quand sa suppression échoue', async () => {
     reinitialiser()
     faux.suppression = { error: { message: 'échec réseau' } }
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     const bouton = await screen.findByRole('button', { name: "C'est une facture" })
 
     await act(async () => { bouton.click() })
@@ -318,7 +353,7 @@ describe('DocumentsTab — « Facture probable »', () => {
       ],
       error: null,
     }
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     const marque = await screen.findByText('Facture probable')
     const ligne = marque.closest('tr') as HTMLElement
     within(ligne).getByText('rc-pro.pdf')
@@ -330,7 +365,7 @@ describe('DocumentsTab — « Facture probable »', () => {
   it('des textes illisibles ne marquent rien, et le disent sous la liste', async () => {
     reinitialiser()
     faux.presence = { data: [], error: { message: 'permission denied' } }
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     await screen.findByText(/aucune n’est marquée « Facture probable »/)
     expect(screen.queryByText('Facture probable')).toBeNull()
   })
@@ -345,7 +380,7 @@ describe('DocumentsTab — « Supprimer la sélection »', () => {
 
   async function supprimerToutLaSelection(confirmation = true) {
     const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(confirmation)
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     fireEvent.click(await screen.findByRole('button', { name: 'Tout sélectionner' }))
     const bouton = screen.getByRole('button', { name: /^Supprimer la sélection/ })
     await act(async () => { bouton.click() })
@@ -439,7 +474,7 @@ describe('DocumentsTab — « Supprimer la sélection »', () => {
     reinitialiser()
     faux.documents = troisDocuments().slice(0, 2)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     fireEvent.click(await screen.findByRole('button', { name: 'Tout sélectionner' }))
     const bouton = screen.getByRole('button', { name: /^Supprimer la sélection/ })
 
@@ -465,7 +500,7 @@ describe('DocumentsTab — « Supprimer » un document', () => {
     reinitialiser()
     faux.sansEffet = new Set(['document-a-convertir'])
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     const bouton = await screen.findByRole('button', { name: 'Supprimer' })
 
     await act(async () => { bouton.click() })
@@ -477,7 +512,7 @@ describe('DocumentsTab — « Supprimer » un document', () => {
   it('retire la ligne puis son fichier quand la base l’a supprimée', async () => {
     reinitialiser()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     const bouton = await screen.findByRole('button', { name: 'Supprimer' })
 
     await act(async () => { bouton.click() })
@@ -500,7 +535,7 @@ describe('DocumentsTab — une écriture refusée se dit', () => {
   it('un changement de catégorie refusé le dit, et la liste garde la catégorie de la base', async () => {
     reinitialiser()
     faux.refusMaj = 'permission denied for table documents_divers'
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     await screen.findByText('facture.pdf')
 
     await act(async () => { fireEvent.change(listeDeCategorie(), { target: { value: 'attestation' } }) })
@@ -513,7 +548,7 @@ describe('DocumentsTab — une écriture refusée se dit', () => {
 
   it('un changement de catégorie accepté ne dit rien', async () => {
     reinitialiser()
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     await screen.findByText('facture.pdf')
 
     await act(async () => { fireEvent.change(listeDeCategorie(), { target: { value: 'attestation' } }) })
@@ -525,7 +560,7 @@ describe('DocumentsTab — une écriture refusée se dit', () => {
   it('« C’est une facture » dit quand la base n’a retiré aucune ligne du document', async () => {
     reinitialiser()
     faux.sansEffet = new Set(['document-a-convertir'])
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     const bouton = await screen.findByRole('button', { name: "C'est une facture" })
 
     await act(async () => { bouton.click() })
@@ -540,7 +575,7 @@ describe('DocumentsTab — une écriture refusée se dit', () => {
     reinitialiser()
     faux.refusTexte = 'new row violates row-level security policy'
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     const bouton = await screen.findByRole('button', { name: "C'est une facture" })
 
     await act(async () => { bouton.click() })
@@ -556,7 +591,7 @@ describe('DocumentsTab — une écriture refusée se dit', () => {
   it('« C’est une facture » réussi ne dit rien, et le document part', async () => {
     // Le garde SYMÉTRIQUE des deux cas ci-dessus.
     reinitialiser()
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     const bouton = await screen.findByRole('button', { name: "C'est une facture" })
 
     await act(async () => { bouton.click() })
@@ -589,7 +624,7 @@ describe('DocumentsTab — un document cité par la révision', () => {
   it('dit la phrase de la base sur la ligne, et n’offre ni « Supprimer » ni « C’est une facture »', async () => {
     reinitialiser()
     citer('document-a-convertir')
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByText(PHRASE)).toBeDefined()
     expect(screen.getByText('Cité par la révision')).toBeDefined()
     expect(screen.queryByRole('button', { name: 'Supprimer' })).toBeNull()
@@ -603,7 +638,7 @@ describe('DocumentsTab — un document cité par la révision', () => {
     citer('document-a-convertir')
     faux.decisions = faux.decisions.map((d) => ({ ...d, dossier_id: 'autre-dossier' }))
     faux.preuves = faux.preuves.map((p) => ({ ...p, dossier_id: 'autre-dossier' }))
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByRole('button', { name: "C'est une facture" })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Supprimer' })).toBeDefined()
     expect(screen.queryByText(PHRASE)).toBeNull()
@@ -614,7 +649,7 @@ describe('DocumentsTab — un document cité par la révision', () => {
     faux.documents = deuxDocuments()
     citer('doc-2')
     const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     fireEvent.click(await screen.findByRole('button', { name: 'Tout sélectionner' }))
     await act(async () => { screen.getByRole('button', { name: /^Supprimer la sélection/ }).click() })
 
@@ -629,7 +664,7 @@ describe('DocumentsTab — un document cité par la révision', () => {
     reinitialiser()
     citer('document-a-convertir')
     const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     fireEvent.click(await screen.findByRole('button', { name: 'Tout sélectionner' }))
     await act(async () => { screen.getByRole('button', { name: /^Supprimer la sélection/ }).click() })
 
@@ -642,7 +677,7 @@ describe('DocumentsTab — un document cité par la révision', () => {
   it('lues en partie, les citations le disent : « C’est une facture » attend, « Supprimer » reste (la base juge)', async () => {
     reinitialiser()
     faux.revisionRefusee = true
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByText(/Les décisions de la révision des soldes et leurs preuves/)).toBeDefined()
     expect((screen.getByRole('button', { name: "C'est une facture" }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: 'Supprimer' }) as HTMLButtonElement).disabled).toBe(false)
@@ -674,7 +709,7 @@ describe('DocumentsTab — un document cité par le dossier permanent', () => {
   it('dit la phrase de la base sur la ligne, sans le titre, et n’offre ni « Supprimer » ni « C’est une facture »', async () => {
     reinitialiser()
     faux.entrees = [entree({ document_id: 'document-a-convertir' })]
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByText(PHRASE_PERMANENT)).toBeDefined()
     expect(screen.getByText('Cité par le dossier permanent')).toBeDefined()
     expect(screen.queryByText(/Titre secret/)).toBeNull()
@@ -690,14 +725,14 @@ describe('DocumentsTab — un document cité par le dossier permanent', () => {
       entree({ id: 'e-1', document_id: 'document-a-convertir', remplace_id: null, retire_le: null }),
       entree({ id: 'e-2', nature: 'contrat', document_id: null, texte: 'La suite', remplace_id: 'e-1', retire_le: '2026-02-01T00:00:00Z' }),
     ]
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByText(PHRASE_PERMANENT)).toBeDefined()
   })
 
   it('une entrée d’un AUTRE dossier ne compte pas : les deux gestes restent offerts', async () => {
     reinitialiser()
     faux.entrees = [entree({ dossier_id: 'autre-dossier', document_id: 'document-a-convertir' })]
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByRole('button', { name: "C'est une facture" })).toBeDefined()
     expect(screen.getByRole('button', { name: 'Supprimer' })).toBeDefined()
     expect(screen.queryByText(PHRASE_PERMANENT)).toBeNull()
@@ -708,7 +743,7 @@ describe('DocumentsTab — un document cité par le dossier permanent', () => {
     faux.decisions = [{ id: 'j-2025', dossier_id: 'dossier-de-test', annee: 2025, compte: '512000' }]
     faux.preuves = [{ id: 'rp-1', dossier_id: 'dossier-de-test', justification_id: 'j-2025', piece_id: null, document_id: 'document-a-convertir' }]
     faux.entrees = [entree({ document_id: 'document-a-convertir' })]
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByText(PHRASE_REVISION)).toBeDefined()
     expect(screen.queryByText(PHRASE_PERMANENT)).toBeNull()
     expect(screen.getByText('Cité par la révision')).toBeDefined()
@@ -719,7 +754,7 @@ describe('DocumentsTab — un document cité par le dossier permanent', () => {
     faux.documents = deuxDocuments()
     faux.entrees = [entree({ document_id: 'doc-2' })]
     const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     fireEvent.click(await screen.findByRole('button', { name: 'Tout sélectionner' }))
     await act(async () => { screen.getByRole('button', { name: /^Supprimer la sélection/ }).click() })
 
@@ -736,7 +771,7 @@ describe('DocumentsTab — un document cité par le dossier permanent', () => {
     faux.preuves = [{ id: 'rp-1', dossier_id: 'dossier-de-test', justification_id: 'j-2025', piece_id: null, document_id: 'doc-1' }]
     faux.entrees = [entree({ document_id: 'doc-2' })]
     const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     fireEvent.click(await screen.findByRole('button', { name: 'Tout sélectionner' }))
     await act(async () => { screen.getByRole('button', { name: /^Supprimer la sélection/ }).click() })
     // Rien à supprimer : les deux sont cités, le message le dit sans demander de confirmation.
@@ -748,7 +783,7 @@ describe('DocumentsTab — un document cité par le dossier permanent', () => {
   it('lues en partie, les entrées le disent à part : « C’est une facture » attend, avec ses mots', async () => {
     reinitialiser()
     faux.dossierPermanentRefuse = true
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByText(/Les entrées du dossier permanent n'ont pas pu être lues en entier/)).toBeDefined()
     expect(screen.queryByText(/Les décisions de la révision des soldes et leurs preuves/)).toBeNull()
     const bouton = screen.getByRole('button', { name: "C'est une facture" }) as HTMLButtonElement
@@ -761,10 +796,194 @@ describe('DocumentsTab — un document cité par le dossier permanent', () => {
   it('la révision d’un solde en défaut garde ses mots d’hier, et le dossier permanent n’en dit rien', async () => {
     reinitialiser()
     faux.revisionRefusee = true
-    render(<DocumentsTab dossierId="dossier-de-test" />)
+    rendre()
     expect(await screen.findByText(/Les décisions de la révision des soldes et leurs preuves n'ont pas pu être lues en entier/)).toBeDefined()
     expect(screen.queryByText(/Les entrées du dossier permanent/)).toBeNull()
     expect((screen.getByRole('button', { name: "C'est une facture" }) as HTMLButtonElement).title)
       .toMatch(/^Les décisions de la révision des soldes n’ont pas été lues en entier/)
+  })
+})
+
+// LA FICHE D'UN DOCUMENT DANS LE PANNEAU DE DROITE (demande du cabinet du 16/11/2026) : un clic sur un document ouvre sa
+// fiche — l'aperçu et les gestes de la ligne —, au lieu d'ouvrir le fichier dans une autre fenêtre.
+describe('DocumentsTab — la fiche d’un document dans le volet', () => {
+  const volet = () => document.getElementById('panneau-droit')!
+  const releveJanvier = () => documentDeTest({ id: 'doc-janvier', nom_fichier: 'releve-janvier.pdf', storage_path: 'dossier-de-test/releve-janvier.pdf', created_at: '2025-02-01T09:00:00Z' })
+  const releveFevrier = () => documentDeTest({ id: 'doc-fevrier', nom_fichier: 'releve-fevrier.pdf', storage_path: 'dossier-de-test/releve-fevrier.pdf', created_at: '2025-03-01T09:00:00Z' })
+
+  it('un clic sur le nom ouvre la fiche DE CE document, son aperçu signé, sans ouvrir de fenêtre', async () => {
+    reinitialiser()
+    faux.documents = [releveFevrier(), releveJanvier()]
+    const ouverture = vi.spyOn(window, 'open')
+    rendre()
+    expect(volet().childElementCount).toBe(0)
+
+    fireEvent.click(await screen.findByText('releve-janvier.pdf'))
+
+    // Rendus du plus récent au plus ancien : janvier est le second de la liste affichée.
+    expect(await within(volet()).findByText('Document 2 sur 2')).toBeDefined()
+    expect(within(volet()).getByText('releve-janvier.pdf')).toBeDefined()
+    const apercu = await within(volet()).findByTitle('Aperçu du document')
+    expect(apercu.getAttribute('src')).toBe('https://signee.test/dossier-de-test/releve-janvier.pdf')
+    expect(faux.signatures).toEqual(['dossier-de-test/releve-janvier.pdf'])
+    expect(ouverture).not.toHaveBeenCalled()
+    expect(screen.getByText('releve-janvier.pdf', { selector: 'a' }).closest('tr')!.className).toContain('ligne-ouverte')
+  })
+
+  it('« précédent » et « suivant » suivent la liste affichée', async () => {
+    reinitialiser()
+    faux.documents = [releveFevrier(), releveJanvier()]
+    rendre()
+    fireEvent.click(await screen.findByText('releve-fevrier.pdf'))
+    expect(await within(volet()).findByText('Document 1 sur 2')).toBeDefined()
+    expect((within(volet()).getByRole('button', { name: 'Document précédent' }) as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.click(within(volet()).getByRole('button', { name: 'Document suivant' }))
+
+    expect(await within(volet()).findByText('Document 2 sur 2')).toBeDefined()
+    expect(within(volet()).getByText('releve-janvier.pdf')).toBeDefined()
+    expect((within(volet()).getByRole('button', { name: 'Document suivant' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('changer de document pendant que l’aperçu se signe n’affiche jamais l’ancien', async () => {
+    reinitialiser()
+    faux.documents = [releveFevrier(), releveJanvier()]
+    faux.signaturesRetenues = true
+    rendre()
+    fireEvent.click(await screen.findByText('releve-fevrier.pdf'))
+    await within(volet()).findByText('Document 1 sur 2')
+    fireEvent.click(within(volet()).getByRole('button', { name: 'Document suivant' }))
+    await within(volet()).findByText('Document 2 sur 2')
+
+    // La signature du document QUITTÉ revient la première : elle ne s'écrit nulle part.
+    await act(async () => { faux.signaturesEnAttente.get('dossier-de-test/releve-fevrier.pdf')!() })
+    expect(within(volet()).queryByTitle('Aperçu du document')).toBeNull()
+
+    await act(async () => { faux.signaturesEnAttente.get('dossier-de-test/releve-janvier.pdf')!() })
+    expect(within(volet()).getByTitle('Aperçu du document').getAttribute('src'))
+      .toBe('https://signee.test/dossier-de-test/releve-janvier.pdf')
+  })
+
+  it('un chemin hors du dossier ne se demande pas au stockage, et la fiche le dit', async () => {
+    reinitialiser()
+    faux.documents = [documentDeTest({ storage_path: 'autre-dossier/facture.pdf' })]
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    expect(await within(volet()).findByText(/Aperçu indisponible : son chemin de stockage n’est pas dans ce dossier/)).toBeDefined()
+    expect(faux.signatures).toEqual([])
+  })
+
+  it('ce qui ne se prévisualise pas le dit, et s’ouvre dans un onglet par lib/apercu.ts', async () => {
+    reinitialiser()
+    faux.documents = [documentDeTest({ nom_fichier: 'releve.csv', storage_path: 'dossier-de-test/releve.csv' })]
+    const onglet = { opener: {} } as unknown as Window
+    const ouverture = vi.spyOn(window, 'open').mockReturnValue(onglet)
+    rendre()
+    fireEvent.click(await screen.findByText('releve.csv'))
+    expect(await within(volet()).findByText(/Ce type de fichier ne s’affiche pas ici/)).toBeDefined()
+    expect(within(volet()).queryByTitle('Aperçu du document')).toBeNull()
+
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Ouvrir dans un onglet ↗' })) })
+
+    expect(ouverture).toHaveBeenCalledWith('https://signee.test/dossier-de-test/releve.csv', '_blank')
+    expect(onglet.opener).toBeNull()
+  })
+
+  it('« Supprimer » depuis la fiche demande la même confirmation, n’écrit qu’une fois sur trois clics, et ferme la fiche', async () => {
+    reinitialiser()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    const bouton = await within(volet()).findByRole('button', { name: 'Supprimer' })
+
+    await act(async () => {
+      bouton.click()
+      bouton.click()
+      bouton.click()
+    })
+
+    expect(confirmation).toHaveBeenCalledTimes(1)
+    expect(confirmation).toHaveBeenCalledWith('Supprimer définitivement "facture.pdf" ?')
+    expect(faux.suppressions).toBe(1)
+    expect(faux.retraits).toEqual([['dossier-de-test/facture.pdf']])
+    expect(await screen.findByText('Aucun document.')).toBeDefined()
+    expect(volet().childElementCount).toBe(0)
+  })
+
+  it('une suppression qui répond après qu’on a ouvert un autre document ne ferme pas sa fiche', async () => {
+    reinitialiser()
+    faux.documents = [releveFevrier(), releveJanvier()]
+    faux.suppressionRetenue = true
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    rendre()
+    fireEvent.click(await screen.findByText('releve-fevrier.pdf'))
+    await act(async () => { fireEvent.click(await within(volet()).findByRole('button', { name: 'Supprimer' })) })
+    fireEvent.click(within(volet()).getByRole('button', { name: 'Document suivant' }))
+    await within(volet()).findByText('Document 2 sur 2')
+
+    await act(async () => { faux.relacherSuppression?.() })
+
+    expect(await screen.findByText('Document 1 sur 1')).toBeDefined()
+    expect(within(volet()).getByText('releve-janvier.pdf')).toBeDefined()
+  })
+
+  it('« C’est une facture » depuis la fiche n’écrit qu’une pièce sur trois clics, puis la fiche se ferme', async () => {
+    reinitialiser()
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    const bouton = await within(volet()).findByRole('button', { name: "C'est une facture" })
+    await screen.findAllByRole('button', { name: "C'est une facture" })
+    await vi.waitFor(() => expect((bouton as HTMLButtonElement).disabled).toBe(false))
+
+    await act(async () => {
+      bouton.click()
+      bouton.click()
+      bouton.click()
+    })
+    expect(faux.inserts).toHaveLength(1)
+    await act(async () => { faux.resoudreInsert?.() })
+
+    expect(faux.suppressions).toBe(1)
+    expect(await screen.findByText('Aucun document.')).toBeDefined()
+    expect(volet().childElementCount).toBe(0)
+  })
+
+  it('un document cité n’offre dans la fiche ni « Supprimer » ni « C’est une facture », et dit la phrase de la base', async () => {
+    reinitialiser()
+    faux.documents = [documentDeTest({ dossier_id: 'dossier-de-test' })]
+    faux.entrees = [{ id: 'e1', dossier_id: 'dossier-de-test', nature: 'bail', piece_id: null, document_id: 'document-a-convertir', remplace_id: null, retire_le: null }]
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    await within(volet()).findByText('Document 1 sur 1')
+    await vi.waitFor(() => expect(within(volet()).queryByText('Cité par le dossier permanent')).not.toBeNull())
+    expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: "C'est une facture" })).toBeNull()
+  })
+
+  it('la catégorie se change depuis la fiche, et un refus s’y dit', async () => {
+    reinitialiser()
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    const liste = await within(volet()).findByLabelText('Catégorie')
+
+    await act(async () => { fireEvent.change(liste, { target: { value: 'attestation' } }) })
+    expect(faux.documents[0].categorie).toBe('attestation')
+    await vi.waitFor(() => expect((within(volet()).getByLabelText('Catégorie') as HTMLSelectElement).value).toBe('attestation'))
+
+    faux.refusMaj = 'permission denied for table documents_divers'
+    await act(async () => { fireEvent.change(within(volet()).getByLabelText('Catégorie'), { target: { value: 'autre' } }) })
+    expect(await within(volet()).findByText(
+      'La catégorie du document n’a pas pu être changée : permission denied for table documents_divers.',
+    )).toBeDefined()
+  })
+
+  it('le texte lu se lit dans la fiche, sur un clic', async () => {
+    reinitialiser()
+    faux.presence = { data: [{ document_id: 'document-a-convertir' }], error: null }
+    rendre()
+    fireEvent.click(await screen.findByText('facture.pdf'))
+    const bascule = await within(volet()).findByRole('button', { name: '▸ texte lu' })
+    await act(async () => { fireEvent.click(bascule) })
+    expect(await within(volet()).findByText('FOUR MICRO-ONDES')).toBeDefined()
   })
 })

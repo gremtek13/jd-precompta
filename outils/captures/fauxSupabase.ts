@@ -301,6 +301,25 @@ function ligne(id: string, date: string, libelle: string, montant: number, statu
   }
 }
 
+// Un document administratif du cabinet infirmier (onglet Documents), rangé nulle part, rattaché à aucune échéance.
+function documentDivers(id: string, nom: string, categorie: string, depose: string): Ligne {
+  return {
+    id, dossier_id: 'd1', storage_path: `d1/documents/${nom}`, storage_hash: null, nom_fichier: nom, categorie,
+    sous_dossier_id: null, attached_to_cotisation_id: null, created_at: depose,
+  }
+}
+
+// L'aperçu que le banc rend d'une image du seau `pieces` (la fiche d'un document) : une attestation dessinée, sans nom de
+// personne — le reste du seau reste une maquette, dont l'aperçu se dit « indisponible ».
+const APERCU_DU_BANC = `data:image/svg+xml;utf8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="595" height="420" viewBox="0 0 595 420">'
+  + '<rect width="595" height="420" fill="#ffffff"/><rect x="24" y="24" width="547" height="56" fill="#e8eef7"/>'
+  + '<text x="44" y="60" font-family="sans-serif" font-size="22" fill="#1f2a44">Attestation de vigilance — fictive</text>'
+  + '<g fill="#c9d1de"><rect x="44" y="120" width="420" height="12"/><rect x="44" y="150" width="380" height="12"/>'
+  + '<rect x="44" y="180" width="450" height="12"/><rect x="44" y="210" width="300" height="12"/>'
+  + '<rect x="44" y="270" width="200" height="12"/><rect x="44" y="300" width="240" height="12"/></g></svg>',
+)}`
+
 // Une opération de la caisse du cabinet infirmier (ligne 26.6, étape C4), telle que les fonctions de la caisse la laissent.
 function operationCaisse(id: string, genre: string, date: string, montant: number, categorie: string | null): Ligne {
   return {
@@ -2103,6 +2122,13 @@ const TABLES: Record<string, Ligne[]> = {
     aNouveau('an4', '164', '164', 'Emprunt matériel', 'credit', 2400),
     aNouveau('an5', '108', '108', 'Compte de l’exploitant', 'credit', 7920),
   ],
+  // L'ONGLET DOCUMENTS ADMINISTRATIFS DU CABINET INFIRMIER (la fiche d'un document dans le volet, 16/11/2026) : un relevé, une
+  // attestation en image — la seule dont le banc rend un aperçu (`APERCU_DU_BANC`) —, un export que rien ne prévisualise.
+  documents_divers: [
+    documentDivers('dv1', 'releve-banque-populaire-2026-09.pdf', 'releve_bancaire', '2026-10-02T08:00:00Z'),
+    documentDivers('dv2', 'attestation-vigilance-urssaf-2026.png', 'attestation', '2026-09-15T08:00:00Z'),
+    documentDivers('dv3', 'export-releve-snir-2026-T2.csv', 'autre', '2026-07-10T08:00:00Z'),
+  ],
   agent_conversations: [
     message(1, 'user', 'Qu’est-ce qui reste à faire sur ce dossier ?'),
     message(2, 'assistant', '4 justificatifs sont à valider et 2 mouvements bancaires à rapprocher. Le prélèvement du 15/09 de Télécom Plus (39,99 €) correspond à la pièce du 12/09 : même montant, 3 jours d’écart.', ['points_a_traiter', 'lister_pieces']),
@@ -2899,7 +2925,9 @@ export const supabase = {
     // Le seau `ventes` (étape A5c2a) rend et range les logos ; les autres seaux restent une maquette.
     from: (seau: string) => ({
       getPublicUrl: () => ({ data: { publicUrl: LOGO_DU_BANC ?? '' } }),
-      createSignedUrl: () => Promise.resolve({ data: null, error: { message: 'maquette' } }),
+      createSignedUrl: (chemin: string) => Promise.resolve(seau === 'pieces' && chemin.startsWith('d1/documents/') && chemin.endsWith('.png')
+        ? { data: { signedUrl: APERCU_DU_BANC }, error: null }
+        : { data: null, error: { message: 'maquette' } }),
       download: (chemin: string) => {
         if (seau !== 'ventes') return Promise.resolve({ data: null, error: { message: 'maquette' } })
         const fichier = SEAU_VENTES.get(chemin)

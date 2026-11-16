@@ -95,6 +95,15 @@ const VISITES = [
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
   ...ONGLETS.map((onglet) => ({ dossier: onglet === 'tva' ? 'd7' : 'd1', onglet, nom: onglet })),
   ...ONGLETS_ENGAGEMENT.map((onglet) => ({ dossier: 'd8', onglet, nom: `engagement/${onglet}` })),
+  // LA FICHE D'UN DOCUMENT dans le volet (onglet Documents administratifs, 16/11/2026) : l'attestation, son aperçu, sa
+  // catégorie et ses deux gestes ; à 1 440 et 1 280 pixels elle rétrécit le panneau central, en dessous elle se superpose.
+  {
+    dossier: 'd1', onglet: 'documents', nom: 'documents/fiche',
+    apres: async (page) => {
+      await page.getByText('attestation-vigilance-urssaf-2026.png').first().click()
+      await page.locator('.fiche-document').waitFor({ timeout: 10000 })
+    },
+  },
   // La connexion bancaire, une récupération faite : l'aperçu de ce qui entrerait — son tableau, son
   // libellé long, ses boutons — n'apparaît qu'après un clic, donc aucune visite ordinaire ne le voit.
   {
