@@ -30,9 +30,20 @@ export interface FiletVertical {
   y1: number
 }
 
+// Un filet horizontal : il sépare les LIGNES d'un tableau. Seul le cadre 7 de la 2035-B en a besoin (lib/gabaritCadre7.ts),
+// ses lignes de véhicules n'ayant aucun code imprimé pour les situer.
+export interface FiletHorizontal {
+  y: number
+  x0: number
+  x1: number
+}
+
 export interface PageFormulaire {
   fragments: FragmentTexte[]
   filets: FiletVertical[]
+  // Facultatif : les pages lues sans eux (la liasse 2033, les essais d'hier) gardent leur forme, et le cadre 7 sans eux
+  // n'est pas repéré — rien ne s'y écrit, et l'écran le dit.
+  filetsHorizontaux?: FiletHorizontal[]
 }
 
 export interface Ancrage {

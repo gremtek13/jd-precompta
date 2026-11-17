@@ -53474,3 +53474,15 @@ l'écart dit sinon ; « à saisir » pour les colonnes 2 et 3 d'un redevable et 
 vide (conception 55). Le bouton de Clôture, sous `FORMULAIRE_2035_SD_OFFERT` levé. Preuves : quatre fichiers de tests (le
 gabarit relu sur le vrai formulaire, le PDF produit relu par pdf.js, la confrontation à CH par le vrai moteur de la 2035),
 quatre tests d'écran ; les mutations (répartition, filtre du registre, verrou, blocage) mordent.
+### 17/11/2026 — LE CADRE 7 DE LA 2035-B : LES VÉHICULES ET LE TOTAL A IMPRIMÉS
+
+(Agent architecte ; signalé par le cabinet : « sur le B il n'y a pas Total A ou B de rempli ».) Le cadre 7 restait vierge alors
+que BJ comptait le forfait. `lib/cadre7.ts` tire de `vehicules` (figée par la validation) une ligne par véhicule au barème :
+type T/M/V, puissance (vide pour un cyclomoteur), croix BNC ou BIC, motorisation et carburant aux mots de la notice (vides non
+saisis), kilomètres, indemnité ; le total A est la part de BJ venue du barème, les lignes réparties aux plus grands restes pour
+s'additionner (6 726,20 € : 2 661 + 2 662 + 1 403, pas 1 404). Restent vides : les frais réels non couverts (mêlés en BJ au
+train et à l'hôtel), les amortissements à réintégrer et le total B, qu'aucun écran ne saisit (« à saisir » au total B quand un
+bien 2182 est amorti l'année du barème) ; une indemnité non calculée porte « à saisir » sur sa ligne et au total A ; un exercice
+validé dont le recalcul ne retrouve pas le poste de l'instantané laisse les montants vides. `lib/gabaritCadre7.ts` lit colonnes
+(début du libellé : BNC et BIC sont verticaux), lignes (filets horizontaux, lus par `lirePage`) et cases A et B ; deux lignes
+offertes, le troisième véhicule dit à l'écran ; le paquet d'archive garde le cadre vierge. CADRE7-Q1 à Q4 posées.

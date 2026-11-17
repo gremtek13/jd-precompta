@@ -1,7 +1,9 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { ancragesDesCases, planDeRemplissage } from './gabarit2035'
-import type { EnteteDeclaration, FiletVertical, FragmentTexte, Inscription, PageFormulaire } from './gabarit2035'
+import type { EnteteDeclaration, FiletHorizontal, FiletVertical, FragmentTexte, Inscription, PageFormulaire } from './gabarit2035'
+import { planDuCadre7 } from './gabaritCadre7'
+import type { Cadre7ARemplir } from './cadre7'
 import { planDeRemplissage2035E } from './gabarit2035E'
 import type { EnteteAnnexe2035E } from './gabarit2035E'
 import { mentionDeLAnnexe2035E } from './saisies2035E'
@@ -57,15 +59,18 @@ export async function lirePage(doc: pdfjsLib.PDFDocumentProxy, numero: number): 
   // hauteur. Le seuil de 2 points absorbe l'épaisseur du trait lui-même.
   const operations = await page.getOperatorList()
   const filets: FiletVertical[] = []
+  // Et les filets horizontaux, de même (sans hauteur, avec de la largeur) : les lignes du cadre 7 n'ont qu'eux pour se situer.
+  const filetsHorizontaux: FiletHorizontal[] = []
   for (let i = 0; i < operations.fnArray.length; i++) {
     if (operations.fnArray[i] !== pdfjsLib.OPS.constructPath) continue
     const boite = operations.argsArray[i][2] as number[] | undefined
     if (!boite) continue
     const [x0, y0, x1, y1] = boite
     if (x1 - x0 <= 2 && y1 - y0 > 4) filets.push({ x: (x0 + x1) / 2, y0, y1 })
+    else if (y1 - y0 <= 2 && x1 - x0 > 4) filetsHorizontaux.push({ y: (y0 + y1) / 2, x0, x1 })
   }
 
-  return { fragments, filets }
+  return { fragments, filets, filetsHorizontaux }
 }
 
 export interface Remplissage2035 {
@@ -76,7 +81,14 @@ export interface Remplissage2035 {
   codesSansAncrage: string[]
   // De même pour les lignes de l'annexe 2035-E, à part : leurs codes ne disent pas d'eux-mêmes de quelle page ils sont.
   codesSansAncrage2035E: string[]
+  // Le cadre 7 de la 2035-B (lib/gabaritCadre7.ts) : les véhicules restés sans ligne — au-delà des lignes du formulaire, ou
+  // tous quand le cadre n'a pas été repéré (`cadre7Repere` faux) —, à dire à l'écran. Vides et vrai sans cadre à remplir.
+  vehiculesSansLigne: string[]
+  cadre7Repere: boolean
 }
+
+// La page qui porte le cadre 7 : la 2035-B.
+const PAGE_2035B = 2
 
 // L'annexe 2035-E à porter sur la page 3 : ses lignes à l'euro (`calculer2035E(...).lignes`) et son en-tête.
 export interface Annexe2035EARemplir {
@@ -100,6 +112,9 @@ export async function remplir2035(
   // L'exercice déclaré : il choisit le millésime du formulaire (lib/modeles2035.ts). Sans valeur par défaut — un appelant
   // qui l'oublierait imprimerait ses chiffres sous l'en-tête d'une autre année, le défaut que l'étape 2035S6 corrige.
   annee: number,
+  // Le cadre 7 de la 2035-B (`cadre7DeLExercice`), ou null : le cadre reste vierge — aucun véhicule au barème, ou le paquet
+  // d'archive, qui ne porte que ce que la validation a scellé. Sans valeur par défaut, comme l'annexe.
+  cadre7: Cadre7ARemplir | null,
 ): Promise<Remplissage2035> {
   const modeleDeLExercice = modeleDuFormulaire(annee)
   // Sans son millésime, le dernier livré (avec sa mention, plus bas) ; aucun modèle du tout ne se voit que si l'application n'en livre plus.
@@ -147,6 +162,20 @@ export async function remplir2035(
   }
   // Bleu foncé plutôt que noir : sur une relecture papier, ce qui a été porté par l'application
   // se distingue immédiatement de ce qui était imprimé sur le formulaire.
+  // Le cadre 7 se place après le chargement de la police : ses textes se mesurent pour tenir entre les filets de leur cellule.
+  let vehiculesSansLigne: string[] = []
+  let cadre7Repere = true
+  if (cadre7 && pages[PAGE_2035B - 1]) {
+    const plan = planDuCadre7(pages[PAGE_2035B - 1], PAGE_2035B, cadre7, (texte, taille) => police.widthOfTextAtSize(texte, taille))
+    inscriptions.push(...plan.inscriptions)
+    aSaisir.push(...plan.aSaisir)
+    vehiculesSansLigne = plan.vehiculesSansLigne
+    cadre7Repere = plan.repere
+  } else if (cadre7) {
+    vehiculesSansLigne = cadre7.lignes.map((l) => l.nom)
+    cadre7Repere = false
+  }
+
   for (const i of inscriptions) dessiner(i, rgb(0, 0, 0.6))
   for (const i of aSaisir) dessiner(i, rgb(0.75, 0, 0))
 
@@ -173,5 +202,5 @@ export async function remplir2035(
     })
   }
 
-  return { pdf: await pdf.save(), codesSansAncrage, codesSansAncrage2035E }
+  return { pdf: await pdf.save(), codesSansAncrage, codesSansAncrage2035E, vehiculesSansLigne, cadre7Repere }
 }
