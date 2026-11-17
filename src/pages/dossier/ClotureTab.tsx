@@ -23,6 +23,9 @@ import { comptesPartagesEntreCases, concordance2035 } from '../../lib/concordanc
 import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
 import { avertissementDuFormulaire } from '../../lib/modeles2035'
+import { FORMULAIRE_2035_SD_OFFERT, avertissementDuFormulaire2035SD } from '../../lib/modeles2035SD'
+import { avisDuTableauDesImmobilisations, calculer2035SD, type Declaration2035SD } from '../../lib/declaration2035SD'
+import { remplir2035SD } from '../../lib/remplir2035SD'
 import { SAISIES_2035E_ABSENTES, calculer2035E, forfaitKilometriqueDesPostes, type Annexe2035E } from '../../lib/declaration2035E'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
@@ -913,6 +916,37 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       setError(messageErreur(e, 'Génération du formulaire impossible'))
     } finally {
       generationEnCours.current = false
+    }
+  }
+
+  // LA DÉCLARATION PRINCIPALE N° 2035-SD (docs/conceptions/55-formulaire-2035-sd.md) : l'identité, la ligne 1 et le tableau
+  // des immobilisations, tirés de la 2035 telle que l'écran la montre — l'instantané d'un exercice validé, sinon le calcul — et
+  // du registre lu en entier. Un verrou à elle, posé avant tout `await` : les deux PDF ne se retiennent pas l'un l'autre.
+  const generation2035SDEnCours = useRef(false)
+  async function telechargerDeclaration2035SD(declaration: Declaration2035SD, instantane: Instantane2035 | null) {
+    if (generation2035SDEnCours.current || lectureIncomplete || naturesIncompletes) return
+    generation2035SDEnCours.current = true
+    setError(null)
+    try {
+      const declarant = instantane ? instantane.entete : entete
+      const { pdf, libellesSansAncrage } = await remplir2035SD(declaration, {
+        nom: declarant.nom, activite: declarant.activite, siret: declarant.siret,
+        // L'adresse est celle d'aujourd'hui, même pour un exercice validé : l'instantané ne la garde pas (comme la 2035-E).
+        adresse: dossier?.adresse ?? null,
+      })
+      if (libellesSansAncrage.length > 0) {
+        setError(`Valeurs non placées sur la déclaration 2035-SD : ${libellesSansAncrage.join(', ')} — elles manquent sur le PDF.`)
+      }
+      const url = URL.createObjectURL(new Blob([pdf as BlobPart], { type: 'application/pdf' }))
+      const lien = document.createElement('a')
+      lien.href = url
+      lien.download = `2035-SD-${declaration.annee}-${(declarant.nom ?? 'dossier').replace(/[^\w-]+/g, '-')}.pdf`
+      lien.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setError(messageErreur(e, 'Génération de la déclaration 2035-SD impossible'))
+    } finally {
+      generation2035SDEnCours.current = false
     }
   }
 
@@ -1977,6 +2011,14 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           // Une annexe due ne se remplit pas avant que sa saisie soit lue en entier (drapeau levé) : sinon, des zéros supposés.
           const saisiesAnnexeIncompletes = annexe.obligatoire
             ? motifDesSaisies2035E(lectureDesSaisies2035E, SAISIES_2035E_EXPORTEES) : null
+          // LA DÉCLARATION 2035-SD de l'exercice, sur les MÊMES cases que le PDF de la 2035-A/B (`entreeAnnexe.formulaire`) et le
+          // registre ; un véhicule amorti l'année du barème laisse (B) « à saisir » (lib/forfaitKilometrique.ts).
+          const declaration2035SD = FORMULAIRE_2035_SD_OFFERT
+            ? calculer2035SD({
+              annee, formulaire: entreeAnnexe.formulaire, immobilisations, assujettiTva,
+              vehiculesSousLeBareme: amortissementsSousLeBareme(immobilisations, natures, vehicules, annee).length > 0,
+            })
+            : null
           return (
             <Fragment key={annee}>
               {validation.valide && !instantane ? (
@@ -2001,6 +2043,15 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                     : undefined}
                   genere={genere === annee}
                   onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe, annexeSaisie)}
+                  declaration2035SD={declaration2035SD === null ? null : {
+                    avis: [
+                      ...(avertissementDuFormulaire2035SD(annee) === null ? [] : [avertissementDuFormulaire2035SD(annee)!]),
+                      ...avisDuTableauDesImmobilisations(declaration2035SD.immobilisations),
+                    ],
+                    // Le registre et les véhicules sont dans `lectureIncomplete` ; les natures disent quel bien est un véhicule.
+                    blocage: lectureIncomplete ?? naturesIncompletes,
+                    onTelecharger: () => telechargerDeclaration2035SD(declaration2035SD, instantane),
+                  }}
                   annexe2035E={annexe}
                   annexeSaisie={annexeSaisie}
                   lectureAnnexe={instantane ? null : lectureIncomplete ?? saisiesIncompletes}
@@ -2069,7 +2120,7 @@ function BoutonCloture({ cloture, onCloturer }: { cloture: boolean; onCloturer: 
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
 function FormulaireAnnuel({
   dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, annexe2035E, annexeSaisie, lectureAnnexe, blocage, blocageDeLAnnexe,
-  cotisations, exerciceValide, avertissement, cloture, onCloturer,
+  cotisations, exerciceValide, avertissement, cloture, onCloturer, declaration2035SD,
 }: {
   dossierId: string
   annee: number
@@ -2105,6 +2156,9 @@ function FormulaireAnnuel({
   // reste actif, pour rattraper une pièce sensible validée après coup (voir clotureExercice.ts).
   cloture: boolean
   onCloturer: () => void
+  // La déclaration principale n° 2035-SD (`FORMULAIRE_2035_SD_OFFERT`) : ce qu'elle dira avant le clic, ce qui la retient, et
+  // son geste ; null, drapeau baissé : rien ne s'affiche. Sans valeur par défaut.
+  declaration2035SD: { avis: string[]; blocage: string | null; onTelecharger: () => void } | null
 }) {
   // Une case à zéro que personne n'a alimentée n'apprend rien et noie le reste : on ne montre que
   // les cases qui portent un montant, plus les totaux, toujours affichés parce que c'est sur eux que
@@ -2140,11 +2194,27 @@ function FormulaireAnnuel({
           >
             {genere ? '↻ Regénérer le formulaire' : '⬇ Remplir le formulaire officiel'}
           </button>
+          {declaration2035SD && (
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={declaration2035SD.onTelecharger}
+              disabled={declaration2035SD.blocage !== null}
+              title={declaration2035SD.blocage
+                ? `Lecture partielle d'une des collections de la déclaration (${declaration2035SD.blocage}) — le tableau des immobilisations ne peut pas dire qu'il est amputé.`
+                : 'La déclaration principale n° 2035-SD : identité, résultat fiscal (ligne 1) et tableau des immobilisations ; le reste à compléter.'}
+            >
+              ⬇ Déclaration 2035-SD
+            </button>
+          )}
         </div>
       </div>
       {avertissement !== null && (
         <p role="note" style={{ margin: 0, padding: '0 16px 12px', color: 'var(--color-warning)' }}>{avertissement}</p>
       )}
+      {/* CE QUE LA DÉCLARATION 2035-SD PORTERA « À SAISIR » OU NE REDIRA PAS, dit avant le clic, sur des lectures entières. */}
+      {declaration2035SD && declaration2035SD.blocage === null && declaration2035SD.avis.map((avis) => (
+        <p key={avis} role="note" style={{ margin: 0, padding: '0 16px 12px', color: 'var(--color-warning)' }}>2035-SD : {avis}</p>
+      ))}
       {/* CE QUE LE PDF PORTERA « À SAISIR », dit avant le clic (ligne 48) : sur une annexe due, jugée sur une lecture entière. */}
       {lectureAnnexe === null && annexe2035E.obligatoire && annexeSaisie !== null
         && avisAvantLeTelechargement2035E(annexeSaisie).map((avis) => (
