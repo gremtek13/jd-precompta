@@ -562,6 +562,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
   (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
   les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».
+- **Les exports vers les logiciels comptables** (17/11/2026), recherchés, rien d'écrit (`docs/conceptions/57-exports-vers-les-logiciels-comptables.md`) :
+  le FEC avec ses pièces en ZIP est le pivot (ACD d'abord), puis l'ASCII Quadra et le TRA ; EXP-Q1 à Q8, EXP-E1 à E7 → « LES
+  EXPORTS VERS LES LOGICIELS COMPTABLES : LA RECHERCHE ».
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
   levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la
