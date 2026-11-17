@@ -32,6 +32,7 @@ import {
   exercicesEnMots, inventaireDesControles, pointsDeLInventaire, premierExerciceDuDossier, type InventaireDesControles,
 } from './inventaireDesControles'
 import { confronterLesAmortissementsRepris, detailDesAmortissementsSousUnAutreNumero, detailDesEcartsDeLaReprise } from './repriseDesAmortissements'
+import { CUMUL_REPRIS_PREVU } from './cumulRepris'
 import type { OuvertureBanque } from './planTresorerie'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
@@ -1026,7 +1027,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     {
       id: 'amortissements-repris-en-ecart', label: 'compte(s) d’amortissement dont la balance reprise ne porte pas le cumul que le registre calcule à l’ouverture',
       action: 'Vérifier ces biens', nb: repriseDesBiens?.ecarts.length ?? 0, cible: 'immobilisations', severite: 'attention',
-      detail: repriseDesBiens !== null && repriseDesBiens.ecarts.length > 0 ? detailDesEcartsDeLaReprise(repriseDesBiens) : undefined,
+      detail: repriseDesBiens !== null && repriseDesBiens.ecarts.length > 0 ? detailDesEcartsDeLaReprise(repriseDesBiens, CUMUL_REPRIS_PREVU) : undefined,
     },
     // À part, et sans être pris pour un écart : un compte 28 de la reprise sous un autre numéro que celui que l'application écrit
     // (un 28183 pour le 281830) — le comparer au registre n'aurait pas de sens, et le compte repris ne se soldera jamais.

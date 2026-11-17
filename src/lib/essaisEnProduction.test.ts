@@ -485,7 +485,9 @@ describe('les essais de la base, rejoués en production', () => {
     // « apres », après sa migration préparée ; joué sur une copie de la réplique à 236 (17 verdicts sur 17), le banc reste à
     // rejouer.
     // Trente et un le soir : `dateDeValeurDesMouvements` sorti (EXP58-Q4 en production, 20261117180150).
-    expect(cas.length).toBe(31)
+    // Trente-deux le même soir : `cumulReprisDesBiens` (EXP58-Q5, `cumul_repris_des_biens`) entré dans la famille « apres »,
+    // après sa migration préparée ; joué sur une copie de la réplique à 237 (34 verdicts sur 34), le banc reste à rejouer.
+    expect(cas.length).toBe(32)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

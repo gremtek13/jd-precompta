@@ -132,6 +132,37 @@ describe('le tableau des immobilisations, confronté à la case CH du même jeu 
   })
 })
 
+// LE CUMUL REPRIS D'UN BIEN (EXP58-Q5) : le tableau des immobilisations de la 2035 lit le plan continué — les antérieurs de
+// l'année qui suit la reprise sont le cumul de l'ancien tableau, et la colonne 7 la dotation continuée, que la case CH de la
+// 2035-B (le vrai moteur, sur le même registre) compte aussi.
+describe('le tableau des immobilisations d’un bien qui porte un cumul repris', () => {
+  const biens = [
+    bien({ id: 'r1', libelle: 'Fauteuil repris', valeur: 4800, date_acquisition: '2022-03-15', duree_annees: 5, cumul_repris: 2000, cumul_repris_au: '2024-12-31' }),
+    bien({ id: 'r2', libelle: 'Ordinateur', valeur: 1005, date_acquisition: '2025-07-01', duree_annees: 3 }),
+  ]
+  const formulaire = formulaireDe(biens)
+  const t = tableauDesImmobilisations(entree({ formulaire, immobilisations: biens }))
+
+  it('les antérieurs sont le cumul repris, la colonne 7 la dotation du plan continué', () => {
+    const repris = t.lignes.find((l) => l.id === 'r1')!
+    expect(repris.anterieurs).toBe(2000)
+    expect(repris.base).toBe(4800)
+    expect(dotationDeLExercice(biens[0], 2025)).toBe(1269.52)
+    expect(Math.abs(repris.annee - 1269.52)).toBeLessThan(1)
+  })
+
+  it('et la case CH de la 2035-B les compte de même : le tableau la redit', () => {
+    expect(formulaire.get('CH')).toBe(Math.round(1269.52 + dotationDeLExercice(biens[1], 2025)))
+    expect(t.concorde).toBe(true)
+    expect(t.totalGeneral).toBe(formulaire.get('CH'))
+  })
+
+  it('l’année d’après, les antérieurs sont le cumul repris plus la dotation continuée', () => {
+    const suivant = tableauDesImmobilisations(entree({ annee: 2026, formulaire: formulaireDe(biens, [], 2026), immobilisations: biens }))
+    expect(suivant.lignes.find((l) => l.id === 'r1')!.anterieurs).toBe(Math.round(2000 + 1269.52))
+  })
+})
+
 describe('la récapitulation', () => {
   it('reporte CP en bénéfice, CR en déficit, depuis les cases que le PDF de la 2035-B imprime', () => {
     const pieces = [{

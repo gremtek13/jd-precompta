@@ -3,12 +3,12 @@ import {
   acquisitionsDesBiens, amortissementCumuleCentimes, bienRepris, compteAmortissement, dotationAEcrire, dotationConforme, dotationDeLExercice, montantDeFactureDifferent,
   dotationsDuRegistre, dotationsEnDefaut, dotationSurPeriode, ecritureDeLaDotation, FORMAT_COMPTE_IMMOBILISATION, miseEnService,
   planAmortissement, rang360, refusBien, REFUS_DOTATION_SANS_NATURE, refusDotation, refusNature, valeurSaisie,
-  bienReprisSansPiece, refusBienRepris,
+  bienReprisSansPiece, refusBienRepris, dateDuCumulRepris, refusDuCumulRepris,
 } from './amortissements'
 import { COMPTE_DOTATIONS_AMORTISSEMENTS, libelleCompteTenu } from './comptes'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
-import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { derniereDefinitionSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 import { NON_VALIDEE } from '../test/ecritures'
 
 // TYPÉ sans `as` : le compilateur confronte chaque champ à la table.
@@ -113,6 +113,176 @@ describe('dotationDeLExercice — le calcul de la base, au centime', () => {
     expect(amortissementCumuleCentimes(b, rang360('2025-07-01'))).toBe(111n)
     expect(amortissementCumuleCentimes(b, rang360('2028-12-31'))).toBe(120000n)
     expect(amortissementCumuleCentimes(b, rang360('2040-12-31'))).toBe(120000n)
+  })
+})
+
+// LE PLAN CONTINUÉ DEPUIS UN CUMUL REPRIS (EXP58-Q5) : la TABLE DE PARITÉ, RELEVÉE SUR UNE COPIE DE LA RÉPLIQUE le 17/11/2026,
+// la migration préparée `cumul_repris_des_biens` appliquée, par `dotation_amortissement_continue(valeur, durée, mise en
+// service, cumul repris, date du cumul, exercice)`. Quatorze biens choisis pour leurs bornes : un cumul en retard sur le
+// registre (A, J), en avance (L), nul avant la mise en service ou après (C, D), égal à la valeur (F, G — G au plan fini à la
+// reprise), de quelques centimes (H), d'un jour de service (K), à 999 999,99 € (E), un 29 février (C), une reprise datée d'une
+// autre année (M), un plan qui finit au premier trimestre (N). Les années avant le cumul : le cumul repris réparti sur les jours
+// en service jusqu'à lui (aucune ne s'écrit). La base REFUSE une dotation qui ne vaut pas ce calcul au centime : un écart ici,
+// c'est une écriture juste refusée. (L'essai de la base en rejoue une part : supabase/essais/cumulReprisDesBiens.sql.)
+const TABLE_CONTINUEE: [string, number, number, string, number, string, [number, number][]][] = [
+  ['A', 4800, 5, '2022-03-15', 2000, '2024-12-31', [[2021, 0], [2022, 568.59], [2023, 715.70], [2024, 715.71], [2025, 1269.52], [2026, 1269.52], [2027, 260.96], [2028, 0]]],
+  ['B', 1233, 3, '2023-11-30', 500, '2024-12-31', [[2022, 0], [2023, 39.64], [2024, 460.36], [2025, 382.99], [2026, 350.01], [2027, 0]]],
+  ['C', 1000, 4, '2024-02-29', 0, '2024-12-31', [[2023, 0], [2024, 0], [2025, 316.34], [2026, 316.35], [2027, 316.34], [2028, 50.97], [2029, 0]]],
+  ['D', 12000, 5, '2025-07-01', 0, '2024-12-31', [[2024, 0], [2025, 1200], [2026, 2400], [2027, 2400], [2028, 2400], [2029, 2400], [2030, 1200], [2031, 0]]],
+  ['E', 999999.99, 10, '2020-05-17', 432109.87, '2024-12-31', [[2019, 0], [2020, 58168.64], [2021, 93485.30], [2022, 93485.31], [2023, 93485.31], [2024, 93485.31], [2025, 105599.40], [2026, 105599.40], [2027, 105599.41], [2028, 105599.40], [2029, 105599.40], [2030, 39893.11], [2031, 0]]],
+  ['F', 750, 2, '2023-12-31', 750, '2024-12-31', [[2022, 0], [2023, 2.08], [2024, 747.92], [2025, 0], [2026, 0]]],
+  ['G', 600, 1, '2023-01-01', 600, '2024-12-31', [[2022, 0], [2023, 300], [2024, 300], [2025, 0]]],
+  ['H', 1.01, 3, '2024-07-01', 0.17, '2024-12-31', [[2023, 0], [2024, 0.17], [2025, 0.34], [2026, 0.33], [2027, 0.17], [2028, 0]]],
+  ['I', 2500, 3, '2022-08-31', 2400, '2024-12-31', [[2021, 0], [2022, 345.30], [2023, 1027.35], [2024, 1027.35], [2025, 100], [2026, 0]]],
+  ['J', 3333.33, 7, '2019-10-15', 1234.56, '2024-12-31', [[2018, 0], [2019, 50.01], [2020, 236.91], [2021, 236.91], [2022, 236.91], [2023, 236.91], [2024, 236.91], [2025, 1173.23], [2026, 925.54], [2027, 0]]],
+  ['K', 1000, 3, '2024-12-31', 0.28, '2024-12-31', [[2023, 0], [2024, 0.28], [2025, 333.55], [2026, 333.55], [2027, 332.62], [2028, 0]]],
+  ['L', 5000, 5, '2021-01-01', 3900, '2024-12-31', [[2020, 0], [2021, 975], [2022, 975], [2023, 975], [2024, 975], [2025, 1100], [2026, 0], [2027, 0]]],
+  ['M', 12000, 5, '2023-07-01', 3000, '2023-12-31', [[2022, 0], [2023, 3000], [2024, 2000], [2025, 2000], [2026, 2000], [2027, 2000], [2028, 1000], [2029, 0]]],
+  ['N', 1234.56, 7, '2018-03-15', 1100, '2024-12-31', [[2017, 0], [2018, 128.62], [2019, 161.90], [2020, 161.89], [2021, 161.90], [2022, 161.90], [2023, 161.89], [2024, 161.90], [2025, 134.56], [2026, 0]]],
+]
+
+describe('le plan continué depuis un cumul repris — le calcul de la base, au centime (EXP58-Q5)', () => {
+  const repris = (valeur: number, duree: number, mise: string, cumul: number, au: string) =>
+    bien({ valeur, duree_annees: duree, date_acquisition: mise, cumul_repris: cumul, cumul_repris_au: au })
+
+  it.each(TABLE_CONTINUEE)('%s : %s € sur %s ans mis en service le %s, %s € repris au %s', (_n, valeur, duree, mise, cumul, au, attendues) => {
+    const b = repris(valeur, duree, mise, cumul, au)
+    for (const [annee, montant] of attendues) expect([annee, dotationDeLExercice(b, annee)]).toEqual([annee, montant])
+  })
+
+  it('rend le cumul repris EXACT à son jour, la valeur exacte à la fin du plan, sans annuité de rattrapage', () => {
+    for (const [, valeur, duree, mise, cumul, au, attendues] of TABLE_CONTINUEE) {
+      const b = repris(valeur, duree, mise, cumul, au)
+      expect(amortissementCumuleCentimes(b, rang360(au))).toBe(BigInt(Math.round(cumul * 100)))
+      expect(amortissementCumuleCentimes(b, rang360('2060-12-31'))).toBe(BigInt(Math.round(valeur * 100)))
+      // Les dotations d'après le cumul font la valeur nette restante, au centime.
+      const apres = attendues.filter(([annee]) => annee > Number(au.slice(0, 4))).reduce((s, [, m]) => s + Math.round(m * 100), 0)
+      expect(apres).toBe(Math.round(valeur * 100) - Math.round(cumul * 100))
+    }
+  })
+
+  // La règle : la valeur nette restante sur les jours qui restent du plan. A : 2 800 € sur 794 jours (du 1er janvier 2025 au
+  // 14 mars 2027, en 30/360) — 2 800 × 360 ÷ 794 = 1 269,52 € en 2025.
+  it('répartit la valeur nette restante sur les jours qui restent du plan', () => {
+    const a = repris(4800, 5, '2022-03-15', 2000, '2024-12-31')
+    expect(rang360('2022-03-15') + 360 * 5 - (rang360('2024-12-31') + 1)).toBe(794)
+    expect(dotationDeLExercice(a, 2025)).toBe(1269.52)
+  })
+
+  it('un cumul nul d’un bien mis en service après lui : le calcul d’hier, à l’identique', () => {
+    const d = repris(12000, 5, '2025-07-01', 0, '2024-12-31')
+    for (let annee = 2024; annee <= 2031; annee++) expect(dotationDeLExercice(d, annee)).toBe(dotationDeLExercice(bien({ valeur: 12000, duree_annees: 5, date_acquisition: '2025-07-01' }), annee))
+  })
+
+  // SANS CUMUL REPRIS, LE CALCUL D'HIER : la table relevée en base le 01/10/2026 tient, et un cumul nul ou absent des deux
+  // colonnes (une ligne d'avant la migration) ne change rien.
+  it('sans cumul repris, la table de la base d’hier, au centime — colonnes absentes ou nulles', () => {
+    for (const [valeur, duree, mise, attendues] of TABLE_BASE) {
+      for (const o of [{}, { cumul_repris: null, cumul_repris_au: null }] as Partial<Immobilisation>[]) {
+        const b = bien({ valeur, duree_annees: duree, date_acquisition: mise, ...o })
+        for (const [annee, montant] of attendues) expect([annee, dotationDeLExercice(b, annee)]).toEqual([annee, montant])
+      }
+    }
+  })
+
+  // Le texte de la migration préparée porte la formule que le module redit (et la garde de fin, la valeur du cas A).
+  it('suit le texte de la fonction SQL préparée', () => {
+    const sql = fichiersPrepares().find((f) => /_cumul_repris_des_biens\.sql$/.test(f.chemin))?.texte
+      ?? fichiersDuSchema().find((f) => /_cumul_repris_des_biens\.sql$/.test(f.chemin))!.texte
+    expect(sql).toContain('when p_rang < r.repris')
+    expect(sql).toContain('(2 * r.cumul * least(greatest(p_rang - r.service + 1, 0), r.repris - r.service + 1)::bigint\n'
+      + '                      + (r.repris - r.service + 1)) / (2 * (r.repris - r.service + 1))::bigint')
+    expect(sql).toContain('else r.cumul + (2 * (r.valeur - r.cumul) * least(greatest(p_rang - s.debut + 1, 0), s.jours)::bigint + s.jours)\n'
+      + '                   / (2 * s.jours)::bigint')
+    expect(sql).toContain('lateral (select greatest(r.repris + 1, r.service) as debut,\n'
+      + '                       greatest(r.service + 360 * p_duree - greatest(r.repris + 1, r.service), 1) as jours) as s')
+    expect(sql).toContain("public.dotation_amortissement_continue(4800, 5, date '2022-03-15', 2000, date '2024-12-31', 2025) is distinct from 1269.52")
+  })
+})
+
+describe('planAmortissement — continué depuis un cumul repris', () => {
+  const repris = (o: Partial<Immobilisation>) => bien({ valeur: 4800, duree_annees: 5, date_acquisition: '2022-03-15', cumul_repris: 2000, cumul_repris_au: '2024-12-31', ...o })
+
+  it('commence l’année qui suit le cumul, et finit l’année du dernier jour du plan, à la valeur exacte', () => {
+    expect(planAmortissement(repris({}))).toEqual([
+      { annee: 2025, dotation: 1269.52, cumul: 3269.52, valeurNette: 1530.48 },
+      { annee: 2026, dotation: 1269.52, cumul: 4539.04, valeurNette: 260.96 },
+      { annee: 2027, dotation: 260.96, cumul: 4800, valeurNette: 0 },
+    ])
+  })
+
+  it('un bien entièrement amorti à la reprise garde une ligne, à dotation nulle — le plan fini comme le plan qui court', () => {
+    expect(planAmortissement(repris({ cumul_repris: 4800 }))).toEqual([{ annee: 2025, dotation: 0, cumul: 4800, valeurNette: 0 }])
+    expect(planAmortissement(bien({ valeur: 600, duree_annees: 1, date_acquisition: '2023-01-01', cumul_repris: 600, cumul_repris_au: '2024-12-31' })))
+      .toEqual([{ annee: 2025, dotation: 0, cumul: 600, valeurNette: 0 }])
+  })
+
+  it('un bien mis en service après le cumul commence à sa mise en service : le tableau d’hier', () => {
+    const tardif = { valeur: 12000, duree_annees: 5, date_acquisition: '2024-11-02', date_mise_en_service: '2025-07-01' }
+    expect(planAmortissement(bien({ ...tardif, cumul_repris: 0, cumul_repris_au: '2024-12-31' }))).toEqual(planAmortissement(bien(tardif)))
+  })
+})
+
+describe('refusDuCumulRepris — un cumul repris qui n’est le départ d’aucun plan, les mots de la base', () => {
+  it('se tait sans cumul, et sur un cumul daté du 31 décembre qui précède l’année de l’ouverture', () => {
+    expect(refusDuCumulRepris(bien(), '2025-01-01')).toBeNull()
+    expect(refusDuCumulRepris(bien({ cumul_repris: 100, cumul_repris_au: '2024-12-31' }), '2025-01-01')).toBeNull()
+    // Une ouverture qui n'est pas un 1er janvier : le 31 décembre qui précède son année.
+    expect(dateDuCumulRepris('2025-03-01')).toBe('2024-12-31')
+    expect(refusDuCumulRepris(bien({ cumul_repris: 100, cumul_repris_au: '2024-12-31' }), '2025-03-01')).toBeNull()
+  })
+
+  it('refuse un cumul daté d’un autre jour, et dans un dossier sans ouverture', () => {
+    expect(refusDuCumulRepris(bien({ cumul_repris: 100, cumul_repris_au: '2023-12-31' }), '2025-01-01'))
+      .toBe('Le cumul repris de ce bien est daté du 31/12/2023 : l’ouverture du dossier, le 01/01/2025, en demande un au 31/12/2024.')
+    expect(refusDuCumulRepris(bien({ cumul_repris: 100, cumul_repris_au: '2024-12-31' }), null))
+      .toBe('Le cumul repris de ce bien, au 31/12/2024, suppose un dossier ouvert par une balance reprise : ce dossier n’en a pas.')
+  })
+
+  // Une apostrophe se double en SQL, se courbe à l'écran : comparées, elles sont la même.
+  const sansApostrophes = (s: string) => s.replace(/''/g, "'").replace(/’/g, "'")
+  it('dit les phrases que la fonction préparée lève, dans le même ordre que ses refus', () => {
+    const sql = sansApostrophes(fichiersPrepares().find((f) => /_cumul_repris_des_biens\.sql$/.test(f.chemin))?.texte
+      ?? fichiersDuSchema().find((f) => /_cumul_repris_des_biens\.sql$/.test(f.chemin))!.texte)
+    expect(sql).toContain("'Le cumul repris de ce bien, au %, suppose un dossier ouvert par une balance reprise : ce dossier n'en a pas.'")
+    expect(sql).toContain("'Le cumul repris de ce bien est daté du % : l'ouverture du dossier, le %, en demande un au %.'")
+    // Le refus du cumul vient avant celui de la nature, comme dans `refusDotation`.
+    expect(sql.indexOf('Le cumul repris de ce bien est daté du')).toBeLessThan(sql.indexOf('Choisissez la nature de ce bien'))
+  })
+
+  it('refusDotation le dit avant la nature, et seulement quand la dotation s’écrirait', () => {
+    const perime = bien({ nature_id: null, cumul_repris: 100, cumul_repris_au: '2023-12-31' })
+    expect(refusDotation(perime, 2025, 2026, [], undefined, '2025-01-01'))
+      .toBe('Le cumul repris de ce bien est daté du 31/12/2023 : l’ouverture du dossier, le 01/01/2025, en demande un au 31/12/2024.')
+    // Avant l'ouverture, rien ne s'écrit : aucun refus.
+    expect(refusDotation(perime, 2024, 2026, [{ statut: 'proposee' }], undefined, '2025-01-01')).toBeNull()
+  })
+})
+
+describe('dotationsDuRegistre — un bien qui porte un cumul repris', () => {
+  const repris = bien({ valeur: 4800, duree_annees: 5, date_acquisition: '2022-03-15', cumul_repris: 2000, cumul_repris_au: '2024-12-31' })
+  const etats = (r: ReturnType<typeof dotationsDuRegistre>) => r.map((d) => [d.annee, d.etat, d.montant, d.refus])
+
+  it('compose la dotation du plan continué à partir de l’ouverture, et rien avant', () => {
+    expect(etats(dotationsDuRegistre([repris], [INFORMATIQUE], [], '2025-01-01', 2026, null, PLAN_PAR_DEFAUT))).toEqual([
+      [2025, 'a_ecrire', 1269.52, null], [2026, 'a_ecrire', 1269.52, null],
+    ])
+    expect(ecritureDeLaDotation(repris, '218300', 2025, '2025-01-01', PLAN_PAR_DEFAUT).map((l) => l.montant)).toEqual([1269.52, 1269.52])
+  })
+
+  it('dit à réécrire une dotation écrite sur le recalcul d’hier, une fois le cumul repris saisi', () => {
+    const sansCumul = bien({ valeur: 4800, duree_annees: 5, date_acquisition: '2022-03-15' })
+    expect(dotationDeLExercice(sansCumul, 2025)).toBe(960)
+    expect(etats(dotationsDuRegistre([repris], [INFORMATIQUE], dotationEcrite(2025, 960), '2025-01-01', 2025, null, PLAN_PAR_DEFAUT)))
+      .toEqual([[2025, 'a_reecrire', 1269.52, null]])
+  })
+
+  it('un cumul daté d’un autre jour se réclame, sans s’écrire, et dit pourquoi', () => {
+    const perime = { ...repris, cumul_repris_au: '2023-12-31' }
+    const r = dotationsDuRegistre([perime], [INFORMATIQUE], [], '2025-01-01', 2026, null, PLAN_PAR_DEFAUT)
+    expect(r.map((d) => [d.annee, d.etat])).toEqual([[2025, 'a_ecrire'], [2026, 'a_ecrire']])
+    expect(r.every((d) => d.refus?.startsWith('Le cumul repris de ce bien est daté du 31/12/2023'))).toBe(true)
+    expect(dotationsEnDefaut(r, 2026).map((d) => d.annee)).toEqual([2025])
   })
 })
 

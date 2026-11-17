@@ -86,10 +86,44 @@ describe('confronterLesAmortissementsRepris — compte par compte, au 31 décemb
 
   it('le détail nomme les comptes et les montants, dans les mots de l’écran', () => {
     const c = confronter([FAUTEUIL, ECRAN, PORTABLE], [aNouveau('a1', '281540', 'credit', 2690.63), aNouveau('a2', '28183', 'credit', 1854.59)])!
-    expect(detailDesEcartsDeLaReprise(c)).toContain(
-      `281540 : registre ${formatMoney(2682.67)}, balance reprise ${formatMoney(2690.63)}, écart ${formatMoney(7.96)} (le registre en dessous)`)
-    expect(detailDesEcartsDeLaReprise(c)).toMatch(/^Cumuls au 31\/12\/2024 — /)
+    for (const offert of [false, true]) {
+      expect(detailDesEcartsDeLaReprise(c, offert)).toContain(
+        `281540 : registre ${formatMoney(2682.67)}, balance reprise ${formatMoney(2690.63)}, écart ${formatMoney(7.96)} (le registre en dessous)`)
+      expect(detailDesEcartsDeLaReprise(c, offert)).toMatch(/^Cumuls au 31\/12\/2024 — /)
+    }
     expect(detailDesAmortissementsSousUnAutreNumero(c)).toContain(
       `28183 dans la balance reprise (${formatMoney(1854.59)}), 281830 au registre (${formatMoney(1851.19)})`)
+  })
+
+  // Le drapeau BAISSÉ (`CUMUL_REPRIS_PREVU`) : la phrase d'hier, mot pour mot — l'écran n'offre pas encore le champ. LEVÉ : elle
+  // propose le cumul repris de l'ancien tableau, à la date confrontée.
+  it('ne propose le cumul repris que si l’écran l’offre', () => {
+    const c = confronter([FAUTEUIL], [aNouveau('a1', '281540', 'credit', 2690.63)])!
+    expect(detailDesEcartsDeLaReprise(c, false)).toContain('corriger la valeur, les dates ou la durée d’un bien pour retrouver l’ancien tableau')
+    expect(detailDesEcartsDeLaReprise(c, false)).not.toContain('cumul repris')
+    expect(detailDesEcartsDeLaReprise(c, true)).toContain('saisir dans sa fiche celui de l’ancien tableau au 31/12/2024, et le plan continue depuis lui')
+  })
+})
+
+// LE CUMUL REPRIS D'UN BIEN (EXP58-Q5) : un bien qui porte le cumul de l'ancien tableau au 31 décembre de la reprise compte ici
+// ce cumul même, et la confrontation devient celle des cumuls saisis au 28 repris — ce que l'expert-comptable vérifie.
+describe('confronterLesAmortissementsRepris — avec le cumul repris d’un bien', () => {
+  it('compte le cumul saisi au jour de la reprise, et non plus le recalcul : l’écart de l’ancien logiciel disparaît', () => {
+    const reprise = [aNouveau('a1', '281540', 'credit', 2690.63)]
+    expect(confronter([FAUTEUIL], reprise)?.ecarts.map((e) => e.ecartCentimes)).toEqual([-796])
+    const repris = { ...FAUTEUIL, cumul_repris: 2690.63, cumul_repris_au: '2024-12-31' }
+    expect(confronter([repris], reprise)?.ecarts).toEqual([])
+  })
+
+  it('additionne sous un compte les cumuls saisis et les cumuls recalculés des autres biens', () => {
+    const ecranRepris = { ...ECRAN, cumul_repris: 1400, cumul_repris_au: '2024-12-31' }
+    // 1 400,00 € saisis pour l'écran, 501,19 € recalculés pour le portable.
+    const c = confronter([ecranRepris, PORTABLE], [aNouveau('a1', '281830', 'credit', 1950)])
+    expect(c?.ecarts).toEqual([{ compte: '281830', registreCentimes: 190119, repriseCentimes: 195000, ecartCentimes: -4881 }])
+  })
+
+  it('un cumul repris nul ne compte rien, et ne range pas le bien parmi ceux qui ont un cumul', () => {
+    const c = confronter([{ ...FAUTEUIL, cumul_repris: 0, cumul_repris_au: '2024-12-31' }], [aNouveau('a1', '281540', 'credit', 5)])
+    expect(c?.ecarts).toEqual([{ compte: '281540', registreCentimes: 0, repriseCentimes: 500, ecartCentimes: -500 }])
   })
 })

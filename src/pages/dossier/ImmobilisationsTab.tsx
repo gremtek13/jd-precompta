@@ -3,10 +3,11 @@ import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, aujourdHuiSql, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
 import {
-  bienReprisSansPiece, compteAmortissement, dateDeLaDotation, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut,
-  montantDeFactureDifferent, planAmortissement, refusBien, refusBienRepris, refusNature, valeurSaisie,
+  bienReprisSansPiece, compteAmortissement, dateDeLaDotation, dateDuCumulRepris, dotationDeLExercice, dotationsDuRegistre,
+  dotationsEnDefaut, montantDeFactureDifferent, planAmortissement, refusBien, refusBienRepris, refusNature, valeurSaisie,
   type DotationDuRegistre, type EtatDotation,
 } from '../../lib/amortissements'
+import { CUMUL_REPRIS_PREVU, champsDuCumulRepris, phraseDuCumulRepris, refusCumulRepris, refusDuCumulFige } from '../../lib/cumulRepris'
 import { achatsAImmobiliser, SEUIL_IMMOBILISATION } from '../../lib/candidatesImmobilisation'
 import { immobilisationSansJustificatif } from '../../lib/controles'
 import type { PlanComptable } from '../../lib/planComptable'
@@ -57,10 +58,12 @@ interface BienEnEdition {
   dateAcquisition: string
   dateMiseEnService: string
   duree: string
+  // Le cumul repris de l'ancien tableau (EXP58-Q5), en texte comme la valeur ; vide, aucun.
+  cumulRepris: string
 }
 
 const BIEN_REPRIS_VIDE: BienEnEdition = {
-  libelle: '', natureId: '', valeur: '', dateAcquisition: '', dateMiseEnService: '', duree: String(DUREE_DEFAUT_ANNEES),
+  libelle: '', natureId: '', valeur: '', dateAcquisition: '', dateMiseEnService: '', duree: String(DUREE_DEFAUT_ANNEES), cumulRepris: '',
 }
 
 // Palier 5, brique 2 — registre des immobilisations. Un achat validé dépassant le seuil est
@@ -433,12 +436,32 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
   }
 
   // CE QUE LA BASE REFUSERAIT D'UN BIEN REPRIS, au-delà de `refusBienRepris` : un bien acquis dans un exercice validé ne
-  // s'inscrit plus au registre (`garder_bien_valide`) — les mots de la base.
+  // s'inscrit plus au registre (`garder_bien_valide`) — les mots de la base. Puis, le drapeau levé, ce qu'elle refuserait de son
+  // cumul repris (EXP58-Q5) : ses trois contraintes, puis sa garde (`garder_cumul_repris`), sur la saisie telle qu'elle part.
   function refusDuBienRepris(b: BienEnEdition): string | null {
     const refus = refusBienRepris(b, ouverture)
     if (refus) return refus
     const fige = dateFigee(b.dateAcquisition, anneesValidees)
-    return fige ? `${fige} : un bien acquis dans cet exercice ne s’inscrit plus au registre.` : null
+    if (fige) return `${fige} : un bien acquis dans cet exercice ne s’inscrit plus au registre.`
+    if (!CUMUL_REPRIS_PREVU) return null
+    return refusCumulRepris(b, ouverture) ?? refusDuCumulFige(null, champsDuCumulRepris(b.cumulRepris, ouverture), anneesValidees)
+  }
+
+  // LE CUMUL REPRIS DANS LA FICHE D'UN BIEN (EXP58-Q5), le drapeau levé : un bien acquis au plus tard le 31 décembre de la reprise
+  // peut le porter — avec ou sans pièce : son acquisition est dans la balance reprise ; et un bien qui en porte un le montre
+  // toujours, pour qu'il se corrige ou se retire (une ouverture changée depuis, ou plus d'ouverture du tout). Ailleurs, ni champ
+  // ni colonne écrite : le bien garde ce qu'il porte.
+  function cumulDansLaFiche(origine: Immobilisation, b: BienEnEdition): boolean {
+    if (!CUMUL_REPRIS_PREVU) return false
+    return origine.cumul_repris_au != null || (ouverture !== null && b.dateAcquisition <= dateDuCumulRepris(ouverture))
+  }
+
+  // Ce que la base refuserait du cumul repris de la fiche, dit avant le clic : ses contraintes, sur la valeur, les dates et la
+  // durée telles qu'elles partent, puis la garde, qui le fige une fois validé un exercice qui suit sa date.
+  function refusDuCumulDeLaFiche(id: string, b: BienEnEdition): string | null {
+    const origine = immobilisations.find((x) => x.id === id)
+    if (!origine || !cumulDansLaFiche(origine, b)) return null
+    return refusCumulRepris(b, ouverture) ?? refusDuCumulFige(origine, champsDuCumulRepris(b.cumulRepris, ouverture), anneesValidees)
   }
 
   // INSCRIRE UN BIEN REPRIS, SANS PIÈCE (IMMO-Q2) : un bien acquis avant l'ouverture, que la balance reprise porte. Rien
@@ -464,6 +487,8 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
         date_acquisition: bienRepris.dateAcquisition,
         date_mise_en_service: bienRepris.dateMiseEnService || null,
         duree_annees: Number(bienRepris.duree),
+        // Le drapeau baissé, aucune des deux colonnes : elles n'existent pas encore, et l'insertion entière serait refusée.
+        ...(CUMUL_REPRIS_PREVU ? champsDuCumulRepris(bienRepris.cumulRepris, ouverture) : {}),
       })
       if (erreurInscription) {
         setError(`Le bien repris n’a pas pu être inscrit : ${messageErreur(erreurInscription, 'raison inconnue')}`)
@@ -485,6 +510,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
       bien: {
         libelle: i.libelle, natureId: i.nature_id ?? '', valeur: String(i.valeur), dateAcquisition: i.date_acquisition,
         dateMiseEnService: i.date_mise_en_service ?? '', duree: String(i.duree_annees),
+        cumulRepris: i.cumul_repris != null ? String(i.cumul_repris) : '',
       },
     })
   }
@@ -497,10 +523,12 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
     const b = edition.bien
     const refus = refusBien({ libelle: b.libelle, valeur: b.valeur, dateAcquisition: b.dateAcquisition, dateMiseEnService: b.dateMiseEnService, duree: b.duree })
       ?? refusEdition(edition.id, b.dateAcquisition)
+      ?? refusDuCumulDeLaFiche(edition.id, b)
     if (refus) {
       setError(refus)
       return
     }
+    const origine = immobilisations.find((x) => x.id === edition.id)
     ecritureEnCours.current = true
     setEnCours(true)
     try {
@@ -511,6 +539,9 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
         date_acquisition: b.dateAcquisition,
         date_mise_en_service: b.dateMiseEnService || null,
         duree_annees: Number(b.duree),
+        // Le cumul repris, quand la fiche le montre (le champ vide le retire) ; sinon rien de lui ne part — le drapeau baissé,
+        // les colonnes n'existent pas encore.
+        ...(origine && cumulDansLaFiche(origine, b) ? champsDuCumulRepris(b.cumulRepris, ouverture) : {}),
       }).eq('id', edition.id)
       if (erreurModification) {
         setError(`Le bien n’a pas pu être modifié : ${messageErreur(erreurModification, 'raison inconnue')}`)
@@ -733,7 +764,9 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
             et son amortissement antérieur y sont. Il s’inscrit ici sans pièce — sa facture a pu être perdue, ou l’ancien logiciel
             l’a immobilisé sous {formatMoney(SEUIL_IMMOBILISATION)} — et son acquisition ne s’écrit pas : seules ses dotations à
             partir de l’ouverture s’écrivent, et comptent en case CH. Saisis la valeur, les dates et la durée de l’ancien tableau
-            d’amortissement. Un bien acquis depuis l’ouverture s’inscrit depuis sa facture, parmi les candidates.
+            d’amortissement{CUMUL_REPRIS_PREVU
+              ? `, et le cumul de ses amortissements au ${formatDate(dateDuCumulRepris(ouverture))} : le plan continue depuis lui`
+              : ''}. Un bien acquis depuis l’ouverture s’inscrit depuis sa facture, parmi les candidates.
           </p>
           {gesteBienReprisSuspendu && (
             <p className="error-text">Inscription suspendue : une lecture est partielle (voir plus haut). Recharge la page.</p>
@@ -776,6 +809,21 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
                   <input type="number" min={1} value={bienRepris.duree} onChange={(e) => setBienRepris({ ...bienRepris, duree: e.target.value })} />
                 </label>
               </div>
+              {/* LE CUMUL REPRIS (EXP58-Q5), derrière son drapeau : celui de l'ancien tableau, au 31 décembre de la reprise. */}
+              {CUMUL_REPRIS_PREVU && (
+                <>
+                  <div className="field-row">
+                    <label className="field">
+                      Amortissements cumulés au {formatDate(dateDuCumulRepris(ouverture))}
+                      <input
+                        type="number" min={0} step="0.01" value={bienRepris.cumulRepris} placeholder="Vide : recalculé"
+                        onChange={(e) => setBienRepris({ ...bienRepris, cumulRepris: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                  <p className="muted">{phraseDuCumulRepris(ouverture)}</p>
+                </>
+              )}
               {refusDuBienRepris(bienRepris) && (
                 <p className="muted">{refusDuBienRepris(bienRepris)}</p>
               )}
@@ -809,7 +857,8 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
           <p className="muted">
             Chaque dotation s’écrit au 31 décembre de son exercice : le compte {plan.dotations_amortissements} au débit, le compte
             d’amortissement du bien au crédit — celui que sa nature donne. Elle compte prorata temporis depuis la
-            mise en service, et le FEC la porte au journal des opérations diverses. Celle de l’exercice en cours
+            mise en service{CUMUL_REPRIS_PREVU ? ', ou, pour un bien repris qui le porte, depuis le cumul de l’ancien tableau' : ''},
+            et le FEC la porte au journal des opérations diverses. Celle de l’exercice en cours
             peut s’écrire dès aujourd’hui ; la Checklist ne la réclame qu’une fois l’exercice fini. Un exercice
             tenu dans un autre logiciel s’ouvre par une balance reprise (onglet Informations) : ses dotations sont
             alors dans les à-nouveaux, et ne se demandent plus ici.
@@ -921,6 +970,13 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
                           {bienReprisSansPiece(i, ouverture) && (
                             <span className="badge badge-neutral" style={{ marginLeft: 8 }} title="Acquis avant l’ouverture du dossier : la balance reprise porte sa valeur.">Bien repris, sans pièce</span>
                           )}
+                          {/* Le cumul repris (EXP58-Q5) : il n'existe qu'une fois la migration appliquée. */}
+                          {i.cumul_repris != null && i.cumul_repris_au != null && (
+                            <span className="badge badge-neutral" style={{ marginLeft: 8 }}
+                              title={`Amortissements cumulés au ${formatDate(i.cumul_repris_au)} : ${formatMoney(i.cumul_repris)}, ceux de l’ancien tableau — le plan continue depuis eux.`}>
+                              Cumul repris
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td data-libelle="Nature">
@@ -996,12 +1052,36 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
                                 <input type="number" min={1} value={edition.bien.duree} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, duree: e.target.value } })} />
                               </label>
                             </div>
+                            {/* LE CUMUL REPRIS (EXP58-Q5), derrière son drapeau : la fiche d'un bien acquis au plus tard le 31
+                                décembre de la reprise, ou qui en porte déjà un. */}
+                            {cumulDansLaFiche(i, edition.bien) && (
+                              <>
+                                <div className="field-row">
+                                  <label className="field">
+                                    Amortissements cumulés{ouverture ? ` au ${formatDate(dateDuCumulRepris(ouverture))}` : ' repris'}
+                                    <input
+                                      type="number" min={0} step="0.01" value={edition.bien.cumulRepris} placeholder="Vide : recalculé"
+                                      onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, cumulRepris: e.target.value } })}
+                                    />
+                                  </label>
+                                </div>
+                                {ouverture && <p className="muted">{phraseDuCumulRepris(ouverture)}</p>}
+                                {ouverture && i.cumul_repris_au != null && i.cumul_repris_au !== dateDuCumulRepris(ouverture) && (
+                                  <p className="muted">
+                                    Ce cumul est daté du {formatDate(i.cumul_repris_au)} : l’ouverture du dossier en demande un
+                                    au {formatDate(dateDuCumulRepris(ouverture))}, et aucune dotation ne s’écrit sur lui. Enregistré,
+                                    il le sera à cette date — vérifie son montant sur l’ancien tableau.
+                                  </p>
+                                )}
+                                {refusDuCumulDeLaFiche(i.id, edition.bien) && <p className="muted">{refusDuCumulDeLaFiche(i.id, edition.bien)}</p>}
+                              </>
+                            )}
                             <p className="muted">
                               L’amortissement part de la mise en service — de l’acquisition quand elle est vide. Les dotations déjà
                               écrites ne changent pas d’elles-mêmes : elles paraîtront « à réécrire » ci-dessus.
                             </p>
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              <button type="submit" className="btn btn-primary btn-sm" disabled={enCours}>{enCours ? 'Enregistrement…' : 'Enregistrer'}</button>
+                              <button type="submit" className="btn btn-primary btn-sm" disabled={enCours || refusDuCumulDeLaFiche(i.id, edition.bien) !== null}>{enCours ? 'Enregistrement…' : 'Enregistrer'}</button>
                               <button type="button" className="btn btn-outline btn-sm" onClick={() => setEdition(null)}>Annuler</button>
                             </div>
                           </form>
@@ -1026,6 +1106,18 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
                                 </tr>
                               </thead>
                               <tbody>
+                                {/* Le cumul repris (EXP58-Q5) : l'ancien tableau, résumé en une ligne, d'où le plan continue. */}
+                                {i.cumul_repris != null && i.cumul_repris_au != null && (
+                                  <tr>
+                                    <td data-libelle="Exercice">Repris au {formatDate(i.cumul_repris_au)}</td>
+                                    <td data-libelle="Dotation" style={{ textAlign: 'right' }}>—</td>
+                                    <td data-libelle="Amortissement cumulé" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(i.cumul_repris)}</td>
+                                    <td data-libelle="Valeur nette" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                      {formatMoney((Math.round(i.valeur * 100) - Math.round(i.cumul_repris * 100)) / 100)}
+                                    </td>
+                                    <td data-libelle="Écriture">Ancien tableau</td>
+                                  </tr>
+                                )}
                                 {planAmortissement(i).map((a) => (
                                   <tr key={a.annee}>
                                     <td data-libelle="Exercice">{a.annee}</td>

@@ -1,5 +1,5 @@
 import type { PlanComptable } from './planComptable'
-import { anneeDe, jourDe, moisDe } from './format'
+import { anneeDe, formatDate, jourDe, moisDe } from './format'
 import { montantRetenu } from './montantRetenu'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from './types'
 import { estFigee } from './validationExercice'
@@ -27,8 +27,18 @@ import { estFigee } from './validationExercice'
 // centime. Un arrondi qui différerait d'un centime d'un côté ferait refuser une écriture juste, et personne
 // ne comprendrait pourquoi. Les centimes sont donc des entiers (BigInt, comme le `bigint` de la base), et
 // la parité est éprouvée par amortissements.test.ts sur une table relevée en base.
+//
+// LE PLAN CONTINUÉ DEPUIS UN CUMUL REPRIS (EXP58-Q5, décision du cabinet du 17/11/2026 ; la migration préparée
+// `cumul_repris_des_biens`, supabase/preparees/20261117190000_cumul_repris_des_biens.sql). Un bien acquis avant la reprise du
+// dossier peut porter le cumul de ses amortissements au 31 décembre qui précède l'année de l'ouverture, tel que l'ancien
+// tableau le porte (`cumul_repris`, `cumul_repris_au`). Ses dotations suivantes partent alors de la valeur nette restante,
+// répartie sur les jours qui restent du plan — au lieu du recalcul depuis la mise en service, qui s'écartait du 28 repris quand
+// l'ancien logiciel comptait autrement. La même règle : le cumul s'arrondit, pas l'annuité, et la dernière annuité solde. Sans
+// cumul repris, le calcul d'hier, au caractère près. Le moteur lit le cumul de tout bien qui en porte un, sans drapeau : sans
+// la migration, aucun n'en porte (l'écran, lui, attend `CUMUL_REPRIS_PREVU`, src/lib/cumulRepris.ts).
 
-export type BienAmortissable = Pick<Immobilisation, 'valeur' | 'duree_annees' | 'date_acquisition' | 'date_mise_en_service'>
+export type BienAmortissable = Pick<Immobilisation,
+  'valeur' | 'duree_annees' | 'date_acquisition' | 'date_mise_en_service' | 'cumul_repris' | 'cumul_repris_au'>
 
 /** Le jour d'où part l'amortissement : la mise en service, sinon l'acquisition — la base fait de même. */
 export function miseEnService(bien: Pick<Immobilisation, 'date_acquisition' | 'date_mise_en_service'>): string {
@@ -44,13 +54,46 @@ export function rang360(date: string): number {
 const valeurEnCentimes = (bien: Pick<Immobilisation, 'valeur'>) => BigInt(Math.round(bien.valeur * 100))
 const enEuros = (centimes: bigint) => Number(centimes) / 100
 
+/** Le cumul repris d'un bien (EXP58-Q5) : ses centimes et le 31 décembre auquel il est arrêté — ou rien, et le plan part de la
+ *  mise en service. Les deux colonnes vont ensemble (contrainte `immobilisations_cumul_repris_date`). */
+export function cumulRepris(bien: Pick<Immobilisation, 'cumul_repris' | 'cumul_repris_au'>): { centimes: bigint; au: string } | null {
+  if (bien.cumul_repris == null || bien.cumul_repris_au == null) return null
+  return { centimes: BigInt(Math.round(bien.cumul_repris * 100)), au: bien.cumul_repris_au }
+}
+
+/** Le jour auquel le cumul repris d'un bien s'arrête : le 31 décembre qui précède l'année de l'ouverture du dossier — celui
+ *  de l'ancien tableau d'amortissement, et le seul sur lequel `ecrire_dotation_amortissement` écrit. */
+export const dateDuCumulRepris = (ouverture: string) => `${anneeDe(ouverture) - 1}-12-31`
+
 // L'amortissement cumulé au soir du jour de rang `rang`, en centimes : la valeur × les jours en service (le
 // jour de mise en service compris) ÷ (360 × la durée), le demi-centime vers le haut, plafonné à la valeur.
 // `amortissement_cumule_centimes` en base, au caractère près de la formule.
+//
+// AVEC UN CUMUL REPRIS (EXP58-Q5), `amortissement_cumule_continue_centimes` en base, au caractère près de la formule :
+// - à partir de son jour, le cumul repris plus la valeur nette restante × les jours écoulés depuis le premier jour amorti
+//   après lui (le lendemain, ou la mise en service si elle suit) ÷ les jours qui restent du plan — au moins un : un plan fini au
+//   jour du cumul solde le lendemain —, le demi-centime vers le haut ; à la fin du plan, la valeur exacte ;
+// - avant son jour, le cumul repris réparti sur les jours en service jusqu'à lui, pour qu'une année reprise s'affiche sans
+//   saut : aucune écriture ne s'en sert (une dotation d'avant l'ouverture ne s'écrit pas, `dotationAEcrire`).
 export function amortissementCumuleCentimes(bien: BienAmortissable, rang: number): bigint {
-  const duree = BigInt(bien.duree_annees)
-  const jours = BigInt(Math.min(Math.max(rang - rang360(miseEnService(bien)) + 1, 0), 360 * bien.duree_annees))
-  return (2n * valeurEnCentimes(bien) * jours + 360n * duree) / (720n * duree)
+  const repris = cumulRepris(bien)
+  if (!repris) {
+    const duree = BigInt(bien.duree_annees)
+    const jours = BigInt(Math.min(Math.max(rang - rang360(miseEnService(bien)) + 1, 0), 360 * bien.duree_annees))
+    return (2n * valeurEnCentimes(bien) * jours + 360n * duree) / (720n * duree)
+  }
+  const service = rang360(miseEnService(bien))
+  const rangDuCumul = rang360(repris.au)
+  if (rang < rangDuCumul) {
+    const enService = rangDuCumul - service + 1
+    if (enService <= 0) return 0n
+    const jours = BigInt(Math.min(Math.max(rang - service + 1, 0), enService))
+    return (2n * repris.centimes * jours + BigInt(enService)) / (2n * BigInt(enService))
+  }
+  const debut = Math.max(rangDuCumul + 1, service)
+  const restants = Math.max(service + 360 * bien.duree_annees - debut, 1)
+  const jours = BigInt(Math.min(Math.max(rang - debut + 1, 0), restants))
+  return repris.centimes + (2n * (valeurEnCentimes(bien) - repris.centimes) * jours + BigInt(restants)) / (2n * BigInt(restants))
 }
 
 /** La dotation d'un exercice, en euros : l'écart des cumuls au 31 décembre de l'exercice et du précédent. */
@@ -83,15 +126,29 @@ export interface AnnuiteAmortissement {
 // atteint la valeur — la durée, plus l'exercice du reliquat quand la mise en service n'est pas un 1er
 // janvier. Un exercice à dotation nulle au milieu reste dans le tableau (un bien de quelques centimes
 // amorti sur cinq ans), puisque le tableau est le justificatif des dotations écrites.
+//
+// UN BIEN QUI PORTE UN CUMUL REPRIS (EXP58-Q5) : le tableau commence l'année qui suit le cumul (ou celle de la mise en service,
+// si elle vient après) — les années d'avant sont celles de l'ancien tableau, que l'écran résume en une ligne (`cumulRepris`) —
+// et finit l'année du dernier jour du plan, ou l'année qui suit le cumul quand le plan était fini à son jour (la dernière
+// annuité solde). Un bien entièrement amorti à la reprise y garde une ligne, à dotation nulle.
 export function planAmortissement(bien: BienAmortissable): AnnuiteAmortissement[] {
   const valeur = valeurEnCentimes(bien)
-  const premiere = anneeDe(miseEnService(bien))
+  const repris = cumulRepris(bien)
   const plan: AnnuiteAmortissement[] = []
-  for (let annee = premiere; annee <= premiere + bien.duree_annees; annee++) {
+  const ligne = (annee: number) => {
     const cumul = amortissementCumuleCentimes(bien, rang360(`${annee}-12-31`))
     plan.push({ annee, dotation: dotationDeLExercice(bien, annee), cumul: enEuros(cumul), valeurNette: enEuros(valeur - cumul) })
-    if (cumul >= valeur) break
+    return cumul >= valeur
   }
+  if (!repris) {
+    const premiere = anneeDe(miseEnService(bien))
+    for (let annee = premiere; annee <= premiere + bien.duree_annees; annee++) if (ligne(annee)) break
+    return plan
+  }
+  const premiere = Math.max(anneeDe(repris.au) + 1, anneeDe(miseEnService(bien)))
+  // L'année du dernier jour du plan : son rang en 30/360, la mise en service plus la durée, moins un jour.
+  const derniere = Math.max(premiere, Math.floor((rang360(miseEnService(bien)) + 360 * bien.duree_annees - 1) / 360))
+  for (let annee = premiere; annee <= derniere; annee++) if (ligne(annee)) break
   return plan
 }
 
@@ -203,6 +260,22 @@ export function ecritureDeLaDotation(
 
 export const REFUS_DOTATION_SANS_NATURE = 'Choisissez la nature de ce bien : c’est elle qui donne son compte d’amortissement.'
 
+// UN CUMUL REPRIS QUI N'EST LE DÉPART D'AUCUN PLAN (EXP58-Q5) : daté d'un autre jour que le 31 décembre qui précède l'année de
+// l'ouverture — la balance reprise a changé de date depuis sa saisie —, ou dans un dossier sans ouverture. La base n'écrit
+// aucune dotation sur lui (`ecrire_dotation_amortissement`, ses deux refus, mot pour mot) : il se corrige dans la fiche du
+// bien. Rien quand le bien n'en porte pas, ou qu'il est daté du bon jour.
+export function refusDuCumulRepris(bien: Pick<Immobilisation, 'cumul_repris_au'>, ouverture: string | null): string | null {
+  const au = bien.cumul_repris_au
+  if (au == null) return null
+  if (ouverture === null) {
+    return `Le cumul repris de ce bien, au ${formatDate(au)}, suppose un dossier ouvert par une balance reprise : ce dossier n’en a pas.`
+  }
+  const attendu = dateDuCumulRepris(ouverture)
+  if (au === attendu) return null
+  return `Le cumul repris de ce bien est daté du ${formatDate(au)} : l’ouverture du dossier, le ${formatDate(ouverture)}, `
+    + `en demande un au ${formatDate(attendu)}.`
+}
+
 // Pourquoi la dotation de cet exercice ne peut pas s'écrire, dit AVANT le clic — les refus de la base, dans
 // son ordre. `nature` est celle que l'écran a lue : introuvable alors que le bien en désigne une, c'est
 // une lecture qui a manqué quelque chose, et on ne compose pas d'écriture sur un compte deviné.
@@ -217,6 +290,8 @@ export function refusDotation(
   if (annee > anneeCourante) return 'La dotation d’un exercice à venir ne s’écrit pas encore.'
   if (presentes.some((e) => e.statut !== 'proposee')) return `La dotation ${annee} de ce bien est validée : elle ne se remplace plus.`
   if (dotationAEcrire(bien, annee, ouverture) > 0) {
+    const cumul = refusDuCumulRepris(bien, ouverture)
+    if (cumul) return cumul
     if (!bien.nature_id) return REFUS_DOTATION_SANS_NATURE
     if (!nature) return 'La nature de ce bien est introuvable.'
   }

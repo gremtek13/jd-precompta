@@ -713,6 +713,12 @@ export interface Immobilisation {
   date_mise_en_service: string | null
   duree_annees: number
   created_at: string
+  // LE CUMUL REPRIS (EXP58-Q5, la migration préparée `cumul_repris_des_biens`) : le cumul des amortissements du bien au 31
+  // décembre `cumul_repris_au`, celui de l'ancien tableau, au centime, de zéro à la valeur ; les deux ensemble ou aucun. Nuls,
+  // le plan part de la mise en service ; portés, il continue depuis eux (`amortissementCumuleCentimes`). Facultatifs ici :
+  // absents de la ligne tant que la migration n'est pas appliquée.
+  cumul_repris?: number | null
+  cumul_repris_au?: string | null
 }
 
 // Palier 5, brique 4 — suivi des cotisations sociales URSSAF. Le montant_csg_crds est saisi
