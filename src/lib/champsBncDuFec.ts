@@ -9,6 +9,7 @@ import { POSTE_ASSURANCE_EMPRUNT, POSTE_INTERETS_EMPRUNT } from './echeanceEmpru
 import { justifieSonMouvement } from './encaissementsFactures'
 import { dateLocaleDe } from './format'
 import { sirenDuClient } from './libellesDesVentes'
+import { MODE_DE_REGLEMENT_PREVU, type ModeDUnMouvement } from './modeDeReglement'
 import type { PlanComptable } from './planComptable'
 import { cleDuPaiement, partsDesPaiements, rattachementsTresorerie, type PaiementDePiece } from './rattachement'
 import type {
@@ -33,8 +34,11 @@ import type {
 //   1. UNE VALEUR LUE, JAMAIS DEVINÉE. Chaque champ se tire de la source de l'écriture — la pièce et son paiement, le
 //      mouvement et son lien, l'opération de caisse, l'encaissement du registre, la facture, l'échéance payée de la poche
 //      de l'exploitant. AUCUN LIBELLÉ n'est lu — ni celui du relevé (« PRLV », « CB », « CHQ » ne disent pas le mode que
-//      la banque n'a pas transmis), ni celui d'une pièce, d'une écriture ou d'une catégorie. Ce qui n'a pas de source
-//      reste vide (''), comme le § 70 de la notice le veut (« Il ne faut pas remplir avec des « 0 » ou des « espaces » »).
+//      la banque n'a pas transmis), ni celui d'une pièce, d'une écriture ou d'une catégorie. Depuis EXP58-Q1, le mode d'un
+//      mouvement du relevé est celui que le CABINET a posé sur lui (`mode_reglement`, `modeRgltDuReleve`), une valeur lue
+//      comme les autres : la proposition que son libellé fait (lib/modeDeReglement.ts) ne vaut qu'à l'écran, jamais ici. Ce
+//      qui n'a pas de source reste vide (''), comme le § 70 de la notice le veut (« Il ne faut pas remplir avec des « 0 »
+//      ou des « espaces » »).
 //   2. JAMAIS UN NOM (BOI-BNC-DECLA-10-20, § 280 ; CGI, art. 99 ; code pénal, art. 226-13). IdClient n'est que sur les
 //      écritures d'une facture émise, et n'y est que le SIREN de son client ou le numéro de la facture (FEC22-Q4, (D)) ;
 //      NatOp n'est que la nature comptable de l'opération et un poste du formulaire, jamais la nature d'un soin (LPF,
@@ -52,7 +56,9 @@ import type {
 /**
  * Les modes de règlement (ModeRglt), en toutes lettres (BOI-CF-IOR-60-40-20, § 290 : « chèque, espèces, virement »,
  * littéral ou codifié ; littéral ici, sans table à fournir). « Banque » : un règlement par le relevé, dont l'instrument
- * n'est pas connu — l'import ne garde du mouvement que sa date, son montant et son libellé (FEC22-Q2, (A)). « Compte
+ * n'est pas connu — l'import ne garde du mouvement que sa date, son montant et son libellé (FEC22-Q2, (A)) ; depuis EXP58-Q1,
+ * le mode que le cabinet a posé sur le mouvement le remplace (`modeRgltDuReleve`), « Banque » restant celui d'un mouvement
+ * sans mode (lib/modeDeReglement.ts, `MODES_D_UN_MOUVEMENT` : sept de ces modes, ceux qu'un mouvement peut porter). « Compte
  * personnel » : l'exploitant a payé de sa poche, le moyen exact n'est pas connu. « Sans règlement » : la seconde option de
  * FEC22-Q1, pour une écriture qui n'en est pas un ; jamais écrite sans ce choix.
  */
@@ -167,12 +173,29 @@ export type EncaissementDuRegistre = Pick<EncaissementFacture,
 export type PieceDuFec = Pick<Piece,
   'id' | 'type_piece' | 'facture_id' | 'date_piece' | 'montant_ttc' | 'created_at' | 'tiers' | 'nom_fichier'>
 
-/** Un mouvement du relevé tel qu'on le lit, ses libellés et son fichier compris — jamais lus ici. */
+/** Un mouvement du relevé tel qu'on le lit, ses libellés et son fichier compris — jamais lus ici —, et le mode que le cabinet
+ *  a posé (EXP58-Q1 ; facultatif comme dans `LigneBancaire` : absent avant la migration). */
 export type MouvementDuFec = Pick<LigneBancaire,
   'id' | 'date' | 'montant' | 'libelle' | 'libelle_brut' | 'source_fichier' | 'statut' | 'categorie_id' | 'emprunt_id'
-  | 'emprunt_echeance' | 'cotisation_id' | 'ventilee' | 'compte_bilan' | 'declaration_tva_id' | 'prelevement_personnel'>
+  | 'emprunt_echeance' | 'cotisation_id' | 'ventilee' | 'compte_bilan' | 'declaration_tva_id' | 'prelevement_personnel'
+  | 'mode_reglement'>
 
 // ── Les briques ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ModeRglt d'une écriture que des mouvements du relevé règlent (EXP58-Q1) : le mode que le cabinet a posé sur EUX, quand ils
+ * en portent tous un, et le même ; « Banque » sinon — aucun mouvement lu, un mouvement sans mode (nul, ou absent d'une
+ * lecture qui ne le nomme pas), ou deux mouvements de deux modes réunis dans une écriture (une pièce payée le même jour par
+ * une carte et un chèque : la clé de son règlement ne change pas, `cleDuReglement`, et « Banque » est vrai des deux). Jamais
+ * la proposition du libellé. Le drapeau baissé (`MODE_DE_REGLEMENT_PREVU`, lib/modeDeReglement.ts, lu à l'appel) : « Banque »
+ * toujours, le fichier d'hier à l'octet.
+ */
+export function modeRgltDuReleve(modes: readonly (ModeDUnMouvement | null | undefined)[]): ModeRglt {
+  if (!MODE_DE_REGLEMENT_PREVU || modes.length === 0) return 'Banque'
+  const premier = modes[0]
+  if (premier === null || premier === undefined || modes.some((m) => m !== premier)) return 'Banque'
+  return premier
+}
 
 function sansReglement(dateDeLEcriture: string, choix: ChoixChampsBnc): Pick<ChampsBnc, 'dateRglt' | 'modeRglt'> {
   switch (choix.sansReglement) {
@@ -386,12 +409,17 @@ export interface EntreesDUnePiece {
   cible: Pick<CibleComptable, 'immobilisation'>
   // La facture que la pièce désigne (`pieces.facture_id`), lue ; nulle quand elle n'en désigne aucune.
   exemplaireDe: FactureDuClient | null
+  // Les modes que le cabinet a posés sur les mouvements du relevé de l'écriture — ceux de ses lignes de banque, un par
+  // mouvement, nul sans mode (EXP58-Q1) : le mode d'un règlement `releve` (`modeRgltDuReleve`). Vide quand l'écriture n'en
+  // porte aucun ; lu pour tout règlement, compté pour le seul relevé.
+  modesDuReleve: readonly (ModeDUnMouvement | null | undefined)[]
   lignes: readonly LigneACaracteriser[]
   choix: ChoixChampsBnc
 }
 
 /**
- * Une écriture d'une pièce (clé `pièce|date`). DateRglt et ModeRglt de son règlement ; NatOp « Recette » pour une pièce
+ * Une écriture d'une pièce (clé `pièce|date`). DateRglt et ModeRglt de son règlement — par le relevé, « Banque » ou, depuis
+ * EXP58-Q1, le mode que le cabinet a posé sur ses mouvements (`modeRgltDuReleve`) ; NatOp « Recette » pour une pièce
  * de vente, « Dépense » sinon, « Acquisition d'immobilisation » quand sa cible est un bien. IdClient : celui de la
  * facture que la pièce désigne, quand c'est une pièce de VENTE désignée exemplaire d'une facture qui n'est PAS source de
  * sa vente (l'exemplaire d'une facture source ne compte plus, VF3b) — '' sur toute autre pièce : le tiers lu par l'OCR
@@ -400,7 +428,7 @@ export interface EntreesDUnePiece {
 export function champsDUnePiece(e: EntreesDUnePiece): ChampsBnc {
   const r = e.reglement
   const reglement: Pick<ChampsBnc, 'dateRglt' | 'modeRglt'> =
-    r.par === 'releve' ? { dateRglt: r.date, modeRglt: 'Banque' }
+    r.par === 'releve' ? { dateRglt: r.date, modeRglt: modeRgltDuReleve(e.modesDuReleve) }
     : r.par === 'virement_mixte' ? { dateRglt: r.date, modeRglt: r.encaissement === null ? '' : MODE_DU_MOYEN[r.encaissement.moyen] }
     : r.par === 'note_de_frais' ? { dateRglt: r.date, modeRglt: 'Compte personnel' }
     : r.par === 'caisse' ? { dateRglt: r.date, modeRglt: 'Espèces' }
@@ -452,7 +480,8 @@ function natureDesLignes(lignes: readonly LigneACaracteriser[]): NatureOperation
 
 /**
  * Une écriture d'un mouvement justifié par le relevé (clé `releve|mouvement`) : DateRglt la date du mouvement, ModeRglt
- * « Banque » (FEC22-Q2, (A) : le relevé ne dit pas l'instrument, et son libellé ne se lit pas), IdClient vide — un
+ * « Banque » (FEC22-Q2, (A) : le relevé ne dit pas l'instrument, et son libellé ne se lit pas) ou, depuis EXP58-Q1, le mode
+ * que le cabinet a posé sur lui (`modeRgltDuReleve`), IdClient vide — un
  * crédit de l'Assurance maladie paie pour des patients que le relevé ne nomme pas (RGPD.md § 8.7). La nature selon le
  * lien : le signe pour un virement personnel ou une déclaration de TVA ; l'échéance (`emprunt_echeance`) pour un emprunt ;
  * le compte de la caisse du PLAN (jamais le libellé) et le signe pour un versement d'espèces (un crédit, les espèces qui
@@ -474,7 +503,7 @@ export function champsDUnMouvementDuReleve(
     : m.compte_bilan
       ? (m.compte_bilan !== plan.caisse ? 'Opération de bilan' : m.montant < 0 ? "Retrait d'espèces pour la caisse" : "Versement d'espèces")
     : natureDesLignes(lignes)
-  return { dateRglt: m.date, modeRglt: 'Banque', nature, natOp: natOps(nature, lignes), idClient: '' }
+  return { dateRglt: m.date, modeRglt: modeRgltDuReleve([m.mode_reglement]), nature, natOp: natOps(nature, lignes), idClient: '' }
 }
 
 // ── Une opération de caisse ──
@@ -602,14 +631,15 @@ export function champsDUnEncaissement(
 /**
  * Le mouvement que ses encaissements classent (clé `mouvement-encaissements|mouvement`) : DateRglt la date du mouvement ;
  * ModeRglt le moyen des encaissements qui le justifient quand ils n'en ont qu'un (une remise de chèques : « Chèque »),
- * sinon « Banque » ; IdClient vide — un bordereau porte plusieurs clients (BOI-BNC-DECLA-10-20, § 80). Justifient le
+ * sinon « Banque » — ou, depuis EXP58-Q1, le mode que le cabinet a posé sur le mouvement (`modeRgltDuReleve`) : le registre,
+ * quand il ne dit qu'un moyen, l'emporte comme hier ; IdClient vide — un bordereau porte plusieurs clients (BOI-BNC-DECLA-10-20, § 80). Justifient le
  * mouvement, comme la composition les lit : ceux qui le citent, vivants, qu'aucune contre-passation vivante SANS
  * mouvement n'annule (`justifieSonMouvement`) — une contre-passation qui cite un débit compris. NatOp « Remise en
  * banque » pour un crédit ; pour un débit — l'impayé, la somme rendue, que ses contre-passations classent —, « Annulation
  * de recette ».
  */
 export function champsDUnMouvementDesEncaissements(
-  mouvement: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'libelle' | 'libelle_brut' | 'source_fichier'>,
+  mouvement: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'libelle' | 'libelle_brut' | 'source_fichier' | 'mode_reglement'>,
   registre: readonly EncaissementDuRegistre[],
   lignes: readonly LigneACaracteriser[],
 ): ChampsBnc {
@@ -618,7 +648,8 @@ export function champsDUnMouvementDesEncaissements(
   const modes = new Set(justifient.map((e) => MODE_DU_MOYEN[e.moyen]))
   const nature: NatureOperation = mouvement.montant < 0 ? 'Annulation de recette' : 'Remise en banque'
   return {
-    dateRglt: mouvement.date, modeRglt: modes.size === 1 ? [...modes][0] : 'Banque', nature, natOp: natOps(nature, lignes),
+    dateRglt: mouvement.date, modeRglt: modes.size === 1 ? [...modes][0] : modeRgltDuReleve([mouvement.mode_reglement]),
+    nature, natOp: natOps(nature, lignes),
     idClient: '',
   }
 }

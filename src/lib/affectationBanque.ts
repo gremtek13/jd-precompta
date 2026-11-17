@@ -38,12 +38,14 @@ export function natureDuCompte(compte: string | null | undefined): NatureCompte 
   return null
 }
 
-/** Ce que le relevé justifie d'un mouvement se lit sur ces colonnes : le reste de la ligne ne décide de rien. */
+/** Ce que le relevé justifie d'un mouvement se lit sur ces colonnes : le reste de la ligne ne décide de rien. Le mode de
+ *  règlement posé par le cabinet (EXP58-Q1, facultatif comme dans `LigneBancaire`) ne décide de rien ici : le FEC le lit
+ *  (lib/fec.ts, lib/champsBncDuFec.ts), sur les mouvements qu'il reçoit sous ce type. */
 export type MouvementBancaire = Pick<
   LigneBancaire,
   'id' | 'date' | 'libelle' | 'libelle_brut' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
   | 'taux_tva' | 'prelevement_personnel' | 'source_fichier' | 'emprunt_id' | 'emprunt_echeance' | 'emprunt_interets' | 'emprunt_assurance'
-  | 'ventilee' | 'reglement_groupe' | 'compte_bilan' | 'declaration_tva_id'
+  | 'ventilee' | 'reglement_groupe' | 'compte_bilan' | 'declaration_tva_id' | 'mode_reglement'
 >
 
 // Pourquoi ce mouvement ne peut pas être affecté à cette catégorie, à ce taux, dit AVANT d'écrire. La

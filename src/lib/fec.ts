@@ -532,10 +532,15 @@ function champsDeLEcriture(e: EcritureANumeroter, x: ContexteDesChamps): ChampsB
       if (!piece) return nonLue()
       // La cible de la pièce par la règle de la génération (`piecesAComptabiliser`) : son bien, s'il en est un.
       const cible = piecesAComptabiliser([piece], [...x.categories], acquisitions, AUCUNE_FACTURE_SOURCE)[0]
+      // Les mouvements du relevé de CETTE écriture — ceux de ses lignes de banque, une fois chacun, après la scission ou le
+      // rangement par règlement — et le mode que le cabinet a posé sur chacun (EXP58-Q1) ; un mouvement que la lecture ne
+      // rend pas n'en dit aucun.
+      const mouvementsDeLEcriture = [...new Set(e.rows.flatMap((l) => (l.ligne_bancaire_id ? [l.ligne_bancaire_id] : [])))]
       return champsDUnePiece({
         piece, reglement: e.reglement ?? { par: 'aucun' }, dateDeLEcriture: date,
         cible: { immobilisation: cible?.immobilisation ?? false },
         exemplaireDe: piece.facture_id === null ? null : factures.find((f) => f.id === piece.facture_id) ?? null,
+        modesDuReleve: mouvementsDeLEcriture.map((id) => x.mouvementById.get(id)?.mode_reglement),
         lignes, choix,
       })
     }

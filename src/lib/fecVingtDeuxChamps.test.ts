@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { anomaliesBnc, anomaliesDgfip, colonnes, desequilibresDgfip, ENTETES_BNC_ATTENDUS, structureBncDgfip } from '../test/fecDgfip'
 import { brouillonDesVentes, composition, ligneBancaire, pieceDeVente, sourcesDuDossierBascule } from '../test/dossierBascule'
 import { NON_VALIDEE, A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
@@ -27,6 +27,7 @@ import type {
   ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable, OperationCaisse, Piece, VentilationBancaire,
 } from './types'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
+import type { ModeDUnMouvement } from './modeDeReglement'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 import { banquesDuDossier } from './banqueDuMouvement'
 
@@ -44,6 +45,12 @@ import { banquesDuDossier } from './banqueDuMouvement'
 vi.mock('./champsBncExportes', async (original) => {
   const vrai = await original<typeof import('./champsBncExportes')>()
   return { ...vrai, CHAMPS_BNC_EXPORTES: null }
+})
+// Le drapeau du mode de règlement d'un mouvement (EXP58-Q1), joué par un accesseur : nul, sa vraie valeur (baissé).
+const drapeauDuMode = vi.hoisted(() => ({ leve: null as boolean | null }))
+vi.mock('./modeDeReglement', async (original) => {
+  const vrai = await original<typeof import('./modeDeReglement')>()
+  return { ...vrai, get MODE_DE_REGLEMENT_PREVU() { return drapeauDuMode.leve ?? vrai.MODE_DE_REGLEMENT_PREVU } }
 })
 
 const D = 'd1'
@@ -736,6 +743,84 @@ function dossierTire(suivant: () => number, n: number): JeuTire {
     }),
   }
 }
+
+// LE MODE DE RÈGLEMENT POSÉ SUR LES MOUVEMENTS (EXP58-Q1, lib/modeDeReglement.ts) : baissé, le fichier d'aujourd'hui à l'octet,
+// que les mouvements lus portent un mode ou non ; levé, ModeRglt prend le mode que le cabinet a posé là où le fichier écrivait
+// « Banque », et rien d'autre ne bouge — ni une autre colonne, ni une autre ligne, ni la scission.
+describe('le mode de règlement posé sur les mouvements du relevé (EXP58-Q1)', () => {
+  afterEach(() => { drapeauDuMode.leve = null })
+  const MODES_POSES: Readonly<Record<string, ModeDUnMouvement>> = {
+    'm-achat': 'Carte bancaire', 'm-cpam': 'Virement', 'm-perso': 'Virement', 'm-emp': 'Prélèvement', 'm-vent': 'Chèque',
+  }
+  const avecModes = (j: Jeu): Jeu => ({ ...j, mouvements: j.mouvements.map((m) => ({ ...m, mode_reglement: MODES_POSES[m.id] ?? null })) })
+
+  it('le drapeau baissé : le fichier d’aujourd’hui, à l’octet, à dix-huit comme à vingt-deux colonnes, et en engagement', () => {
+    const j = dossierComplet(VIDES)
+    const poses = avecModes(j)
+    expect(fec(poses, 'tresorerie', exportes(poses.entrees))).toBe(fec(j, 'tresorerie', exportes(j.entrees)))
+    expect(fec(poses, 'tresorerie', CHAMPS_BNC_NON_EXPORTES)).toBe(fec(j, 'tresorerie', CHAMPS_BNC_NON_EXPORTES))
+    expect(fec(poses, 'engagement', exportes(poses.entrees))).toBe(fec(j, 'engagement', exportes(j.entrees)))
+    expect(fec(poses, 'tresorerie', exportes(poses.entrees))).not.toMatch(/Carte bancaire|Prélèvement\t/)
+  })
+
+  it('le drapeau levé : ModeRglt prend le mode posé, mouvement par mouvement ; un mouvement sans mode reste « Banque » ; rien d’autre ne bouge', () => {
+    const j = dossierComplet(VIDES)
+    const hier = colonnes(fec(avecModes(j), 'tresorerie', exportes(j.entrees)))
+    drapeauDuMode.leve = true
+    const poses = avecModes(j)
+    const f = fec(poses, 'tresorerie', exportes(poses.entrees))
+    expect(structureBncDgfip(f)).toEqual([])
+    expect(anomaliesDgfip(f)).toEqual([])
+    const lignes = colonnes(f)
+    expect(lignes.length).toBe(hier.length)
+    // Toutes les colonnes, ModeRglt (la vingtième) à part : celles d'hier.
+    expect(lignes.map((r) => [...r.slice(0, 19), ...r.slice(20)])).toEqual(hier.map((r) => [...r.slice(0, 19), ...r.slice(20)]))
+    const modes = quatre(f)
+    const de = (journal: string, compte: string, date: string) => modes.filter((l) => l[0] === journal && l[1] === compte && l[2] === date).map((l) => l[3])
+    // La pièce payée par la carte : sa charge et sa banque.
+    expect(de('AC', '606100', '20260320')).toEqual(['Carte bancaire'])
+    expect(de('AC', '512000', '20260320')).toEqual(['Carte bancaire'])
+    // La pièce de vente et le bien, payés par des mouvements sans mode : « Banque », comme hier.
+    expect(de('VE', '706000', '20260402')).toEqual(['Banque'])
+    expect(de('AC', '218300', '20260505')).toEqual(['Banque'])
+    // Les mouvements justifiés par le relevé : la recette de l'assurance maladie, le virement personnel, l'échéance, la ventilation.
+    expect(de('BQ', '706000', '20260312')).toEqual(['Virement'])
+    expect(de('BQ', '108000', '20260325')).toEqual(['Virement'])
+    expect(new Set(modes.filter((l) => l[2] === '20260405').map((l) => l[3]))).toEqual(new Set(['Prélèvement']))
+    expect(new Set(modes.filter((l) => l[2] === '20260415').map((l) => l[3]))).toEqual(new Set(['Chèque']))
+    // Ce qui ne passe pas par le relevé garde son mode : la note de frais, la caisse, le compte personnel.
+    expect(de('AC', '625100', '20260601')).toEqual(['Compte personnel'])
+    expect(de('VE', '706000', '20260703')).toEqual(['Espèces'])
+    expect(modes.filter((l) => l[1] === '646000').map((l) => l[3])).toEqual(['Compte personnel'])
+    // Le dix-huit colonnes n'a pas de ModeRglt : à l'octet, levé ou non.
+    expect(fec(poses, 'tresorerie', CHAMPS_BNC_NON_EXPORTES)).toBe(fec(j, 'tresorerie', CHAMPS_BNC_NON_EXPORTES))
+  })
+
+  it('le drapeau levé : deux mouvements de deux modes le même jour pour une pièce, « Banque », et toujours aucune scission', () => {
+    drapeauDuMode.leve = true
+    const p = piece({ id: 'p-deux', date_piece: '2026-03-01', montant_ttc: 120 })
+    const jeu = (modes: [ModeDUnMouvement | null, ModeDUnMouvement | null]): Jeu => {
+      const mouvements = [
+        mouvement({ id: 'm-1', date: '2026-03-20', montant: -70, piece_id: 'p-deux', mode_reglement: modes[0] }),
+        mouvement({ id: 'm-2', date: '2026-03-20', montant: -30, reglement_groupe: true, mode_reglement: modes[1] }),
+      ]
+      const parts: PartReglee[] = [{ ligne_bancaire_id: 'm-2', piece_id: 'p-deux', montant: -50 }]
+      const paiements = paiementsDesPieces(mouvements, parts, [], [])
+      return {
+        brouillon: lignesDeLaPiece(p, '606100', false, false, paiements), pieces: [p], aNouveaux: [], mouvements,
+        ventes: SANS_ECRITURE_DE_VENTE, caisse: OPERATIONS_DE_CAISSE_ABSENTES, entrees: entreesVides({ paiements }),
+      }
+    }
+    const deuxModes = jeu(['Carte bancaire', 'Chèque'])
+    const f = fec(deuxModes, 'tresorerie', exportes(deuxModes.entrees))
+    expect(new Set(colonnes(f).slice(1).map((r) => r[2]))).toEqual(new Set(['AC00001']))
+    expect(new Set(colonnes(f).slice(1).map((r) => r[19]))).toEqual(new Set(['Banque']))
+    const unMode = jeu(['Chèque', 'Chèque'])
+    expect(new Set(colonnes(fec(unMode, 'tresorerie', exportes(unMode.entrees))).slice(1).map((r) => r[19]))).toEqual(new Set(['Chèque']))
+    const unSansMode = jeu(['Chèque', null])
+    expect(new Set(colonnes(fec(unSansMode, 'tresorerie', exportes(unSansMode.entrees))).slice(1).map((r) => r[19]))).toEqual(new Set(['Banque']))
+  })
+})
 
 describe('200 dossiers tirés (graine fixe), de toutes les sortes', () => {
   it('chaque fichier passe les contrôles de la DGFiP et de la conception ; aucun nom ; le total de chaque compte intact', () => {

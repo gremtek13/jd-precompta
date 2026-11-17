@@ -1,5 +1,6 @@
 import type { DemandeAcompte } from './acompteDevis'
 import type { CodeStatutRecu, MontantRecu } from './cdarRecu'
+import type { ModeDUnMouvement } from './modeDeReglement'
 
 export type Statut = 'a_valider' | 'validee'
 export type TypePiece = 'achat' | 'vente' | 'note_frais' | 'autre'
@@ -334,6 +335,13 @@ export interface LigneBancaire {
   // (`lignes_bancaires_date_valeur_proche`), figée avec le mouvement par la validation de son exercice. Facultative ici :
   // absente avant la migration, et d'une lecture par liste de colonnes qui ne la nomme pas. Aucun moteur ne la lit encore.
   date_valeur?: string | null
+  // LE MODE DE RÈGLEMENT que le cabinet a posé sur ce mouvement (EXP58-Q1, migration `mode_de_reglement_des_mouvements`,
+  // PRÉPARÉE ; lib/modeDeReglement.ts) : l'un des sept de `lignes_bancaires_mode_reglement_liste`, proposé par le libellé de la
+  // banque mais jamais écrit sans son clic — la base ne l'écrit que par `poser_modes_de_reglement` (la restauration
+  // exceptée) —, nul tant que rien n'est posé (le FEC écrit alors « Banque »), figé avec le mouvement par la validation de son
+  // exercice. Facultatif ici : absent avant la migration, et d'une lecture par liste de colonnes qui ne le nomme pas — une
+  // fiche qui ne l'a pas lu n'offre aucun geste (`modeDeLaFiche`).
+  mode_reglement?: ModeDUnMouvement | null
   created_at: string
 }
 

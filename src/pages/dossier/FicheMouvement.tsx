@@ -26,6 +26,8 @@ import {
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
 import { DATE_DE_VALEUR_PREVUE } from '../../lib/dateDeValeur'
+import { MODE_DE_REGLEMENT_PREVU, modeDeLaFiche, type ModeDUnMouvement } from '../../lib/modeDeReglement'
+import ModeDeReglementDuMouvement from '../../components/ModeDeReglementDuMouvement'
 import { euros, type CaisseDeLaFiche } from '../../lib/caisseEcran'
 import { JOURS_DU_VIREMENT_INTERNE as JOURS_EN_FACE, type CompteDeLaFiche } from '../../lib/virementsInternes'
 import { libelleDitUnVersementDEspeces } from '../../lib/controlesDeLaCaisse'
@@ -324,6 +326,14 @@ interface FicheMouvementProps {
     erreur: string | null
     onAssocier: (groupe: GroupeAAssocier) => void
     onDefaire: (mouvementId: string) => void
+  }
+  // LE MODE DE RÈGLEMENT DE CE MOUVEMENT (EXP58-Q1 ; lib/modeDeReglement.ts, components/ModeDeReglementDuMouvement.tsx) : le
+  // mode posé, celui que le libellé propose, et le geste qui le pose, le corrige ou le retire — l'onglet l'écrit par sa
+  // fonction seule, sous le verrou des écritures du relevé (`occupe`), et dit ici le refus de la base. Rien tant que
+  // `MODE_DE_REGLEMENT_PREVU` est baissé, ni sur un dossier en engagement.
+  modeDeReglement: {
+    erreur: string | null
+    onPoser: (mode: ModeDUnMouvement | null) => void
   }
 }
 
@@ -664,7 +674,7 @@ export default function FicheMouvement({
   restesARegler, paiementsDeLaCaisseIncomplets, caisse, onEcrireCompteBilan, onRetirerCompteBilan, compteBancaire, onConfirmerVirementInterne,
   suivisTva, declarationsTvaIncompletes, releveIncomplet, onRapprocherDeclarationTva, onRetirerDeclarationTva,
   dossierId, envoisDuClient, accesDuReleve, piecesIncompletes, onDemanderAuClient,
-  onEcarterProposition, onSupprimerMessage, assuranceMaladie,
+  onEcarterProposition, onSupprimerMessage, assuranceMaladie, modeDeReglement,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
@@ -2427,6 +2437,15 @@ export default function FicheMouvement({
           occupe={occupe}
           onDemander={onDemanderAuClient}
           onSupprimer={onSupprimerMessage}
+        />
+
+        {/* Le mode de règlement (EXP58-Q1) : sur tout mouvement, classé ou non — un fait du relevé, que le FEC écrit. */}
+        <ModeDeReglementDuMouvement
+          fiche={modeDeLaFiche(ligne, figeePar, modeComptable, MODE_DE_REGLEMENT_PREVU)}
+          montant={ligne.montant}
+          occupe={occupe}
+          erreur={modeDeReglement.erreur}
+          onPoser={modeDeReglement.onPoser}
         />
 
         {/* Traçabilité de l'import (voir audit ergonomie) — surtout utile quand le libellé est retombé

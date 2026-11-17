@@ -1206,6 +1206,14 @@ export const TOUS_LES_LIENS: readonly Relation[] = [...RELATIONS, ...LIENS_GARDE
 // aucun écart. Le dossier précède ses accès ; le droit « Ventes » d'un accès ne retient que la BAISSE du réglage, qu'aucune
 // restauration ne fait. Rien ne change à l'ordre ; `sauvegardeVenteFacturee.test.ts` le garde.
 //
+// Le mode de règlement d'un mouvement (EXP58-Q1 ; migration `mode_de_reglement_des_mouvements`, PRÉPARÉE ;
+// `MODE_DE_REGLEMENT_PREVU`, lib/modeDeReglement.ts) : une colonne de `lignes_bancaires`, sans clé, recopiée avec sa ligne
+// entière (`select('*')`) et réinsérée TELLE — elle n'est pas une colonne générée, et sa garde, qui refuse à toute insertion
+// un mouvement qui porte un mode, laisse passer le super-administrateur qui restaure. Ni table, ni relation, ni rang : le plan
+// est le même dans les deux états du drapeau, et rien ne le nomme. Une sauvegarde faite avant la migration ne porte pas la
+// colonne : la base la laisse nulle, le FEC écrit « Banque » ; une sauvegarde d'après ne se restaure que dans une base qui la
+// porte (comme toute colonne). `sauvegardeModeDeReglement.test.ts` le garde.
+//
 // La caisse (ligne 26.6, étape C2) vient juste avant le brouillon, qui la cite (`operation_caisse_id`) : après les pièces
 // qu'un paiement cite et les catégories d'une recette. Ses opérations partent par VAGUES (`remplace_id`) : la garde, à
 // l'insertion, exige l'opération remplacée déjà écrite, dans le même dossier. Ni la garde ni les déclencheurs de la caisse
