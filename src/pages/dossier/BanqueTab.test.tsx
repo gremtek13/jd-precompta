@@ -153,6 +153,12 @@ vi.mock('../../lib/comptesBancaires', async (original) => {
   const module = await original<typeof import('../../lib/comptesBancaires')>()
   return { ...module, get COMPTES_BANCAIRES_PREVUS() { return drapeauDesComptes.leve } }
 })
+// La date de valeur (EXP58-Q4) : baissé, l'import lit, montre et écrit ce qu'il écrivait hier ; levé, il la garde.
+const drapeauDateDeValeur = vi.hoisted(() => ({ leve: false }))
+vi.mock('../../lib/dateDeValeur', async (original) => {
+  const module = await original<typeof import('../../lib/dateDeValeur')>()
+  return { ...module, get DATE_DE_VALEUR_PREVUE() { return drapeauDateDeValeur.leve } }
+})
 // Le justificatif qu'on ouvre depuis la fiche d'un mouvement : le chemin demandé, sans ouvrir d'onglet.
 const justificatifs = vi.hoisted(() => ({ ouverts: [] as string[] }))
 vi.mock('../../lib/depot', () => ({
@@ -547,6 +553,7 @@ function reinitialiser() {
   faux.comptesBancaires = []
   faux.updatesComptes = []
   drapeauDesComptes.leve = false
+  drapeauDateDeValeur.leve = false
   faux.muet = {}
   faux.lignesPdf = []
   faux.ecritures = []
@@ -7031,5 +7038,88 @@ describe('BanqueTab — le tri des mouvements par un clic sur l’en-tête', () 
     await act(async () => { within(volet()).getByRole('button', { name: 'Mouvement suivant' }).click() })
     expect(within(volet()).getByText('Mouvement 3 sur 3')).toBeTruthy()
     expect(within(volet()).getAllByText('PRLV BETA').length).toBeGreaterThan(0)
+  })
+})
+
+// EXP58-Q4 : la date de valeur d'un relevé, gardée avec le mouvement sous `DATE_DE_VALEUR_PREVUE`. Le câblage que les modules ne
+// voient pas : la colonne reconnue dans le réglage, montrée dans l'aperçu, écrite dans le lot ; le dédoublonnage qui ne la
+// regarde pas ; la ligne discrète de la fiche d'un mouvement.
+describe('BanqueTab — la date de valeur d’un relevé (EXP58-Q4)', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  const CSV_VALEUR = 'Date;Date de valeur;Libellé;Montant\n02/06/2025;03/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n'
+    + '05/06/2025;06/06/2025;VIR CLIENT DUPONT;250,00\n'
+
+  async function deposer() {
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File([CSV_VALEUR], 'releve-juin.csv')] } }) })
+    return screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+  }
+
+  it('drapeau baissé : ni réglage, ni colonne dans l’aperçu, ni date_valeur dans le lot — l’import d’hier', async () => {
+    reinitialiser()
+    rendre()
+    const bouton = await deposer()
+    expect(document.getElementById('colDateValeur')).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: 'Date de valeur' })).toBeNull()
+    await act(async () => { bouton.click() })
+    const lot = faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+    expect(lot).toHaveLength(1)
+    expect(lot[0].valeur).toEqual([expect.objectContaining({ libelle: 'VIR CLIENT DUPONT', montant: 250 })])
+    expect(lot[0].valeur as unknown as Record<string, unknown>[]).toEqual([expect.not.objectContaining({ date_valeur: expect.anything() })])
+    expect(Object.keys((lot[0].valeur as unknown as Record<string, unknown>[])[0])).not.toContain('date_valeur')
+  })
+
+  it('drapeau levé : la colonne reconnue, montrée avant le clic, écrite avec le mouvement ; le doublon reconnu sans elle', async () => {
+    reinitialiser()
+    drapeauDateDeValeur.leve = true
+    rendre()
+    const bouton = await deposer()
+    expect((document.getElementById('colDateValeur') as HTMLSelectElement).value).toBe('1')
+    expect(screen.getByRole('columnheader', { name: 'Date de valeur' })).toBeTruthy()
+    expect(screen.getByText('Date de valeur gardée sur 2 opération(s).')).toBeTruthy()
+    await act(async () => { bouton.click() })
+    const lot = faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+    expect(lot).toHaveLength(1)
+    // Le prélèvement du 02/06 est déjà en base (mêmes date, libellé et montant) : il se reconnaît, la date de valeur à part.
+    expect(lot[0].valeur).toEqual([expect.objectContaining({ libelle: 'VIR CLIENT DUPONT', montant: 250, date_valeur: '2025-06-06' })])
+    expect(alertes).toEqual([expect.stringContaining('1 déjà présente(s), ignorée(s)')])
+  })
+
+  it('drapeau levé : « Aucune » ne garde rien, et la colonne du libellé se refuse', async () => {
+    reinitialiser()
+    drapeauDateDeValeur.leve = true
+    rendre()
+    const bouton = await deposer()
+    const choix = document.getElementById('colDateValeur') as HTMLSelectElement
+    await act(async () => { fireEvent.change(choix, { target: { value: '2' } }) })
+    expect(screen.getByText(/La colonne 3 est déjà lue comme le libellé/)).toBeTruthy()
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { fireEvent.change(choix, { target: { value: '' } }) })
+    expect(screen.queryByRole('columnheader', { name: 'Date de valeur' })).toBeNull()
+    await act(async () => { bouton.click() })
+    const lot = faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+    expect(lot).toHaveLength(1)
+    expect(Object.keys((lot[0].valeur as unknown as Record<string, unknown>[])[0])).not.toContain('date_valeur')
+  })
+
+  it('la fiche d’un mouvement dit sa date de valeur sous le drapeau, et rien sans lui', async () => {
+    reinitialiser()
+    faux.lignes = [ligneDeTest({ date_valeur: '2025-06-03' })]
+    rendre()
+    await ouvrir()
+    expect(within(volet()).queryByText(/Date de valeur selon la banque/)).toBeNull()
+  })
+
+  it('… levé : une ligne discrète', async () => {
+    reinitialiser()
+    drapeauDateDeValeur.leve = true
+    faux.lignes = [ligneDeTest({ date_valeur: '2025-06-03' })]
+    rendre()
+    await ouvrir()
+    expect(within(volet()).getByText('Date de valeur selon la banque : 03/06/2025')).toBeTruthy()
   })
 })

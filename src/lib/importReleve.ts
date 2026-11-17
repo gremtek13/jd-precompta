@@ -1,4 +1,5 @@
 import { libelleDeLigne, montantDeLigne, parseDateBancaire, type ColumnMapping, type ReglageDesMontants } from './csv'
+import { lireDateDeValeur, type DatesDeValeurDuFichier, type LectureDeLaDateDeValeur } from './dateDeValeur'
 import { formatDate } from './format'
 import { lignesATrancher, lignesDeSolde } from './soldeReleve'
 
@@ -15,6 +16,9 @@ export interface ReglageDeLImport extends ReglageDesMontants {
   colLibelle: number
   hasHeader: boolean
   colSolde: number | null
+  // La colonne de la DATE DE VALEUR (EXP58-Q4, `lib/dateDeValeur.ts`), facultative : absente ou nulle, aucune — l'import
+  // d'hier, à l'octet. L'écran ne la pose que sous `DATE_DE_VALEUR_PREVUE`.
+  colDateValeur?: number | null
 }
 
 // Un réglage qui ne peut que faire entrer de faux montants se refuse avant l'import, et le dit.
@@ -27,6 +31,15 @@ export function refusDuReglage(r: ReglageDeLImport): string | null {
   if (r.format === 'debit_credit' && r.colDebit === r.colCredit) {
     return 'La colonne Débit et la colonne Crédit sont la même : choisis deux colonnes distinctes.'
   }
+  // La date de valeur lue dans une colonne déjà lue pour autre chose garderait une fausse date (celle de l'opération) ou
+  // n'en lirait aucune.
+  if (r.colDateValeur != null) {
+    const lue = r.colDateValeur === r.colDate ? 'la date d’opération' : r.colDateValeur === r.colLibelle ? 'le libellé'
+      : montants.includes(r.colDateValeur) ? 'un montant' : r.colDateValeur === r.colSolde ? 'le solde courant' : null
+    if (lue) {
+      return `La colonne ${r.colDateValeur + 1} est déjà lue comme ${lue} : choisis la colonne de la date de valeur, ou « Aucune ».`
+    }
+  }
   return null
 }
 
@@ -37,6 +50,7 @@ export function mappingDuReglage(r: ReglageDeLImport): ColumnMapping {
   return {
     colDate: r.colDate, colLibelle: r.colLibelle, hasHeader: r.hasHeader,
     colMontant: r.format === 'signe' ? r.colMontant : r.colDebit, autresMontants: autres,
+    ...(r.colDateValeur == null ? {} : { colDateValeur: r.colDateValeur }),
   }
 }
 
@@ -45,8 +59,9 @@ export function mappingDuReglage(r: ReglageDeLImport): ColumnMapping {
 export type RaisonDEcart = 'date illisible' | 'sans montant' | 'montant illisible' | 'débit et crédit à la fois' | 'montant nul'
 const ORDRE_DES_RAISONS: readonly RaisonDEcart[] = ['date illisible', 'sans montant', 'montant illisible', 'débit et crédit à la fois', 'montant nul']
 
+// `valeur` : sur une opération, ce que la colonne de la date de valeur en dit — absente quand le réglage n'en lit aucune.
 export type LigneInterpretee =
-  | { index: number; nature: 'operation' | 'solde' | 'a trancher'; date: string; libelle: string; montant: number }
+  | { index: number; nature: 'operation' | 'solde' | 'a trancher'; date: string; libelle: string; montant: number; valeur?: LectureDeLaDateDeValeur }
   | { index: number; nature: 'ecartee'; libelle: string; raison: RaisonDEcart }
 
 export interface OperationDuFichier {
@@ -55,6 +70,8 @@ export interface OperationDuFichier {
   montant: number
   // La ligne telle qu'elle est dans le fichier, gardée à part (`libelle_brut`) pour remonter à la source.
   brut: string
+  // La date de valeur gardée (`date_valeur`), ou `null` — absente quand le réglage n'en lit aucune (l'import d'hier).
+  dateValeur?: string | null
 }
 
 // Une ligne nommée à l'écran : un solde retenu, ou une ligne à trancher. `ligne` : la ligne du fichier elle-même, qui sert
@@ -75,6 +92,8 @@ export interface ReleveInterprete {
   soldesNommes: LigneNommee[]
   aTrancher: (LigneNommee & { decision: DecisionDeSolde | null })[]
   ecartees: { raison: RaisonDEcart; nombre: number }[]
+  // Le compte des dates de valeur des opérations — absent quand le réglage n'en lit aucune.
+  datesDeValeur?: DatesDeValeurDuFichier
 }
 
 // Les lignes du fichier (en-tête retiré), une à une : une opération, un solde, une ligne à trancher, ou une ligne écartée
@@ -92,6 +111,8 @@ export function interpreterReleve(
   const soldesNommes: LigneNommee[] = []
   const aTrancher: ReleveInterprete['aTrancher'] = []
   const compte = new Map<RaisonDEcart, number>()
+  const colValeur = reglage.colDateValeur ?? null
+  const datesDeValeur: DatesDeValeurDuFichier = { gardees: 0, sans: 0, illisibles: 0, eloignees: 0 }
   const ecarter = (index: number, libelle: string, raison: RaisonDEcart) => {
     lignes.push({ index, nature: 'ecartee', libelle, raison })
     compte.set(raison, (compte.get(raison) ?? 0) + 1)
@@ -121,11 +142,23 @@ export function interpreterReleve(
       continue
     }
     if (montant === 0) { ecarter(index, libelle, 'montant nul'); continue }
-    lignes.push({ index, nature: 'operation', date, libelle, montant })
-    operations.push({ date, libelle, montant, brut: row.join(' | ') })
+    if (colValeur == null) {
+      lignes.push({ index, nature: 'operation', date, libelle, montant })
+      operations.push({ date, libelle, montant, brut: row.join(' | ') })
+      continue
+    }
+    // La date de valeur, lue comme la date d'opération et jamais devinée : vide, il n'y en a pas ; illisible ou trop loin
+    // de la date d'opération, elle s'écarte et se compte, et le mouvement s'importe sans elle.
+    const valeur = lireDateDeValeur(row[colValeur] ?? '', date)
+    if (valeur === null) datesDeValeur.sans++
+    else if ('date' in valeur) datesDeValeur.gardees++
+    else if (valeur.ecart === 'illisible') datesDeValeur.illisibles++
+    else datesDeValeur.eloignees++
+    lignes.push({ index, nature: 'operation', date, libelle, montant, valeur })
+    operations.push({ date, libelle, montant, brut: row.join(' | '), dateValeur: valeur && 'date' in valeur ? valeur.date : null })
   }
   const ecartees = ORDRE_DES_RAISONS.filter((r) => compte.has(r)).map((raison) => ({ raison, nombre: compte.get(raison)! }))
-  return { lignes, operations, soldes, soldesNommes, aTrancher, ecartees }
+  return { lignes, operations, soldes, soldesNommes, aTrancher, ecartees, ...(colValeur == null ? {} : { datesDeValeur }) }
 }
 
 // Le refus de l'import tant qu'une ligne à trancher ne l'est pas, dit avant le clic.

@@ -195,6 +195,10 @@ export interface ColumnMapping {
   // Les AUTRES colonnes de montants du fichier — le débit et le crédit d'un format à deux colonnes, le solde courant — :
   // comme la date et le montant, elles n'entrent jamais dans un libellé reconstitué (`libelleDeLigne`). Absent : aucune.
   autresMontants?: readonly number[]
+  // La colonne de la DATE DE VALEUR quand l'import la garde (EXP58-Q4, `lib/dateDeValeur.ts`, sous `DATE_DE_VALEUR_PREVUE`) :
+  // lue dans son champ comme la date et les montants, elle n'entre plus dans un libellé reconstitué. Absente ou nulle : la
+  // colonne n'est pas lue pour elle-même, et un libellé reconstitué la reprend comme hier.
+  colDateValeur?: number | null
 }
 
 // Deux façons d'écrire le montant d'un mouvement : une colonne signée (négative au débit), ou deux colonnes, Débit et
@@ -312,6 +316,12 @@ export function colonnesParEntete(rows: string[][]): EnteteReconnue | null {
     if (reconnues >= 2 && (trouve.montant !== null || trouve.debit !== null || trouve.credit !== null)) return trouve
   }
   return null
+}
+
+// La colonne de la DATE DE VALEUR que l'en-tête nomme (« Date de valeur », « Date valeur »), ou `null` : sans en-tête qui la
+// nomme, une seconde colonne de dates ne se devine pas (le cabinet la choisit dans le réglage des colonnes). EXP58-Q4.
+export function colonneDeLaDateDeValeur(rows: string[][]): number | null {
+  return colonnesParEntete(rows)?.dateValeur ?? null
 }
 
 // Une colonne de SOLDE COURANT se reconnaît, sans en-tête, à son arithmétique : d'une ligne à la suivante, elle varie du
@@ -497,7 +507,8 @@ export function libelleDeLigne(row: string[], mapping: ColumnMapping): string {
   if (choisi) return choisi
   const autres = mapping.autresMontants ?? []
   return row
-    .filter((_, i) => i !== mapping.colDate && i !== mapping.colMontant && i !== mapping.colLibelle && !autres.includes(i))
+    .filter((_, i) => i !== mapping.colDate && i !== mapping.colMontant && i !== mapping.colLibelle && !autres.includes(i)
+      && i !== mapping.colDateValeur)
     .map((v) => (v ?? '').trim())
     .filter(Boolean)
     .join(' ')

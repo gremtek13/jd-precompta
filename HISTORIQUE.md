@@ -53679,3 +53679,17 @@ hors de son dossier (`cheminDuDossier`, rejugé à la lecture), un fichier illis
 avant de partir) dit les comptes, les journaux, les refus, le nombre et le poids des fichiers, et les deux avertissements
 (doublons, à-nouveaux). Restent l'essai d'import chez l'expert-comptable (EXP-E1, E4, E5), la règle de nom des pièces dans le
 zip (non trouvée : à la racine pour l'instant), EXP-Q2 à Q5, puis la levée du drapeau.
+### 17/11/2026 — EXP58-Q4 : LA DATE DE VALEUR GARDÉE À L'IMPORT (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) Le cabinet a dit (A) : garder la date de valeur avant l'import réel du 20/11 (un
+relevé importé sans elle ne se réimporte pas), son emploi au 31/12 plus tard (L4). `20261117170000_date_de_valeur_des_mouvements`
+(par l'outil : ni retrait, ni vidage) : `lignes_bancaires.date_valeur`, `date` nullable sans défaut, et la borne
+`lignes_bancaires_date_valeur_proche` (92 jours avant ou après la date d'opération : CMF L. 133-14 et L. 131-1-1, un débit
+différé de carte) ; aucune fonction touchée : `garder_mouvement_valide` compare la ligne entière (`to_jsonb`), la date s'y fige
+d'elle-même (corps relu en tête et en fin), les empreintes ne lisent pas `lignes_bancaires`, une fonction plpgsql déjà en cache
+voit la colonne. Le retour (à coller) refuse dès qu'une date est gardée. L'application derrière `DATE_DE_VALEUR_PREVUE` baissé
+(`lib/dateDeValeur.ts`) : la colonne nommée par l'en-tête ou choisie, DTAVAIL d'un OFX, montrée avant le clic, écartée et
+comptée illisible ou hors borne, écrite avec le mouvement ; hors du dédoublonnage. Piège trouvé : une opération OFX plus courte
+que les autres serait prise pour un solde (`lignesDeSolde`) — un fichier qui porte DTAVAIL rend toutes ses opérations sur
+quatre colonnes. Copie de `replique_227` portée à 236 : l'essai 17/17, EN ATTENTE sans elle ; vingt et un essais voisins
+identiques avec et sans la migration ; simulée : dérive 237, socle 83 (`0d869764…`), inventaire 3 222, égaux des deux côtés.

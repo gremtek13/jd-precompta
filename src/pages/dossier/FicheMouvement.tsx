@@ -19,6 +19,7 @@ import {
 } from '../../lib/echeanceEmprunt'
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
+import { DATE_DE_VALEUR_PREVUE } from '../../lib/dateDeValeur'
 import { euros, type CaisseDeLaFiche } from '../../lib/caisseEcran'
 import { JOURS_DU_VIREMENT_INTERNE as JOURS_EN_FACE, type CompteDeLaFiche } from '../../lib/virementsInternes'
 import { libelleDitUnVersementDEspeces } from '../../lib/controlesDeLaCaisse'
@@ -2396,6 +2397,10 @@ export default function FicheMouvement({
         {/* Traçabilité de l'import (voir audit ergonomie) — surtout utile quand le libellé est retombé
             sur le générique « Mouvement bancaire » : de quoi retrouver le fichier et la ligne d'origine
             sans rouvrir le relevé. Absente sur tout import antérieur à cet ajout. */}
+        {/* La date de valeur que le relevé portait (EXP58-Q4) : une ligne discrète, que rien ne calcule encore. */}
+        {DATE_DE_VALEUR_PREVUE && typeof ligne.date_valeur === 'string' && (
+          <p className="fiche-mouvement-origine">Date de valeur selon la banque : {formatDate(ligne.date_valeur)}</p>
+        )}
         {(ligne.source_fichier || (ligne.libelle_brut && ligne.libelle_brut !== ligne.libelle)) && (
           <p className="fiche-mouvement-origine">
             {ligne.source_fichier && <>Importé depuis « {ligne.source_fichier} »</>}
