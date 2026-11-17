@@ -53612,3 +53612,18 @@ sur huit chiffres, un journal par banque, ModeRglt en une lettre, NatOp et IdCli
 pièces au profil ACD, sur la numérotation existante ; EXP2 ses variantes ; EXP3 Quadra ; EXP4 TRA ; les API après le MVP. Sept
 demandes à l'expert-comptable (EXP-E1 à E7), huit questions au cabinet (EXP-Q1 à Q8). Fermés à la session (403) : Qonto, iDocus,
 EBP, Chaintrust, lus par résumé de recherche.
+### 17/11/2026 — LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT
+
+(Agent architecte ; aucun code, aucune base.) L'expert-comptable a répondu à une cinquantaine de questions (FEC22-E, 2035S-E,
+2035E-7 à 13, 2035SD-E, PIECES-E1, EL-E, VF5 § 8, NOE-E2, B9, EXD-Q4, la réserve légale) ; son logiciel est ACD, dont un FEC de
+BNC a 22 colonnes, NatOp et IdClient vides, ModeRglt en une lettre. Chaque réponse confrontée au code (`docs/conceptions/58-…`).
+Confirmées : les vides de DateRglt et ModeRglt (le drapeau `CHAMPS_BNC_EXPORTES` peut se lever, après le mode), le FEC validé,
+les journaux, le plan de 2026, la date du crédit d'un chèque, la CSG au prorata du payé, le seuil de 500 € sur le TTC d'un
+exonéré, l'assurance emprunteur, DC, B9, pas d'exercice décalé ni de réserve en BNC. Contredites : « Banque » (il veut le mode
+réel : FEC22-Q2), IdClient (un code par client : FEC22-Q4), la note de frais rapprochée de son remboursement (en trésorerie, tout
+passe par le compte de l'exploitant), le bien repris (reprendre le tableau d'avant, pas recalculer), la dotation du véhicule au
+barème (compte de l'exploitant / 28, hors de CH), la CFP et la CURPS (autres impôts, BS, non BK), l'écart d'un débit (frais
+divers, non 627), la dépense de janvier comptée en N (EL-Q3). Ambiguës, gardées telles quelles : la devise, les repas, le cadre
+des exonérations (la somme proposée abandonnée), l'impayé, le prorata de l'estimation. Sources relues : la notice 2035-NOT-SD
+2026 (renvoi 10, le barème qui couvre l'amortissement, la ligne 13 ouverte) ; le BOFiP injoignable. Quatre lots (L1 avant le
+20/11, sans base sauf la date de valeur ; L2 avant la validation de 2025) et cinq questions au cabinet, EXP58-Q1 à Q5.
