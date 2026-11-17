@@ -46,6 +46,11 @@ QUATRE MIGRATIONS DU 02/11/2026 » ; le plan Pro de Supabase sauvegarde la base 
 le geste du cabinet fait ; les fichiers du stockage n'y sont pas : le pack et la copie des fichiers les portent). La case « MVP » de la feuille de route marque les lignes qui y comptent, souvent pour une partie,
 et rien d'autre ne passe avant elles → « LE MVP : UN PREMIER DOSSIER BNC RÉEL, VERS LA MI-DÉCEMBRE 2026 ».
 
+**La priorité, fixée par le cabinet le 17/11/2026** : l'offre « précomptabilité + plateforme agréée + assurance maladie
+(NOEMIE) + envoi vers le logiciel de l'expert-comptable » pour les BNC de santé passe devant, sans abandonner le plan
+initial ; un choix qui fermerait la porte aux autres professions ou aux sociétés se signale au cabinet avant d'être fait.
+L'expert-comptable ne se sollicite plus : ce qui manque se cherche dans les sources publiques → « LA PRIORITÉ DU 17/11/2026 ».
+
 ## État des données (19/09/2026) — à lire avant tout chiffre
 
 **La base ne contient que des données FICTIVES**, et un seul dossier est vivant : `test` (`001c7ed7`, créé le
