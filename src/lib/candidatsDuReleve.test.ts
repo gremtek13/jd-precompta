@@ -87,7 +87,7 @@ function sources(mouvements: readonly LigneBancaire[], encaissements: readonly E
 }
 const lue = (s: SourcesDesGestes): LectureDesGestes => ({ dossierId: D, etat: 'lue', sources: s })
 const candidatsDe = (s: SourcesDesGestes, annees: readonly number[] = []): CandidatsDeLaVente =>
-  candidatsDeLaVente(ventesDuReleve(true, D, lue(s), ACCES), lue(s), annees)
+  candidatsDeLaVente(ventesDuReleve(true, D, lue(s), ACCES), lue(s), annees, new Set())
 
 // Un crédit seul face aux factures sources ouvertes, et ses candidats.
 function surLeCredit(m: LigneBancaire, encaissements: readonly EncaissementDuMouvementLu[] = []) {
@@ -125,13 +125,13 @@ describe('candidatsDeLaVente : les deux listes, et la retenue de VF5a1', () => {
 
   it('pas de candidat sans des ventes lues en entier, du même dossier, ni sur un dossier qui n’a pas basculé', () => {
     const s = sources([])
-    expect(candidatsDeLaVente({ etat: 'sans_objet' }, lue(s), [])).toBe(AUCUN_CANDIDAT)
-    expect(candidatsDeLaVente({ etat: 'en_cours' }, lue(s), [])).toBe(AUCUN_CANDIDAT)
-    expect(candidatsDeLaVente({ etat: 'incomplete', motif: 'refusée' }, lue(s), [])).toBe(AUCUN_CANDIDAT)
+    expect(candidatsDeLaVente({ etat: 'sans_objet' }, lue(s), [], new Set())).toBe(AUCUN_CANDIDAT)
+    expect(candidatsDeLaVente({ etat: 'en_cours' }, lue(s), [], new Set())).toBe(AUCUN_CANDIDAT)
+    expect(candidatsDeLaVente({ etat: 'incomplete', motif: 'refusée' }, lue(s), [], new Set())).toBe(AUCUN_CANDIDAT)
     const v = ventesDuReleve(true, D, lue(s), ACCES)
-    expect(candidatsDeLaVente(v, null, [])).toBe(AUCUN_CANDIDAT)
-    expect(candidatsDeLaVente(v, { dossierId: D, etat: 'incomplete', motif: 'refusée' }, [])).toBe(AUCUN_CANDIDAT)
-    expect(candidatsDeLaVente(v, { ...lue(s), dossierId: 'autre' }, [])).toBe(AUCUN_CANDIDAT)
+    expect(candidatsDeLaVente(v, null, [], new Set())).toBe(AUCUN_CANDIDAT)
+    expect(candidatsDeLaVente(v, { dossierId: D, etat: 'incomplete', motif: 'refusée' }, [], new Set())).toBe(AUCUN_CANDIDAT)
+    expect(candidatsDeLaVente(v, { ...lue(s), dossierId: 'autre' }, [], new Set())).toBe(AUCUN_CANDIDAT)
     expect(AUCUN_CANDIDAT).toEqual({ facturesSourcesOuvertes: [], encaissementsSansMouvement: [], juge: null })
   })
 
@@ -141,6 +141,28 @@ describe('candidatsDeLaVente : les deux listes, et la retenue de VF5a1', () => {
     const m = mouvement({ id: 'm', montant: 600 })
     expect(candidatsDuMouvement(candidatsDe(sources([m])), m).map((x) => x.id)).toEqual(['f1'])
     expect(candidatsDuMouvement(candidatsDe(sources([{ ...m, dossier_id: 'autre' }])), m)).toEqual([])
+  })
+})
+
+// NOE5-Q4 (A) : un crédit associé à un paiement de l'assurance maladie n'est candidat d'aucune vente ; des associations
+// illisibles, et aucun crédit ne se propose — mais les lots le tiennent toujours à l'écart (le côté fermé des deux).
+describe('candidatsDeLaVente : les crédits associés à un paiement de l’assurance maladie', () => {
+  const m = mouvement({ id: 'm', montant: 600 })
+  const avec = (associes: ReadonlySet<string> | null) =>
+    candidatsDeLaVente(ventesDuReleve(true, D, lue(sources([m])), ACCES), lue(sources([m])), [], associes)
+
+  it('un crédit associé n’a aucun candidat, et n’attend aucune vente au lot ; un autre crédit, si', () => {
+    expect(candidatsDuMouvement(avec(new Set()), m).map((x) => x.id)).toEqual(['f1'])
+    expect(candidatsDuMouvement(avec(new Set(['m'])), m)).toEqual([])
+    expect(justificatifDeLaVente(avec(new Set(['m'])), m)).toBeNull()
+    expect(candidatsDuMouvement(avec(new Set(['autre'])), m).map((x) => x.id)).toEqual(['f1'])
+  })
+
+  it('des associations illisibles : rien ne se propose, et le crédit reste hors des lots', () => {
+    expect(candidatsDuMouvement(avec(null), m)).toEqual([])
+    expect(justificatifDeLaVente(avec(null), m)).toBe(JUSTIFICATIF_FACTURE)
+    expect(gestesDuCredit(ventesDuReleve(true, D, lue(sources([m])), ACCES), lue(sources([m])), m, [], PLAN_PAR_DEFAUT, new Set(['m'])))
+      .toEqual(gestesDuCredit(ventesDuReleve(true, D, lue(sources([m])), ACCES), lue(sources([m])), m, [], PLAN_PAR_DEFAUT, null))
   })
 })
 
@@ -407,7 +429,7 @@ describe('les lots sur un crédit qu’une facture source pourrait régler', () 
   const RELEVE = [RESERVE, CANDIDAT, LIBRE]
   const s = sources(RELEVE, [encaissement({ id: 'e3', facture_id: 'f3', montant: 300, ligne_bancaire_id: 'm-res' })])
   const VENTES = ventesDuReleve(true, D, lue(s), ACCES)
-  const CANDIDATS = candidatsDeLaVente(VENTES, lue(s), [])
+  const CANDIDATS = candidatsDeLaVente(VENTES, lue(s), [], new Set())
   const HORS = mouvementsHorsDesLots(VENTES)
   const AVEC = horsDesLotsAvecLesCandidats(HORS, CANDIDATS, RELEVE)
   const MOTS_DU_RESERVE = REFUS_GARDE_MOUVEMENTS[3].modele.replace('%', 'F2026-0016')
@@ -486,7 +508,7 @@ describe('la fiche : les candidats en tête d’un crédit libre ; l’ordre et 
     const m = mouvement({ id: 'm', montant: 299, libelle: 'REMISE CHEQUE LIBRAIRIE ROCHER' })
     const e = encaissement({ id: 'e3', facture_id: 'f3', montant: 300, moyen: 'cheque' })
     const s = sources([m], [e])
-    const g = gestesDuCredit(ventesDuReleve(true, D, lue(s), ACCES), lue(s), m, [], PLAN_PAR_DEFAUT)
+    const g = gestesDuCredit(ventesDuReleve(true, D, lue(s), ACCES), lue(s), m, [], PLAN_PAR_DEFAUT, new Set())
     if (g.etat !== 'libre') throw new Error(g.etat)
     expect(g.complement.proposes.map((x) => x.id)).toEqual(['e3'])
     expect(g.complement.rattachables.map((x) => [x.id, x.clientCite])).toEqual([['e3', true]])
@@ -497,13 +519,13 @@ describe('la fiche : les candidats en tête d’un crédit libre ; l’ordre et 
     ]
     const remise = mouvement({ id: 'm', montant: 300, libelle: 'REMISE CHEQUE LIBRAIRIE ROCHER' })
     const sr = sources([remise], deux)
-    const gl = gestesDuCredit(ventesDuReleve(true, D, lue(sr), ACCES), lue(sr), remise, [], PLAN_PAR_DEFAUT)
+    const gl = gestesDuCredit(ventesDuReleve(true, D, lue(sr), ACCES), lue(sr), remise, [], PLAN_PAR_DEFAUT, new Set())
     if (gl.etat !== 'libre') throw new Error(gl.etat)
     expect(gl.complement.rattachables.map((x) => x.id)).toEqual(['eb', 'ea'])
     // Un crédit réservé dont il reste à faire : le complément, sans candidat en tête.
     const reserve = mouvement({ id: 'm', montant: 900 })
     const r = sources([reserve], [encaissement({ id: 'e1', facture_id: 'f1', montant: 600, ligne_bancaire_id: 'm' }), e])
-    const gr = gestesDuCredit(ventesDuReleve(true, D, lue(r), ACCES), lue(r), reserve, [], PLAN_PAR_DEFAUT)
+    const gr = gestesDuCredit(ventesDuReleve(true, D, lue(r), ACCES), lue(r), reserve, [], PLAN_PAR_DEFAUT, new Set())
     if (gr.etat !== 'reserve') throw new Error(gr.etat)
     expect(gr.complement?.proposes).toEqual([])
     expect(gr.complement?.rattachables.map((x) => x.id)).toEqual(['e3'])

@@ -53707,3 +53707,20 @@ et l'inventaire. Aucun mouvement ne porte encore de date de valeur. `DATE_DE_VAL
 l'essai sorti de la famille « apres » du banc (31). Reste : le banc du leurre à rejouer, EXP58Q4-Q1 et Q2 au cabinet
 (le format des relevés du praticien : CSV ou OFX d'abord, le PDF ne porte pas la date de valeur).
 
+
+### 17/11/2026 — NOE5B : L'ÉCRAN DE L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE (DERRIÈRE SON DRAPEAU)
+
+L'écran de NOE5, côté cabinet, derrière `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` baissé (et celui de NOE3). Une lecture, tenue par
+l'onglet Banque (`lib/lecturePaiementsAssuranceMaladie.ts`) : les paiements et, sous le drapeau de NOE5 seulement, leurs
+associations, dans la même vague (`lireLesPaiementsAssuranceMaladie`) ; « Ma banque » monte la section seule, qui lit elle-même.
+Les mots et l'état de l'écran dans `lib/associationsAssuranceMaladieVue.ts` (pur), l'affichage dans
+`components/AssociationsAssuranceMaladie.tsx`. La fiche d'un crédit : la proposition justifiée signal par signal, « Associer » au
+clic, les autres candidats et l'égalité au choix à la main (« Associer celui-ci »), le refus de la base dit avant le clic,
+« Défaire » sur une confirmation qui nomme les paiements libérés, et toujours que l'association ne classe pas le crédit. La
+section NOEMIE : les contrôles en attention, le lot « Associer les concordances (N) », dont la confirmation nomme chaque crédit
+par sa date et son montant. Un verrou à lui (`associationAssuranceMaladieEnCours`), relâché après la relecture. Muet sur toute
+lecture partielle, le relevé compris tant que sa lecture est en vol. NOE5-Q4 (A) : `candidatsDeLaVente` et `gestesDuCredit`
+prennent les crédits associés en paramètre obligatoire ; illisibles (nul), aucun crédit ne se propose à une vente, mais les lots
+les tiennent à l'écart (les candidats bruts) — le côté fermé des deux. Le retrait d'un import associé se dit refusé avant le clic,
+dans les deux espaces (NOE5-Q1 : la lecture du client, dans la migration, reste à présenter au cabinet). Restent : NOE6 (les
+contrôles dans la Vue d'ensemble et la Révision, la piste d'audit), NOE8 (la levée, la sauvegarde, `rls.sql`).

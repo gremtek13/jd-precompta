@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import PaiementsAssuranceMaladie from './PaiementsAssuranceMaladie'
 import { REFUS_DE_LA_FONCTION, refusDuConflit } from '../lib/paiementsAssuranceMaladie'
 import { phraseApresLImport } from '../lib/paiementsAssuranceMaladieVue'
+import { refusDuRetraitDImportDit } from '../lib/associationsAssuranceMaladieVue'
 import type { PaiementsLus } from '../lib/paiementsAssuranceMaladieLecture'
 import type { PaiementAssuranceMaladie } from '../lib/types'
 
@@ -41,7 +42,7 @@ afterEach(() => { faux.drapeau = true; faux.lecture = null; faux.lectures = 0; f
 
 const lue = <T,>(lignes: T[], complete = true) => ({ lignes, complete, motif: complete ? null : 'lecture interrompue' })
 const lus = (paiements: PaiementAssuranceMaladie[] = [], complete = true): PaiementsLus =>
-  ({ dossierId: 'd1', etat: 'lus', imports: lue([]), paiements: lue(paiements, complete) })
+  ({ dossierId: 'd1', etat: 'lus', imports: lue([]), paiements: lue(paiements, complete), associations: null })
 
 // Ce qui ne doit jamais paraître à l'écran : les valeurs du fichier qui ne sont pas des agrégats.
 const SECRETS = ['F-778801', 'DUPONT-ESSAI', 'Jeannine', 'MARTIN-FICTIF', 'LEFAUX', '2 99 99 99', '26,50', '19,00']
@@ -161,5 +162,42 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
     expect(await screen.findByText(phraseApresLImport('client'))).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(faux.lectures).toBe(avant + 1)
+  })
+
+  // NOE5b : un import dont un paiement est associé à un crédit du relevé ne s'offre pas au retrait, et dit pourquoi, dans les
+  // deux espaces ; des associations lues en partie, aucun geste.
+  const IMPORT = { id: 'i1', dossier_id: 'd1', periode_du: '2026-11-02', periode_au: '2026-11-03', nombre_de_rejets: 0,
+    montant_rejete_centimes: 0, importe_par: 'u1', importe_le: '2026-11-04T09:00:00Z' }
+  const PAYE: PaiementAssuranceMaladie = { id: 'p1', dossier_id: 'd1', import_id: 'i1', date_journee_comptable: '2026-11-02', regime: null,
+    caisse: 691, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 }
+  const ASSOCIEE = { id: 'a1', dossier_id: 'd1', paiement_id: 'p1', ligne_bancaire_id: 'm1', associe_par: 'u1', associe_le: '2026-11-05T09:00:00Z' }
+  const avecAssociations = (lignes: typeof ASSOCIEE[], complete = true): PaiementsLus =>
+    ({ dossierId: 'd1', etat: 'lus', imports: lue([IMPORT]), paiements: lue([PAYE]), associations: lue(lignes, complete) })
+
+  it('un import associé : « Retirer » n’est pas offert, et la raison se dit avant le clic, dans les deux espaces', async () => {
+    for (const espace of ['cabinet', 'client'] as const) {
+      faux.lecture = avecAssociations([ASSOCIEE])
+      const vue = render(<PaiementsAssuranceMaladie espace={espace} dossierId="d1" />)
+      expect(await screen.findByText(refusDuRetraitDImportDit(espace))).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Retirer' })).toBeNull()
+      vue.unmount()
+    }
+    faux.lecture = avecAssociations([])
+    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" />)
+    expect(await screen.findByRole('button', { name: 'Retirer' })).toBeTruthy()
+  })
+
+  it('des associations lues en partie : le bandeau, et aucun geste', async () => {
+    faux.lecture = avecAssociations([ASSOCIEE], false)
+    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" />)
+    expect(await screen.findByText(/Les associations des paiements au relevé n.ont pas pu être/)).toBeTruthy()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('une lecture partagée : la section ne lit pas elle-même, et montre ce qu’on lui confie sous ses imports', async () => {
+    const lecture = { lu: avecAssociations([]), relire: () => Promise.resolve() }
+    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" partagee={lecture}><p>le rapprochement</p></PaiementsAssuranceMaladie>)
+    expect(screen.getByText('le rapprochement')).toBeTruthy()
+    expect(faux.lectures).toBe(0)
   })
 })

@@ -554,7 +554,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   NOE2-Q1). NOE3 préparée, par l'outil, son drapeau baissé (`paiements_assurance_maladie`, `PAIEMENTS_ASSURANCE_MALADIE_PREVUS`,
   NOE-migration, à appliquer avec l'écran) ; NOE4, l'écran, derrière le même drapeau (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
   section de l'onglet Banque et de « Ma banque » : en-têtes et genres seuls, réglage vide, agrégats avant le clic, la phrase de
-  NOE3-Q1) ; l'association au relevé remise à NOE5 → « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
+  NOE3-Q1) ; l'association au relevé, NOE5 (module et migration préparée) puis NOE5b, l'écran (17/11/2026, derrière
+  `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` : la fiche d'un crédit, la section NOEMIE et son lot, un crédit associé hors des
+  candidats d'une vente, `lib/associationsAssuranceMaladieVue.ts`) → « NOE5B : L'ÉCRAN DE L'ASSOCIATION », « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
   DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE »,
   « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1

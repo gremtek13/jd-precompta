@@ -453,7 +453,8 @@ export function refusDuRetraitDAssociation(r: RapprochementCalcule, mouvementId:
 
 const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? 's' : ''}`
 
-function groupeDit(paiements: readonly PaiementDuRapprochement[]): string {
+/** Un groupe de paiements en mots : la journée comptable, l'organisme, les parts et le nombre de factures — jamais un nom. */
+export function groupeDit(paiements: readonly PaiementDuRapprochement[]): string {
   const premier = paiements[0]
   const parts = paiements.map((p) => LIBELLES_DES_PARTS[p.part].toLowerCase()).join(' et ')
   const factures = paiements.reduce((s, p) => s + p.nombre_de_factures, 0)

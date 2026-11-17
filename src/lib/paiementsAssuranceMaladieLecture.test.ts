@@ -7,6 +7,7 @@ import { lireLesPaiementsAssuranceMaladie } from './paiementsAssuranceMaladieLec
 
 const faux = vi.hoisted(() => ({
   drapeau: true,
+  associations: false,
   tables: {} as Record<string, Record<string, unknown>[]>,
   droits: { data: { banque: true } as unknown, error: null as unknown },
   lues: [] as string[],
@@ -16,6 +17,10 @@ const faux = vi.hoisted(() => ({
 vi.mock('./paiementsAssuranceMaladie', async (original) => ({
   ...await original<typeof import('./paiementsAssuranceMaladie')>(),
   get PAIEMENTS_ASSURANCE_MALADIE_PREVUS() { return faux.drapeau },
+}))
+vi.mock('./rapprochementAssuranceMaladie', async (original) => ({
+  ...await original<typeof import('./rapprochementAssuranceMaladie')>(),
+  get ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES() { return faux.associations },
 }))
 vi.mock('./supabase', () => {
   const requete = (table: string) => {
@@ -33,7 +38,7 @@ vi.mock('./supabase', () => {
   return { supabase: { from: requete, rpc: (nom: string) => { faux.lues.push(`rpc:${nom}`); return Promise.resolve(faux.droits) } } }
 })
 
-afterEach(() => { faux.drapeau = true; faux.tables = {}; faux.droits = { data: { banque: true }, error: null }; faux.lues = []; faux.lever = false })
+afterEach(() => { faux.drapeau = true; faux.associations = false; faux.tables = {}; faux.droits = { data: { banque: true }, error: null }; faux.lues = []; faux.lever = false })
 
 describe('les paiements de l’assurance maladie, lus', () => {
   it('drapeau baissé : rien ne se lit, et l’échec se dit — jamais une liste vide', async () => {
@@ -61,5 +66,18 @@ describe('les paiements de l’assurance maladie, lus', () => {
     expect(lu.etat === 'lus' && [lu.imports.complete, lu.paiements.complete]).toEqual([true, false])
     faux.lever = true
     expect((await lireLesPaiementsAssuranceMaladie('d1', 'cabinet')).etat).toBe('echec')
+  })
+
+  it('les associations (NOE5b) : drapeau baissé, rien de lu et nul ; levé, lues avec le reste, une ligne d’un autre dossier les rend incomplètes', async () => {
+    const baisse = await lireLesPaiementsAssuranceMaladie('d1', 'cabinet')
+    expect(baisse.etat === 'lus' && baisse.associations).toBeNull()
+    expect(faux.lues).not.toContain('paiements_assurance_maladie_mouvements')
+    faux.associations = true
+    faux.tables.paiements_assurance_maladie_mouvements = [{ id: 'a', dossier_id: 'd1', paiement_id: 'p', ligne_bancaire_id: 'm' }]
+    const leve = await lireLesPaiementsAssuranceMaladie('d1', 'client')
+    expect(leve.etat === 'lus' && leve.associations?.lignes.map((a) => a.id)).toEqual(['a'])
+    faux.tables.paiements_assurance_maladie_mouvements = [{ id: 'a', dossier_id: 'd2' }]
+    const autre = await lireLesPaiementsAssuranceMaladie('d1', 'cabinet')
+    expect(autre.etat === 'lus' && autre.associations?.complete).toBe(false)
   })
 })

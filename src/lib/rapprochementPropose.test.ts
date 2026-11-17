@@ -66,7 +66,7 @@ function candidatsDe(
     dossierId: D, factures: FACTURES, lignes: LIGNES, encaissements, parts: partsDe(encaissements), mouvements, exemplaires,
   }
   const lue: LectureDesGestes = { dossierId: D, etat: 'lue', sources: s }
-  return candidatsDeLaVente(ventesDuReleve(true, D, lue, ACCES), lue, annees)
+  return candidatsDeLaVente(ventesDuReleve(true, D, lue, ACCES), lue, annees, new Set())
 }
 
 const M1 = mouvement({ id: 'm1' })
@@ -129,7 +129,7 @@ describe('rapprochementProposeParLEncaissement : l’exemplaire de la facture, s
     const e0 = encaissement({ id: 'e0', facture_id: 'f0', montant: 600 })
     const lue = candidatsDe([M1], [e0])
     // Les ventes facturées pas lues en entier : aucun candidat, aucune proposition.
-    expect(rapprochementProposeParLEncaissement(candidatsDeLaVente({ etat: 'incomplete', motif: 'refusée' }, null, []), M1, ACCES)).toBeNull()
+    expect(rapprochementProposeParLEncaissement(candidatsDeLaVente({ etat: 'incomplete', motif: 'refusée' }, null, [], new Set()), M1, ACCES)).toBeNull()
     // Un mouvement d'un autre dossier, ou que la lecture n'a pas rendu.
     expect(rapprochementProposeParLEncaissement(lue, { ...M1, dossier_id: 'autre' }, ACCES)).toBeNull()
     expect(rapprochementProposeParLEncaissement(lue, { ...M1, id: 'm-absent' }, ACCES)).toBeNull()

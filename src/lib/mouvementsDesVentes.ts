@@ -842,7 +842,7 @@ function mouvementDesGestes<S extends SourcesDesGestes>(
  * Les gestes du cabinet sur la fiche d'un CRÉDIT d'un dossier basculé (étape VF5c). `ventes` : ce que l'onglet sait de son
  * relevé (`ventesDuReleve`) — rien ne s'offre s'il n'est pas lu en entier ; `lecture` : la même lecture des ventes
  * facturées, avec ce que les gestes lisent de plus ; `anneesValidees` : celles du dossier (la frontière) ; `plan` : le
- * compte des frais bancaires.
+ * compte des frais bancaires ; `associesAssuranceMaladie` : comme pour `candidatsDeLaVente`.
  */
 export function gestesDuCredit(
   ventes: VentesDuReleve,
@@ -850,6 +850,7 @@ export function gestesDuCredit(
   ligne: LigneDesGestes,
   anneesValidees: readonly number[],
   plan: Pick<PlanComptable, 'services_bancaires'>,
+  associesAssuranceMaladie: ReadonlySet<string> | null,
 ): GestesDuCredit {
   const lu = mouvementDesGestes(ventes, lecture, ligne)
   if (lu === null || lu.m.montant <= 0) return AUCUN_GESTE
@@ -873,7 +874,7 @@ export function gestesDuCredit(
   if (!mouvementLibre(m)) return AUCUN_GESTE
   const manque = manqueDuCredit(m, s.encaissements, vente)
   // Les candidats, sur un crédit libre seulement (`candidatsDuMouvement` le vérifie) : ceux de la même lecture.
-  const proposes = desSources.length === 0 ? candidatsDuMouvement(candidatsDeLaVente(ventes, lecture, anneesValidees), ligne) : []
+  const proposes = desSources.length === 0 ? candidatsDuMouvement(candidatsDeLaVente(ventes, lecture, anneesValidees, associesAssuranceMaladie), ligne) : []
   const complement = manque > 0 && dateFigee(m.date, anneesValidees) === null
     ? complementDuCredit(dossierId, m, manque, s, vente, libelleExploitable(ligne), proposes)
     : null
@@ -1229,6 +1230,8 @@ interface JugeDesCandidats {
   mouvementsParId: ReadonlyMap<string, MouvementClasse>
   facturesParId: ReadonlyMap<string, FactureDesGestes>
   motsDesClients: ReadonlyMap<string, readonly string[]>
+  /** Les crédits associés à un paiement de l'assurance maladie (NOE5b) ; nul : les associations illisibles. */
+  associesAssuranceMaladie: ReadonlySet<string> | null
 }
 
 /**
@@ -1248,11 +1251,17 @@ export const AUCUN_CANDIDAT: CandidatsDeLaVente = { facturesSourcesOuvertes: [],
 /**
  * Les candidats de la vente, tirés de la lecture même des gestes (la retenue de VF5a1 : l'état du relevé ET la lecture,
  * lus en entier, du même dossier). `anneesValidees` : celles du dossier — un mouvement qu'elles figent n'a pas de candidat.
+ * `associesAssuranceMaladie` (NOE5-Q4, recommandation (A) : à l'écran ; conception 53, § 5) : les crédits associés à un
+ * paiement de l'assurance maladie, qui ne sont candidats d'aucune vente — un ensemble vide quand l'association n'est pas en
+ * base (`associesPourLesVentes`), jamais un défaut. Nul : les associations sont illisibles, et AUCUN crédit ne se propose à
+ * une vente (une proposition commanderait une écriture) ; les lots, eux, les tiennent toujours à l'écart
+ * (`justificatifDeLaVente`) : le côté fermé des deux.
  */
 export function candidatsDeLaVente(
   ventes: VentesDuReleve,
   lecture: LectureDesGestes | null,
   anneesValidees: readonly number[],
+  associesAssuranceMaladie: ReadonlySet<string> | null,
 ): CandidatsDeLaVente {
   if (ventes.etat !== 'lue' || lecture === null || lecture.etat !== 'lue') return AUCUN_CANDIDAT
   const s = lecture.sources
@@ -1275,6 +1284,7 @@ export function candidatsDeLaVente(
       mouvementsParId: new Map(s.mouvements.filter((m) => m.dossier_id === dossierId).map((m) => [m.id, m])),
       facturesParId: new Map(s.factures.map((f) => [f.id, f])),
       motsDesClients: new Map(s.factures.filter((f) => sources.has(f.id)).map((f) => [f.id, motsIdentifiants(f.tiers_nom)])),
+      associesAssuranceMaladie,
     },
   }
 }
@@ -1344,9 +1354,18 @@ const TITRES_DES_CANDIDATS = {
 /**
  * Les candidats de la vente pour CE mouvement, le plus petit écart d'abord ; vide sur un mouvement qui n'est pas libre, que
  * des encaissements réservent, qu'un exercice validé fige, que la lecture n'a pas rendu, d'un autre dossier, ou sans
- * candidat. `ligne` : le mouvement tel que l'onglet le lit — son libellé, où le client se lit.
+ * candidat — et sur un crédit associé à un paiement de l'assurance maladie, ou quand ces associations sont illisibles
+ * (NOE5b). `ligne` : le mouvement tel que l'onglet le lit — son libellé, où le client se lit.
  */
 export function candidatsDuMouvement(c: CandidatsDeLaVente, ligne: LigneDesGestes): CandidatDeLaVente[] {
+  const associes = c.juge?.associesAssuranceMaladie
+  if (associes === null || associes?.has(ligne.id)) return []
+  return candidatsBrutsDuMouvement(c, ligne)
+}
+
+/** Les candidats, sans regarder l'assurance maladie : ce que les lots tiennent à l'écart quand ses associations sont
+ * illisibles. */
+function candidatsBrutsDuMouvement(c: CandidatsDeLaVente, ligne: LigneDesGestes): CandidatDeLaVente[] {
   const j = c.juge
   if (j === null || ligne.dossier_id !== j.dossierId) return []
   const { dossierId, sources: s, vente } = j
@@ -1433,7 +1452,9 @@ export function justificatifDeLaVente(c: CandidatsDeLaVente, ligne: LigneDesGest
   // le prend — rapproché d'une autre pièce, classé par une règle ou ignoré, il contredirait ce qui a été saisi.
   const cite = rapprochementProposeParLEncaissement(c, ligne, ACCES_SANS_OBJET)
   if (cite !== null && cite.libre) return JUSTIFICATIF_ENCAISSEMENT_CITE
-  const candidats = candidatsDuMouvement(c, ligne)
+  // Des associations de l'assurance maladie illisibles : les candidats bruts, que le crédit reste hors des lots (le côté
+  // fermé) ; lisibles, un crédit associé n'attend aucune vente.
+  const candidats = c.juge?.associesAssuranceMaladie === null ? candidatsBrutsDuMouvement(c, ligne) : candidatsDuMouvement(c, ligne)
   if (candidats.some((x) => x.genre === 'encaissement')) return JUSTIFICATIF_ENCAISSEMENT
   if (candidats.some((x) => x.genre === 'facture')) return JUSTIFICATIF_FACTURE
   if (candidats.some((x) => x.genre === 'contre_passation' && x.parLeMontant)) return JUSTIFICATIF_CONTRE_PASSATION
