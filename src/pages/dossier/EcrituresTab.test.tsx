@@ -239,6 +239,15 @@ vi.mock('../../lib/fec', async (vrai) => ({
   telechargerTexte: (nom: string, contenu: string) => { telecharge.fichiers.push({ nom, contenu }) },
 }))
 
+// L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP1) : le drapeau `EXPORT_VERS_UN_LOGICIEL_OFFERT` joué par un accesseur — le vrai
+// (baissé) tant qu'un cas ne le lève pas.
+const drapeauExport = vi.hoisted(() => ({ leve: undefined as undefined | boolean }))
+vi.mock('../../lib/profilsDExport', async (original) => {
+  const vrai = await original<typeof import('../../lib/profilsDExport')>()
+  return { ...vrai, get EXPORT_VERS_UN_LOGICIEL_OFFERT() { return drapeauExport.leve ?? vrai.EXPORT_VERS_UN_LOGICIEL_OFFERT } }
+})
+afterEach(() => { drapeauExport.leve = undefined })
+
 // LA CAISSE (ligne 26.6, étape C3b) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
 // réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.
 const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
@@ -3460,5 +3469,36 @@ describe('EcrituresTab — le tri par un clic sur l’en-tête', () => {
     await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
     expect(telecharge.fichiers).toHaveLength(2)
     expect(telecharge.fichiers[1].contenu).toBe(telecharge.fichiers[0].contenu)
+  })
+})
+
+describe('EcrituresTab — l’export vers un logiciel comptable, derrière son drapeau (EXP1)', () => {
+  const ecrituresDuFec = () => poser({
+    pieces: [piece()],
+    ecritures_brouillon: [
+      ecriture({ id: 'e1', compte: '606100', montant: 100 }),
+      ecriture({ id: 'e2', compte: '445660', montant: 20 }),
+    ],
+  })
+
+  it('le drapeau baissé : rien, à côté d’un FEC qui s’exporte', async () => {
+    ecrituresDuFec()
+    monter()
+    await screen.findByText('606100')
+    expect(screen.getByRole('button', { name: /Exporter FEC/ })).toBeDefined()
+    expect(screen.queryByRole('button', { name: /Exporter vers un logiciel comptable/ })).toBeNull()
+  })
+
+  it('le drapeau levé : le FEC de l’onglet, ses comptes complétés à huit caractères, dans l’aperçu', async () => {
+    drapeauExport.leve = true
+    ecrituresDuFec()
+    monter()
+    await screen.findByText('606100')
+    const bouton = await screen.findByRole('button', { name: /Exporter vers un logiciel comptable/ })
+    await waitFor(() => expect((bouton as HTMLButtonElement).disabled).toBe(false))
+    await act(async () => { fireEvent.click(bouton) })
+    expect(screen.getByText('60610000')).toBeDefined()
+    expect(screen.getByText('44566000')).toBeDefined()
+    expect(telecharge.fichiers).toHaveLength(0)
   })
 })

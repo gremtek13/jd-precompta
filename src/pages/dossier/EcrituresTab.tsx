@@ -11,6 +11,8 @@ import OuvertureEclateeCarte from './OuvertureEclateeCarte'
 import { RENDU_DES_BANQUES_AU_FEC, rendreLesBanquesAuFec } from '../../lib/banquesAuFec'
 import { modeleDuMouvement, planDuMouvement, refusDesBanquesDesPaiements } from '../../lib/banqueDuMouvement'
 import PaquetDArchiveBouton from './PaquetDArchiveBouton'
+import ExportVersUnLogiciel from './ExportVersUnLogiciel'
+import { EXPORT_VERS_UN_LOGICIEL_OFFERT } from '../../lib/profilsDExport'
 import { INVENTAIRE_DU_PAQUET_SANS_OBJET, piecesCiteesParLExercice, piecesSansEmpreinte, type PisteDuPaquet } from '../../lib/paquetDArchive'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
@@ -691,11 +693,28 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const exerciceValideAffiche = typeof anneeFilter === 'number' ? exercicesValides.find((e) => e.annee === anneeFilter) ?? null : null
   // Le FEC sous le rendu de la banque (MCB-Q4, lib/banquesAuFec.ts) : un 512 par compte bancaire, la numérotation telle
   // quelle — le fichier d'hier tant qu'aucun compte ne tient son 512. Un rendu qui ne se calcule pas ne sort rien.
-  const fecRendu = (n: NumerotationFec): string | null => {
+  const numerotationRendue = (n: NumerotationFec): NumerotationFec | null => {
     const r = rendreLesBanquesAuFec(n, RENDU_DES_BANQUES_AU_FEC, modele.plan, banques)
-    return 'refus' in r ? null : formaterFec(r, lettrage, modele.mode)
+    return 'refus' in r ? null : r
+  }
+  const fecRendu = (n: NumerotationFec): string | null => {
+    const r = numerotationRendue(n)
+    return r === null ? null : formaterFec(r, lettrage, modele.mode)
   }
   const fecValide = exerciceValideAffiche ? numerotationValidee(ecrituresFiltrees, aNouveauxExercice, exerciceValideAffiche.valide_le, choixDesChampsBnc) : null
+  // Le FEC de l'exercice affiché, calculé au clic, et sa numérotation rendue : ce que « Exporter FEC » télécharge, et ce
+  // dont l'export vers un logiciel comptable part (EXP1). Un exercice validé se relit de ce qui a été figé : à vingt-deux
+  // colonnes quand sa validation a figé les quatre champs (FEC22b, FEC22c2) et que le drapeau est levé, à dix-huit sinon
+  // (`numerotationValidee`). Les autres attendent leurs entrées, lues en entier.
+  const numerotationDuFec = (): { contenu: string; numerotation: NumerotationFec } | null => {
+    if (typeof anneeFilter !== 'number' || ventesDesExports === null || operationsDuFec === null) return null
+    const brute = fecValide ?? (champsDuFec === null ? null : numeroterFec(
+      ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele, lignesBancaires,
+      ventesDesExports.ecritures, operationsDuFec, champsDuFec,
+    ))
+    const rendue = brute === null ? null : numerotationRendue(brute)
+    return rendue === null ? null : { contenu: formaterFec(rendue, lettrage, modele.mode), numerotation: rendue }
+  }
   // Les pièces que l'exercice validé cite sans empreinte de dépôt : le paquet d'archive les prendra marquées « non vérifiée »
   // (INAL3-Q1), et son bouton le dit avant le clic. Comptées sur les pièces validées lues ici (une pièce citée l'est
   // toujours : `garder_piece_validee`) ; la lecture du paquet relit tout au clic. Les pièces que l'inventaire de l'exercice scelle
@@ -2087,23 +2106,31 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               : undefined
           }
           onClick={() => {
-            if (typeof anneeFilter !== 'number' || ventesDesExports === null || operationsDuFec === null) return
-            // Un exercice validé se relit de ce qui a été figé : à vingt-deux colonnes quand sa validation a figé les quatre
-            // champs (FEC22b, FEC22c2) et que le drapeau est levé, à dix-huit sinon (`numerotationValidee`). Les autres
-            // attendent leurs entrées, lues en entier.
-            const contenu = fecValide
-              ? fecRendu(fecValide)
-              : champsDuFec === null ? null
-              : fecRendu(numeroterFec(
-                ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele, lignesBancaires,
-                ventesDesExports.ecritures, operationsDuFec, champsDuFec,
-              ))
+            if (typeof anneeFilter !== 'number') return
+            const contenu = numerotationDuFec()
             if (contenu === null) return
-            telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
+            telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu.contenu)
           }}
         >
           Exporter FEC {typeof anneeFilter === 'number' ? anneeFilter : ''}{fecValide ? ' (validé)' : ''}
         </button>
+        {/* L'export vers le logiciel comptable de l'expert-comptable (EXP1) : CE FEC-là, mis en forme par un profil, avec ou sans
+            les justificatifs ; derrière son drapeau, aux mêmes préalables que le FEC. */}
+        {EXPORT_VERS_UN_LOGICIEL_OFFERT && typeof anneeFilter === 'number' && (
+          <ExportVersUnLogiciel
+            key={`${dossierId}-${anneeFilter}`}
+            dossierId={dossierId}
+            nomDuFec={nomFichierFec(dossierSiret, anneeFilter)}
+            fec={numerotationDuFec}
+            pieces={piecesValidees}
+            indisponible={
+              brouillonIncomplet ?? aNouveauxIncomplets ?? reportesIncomplets ?? lettragesManquants ?? ventesIndisponibles
+              ?? caisseIndisponible ?? (champsBncIndisponibles !== null && fecValide === null ? champsBncIndisponibles : null)
+              ?? (ventesDesExports === null || operationsDuFec === null ? 'les ventes facturées ou la caisse ne sont pas encore lues' : null)
+              ?? (ecrituresFiltrees.length === 0 && aNouveauxExercice.length === 0 ? 'aucune écriture dans cet exercice' : null)
+            }
+          />
+        )}
         {/* Le paquet d'archive d'un exercice validé (ligne 44, INAL3a) : il porte CE FEC-là, calculé au clic comme ci-dessus. */}
         {fecValide && typeof anneeFilter === 'number' && (
           <PaquetDArchiveBouton
