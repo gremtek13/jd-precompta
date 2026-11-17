@@ -53755,3 +53755,22 @@ postes comparés à la LIGNE du formulaire (`posteDuFormulaire` : « Recettes »
 non lue n'apporte rien. Hors du lot : l'assistant (`agent-comptable`, aucun rapprochement de pièce proposé) et la validation, qui
 ne relit pas ces deux points (la conception le demandait aussi « avant la validation » pour le § 1.3) ; B8 reprendra la note du
 dirigeant (lot L3).
+
+### 17/11/2026 — SOIXANTE-NEUF RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 17/11/2026 AU SOIR)
+
+La collection `reponses` relue (maj après 11 h 06 UTC) : 69 fiches. **Contre la recommandation ou en note** : EXP58-Q1 (B), le
+mode de règlement est une colonne du mouvement, proposée puis corrigée par le cabinet (migration, écran) ; EXP-Q6 (B), Quadra et
+TRA tout de suite après le MVP, sans attendre de demande ; EL10-Q2 (B), le dégel seulement avant le dépôt de la 2035 ; EL10-Q7
+(B), le dégel après le MVP ; NOE4-Q1 (C), la section des paiements de l'assurance maladie seulement sur un code NAF de santé
+(86…) ; OPT-Q3 (B), un cabinet neuf n'a que le socle, le super-administrateur coche le reste ; OPT-Q6, « csv et pdf dans le
+navigateur » ; EL-Q1, « les comptables peuvent faire les écritures libres » (déjà consignée) ; CADRE7-Q1 et Q3, les notes déjà
+consignées ; 28.5e-point15, « elle y entre » ; FEC-devise, « oui ». **À la recommandation** : EXP58-Q2 (A, un code opaque par
+fiche client, migration), EXP58-Q3 (A, la désignation « contre la règle » retirée de l'écriture libre), EXP58-Q5 (A, le cumul
+repris saisi par bien, le plan continué) ; EXP-Q1 à Q5, Q7, Q8 ; EL10-Q1, Q3 à Q6 ; OPT-Q1, Q2, Q4, Q5, Q7 (la garde en base des
+plafonds de l'assistant dans OPT1) ; CADRE7Q4-Q1 (A) ; CFCS-Q1 (A, la contrainte en base), CFCS-Q2, CFCS2-Q1 (A, une seconde
+migration) ; RATT-Q1 (oui, par l'outil, en tête du prochain jour d'application) ; FEC22F-Q1 (une page privée avec les trois
+fichiers et une notice) ; EXD-Q3, Q6, EXD1-Q1, Q2, EXD2-Q2 ; INV-Q3, Q5, Q6, Q11, INV1-Q1, INV4-Q1, Q2 ; LIA-Q2 à Q8, Q10 à Q13,
+LIA1-Q1, LIA2-Q2, Q3, LIA3-Q1, Q2, LIA6-Q1, Q2, LIA8-Q1. **Ce que cela ouvre** : le lot L1 point 3 (EXP58-Q3) ; les préparées
+d'EXP58-Q1, Q2 et Q5 ; l'application par l'outil de `chemin_dans_son_dossier` (CFCS-Q1) et de RATT-Q1 au prochain jour
+d'application ; les réglages d'export gardés par dossier (EXP-Q4) ; OPT1. Restent ouvertes : L1-Q1, NOE5-Q1 à Q4, EXP1-Q1 et Q2,
+EXP58Q4-Q1 et Q2, BOR-Q1 à Q9 (pas encore sur la page).
