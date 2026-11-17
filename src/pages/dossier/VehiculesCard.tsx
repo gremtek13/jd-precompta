@@ -3,9 +3,10 @@ import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, aujourdHuiSql, formatMoney } from '../../lib/format'
 import {
-  carburantApplicable, completerModificationVehicule, exercicesProposables,
+  amortissementsSaisis, carburantApplicable, completerModificationVehicule, exercicesProposables,
   totalIndemnitesKilometriques, vehiculeDuDossier,
 } from '../../lib/baremeKilometrique'
+import { avisAuDelaDesLignes } from '../../lib/cadre7'
 import type { TypeVehicule } from '../../lib/baremeKilometrique'
 import type { ModeleComptable } from '../../lib/engagement'
 import {
@@ -308,8 +309,19 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
       <p className="muted">
         Le barème couvre le carburant, l'entretien, les pneus, l'assurance et les réparations du véhicule : l'année où il est
         retenu, ces dépenses ne sont pas des charges — leurs paiements par le compte professionnel se classent en prélèvement de
-        l'exploitant. Il ne couvre ni les péages ni le stationnement, qui restent déductibles.
+        l'exploitant. Il ne couvre ni les péages ni le stationnement, qui restent déductibles en frais de déplacement
+        (ligne 24), hors du cadre 7.
       </p>
+      {/* CADRE7-Q2 (A), 17/11/2026 : ce que les deux colonnes « Au registre » et « Amort. à réintégrer » portent. */}
+      <p className="muted">
+        Un véhicule inscrit au registre des immobilisations a ses amortissements de l'année à réintégrer, le barème couvrant
+        déjà l'amortissement : leur total B du cadre 7 se reporte en ligne (B) du tableau des immobilisations de la 2035-SD.
+        Tant qu'un véhicule inscrit n'a pas son montant, le total B reste « à saisir ».
+      </p>
+      {exercice !== null && avisAuDelaDesLignes(vehicules, exercice) && (
+        // CADRE7-Q3 (« à déconseiller », 17/11/2026) : dit en attention, rien n'est refusé.
+        <p style={{ color: 'var(--color-warning)' }}>⚠ {avisAuDelaDesLignes(vehicules, exercice)}</p>
+      )}
 
       <BandeauLecturePartielle
         quoi="Les véhicules du dossier"
@@ -392,6 +404,8 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                 <th>Carburant</th>
                 <th style={{ width: 120 }}>Km pro</th>
                 <th style={{ textAlign: 'right' }}>Indemnité</th>
+                <th>Au registre</th>
+                <th style={{ width: 130 }}>Amort. à réintégrer</th>
                 <th>Forfait</th>
                 <th></th>
               </tr>
@@ -462,6 +476,37 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                         ? <span className="muted" title={indemnite.nonCalcules[0].motif}>—</span>
                         : formatMoney(indemnite.total)}
                     </td>
+                    {/* CADRE7-Q2 (A) : inscrit au registre des immobilisations, et le montant à réintégrer (lib/cadre7.ts). */}
+                    <td data-libelle="Au registre">
+                      <input
+                        type="checkbox"
+                        aria-label={`${nomDuVehicule(v)} inscrit au registre des immobilisations`}
+                        checked={v.inscrit_immobilisations}
+                        disabled={enCours || !!exerciceFige}
+                        onChange={(e) => modifier(v.id, { inscrit_immobilisations: e.target.checked })}
+                      />
+                    </td>
+                    <td data-libelle="Amort. à réintégrer">
+                      {/* Écrit à la sortie du champ, pas à chaque touche : « 12, » se lirait 12 et la virgule se perdrait. La clé
+                          suit la valeur en base : relu après l'écriture, le champ montre ce que la base garde. */}
+                      <input
+                        key={`${v.id}-${v.amortissements_a_reintegrer ?? ''}`}
+                        inputMode="decimal"
+                        aria-label={`Amortissements à réintégrer de ${nomDuVehicule(v)}`}
+                        defaultValue={v.amortissements_a_reintegrer === null ? '' : String(v.amortissements_a_reintegrer).replace('.', ',')}
+                        placeholder={v.inscrit_immobilisations ? 'à saisir' : ''}
+                        disabled={enCours || !!exerciceFige || !v.inscrit_immobilisations}
+                        title={v.inscrit_immobilisations ? undefined : 'Sans objet : le véhicule n’est pas inscrit au registre'}
+                        onBlur={(e) => {
+                          const montant = amortissementsSaisis(e.target.value)
+                          if (montant === undefined) {
+                            setErreur(`Montant à réintégrer illisible pour « ${nomDuVehicule(v)} » : des euros, positifs (par exemple 1 200,50).`)
+                            return
+                          }
+                          if (montant !== v.amortissements_a_reintegrer) modifier(v.id, { amortissements_a_reintegrer: montant })
+                        }}
+                      />
+                    </td>
                     <td data-libelle="Forfait">
                       {/* D'un seul tenant : « À réécrire » se coupait en deux lignes dans la colonne étroite. */}
                       <span style={{ whiteSpace: 'nowrap' }}>{etat.texte}</span>
@@ -484,6 +529,8 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                 <td data-libelle="Total ligne 23 (case BJ)" style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                   {baremeManquant ? '—' : formatMoney(total)}
                 </td>
+                <td></td>
+                <td></td>
                 <td></td>
                 <td className="td-action"></td>
               </tr>

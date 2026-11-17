@@ -44,7 +44,7 @@ const declaration = (annee: number, lignes: LigneDesImmobilisations[], o: Partia
     immobilisations: { lignes, totalGeneral: total, vehiculesSousLeBareme: 0, dotationNette: total, ch: total, concorde: true, ...o },
   }
 }
-const ENTETE = { nom: 'Dupont Jeanne', activite: 'Activités des infirmiers', siret: '12345678900011', adresse: '3 rue des Lilas, 75011 Paris' }
+const ENTETE = { nom: 'Dupont Jeanne', activite: 'Activités des infirmiers', siret: '12345678900011', adresse: '3 rue des Lilas, 75011 Paris', debutDeLaProfession: '2019-09-01' }
 
 let simple: Fragment[][] = []
 let simpleEtatsAnnexes = -1
@@ -99,6 +99,12 @@ describe('remplir2035SD — le PDF produit, relu', () => {
     expect(trouve(simple[0], 'Dupont Jeanne')).toBeDefined()
     expect(trouve(simple[0], '12345678900011')).toBeDefined()
     expect(trouve(simple[0], '3 rue des Lilas, 75011 Paris')).toBeDefined()
+    // 2035SD-Q1 (A) : la date de début de la profession, dans sa case à droite du libellé (filets x ≈ 440,4 et 580,5).
+    const debut = trouve(simple[0], '01/09/2019')!
+    expect(debut.x).toBeGreaterThan(440.4)
+    expect(debut.x).toBeLessThan(580.5)
+    expect(debut.y).toBeGreaterThan(438)
+    expect(debut.y).toBeLessThan(447)
     expect(trouve(simple[2], 'Dupont Jeanne')).toBeDefined()
     expect(trouve(simple[3], 'Dupont Jeanne')).toBeDefined()
   })

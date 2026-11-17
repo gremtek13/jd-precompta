@@ -108,6 +108,8 @@ const faux = vi.hoisted(() => ({
   formulaire2035SDOffert: true,
   declarations2035SD: [] as { annee: number; benefice: number; deficit: number; immobilisations: Record<string, unknown> }[],
   entetes2035SD: [] as Record<string, unknown>[],
+  // Le début d'activité que la lecture des paramètres des cotisations rend ; `undefined` : une lecture qui échoue.
+  debutActivite: null as string | null | undefined,
   // Une promesse qui retient le remplissage : de quoi cliquer deux fois pendant qu'il court.
   attente2035SD: null as Promise<void> | null,
   // Les mises à jour envoyées, table et valeurs : l'enregistrement d'un poste manquant.
@@ -244,7 +246,7 @@ vi.mock('../../lib/remplir2035', () => ({
     faux.annexes.push(annexe)
     return Promise.resolve({
       pdf: new Uint8Array(), codesSansAncrage: faux.codesSansAncrage, codesSansAncrage2035E: [],
-      vehiculesSansLigne: faux.vehiculesSansLigne, cadre7Repere: faux.cadre7Repere,
+      vehiculesSansLigne: faux.vehiculesSansLigne, cadre7Repere: faux.cadre7Repere, ligne23Reperee: true,
     })
   },
 }))
@@ -258,6 +260,13 @@ vi.mock('../../lib/modeles2035SD', async (importOriginal) => {
 
 // La 2035-SD importe pdf.js comme la 2035 : sa doublure retient ce que l'écran lui envoie ; le dessin est éprouvé sur le vrai
 // formulaire par gabarit2035SD.test.ts et remplir2035SD.test.ts.
+// Le début d'activité de l'onglet Cotisations, que la 2035-SD lit au clic (2035SD-Q1) : sa lecture, telle que le test la pose.
+vi.mock('../../lib/parametresDesCotisationsLecture', () => ({
+  lireLesParametresDesCotisations: async (dossierId: string) => faux.debutActivite === undefined
+    ? { dossierId, etat: 'incomplets', motif: 'lecture refusée' }
+    : { dossierId, etat: 'lus', debutActivite: faux.debutActivite, parExercice: new Map() },
+}))
+
 vi.mock('../../lib/remplir2035SD', () => ({
   remplir2035SD: async (declaration: (typeof faux.declarations2035SD)[number], entete: Record<string, unknown>) => {
     faux.declarations2035SD.push(declaration)
@@ -1990,6 +1999,29 @@ describe('ClotureTab — l’amortissement d’un véhicule déduit avec le bar�
     expect(cadre.totalA).toBe(4050)
     expect(faux.remplies[0].get('BJ')).toBe(4050)
     expect(cadre.totalB).toBe('a_saisir')
+  })
+
+  // CADRE7-Q2 (A), 17/11/2026 : le montant que la carte Véhicules dit devient le total B, et la ligne (B) de la 2035-SD.
+  it('le véhicule dit inscrit, avec son montant : le total B au cadre 7 et la ligne (B) de la 2035-SD', async () => {
+    poser({}, [VOITURE])
+    faux.parTable.natures_immobilisation = [TRANSPORT]
+    faux.parTable.vehicules = [{ ...VEHICULE, inscrit_immobilisations: true, amortissements_a_reintegrer: 1200 }]
+    faux.cadres7 = []
+    faux.declarations2035SD = []
+    faux.formulaire2035SDOffert = true
+    URL.createObjectURL = () => 'blob:formulaire'
+    URL.revokeObjectURL = () => {}
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter()
+
+    const remplir = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ }, { timeout: 5000 })
+    await act(async () => { remplir.click() })
+    const cadre = faux.cadres7[0] as Cadre7ARemplir
+    expect(cadre.lignes[0].amortissements).toBe(1200)
+    expect(cadre.totalB).toBe(1200)
+    await act(async () => { (await screen.findByRole('button', { name: /Déclaration 2035-SD/ })).click() })
+    expect(faux.declarations2035SD[0].immobilisations).toMatchObject({ vehiculesSousLeBareme: 1200 })
+    vi.restoreAllMocks()
   })
 
   it('dit le véhicule qui n’a pas trouvé de ligne sur le formulaire', async () => {
@@ -3854,9 +3886,37 @@ describe('ClotureTab — la déclaration 2035-SD', () => {
     faux.declarations2035SD = []
     faux.entetes2035SD = []
     faux.attente2035SD = null
+    faux.debutActivite = null
     URL.createObjectURL = () => 'blob:declaration'
     URL.revokeObjectURL = () => {}
   }
+
+  // 2035SD-Q1 (A), réponse du cabinet du 17/11/2026.
+  it('reprend le début d’activité de l’onglet Cotisations en date de début de la profession', async () => {
+    preparer()
+    faux.debutActivite = '2019-09-01'
+    poser()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter()
+    const bouton = await screen.findByRole('button', { name: /Déclaration 2035-SD/ })
+    await act(async () => { bouton.click() })
+    expect(faux.entetes2035SD[0]).toMatchObject({ debutDeLaProfession: '2019-09-01' })
+    vi.restoreAllMocks()
+  })
+
+  it('un début d’activité illisible laisse la case vide, et le dit', async () => {
+    preparer()
+    faux.debutActivite = undefined
+    poser()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter()
+    const bouton = await screen.findByRole('button', { name: /Déclaration 2035-SD/ })
+    await act(async () => { bouton.click() })
+    expect(faux.entetes2035SD[0]).toMatchObject({ debutDeLaProfession: null })
+    expect(await screen.findByText(/la date de début de la profession reste vide sur la 2035-SD/)).toBeTruthy()
+    faux.debutActivite = null
+    vi.restoreAllMocks()
+  })
 
   it('envoie la ligne 1 et le tableau tirés des cases du formulaire et du registre, et le déclarant', async () => {
     preparer()

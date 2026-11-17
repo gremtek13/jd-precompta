@@ -182,8 +182,13 @@ export interface EnteteDeclaration2035SD {
   nom: string | null
   activite: string | null
   siret: string | null
-  /** L'adresse professionnelle du dossier (celle des factures et de la 2035-E). */
+  /** L'adresse professionnelle du dossier (celle des factures et de la 2035-E) — 2035SD-Q2 (A), 17/11/2026. */
   adresse: string | null
+  /**
+   * « Date de début de l'exercice de la profession », AAAA-MM-JJ : le début d'activité de l'onglet Cotisations
+   * (`debutDeLaProfession`, 2035SD-Q1 (A), 17/11/2026), ou null — la case reste vide. Sans valeur par défaut.
+   */
+  debutDeLaProfession: string | null
 }
 
 export interface PlanDeRemplissage2035SD {
@@ -202,7 +207,7 @@ export const A_SAISIR = 'à saisir'
 
 export function notesDeLaPremierePage(): string[] {
   return [
-    'Rempli par l’application : l’identité, la ligne 1 (report de la case CP ou CR de la 2035-B) et, page 3, le tableau I',
+    'Rempli par l’application : l’identité, la date de début de la profession (onglet Cotisations), la ligne 1 (report de la case CP ou CR de la 2035-B) et, page 3, le tableau I',
     'des immobilisations et des amortissements. Les autres cadres restent à compléter par le cabinet ; à relire avant le dépôt.',
   ]
 }
@@ -255,6 +260,22 @@ export function planDeRemplissage2035SD(
     texteApres(1, page1, exactement('Nom et Prénom'), entete.nom)
     texteApres(1, page1, exactement('Adresse du déclarant'), entete.adresse)
     texteApres(1, page1, exactement('Nature de l\'activité'), entete.activite)
+    // La date de début de la profession : le libellé court sur deux lignes (« Date de début de l'exercice de » puis « la
+    // profession : ») ; la case tracée à droite de la première, la date posée entre leurs deux lignes de base.
+    if (entete.debutDeLaProfession) {
+      const date = formatDate(entete.debutDeLaProfession)
+      const f = page1.fragments.find((x) => x.texte.trim() === 'Date de début de l\'exercice de')
+      const cellule = f ? celluleDuFragment(page1, f) : null
+      if (!f || !cellule) {
+        libellesSansAncrage.push(`page 1 : date de début de la profession (${date})`)
+      } else {
+        const suite = page1.fragments.find((x) => x.texte.trim().startsWith('la profession') && x.y < f.y && x.y > f.y - 15)
+        inscriptions.push({
+          page: 1, texte: date, x: cellule.gauche + RETRAIT, y: suite ? (f.y + suite.y) / 2 : f.y, alignement: 'gauche',
+          taille: TAILLE_ENTETE_SD, largeurMax: cellule.droite - cellule.gauche - 2 * RETRAIT,
+        })
+      }
+    }
   }
 
   const siret = chiffresDuSiret(entete.siret)

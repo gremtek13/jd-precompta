@@ -49,7 +49,7 @@ export interface TableauDesImmobilisations {
   lignes: LigneDesImmobilisations[]
   /** « Total général » (A) : la somme de la colonne 7. */
   totalGeneral: number
-  /** (B) : les amortissements des véhicules du registre sous le barème forfaitaire — « à saisir » quand il y en a. */
+  /** (B) : les amortissements des véhicules sous le barème forfaitaire, le total B du cadre 7 — « à saisir » tant qu'ils ne sont pas tous dits. */
   vehiculesSousLeBareme: Montant2035SD
   /** (A − B), « à reporter ligne CH » : « à saisir » tant que B l'est. */
   dotationNette: Montant2035SD
@@ -74,8 +74,11 @@ export interface Entree2035SD {
   immobilisations: readonly Immobilisation[]
   /** Le dossier redevable de la TVA : la colonne 3 lui est due, et l'application ne la connaît pas. */
   assujettiTva: boolean
-  /** Vrai quand un véhicule du registre est amorti l'année d'un barème (`amortissementsSousLeBareme`, non vide). */
-  vehiculesSousLeBareme: boolean
+  /**
+   * La ligne (B), le total B du cadre 7 de la 2035-B (`cadre7DeLExercice(...).cadre.totalB`, CADRE7-Q2) : les amortissements à
+   * réintégrer des véhicules sous le barème, « à saisir », ou 0 (rien à réintégrer, ou aucun véhicule au barème).
+   */
+  vehiculesSousLeBareme: Montant2035SD
 }
 
 // L'euro d'un montant en centimes positifs, le demi-euro vers le haut : en entiers, jamais en virgule flottante.
@@ -147,12 +150,12 @@ export function tableauDesImmobilisations(e: Entree2035SD): TableauDesImmobilisa
   })
 
   const totalGeneral = lignes.reduce((s, l) => s + l.annee, 0)
-  const vehiculesSousLeBareme: Montant2035SD = e.vehiculesSousLeBareme ? 'a_saisir' : 0
+  const vehiculesSousLeBareme = e.vehiculesSousLeBareme
   return {
     lignes,
     totalGeneral,
     vehiculesSousLeBareme,
-    dotationNette: vehiculesSousLeBareme === 'a_saisir' ? 'a_saisir' : totalGeneral,
+    dotationNette: vehiculesSousLeBareme === 'a_saisir' ? 'a_saisir' : totalGeneral - vehiculesSousLeBareme,
     ch,
     concorde,
   }
@@ -192,7 +195,22 @@ export function avisDuTableauDesImmobilisations(t: TableauDesImmobilisations): s
     avis.push('Dossier redevable de la TVA : le prix TVA comprise et la TVA déduite de chaque bien (colonnes 2 et 3) sont à saisir.')
   }
   if (t.vehiculesSousLeBareme === 'a_saisir') {
-    avis.push('Un véhicule du registre est amorti l’année du barème kilométrique : la ligne (B) et la dotation nette sont à saisir.')
+    avis.push('Les amortissements à réintégrer des véhicules sous le barème kilométrique ne sont pas tous dits (carte Véhicules) : '
+      + 'la ligne (B) et la dotation nette sont à saisir.')
+  } else if (t.vehiculesSousLeBareme > 0) {
+    // La 2035 de l'application compte en CH la dotation de tout le registre : (A − B) ne la redit donc pas, et c'est CH qui
+    // est à corriger sur la déclaration déposée (lib/forfaitKilometrique.ts, `amortissementsSousLeBareme`).
+    avis.push(`La dotation nette (A − B = ${formaterMontant(Number(t.dotationNette))} €) n’est pas la case CH de la 2035-B `
+      + `(${formaterMontant(t.ch)} €), qui compte aussi les ${formaterMontant(t.vehiculesSousLeBareme)} € des véhicules sous le barème : `
+      + 'à corriger avant le dépôt.')
   }
   return avis
+}
+
+// 2035SD-Q1 (A), réponse du cabinet du 17/11/2026 : « Date de début de l'exercice de la profession » reprend le début
+// d'activité saisi dans l'onglet Cotisations (`debuts_d_activite`), quand il est saisi et qu'il précède la fin de l'exercice
+// déclaré ; sinon la case reste vide (une date postérieure à l'exercice ne se croit pas pour lui).
+export function debutDeLaProfession(debutActivite: string | null, annee: number): string | null {
+  if (debutActivite === null || !/^\d{4}-\d{2}-\d{2}$/.test(debutActivite)) return null
+  return debutActivite <= `${annee}-12-31` ? debutActivite : null
 }

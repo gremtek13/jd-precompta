@@ -26,7 +26,10 @@ import { cadre7DeLExercice } from '../../lib/cadre7'
 import type { Cadre7DeLExercice } from '../../lib/cadre7'
 import { avertissementDuFormulaire } from '../../lib/modeles2035'
 import { FORMULAIRE_2035_SD_OFFERT, avertissementDuFormulaire2035SD } from '../../lib/modeles2035SD'
-import { avisDuTableauDesImmobilisations, calculer2035SD, type Declaration2035SD } from '../../lib/declaration2035SD'
+import {
+  avisDuTableauDesImmobilisations, calculer2035SD, debutDeLaProfession, type Declaration2035SD,
+} from '../../lib/declaration2035SD'
+import { lireLesParametresDesCotisations } from '../../lib/parametresDesCotisationsLecture'
 import { SAISIES_2035E_ABSENTES, calculer2035E, forfaitKilometriqueDesPostes, type Annexe2035E } from '../../lib/declaration2035E'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
@@ -914,6 +917,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           : remplissage.vehiculesSansLigne.length > 0
             ? [`Cadre 7 : le formulaire n’offre pas de ligne pour ${remplissage.vehiculesSansLigne.join(', ')} — à porter sur un état annexe.`]
             : []),
+        ...(remplissage.ligne23Reperee ? []
+          : ['Ligne 23 de la 2035-A non repérée sur le formulaire — la case « évaluation forfaitaire » et son montant manquent sur le PDF.']),
       ]
       if (manquantes.length > 0 || avisDuCadre7.length > 0) {
         setError([
@@ -947,14 +952,24 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       const declarant = instantane ? instantane.entete : entete
       // Chargé au clic : pdf.js touche au navigateur dès son import, et l'écran n'en a besoin qu'ici.
       const { remplir2035SD } = await import('../../lib/remplir2035SD')
+      // 2035SD-Q1 (A) : la date de début de la profession reprend le début d'activité de l'onglet Cotisations, lu au clic
+      // (la lecture ne rejette jamais). Illisible, la case reste vide, et c'est dit.
+      const parametres = await lireLesParametresDesCotisations(dossierId)
+      const debutLu = parametres.etat === 'lus' ? parametres.debutActivite : null
       const { pdf, libellesSansAncrage } = await remplir2035SD(declaration, {
         nom: declarant.nom, activite: declarant.activite, siret: declarant.siret,
         // L'adresse est celle d'aujourd'hui, même pour un exercice validé : l'instantané ne la garde pas (comme la 2035-E).
         adresse: dossier?.adresse ?? null,
+        debutDeLaProfession: debutDeLaProfession(debutLu, declaration.annee),
       })
-      if (libellesSansAncrage.length > 0) {
-        setError(`Valeurs non placées sur la déclaration 2035-SD : ${libellesSansAncrage.join(', ')} — elles manquent sur le PDF.`)
-      }
+      const avis = [
+        ...(libellesSansAncrage.length > 0
+          ? [`Valeurs non placées sur la déclaration 2035-SD : ${libellesSansAncrage.join(', ')} — elles manquent sur le PDF.`] : []),
+        ...(parametres.etat === 'incomplets'
+          ? [`Le début d’activité de l’onglet Cotisations n’a pas pu être lu (${parametres.motif}) : la date de début de la profession reste vide sur la 2035-SD.`]
+          : []),
+      ]
+      if (avis.length > 0) setError(avis.join(' '))
       const url = URL.createObjectURL(new Blob([pdf as BlobPart], { type: 'application/pdf' }))
       const lien = document.createElement('a')
       lien.href = url
@@ -2029,12 +2044,19 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           // Une annexe due ne se remplit pas avant que sa saisie soit lue en entier (drapeau levé) : sinon, des zéros supposés.
           const saisiesAnnexeIncompletes = annexe.obligatoire
             ? motifDesSaisies2035E(lectureDesSaisies2035E, SAISIES_2035E_EXPORTEES) : null
+          // Le cadre 7 de la 2035-B, tiré de la 2035 montrée : le total A est la part de BJ venue du barème ; le total B, les
+          // amortissements à réintégrer que la carte Véhicules dit (CADRE7-Q2), « à saisir » tant qu'ils ne le sont pas tous.
+          const cadre7 = cadre7DeLExercice(
+            vehicules, annee, Math.round(forfaitKilometriqueDesPostes(postes) * 100),
+            amortissementsSousLeBareme(immobilisations, natures, vehicules, annee).length > 0,
+          )
           // LA DÉCLARATION 2035-SD de l'exercice, sur les MÊMES cases que le PDF de la 2035-A/B (`entreeAnnexe.formulaire`) et le
-          // registre ; un véhicule amorti l'année du barème laisse (B) « à saisir » (lib/forfaitKilometrique.ts).
+          // registre ; sa ligne (B) est le total B du MÊME cadre 7.
+          const totalB = cadre7.cadre?.totalB ?? null
           const declaration2035SD = FORMULAIRE_2035_SD_OFFERT
             ? calculer2035SD({
               annee, formulaire: entreeAnnexe.formulaire, immobilisations, assujettiTva,
-              vehiculesSousLeBareme: amortissementsSousLeBareme(immobilisations, natures, vehicules, annee).length > 0,
+              vehiculesSousLeBareme: totalB === null ? 0 : totalB,
             })
             : null
           return (
@@ -2060,10 +2082,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                     }
                     : undefined}
                   genere={genere === annee}
-                  onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe, annexeSaisie, cadre7DeLExercice(
-                    vehicules, annee, Math.round(forfaitKilometriqueDesPostes(postes) * 100),
-                    amortissementsSousLeBareme(immobilisations, natures, vehicules, annee).length > 0,
-                  ))}
+                  onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe, annexeSaisie, cadre7)}
                   declaration2035SD={declaration2035SD === null ? null : {
                     avis: [
                       ...(avertissementDuFormulaire2035SD(annee) === null ? [] : [avertissementDuFormulaire2035SD(annee)!]),
