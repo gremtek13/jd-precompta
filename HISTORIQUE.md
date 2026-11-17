@@ -53486,3 +53486,20 @@ bien 2182 est amorti l'année du barème) ; une indemnité non calculée porte �
 validé dont le recalcul ne retrouve pas le poste de l'instantané laisse les montants vides. `lib/gabaritCadre7.ts` lit colonnes
 (début du libellé : BNC et BIC sont verticaux), lignes (filets horizontaux, lus par `lirePage`) et cases A et B ; deux lignes
 offertes, le troisième véhicule dit à l'écran ; le paquet d'archive garde le cadre vierge. CADRE7-Q1 à Q4 posées.
+
+### 17/11/2026 — LES FEC FICTIFS JUGÉS PAR UN OUTIL TIERS, LA FEUILLE POUR L'EXPERT-COMPTABLE, ET LA JOURNÉE
+
+Test Compta Demat ne se télécharge plus aux adresses connues (404 chez le cabinet ; la page du ministère et le dépôt
+public de la DGFiP inaccessibles depuis la session) : rien n'a été vérifié avec l'outil officiel. Le cabinet a passé les
+trois FEC fictifs (`outils/fec/lancer.mjs`, 18 champs, 22 champs « vides » et « date de l'écriture ») dans un outil
+tiers d'analyse de FEC, qui dit reprendre les règles de l'article A47 A-1 et de Test Compta Demat : 13 contrôles sur 13,
+0 écart, 0 point à justifier, 4 « preuves insuffisantes » sans objet pour un BNC en trésorerie (lettrage, TVA,
+rattachement, dotations) ; UTF-8, tabulation, CRLF, 18 ou 22 colonnes lues, 0 ligne ignorée, équilibre du fichier et de
+chacune des 123 écritures, bilan égal (7 390,31 €), résultat 25 664,31 €. Seule remarque : le nom du fichier, que la
+session avait changé pour l'envoi (l'outil du dépôt produit le nom attendu). L'outil ne juge pas le contenu des quatre
+champs BNC : FEC22-E2 reste à l'import chez l'expert-comptable, que le cabinet voit le 17/11 avec une feuille de
+cinquante questions (hors du dépôt, sans nom). Réponses du cabinet du 16/11 au soir non consignées ailleurs : MANNEE-Q1
+(A), le détail des mois reste ouvert ; DOCF-Q2 (A), pas de renommage ; ESSAISQ1-collage, fait. Le 17/11, dans la
+conversation : le garde-fou de MVP-D9 se branche plus tard (reposé le 19/11) ; le formulaire principal 2035-SD ouvert
+tout de suite ; l'écriture libre réservée à l'expert-comptable (conception 54). Demandes de fusion 376 et 377 fusionnées ;
+`create-client-access` v21 déployée sur le commit `20b8fb98…` de `main` (l'ouverture d'un accès attestée).
