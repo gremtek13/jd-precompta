@@ -98,7 +98,7 @@ const INVENTAIRE: Record<string, { nombre: number; raison: string }> = {
   'appel:piecesCiteesParLExercice (filtré)': { nombre: 1, raison: 'INAL3-Q1 : les pièces que l’exercice validé cite, par `piece_id` ou par leur bien, pour dire avant le clic du paquet d’archive celles qui n’ont pas d’empreinte ; une ligne d’une vente facturée ne cite aucune pièce' },
   'appel:pisteAudit': { nombre: 1, raison: 'l’export de la piste d’audit, qui justifie depuis VF4c2 ces lignes par leur facture, leur registre ou leur relevé' },
   'méthode:filter': { nombre: 4, raison: 'le compte des validées, l’exercice affiché, la recherche affichée : les lignes d’une vente facturée sont des écritures du journal comme les autres ; et (VF4c2) le compte de celles que le FEC ne rattache pas' },
-  'méthode:length': { nombre: 8, raison: 'le compte des proposées ; le modèle verrouillé dès la première écriture, vente facturée comprise ; le FEC vide ; la recherche et le journal vides' },
+  'méthode:length': { nombre: 9, raison: 'le compte des proposées ; le modèle verrouillé dès la première écriture, vente facturée comprise ; le FEC vide, et l’export vers un logiciel comptable vide (EXP1) ; la recherche et le journal vides' },
   'méthode:some': { nombre: 2, raison: 'par `piece_id` : la part figée d’une pièce' },
   'appel:trierLignes': { nombre: 1, raison: 'les lignes affichées du journal, dans l’ordre du tri choisi par un clic sur un en-tête (16/11/2026) : l’affichage seul, le FEC et les totaux restent sur `ecrituresFiltrees`' },
   'autre:conditionnelle': { nombre: 1, raison: '`ecrituresFiltrees`, toutes années : le brouillon entier' },

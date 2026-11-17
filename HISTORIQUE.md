@@ -53662,3 +53662,20 @@ le dit en mots. Version d'abord prise (150000) par DOCF-Q1-B : `versionsDesPrepa
 malgré la clé qui retient ; 19 mutations sur 19 tuées ; le retour puis la migration de nouveau ; une seconde application
 refusée. Restent : l'écran (NOE5b), la sauvegarde et le bloc de `rls.sql` (NOE8), le banc du leurre (il ne connaît pas
 encore l'essai), l'autre sens de G2 en base.
+### 17/11/2026 — EXP1 : L'EXPORT VERS UN LOGICIEL COMPTABLE, PROFIL ACD (DERRIÈRE SON DRAPEAU)
+
+(Agent dev ; rien en production, aucune migration.) Priorité du cabinet du 17/11/2026 : envoyer les écritures au logiciel ACD
+de l'expert-comptable ; la recherche est `docs/conceptions/57-exports-vers-les-logiciels-comptables.md` (§ 3.1, § 4, § 5).
+`src/lib/profilsDExport.ts` (pur) RELIT le FEC réglementaire de l'onglet (`numeroterFec`, le rendu des banques, `formaterFec`)
+colonne par colonne et ne change que ce que le profil dit : le code du journal (correspondance saisie, nos codes par défaut),
+l'EcritureNum (un entier continu, dans l'ordre du FEC), le compte (complété de zéros à la longueur choisie, 8 proposé, 6 à 12)
+et, au choix d'EXP-Q5, NatOp et IdClient ou les quatre champs du BNC vidés ; ModeRglt jamais traduit en lettre ; la PieceRef
+reste la nôtre. L'encodeur Windows-1252 est écrit à la main ; un caractère hors de la page, un compte trop long, un code de
+journal vide se refusent avant le clic, nommés par leur ligne. Le FEC ne change pas d'un octet (ses tests intacts). Les
+justificatifs (EXP-Q2, case décochée) : un ZIP en flux (`lib/exportVersUnLogicielLecture.ts`, `EcrivainZip`), chaque pièce
+sous `<PieceRef>.<pdf|jpg|png|csv>` (le type de `typeDUnePiece`), jamais `nom_fichier` ; une référence non neutre, une pièce
+hors de son dossier (`cheminDuDossier`, rejugé à la lecture), un fichier illisible : dits dans le bilan. L'écran
+(`ExportVersUnLogiciel.tsx`, onglet Écritures, mêmes préalables que le FEC, verrou `useRef`, le fichier relu octet par octet
+avant de partir) dit les comptes, les journaux, les refus, le nombre et le poids des fichiers, et les deux avertissements
+(doublons, à-nouveaux). Restent l'essai d'import chez l'expert-comptable (EXP-E1, E4, E5), la règle de nom des pièces dans le
+zip (non trouvée : à la racine pour l'instant), EXP-Q2 à Q5, puis la levée du drapeau.
