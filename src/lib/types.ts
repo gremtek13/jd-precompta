@@ -329,6 +329,11 @@ export interface LigneBancaire {
   // (`lignes_bancaires_id_externe_unique`, sur le dossier et lui). Nul pour un mouvement importé d'un
   // relevé, CSV ou PDF — deux NULL ne se heurtent pas.
   id_externe: string | null
+  // La DATE DE VALEUR que le relevé portait (EXP58-Q4, migration `date_de_valeur_des_mouvements`, PRÉPARÉE ; lib/dateDeValeur.ts) :
+  // nulle quand le fichier ne la dit pas ou qu'elle ne se lisait pas, à 92 jours au plus de `date`, avant ou après
+  // (`lignes_bancaires_date_valeur_proche`), figée avec le mouvement par la validation de son exercice. Facultative ici :
+  // absente avant la migration, et d'une lecture par liste de colonnes qui ne la nomme pas. Aucun moteur ne la lit encore.
+  date_valeur?: string | null
   created_at: string
 }
 

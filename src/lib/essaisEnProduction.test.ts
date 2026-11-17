@@ -481,7 +481,10 @@ describe('les essais de la base, rejoués en production', () => {
     // Trente et un le même jour : `sousDossierDansSonDossier` (DOCF-Q1-B, `sous_dossier_dans_son_dossier`) entré dans la
     // famille « apres », après sa migration préparée ; joué sur une copie de la réplique à 236 (27 verdicts sur 27), le banc
     // reste à rejouer.
-    expect(cas.length).toBe(31)
+    // Trente-deux le même jour : `dateDeValeurDesMouvements` (EXP58-Q4, `date_de_valeur_des_mouvements`) entré dans la famille
+    // « apres », après sa migration préparée ; joué sur une copie de la réplique à 236 (17 verdicts sur 17), le banc reste à
+    // rejouer.
+    expect(cas.length).toBe(32)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

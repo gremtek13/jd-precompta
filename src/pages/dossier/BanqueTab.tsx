@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
-import { detectColumnMapping, lignesDeDonnees, parseCsv, type FormatDesMontants } from '../../lib/csv'
+import { colonneDeLaDateDeValeur, detectColumnMapping, lignesDeDonnees, parseCsv, type FormatDesMontants } from '../../lib/csv'
+import { DATE_DE_VALEUR_PREVUE, ECART_MAXIMAL_DE_LA_DATE_DE_VALEUR, phraseDesDatesDeValeur } from '../../lib/dateDeValeur'
 import { type EncodageLu } from '../../lib/decodageTexte'
 import {
   AUCUNE_DECISION, douteDuSens, interpreterReleve, operationsDuPdf, partagerParMultiplicite, phraseDesEcartees,
@@ -31,8 +32,8 @@ import { trierLignes, type ColonneTriable } from '../../lib/triDesTableaux'
 import { useTriDuTableau } from '../../lib/useTriDuTableau'
 import { controlerSolde, phraseDesSoldes } from '../../lib/soldeReleve'
 import {
-  decoderReleve, lireReleveOfxQif, NOM_DU_FORMAT, phraseDesSensDouteux, phraseDuSoldeAnnonce, REGLAGE_OFX_QIF,
-  type ReleveOfxQifLu,
+  colonneDeLaDateDeValeurDuReleve, decoderReleve, lireReleveOfxQif, NOM_DU_FORMAT, phraseDesSensDouteux, phraseDuSoldeAnnonce,
+  REGLAGE_OFX_QIF, type ReleveOfxQifLu,
 } from '../../lib/releveOfxQif'
 import { chargerControlesReleves, enregistrerControleReleve } from '../../lib/controlesReleves'
 import {
@@ -2792,16 +2793,23 @@ function ApercuInterprete({ interpretation, phraseSoldes, doute, recouvrement, s
       {soldesNommes.length > 0 && (
         <p className="muted">{`Prise(s) pour des soldes, non importée(s) : ${soldesNommes.map(nommer).join(' ; ')}.`}</p>
       )}
+      {interpretation.datesDeValeur && phraseDesDatesDeValeur(interpretation.datesDeValeur) && (
+        <p className={interpretation.datesDeValeur.illisibles + interpretation.datesDeValeur.eloignees > 0 ? undefined : 'muted'}
+          style={interpretation.datesDeValeur.illisibles + interpretation.datesDeValeur.eloignees > 0 ? AVERTISSEMENT : undefined}>
+          {phraseDesDatesDeValeur(interpretation.datesDeValeur)}
+        </p>
+      )}
       {phraseSoldes && <p style={AVERTISSEMENT}>{phraseSoldes}</p>}
       {recouvrement && <p style={AVERTISSEMENT}>{recouvrement}</p>}
       {suite && <p style={{ ...AVERTISSEMENT, whiteSpace: 'pre-line' }}>{suite}</p>}
       <div className="table-scroll" style={{ marginBottom: 6, border: '1px solid var(--color-border)', borderRadius: 8 }}>
         <table>
-          <thead><tr><th>Date</th><th>Libellé</th><th>Montant lu</th><th>Ligne</th></tr></thead>
+          <thead><tr><th>Date</th>{interpretation.datesDeValeur && <th>Date de valeur</th>}<th>Libellé</th><th>Montant lu</th><th>Ligne</th></tr></thead>
           <tbody>
             {lignes.slice(0, 6).map((l) => (
               <tr key={l.index}>
                 <td>{l.nature === 'ecartee' ? '—' : formatDate(l.date)}</td>
+                {interpretation.datesDeValeur && <td>{celluleDeLaDateDeValeur(l)}</td>}
                 <td>{l.libelle}</td>
                 <td style={{ textAlign: 'right' }}>{l.nature === 'ecartee' ? '—' : formatMoney(l.montant)}</td>
                 <td>{l.nature === 'ecartee' ? `Écartée : ${l.raison}` : l.nature === 'solde' ? 'Solde, non importée'
@@ -2813,6 +2821,14 @@ function ApercuInterprete({ interpretation, phraseSoldes, doute, recouvrement, s
       </div>
     </div>
   )
+}
+
+// Ce que l'aperçu dit de la date de valeur d'une ligne : la date gardée, la raison qui l'écarte, ou un tiret (pas de date de
+// valeur, ou une ligne qui ne s'importe pas comme opération).
+function celluleDeLaDateDeValeur(l: ReturnType<typeof interpreterReleve>['lignes'][number]): string {
+  if (l.nature !== 'operation' || !l.valeur) return '—'
+  if ('date' in l.valeur) return formatDate(l.valeur.date)
+  return l.valeur.ecart === 'illisible' ? 'Illisible, non gardée' : `À plus de ${ECART_MAXIMAL_DE_LA_DATE_DE_VALEUR} jours, non gardée`
 }
 
 // `frontiere` : un mouvement daté d'un exercice validé ne s'importe plus — la base refuserait le lot entier. Il est
@@ -2835,6 +2851,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   // La colonne du solde courant (export CIC ou Crédit Mutuel), que la détection reconnaît à son en-tête ou à son
   // arithmétique : elle n'est jamais un montant, et l'import se refuse si on la choisit comme tel (`refusDuReglage`).
   const [colSolde, setColSolde] = useState<number | null>(null)
+  // La colonne de la DATE DE VALEUR (EXP58-Q4, `lib/dateDeValeur.ts`), facultative : nommée par l'en-tête ou choisie par le
+  // cabinet (un CSV), DTAVAIL (un OFX). Drapeau baissé, elle reste nulle et n'entre pas dans le réglage : l'import d'hier.
+  const [colDateValeur, setColDateValeur] = useState<number | null>(null)
   // Ce que la détection n'a pas pu établir, et l'encodage lu : dits au-dessus de l'aperçu.
   const [doute, setDoute] = useState<string | null>(null)
   const [encodage, setEncodage] = useState<EncodageLu | null>(null)
@@ -2939,6 +2958,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       setMode(REGLAGE_OFX_QIF.format)
       setHasHeader(REGLAGE_OFX_QIF.hasHeader)
       setColSolde(REGLAGE_OFX_QIF.colSolde)
+      setColDateValeur(colonneDeLaDateDeValeurDuReleve(releveNormalise.format))
       setDoute(null)
       setLigneEnTete(null)
       setDecisions(AUCUNE_DECISION)
@@ -2966,6 +2986,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
     setColDebit(detected.colDebit)
     setColCredit(detected.colCredit)
     setColSolde(detected.colSolde)
+    setColDateValeur(DATE_DE_VALEUR_PREVUE ? colonneDeLaDateDeValeur(parsed) : null)
     setDoute(detected.doute)
     setLigneEnTete(detected.ligneEnTete)
     setDecisions(AUCUNE_DECISION)
@@ -2976,11 +2997,17 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   const { donnees: dataRows, retirees } = useMemo(
     () => (rows ? lignesDeDonnees(rows, hasHeader, ligneEnTete) : { donnees: [], retirees: [] }), [rows, hasHeader, ligneEnTete],
   )
-  const reglage: ReglageDeLImport = { colDate, colLibelle, hasHeader, format: mode, colMontant, colDebit, colCredit, colSolde }
+  const reglage: ReglageDeLImport = {
+    colDate, colLibelle, hasHeader, format: mode, colMontant, colDebit, colCredit, colSolde,
+    ...(DATE_DE_VALEUR_PREVUE ? { colDateValeur } : {}),
+  }
   // La même interprétation pour l'aperçu et pour l'import : ce que l'écran montre est ce qui s'écrit.
   const interpretation = useMemo(
-    () => (rows ? interpreterReleve(dataRows, { colDate, colLibelle, hasHeader, format: mode, colMontant, colDebit, colCredit, colSolde }, decisions) : null),
-    [rows, dataRows, colDate, colLibelle, hasHeader, mode, colMontant, colDebit, colCredit, colSolde, decisions],
+    () => (rows ? interpreterReleve(dataRows, {
+      colDate, colLibelle, hasHeader, format: mode, colMontant, colDebit, colCredit, colSolde,
+      ...(DATE_DE_VALEUR_PREVUE ? { colDateValeur } : {}),
+    }, decisions) : null),
+    [rows, dataRows, colDate, colLibelle, hasHeader, mode, colMontant, colDebit, colCredit, colSolde, colDateValeur, decisions],
   )
   // Deux refus dits avant le clic, le bouton grisé : un réglage qui ferait entrer de faux montants, et une ligne qui dit
   // « solde » sans que le cabinet ait tranché ce qu'elle est.
@@ -3202,6 +3229,8 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
         dossier_id: dossierId, date: o.date, libelle: o.libelle, montant: o.montant, statut: statutPourMouvement(o, regles),
         source_fichier: sourceFileName, libelle_brut: o.brut,
         ...(compteEcrit === null ? {} : { compte_bancaire_id: compteEcrit }),
+        // Sous le drapeau, chaque ligne du lot nomme la date de valeur, nulle ou non : un lot d'une seule forme.
+        ...(o.dateValeur === undefined ? {} : { date_valeur: o.dateValeur }),
       }))
 
       // Un relevé déposé deux fois (nouvelle tentative après un doute, mauvais fichier repris par
@@ -3240,6 +3269,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       if (figees > 0 && frontiere) messages.push(`${figees} datée(s) d’un exercice validé, non importée(s)`)
       const phraseEcartees = phraseDesEcartees(ecartees)
       if (phraseEcartees) messages.push(phraseEcartees)
+      const valeursEcartees = interpretation.datesDeValeur
+        ? interpretation.datesDeValeur.illisibles + interpretation.datesDeValeur.eloignees : 0
+      if (valeursEcartees > 0) messages.push(`${valeursEcartees} date(s) de valeur non gardée(s)`)
       if (soldes.length > 0) messages.push(`${soldes.length} ligne(s) de solde écartée(s)`)
       // Une ou plus de deux lignes de solde : le relevé n'est pas vérifié, et l'alerte le dit (zéro, l'aperçu l'a dit).
       const phraseSoldes = soldes.length > 0 ? phraseDesSoldes(soldes.length) : null
@@ -3443,6 +3475,15 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
               {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
             </select>
           </div>
+          {DATE_DE_VALEUR_PREVUE && (
+            <div className="field">
+              <label htmlFor="colDateValeur">Colonne de la date de valeur (facultative, gardée avec le mouvement)</label>
+              <select id="colDateValeur" value={colDateValeur ?? ''} onChange={(e) => setColDateValeur(e.target.value === '' ? null : +e.target.value)}>
+                <option value="">Aucune</option>
+                {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
+              </select>
+            </div>
+          )}
         </>
       )}
 

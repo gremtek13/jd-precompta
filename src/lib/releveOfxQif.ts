@@ -1,4 +1,5 @@
 import { parseDateBancaire, parseMontantBancaire } from './csv'
+import { DATE_DE_VALEUR_PREVUE } from './dateDeValeur'
 import { decoderUtf8OuWindows1252, decoderWindows1252, type EncodageLu } from './decodageTexte'
 import { formatDate, formatMoney } from './format'
 import type { ReglageDeLImport } from './importReleve'
@@ -31,6 +32,21 @@ export const NOM_DU_FORMAT: Record<FormatOfxQif, string> = {
 // en-tête ni colonne de solde. `colDebit` et `colCredit` ne servent qu'au format à deux colonnes, jamais lu ici.
 export const REGLAGE_OFX_QIF: ReglageDeLImport = {
   colDate: 0, colLibelle: 1, colMontant: 2, format: 'signe', colDebit: 2, colCredit: 2, hasHeader: false, colSolde: null,
+}
+
+// LA DATE DE VALEUR (EXP58-Q4, `lib/dateDeValeur.ts`) : l'élément DTAVAIL d'une opération OFX (« Date funds are available
+// (value date) », spécification OFX, l'agrégat STMTTRN), facultatif, rendu en quatrième colonne — seulement sous
+// `DATE_DE_VALEUR_PREVUE`, et seulement pour un fichier dont une opération au moins le porte : alors TOUTES ses opérations
+// ont quatre colonnes, la quatrième vide là où DTAVAIL manque, car une ligne plus courte que les autres serait prise pour un
+// solde (`lignesDeSolde`) et l'opération disparaîtrait. Drapeau baissé, ou aucun DTAVAIL, les lignes sont celles d'hier,
+// trois colonnes, et leur ligne brute (`libelle_brut`) aussi. DTUSER, la date où le client a donné l'ordre, n'est pas une date
+// de valeur. Le QIF n'en porte aucune.
+const COLONNE_DE_LA_DATE_DE_VALEUR = 3
+
+/** La colonne de la date de valeur des lignes que ce module rend pour un format, ou `null` : celle que l'écran pose dans le
+ *  réglage (`colDateValeur`), sous le drapeau. */
+export function colonneDeLaDateDeValeurDuReleve(format: FormatOfxQif): number | null {
+  return DATE_DE_VALEUR_PREVUE && format !== 'qif' ? COLONNE_DE_LA_DATE_DE_VALEUR : null
 }
 
 // Les libellés des lignes de solde que le module ajoute aux opérations : de la forme d'un solde (`aLaFormeDUnSolde`), ils
@@ -234,6 +250,7 @@ function lireOfx(texte: string, format: FormatOfxQif): LectureOfxQif {
   const lignes: string[][] = []
   const sensDouteux: SensDouteux[] = []
   const doutes: string[] = []
+  const avecValeur = DATE_DE_VALEUR_PREVUE && seul.operations.some((op) => op.champs.has('DTAVAIL'))
   for (const op of seul.operations) {
     const date = dateOfx(op.champs.get('DTPOSTED') ?? '')
     const libelle = libelleDe(op.champs.get('NAME') ?? '', op.champs.get('MEMO') ?? '')
@@ -244,7 +261,10 @@ function lireOfx(texte: string, format: FormatOfxQif): LectureOfxQif {
     const refus = refusDUnLibelleDeSolde(date, libelle)
     if (refus) return { format, refus }
     const montant = montantOfx(op.champs.get('TRNAMT') ?? '')
-    lignes.push([date, libelle, montant])
+    // Une date de valeur d'une forme non reconnue n'est pas tue : la cellule la dit, et l'import la compte illisible.
+    const valeur = op.champs.get('DTAVAIL')
+    lignes.push(!avecValeur ? [date, libelle, montant]
+      : [date, libelle, montant, valeur === undefined ? '' : dateOfx(valeur) || `forme non reconnue : ${valeur}`])
     const type = (op.champs.get('TRNTYPE') ?? '').toUpperCase()
     const n = parseMontantBancaire(montant)
     const dateLue = parseDateBancaire(date)

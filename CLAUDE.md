@@ -1288,7 +1288,10 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   dédoublonnage compte par multiplicité ; un solde se reconnaît à sa forme ; un recouvrement se confirme ; l'OFX et le
   QIF se lisent au contenu, sans réglage de colonnes, par le même aval (`lib/releveOfxQif.ts`), et ce qui n'est pas sûr
   se refuse (plusieurs comptes, une carte, une autre devise, un ordre jour/mois non prouvé) → « L'IMPORT D'UN RELEVÉ PAR
-  FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN », « LE RELEVÉ IMPORTÉ EN OFX OU EN QIF (LIGNE 26.6, MVP) ». **Une
+  FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN », « LE RELEVÉ IMPORTÉ EN OFX OU EN QIF (LIGNE 26.6, MVP) ». **La date de valeur**
+  (EXP58-Q4, préparée le 17/11/2026, `DATE_DE_VALEUR_PREVUE` baissé) : `lignes_bancaires.date_valeur` nullable, à 92 jours au plus
+  de la date d'opération, figée avec le mouvement ; gardée à l'import (en-tête ou choix du cabinet, DTAVAIL d'un OFX), écartée et
+  comptée, hors du dédoublonnage ; aucun moteur ne la lit avant L4 → « EXP58-Q4 : LA DATE DE VALEUR GARDÉE À L'IMPORT ». **Une
   règle « Toujours ignorer »** retient le sens du mouvement qui l'a créée (nulle : les deux sens, toute règle d'avant),
   et `rapprocher_cotisation` refuse un mouvement ignoré (REGLES-Q1, en production depuis le 03/11/2026,
   `SENS_DES_REGLES_IGNOREES_EXPORTE` levé) ; « Ignorer » et « Toujours ignorer » n'écrivent que sur un mouvement encore
