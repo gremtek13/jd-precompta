@@ -1,5 +1,8 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import { EntetePanneau } from '../../components/PanneauDroit'
+import { AssociationDansLaFiche } from '../../components/AssociationsAssuranceMaladie'
+import type { AssuranceMaladieDeLaFiche } from '../../lib/associationsAssuranceMaladieVue'
+import type { GroupeAAssocier } from '../../lib/rapprochementAssuranceMaladie'
 import { IconAttention, IconChevron, IconCoche, IconPrecedent } from '../../components/icons'
 import {
   candidatsCotisations, candidatsPieces, ecartEnJours, libelleExploitable, sensCoherent, tiersConfirmeParBanque,
@@ -308,6 +311,17 @@ interface FicheMouvementProps {
   // P9b2 : écarter la pièce que le client a proposée (`retirer_proposition`), supprimer un message du fil — par le numéro.
   onEcarterProposition: (propositionId: string) => void
   onSupprimerMessage: (messageId: string) => void
+  // LES PAIEMENTS DE L'ASSURANCE MALADIE (NOE5b ; components/AssociationsAssuranceMaladie.tsx) : ce que ce mouvement est pour
+  // eux — associé, proposé, à égalité, hors de l'association — et les deux gestes de l'onglet, sous son verrou. Rien tant que
+  // `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` est baissé. L'association ne remplace aucun classement : les sections qui
+  // suivent restent offertes à un crédit associé.
+  assuranceMaladie: {
+    fiche: AssuranceMaladieDeLaFiche
+    occupe: boolean
+    erreur: string | null
+    onAssocier: (groupe: GroupeAAssocier) => void
+    onDefaire: (mouvementId: string) => void
+  }
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -647,7 +661,7 @@ export default function FicheMouvement({
   restesARegler, paiementsDeLaCaisseIncomplets, caisse, onEcrireCompteBilan, onRetirerCompteBilan, compteBancaire, onConfirmerVirementInterne,
   suivisTva, declarationsTvaIncompletes, releveIncomplet, onRapprocherDeclarationTva, onRetirerDeclarationTva,
   dossierId, envoisDuClient, accesDuReleve, piecesIncompletes, onDemanderAuClient,
-  onEcarterProposition, onSupprimerMessage,
+  onEcarterProposition, onSupprimerMessage, assuranceMaladie,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
@@ -1468,6 +1482,10 @@ export default function FicheMouvement({
         )}
 
         {venteDuMouvementPorte && <CarteDeLaVente vente={venteDuMouvementPorte} acces={accesDuReleve} />}
+        <AssociationDansLaFiche
+          fiche={assuranceMaladie.fiche} occupe={occupe || assuranceMaladie.occupe} erreur={assuranceMaladie.erreur}
+          onAssocier={assuranceMaladie.onAssocier} onDefaire={assuranceMaladie.onDefaire}
+        />
         {venteDuMouvement.etat === 'retenu' && (
           <p className="fiche-mouvement-note" role="status">{venteDuMouvement.note}</p>
         )}

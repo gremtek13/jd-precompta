@@ -110,7 +110,7 @@ describe('gestesDuDebit : la retenue de VF5a1 — rien ne s’offre sans des ven
   })
 
   it('et la fiche d’un crédit ne change pas : un débit y reste sans geste', () => {
-    expect(gestesDuCredit(ventesDuReleve(true, D, lue(s), ACCES), lue(s), ici, [], PLAN_PAR_DEFAUT)).toEqual(AUCUN_GESTE)
+    expect(gestesDuCredit(ventesDuReleve(true, D, lue(s), ACCES), lue(s), ici, [], PLAN_PAR_DEFAUT, new Set())).toEqual(AUCUN_GESTE)
   })
 })
 

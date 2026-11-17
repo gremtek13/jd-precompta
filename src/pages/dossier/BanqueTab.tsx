@@ -80,6 +80,10 @@ import { autreSensReconnu, ignoresParLaRegle, phraseDesIgnores, regleOperante, s
 import { motsDuSens, refusDeLaRegleNeuveSelon, SENS_DES_REGLES_IGNOREES_EXPORTE, sensDeLaRegleSelon } from '../../lib/sensDesReglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import PaiementsAssuranceMaladie from '../../components/PaiementsAssuranceMaladie'
+import { AssociationDansLaSection } from '../../components/AssociationsAssuranceMaladie'
+import { useLesPaiementsAssuranceMaladie } from '../../lib/lecturePaiementsAssuranceMaladie'
+import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, type GroupeAAssocier } from '../../lib/rapprochementAssuranceMaladie'
+import { assuranceMaladieDeLaFiche, associesPourLesVentes, rapprochementDeLOnglet } from '../../lib/associationsAssuranceMaladieVue'
 import PanneauDroit from '../../components/PanneauDroit'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
 import { usePanneauDroit } from '../../lib/panneauDroit'
@@ -537,14 +541,30 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     dossierId, caisse: lectureCaisse, ouvertures: repriseDeLaCaisse, releve: lignes, releveIncomplet: lignesIncompletes,
     especes: especesDeLaCaisse, modele,
   }), [dossierId, lectureCaisse, repriseDeLaCaisse, lignes, lignesIncompletes, especesDeLaCaisse, modele])
+  // LES PAIEMENTS DE L'ASSURANCE MALADIE ET LEURS ASSOCIATIONS AU RELEVÉ (conception 53, NOE5b) : une lecture, tenue ici,
+  // que la section NOEMIE, la fiche d'un crédit et les candidats d'une vente lisent ensemble. Rien ne se lit sous le drapeau
+  // de NOE3 baissé ; sous celui de NOE5 baissé, aucune association n'existe (la table non plus), et rien ne se calcule. Un
+  // crédit associé n'est candidat d'aucune vente (NOE5-Q4 (A)) ; des associations illisibles, et aucun crédit ne se propose
+  // à une vente. Le relevé ne se dit lu en entier qu'hors d'une lecture en vol : avant, tout paiement paraîtrait sans crédit.
+  const paiementsAssuranceMaladie = useLesPaiementsAssuranceMaladie(dossierId, 'cabinet')
+  const associesAssuranceMaladie = useMemo(
+    () => associesPourLesVentes(ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, paiementsAssuranceMaladie.lu),
+    [paiementsAssuranceMaladie.lu],
+  )
+  const rapprochementAssuranceMaladie = useMemo(
+    () => rapprochementDeLOnglet(ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, paiementsAssuranceMaladie.lu,
+      { lignes, complet: !loading && lignesIncompletes === null }, ventes, anneesValidees, aujourdHuiAParis()),
+    [paiementsAssuranceMaladie.lu, lignes, loading, lignesIncompletes, ventes, anneesValidees],
+  )
+
   // LES CANDIDATS DE LA VENTE (étape VF5e ; lib/mouvementsDesVentes.ts) : les factures sources ouvertes et les encaissements
   // enregistrés sans mouvement, jugés sur la même lecture. Aucun tant que les ventes ne sont pas lues en entier. Le lot des
   // règles les apprend par `justificatifPossible` (« à rapprocher ») ; les trois autres lots — le rapprochement automatique,
   // « Valider et rapprocher », la règle d'ignorance — ne prennent pas un mouvement qu'ils justifient peut-être : rapproché
   // d'une pièce ou ignoré, il ne pourrait plus être cité par l'encaissement qui l'attend.
   const candidats = useMemo(
-    () => candidatsDeLaVente(ventes, lectureVentes, anneesValidees),
-    [ventes, lectureVentes, anneesValidees],
+    () => candidatsDeLaVente(ventes, lectureVentes, anneesValidees, associesAssuranceMaladie),
+    [ventes, lectureVentes, anneesValidees, associesAssuranceMaladie],
   )
   const horsDesLotsEtCandidats = useMemo(
     () => horsDesLotsAvecLesCandidats(horsDesLots, candidats, lignes),
@@ -790,6 +810,47 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // pas déjà retirée), sous le verrou des écritures de l'écran, relâché après la relecture qui remet la fiche à jour.
   // Un refus de la base est dit ET suivi d'une relecture : le plus probable est une fiche en retard (la proposition déjà
   // retirée par le client entre-temps), et la relecture la remet d'aplomb.
+  // ASSOCIER ET DÉFAIRE UN PAIEMENT DE L'ASSURANCE MALADIE (NOE5b) : le cabinet seul, par les deux fonctions de la base, tout
+  // ou rien, sous un verrou à eux relâché APRÈS la relecture des associations. Un groupe de la fiche, ou le lot de la section
+  // — le même appel : le i-ème paiement au i-ème mouvement. Le refus de la base se dit sous ses mots, puis on relit : le plus
+  // probable est une fiche en retard.
+  const associationAssuranceMaladieEnCours = useRef(false)
+  const [associationAssuranceMaladieOccupee, setAssociationAssuranceMaladieOccupee] = useState(false)
+  const [erreurAssuranceMaladie, setErreurAssuranceMaladie] = useState<string | null>(null)
+  const [messageAssuranceMaladie, setMessageAssuranceMaladie] = useState<string | null>(null)
+
+  async function ecrireAssuranceMaladie(fonction: string, parametres: Record<string, unknown>, repli: string, apres: string) {
+    if (associationAssuranceMaladieEnCours.current) return
+    associationAssuranceMaladieEnCours.current = true
+    setAssociationAssuranceMaladieOccupee(true)
+    setErreurAssuranceMaladie(null)
+    setMessageAssuranceMaladie(null)
+    try {
+      const { error } = await supabase.rpc(fonction, parametres)
+      if (error) setErreurAssuranceMaladie(messageErreur(error, repli))
+      else setMessageAssuranceMaladie(apres)
+      await paiementsAssuranceMaladie.relire()
+    } catch (e) {
+      setErreurAssuranceMaladie(messageErreur(e, repli))
+    } finally {
+      associationAssuranceMaladieEnCours.current = false
+      setAssociationAssuranceMaladieOccupee(false)
+    }
+  }
+
+  function associerAssuranceMaladie(groupes: readonly GroupeAAssocier[]) {
+    const paires = groupes.flatMap((g) => g.paiementIds.map((paiementId) => ({ paiementId, ligneId: g.mouvementId })))
+    const n = groupes.length
+    void ecrireAssuranceMaladie('associer_paiements_assurance_maladie', {
+      p_dossier_id: dossierId, p_paiements: paires.map((p) => p.paiementId), p_lignes: paires.map((p) => p.ligneId),
+    }, 'L’association n’a pas pu se faire.', n > 1 ? `${n} crédits associés à leur paiement de l’assurance maladie.` : 'Crédit associé à son paiement de l’assurance maladie.')
+  }
+
+  function defaireAssuranceMaladie(mouvementId: string) {
+    void ecrireAssuranceMaladie('defaire_association_assurance_maladie', { p_dossier_id: dossierId, p_ligne_bancaire_id: mouvementId },
+      'L’association n’a pas pu se défaire.', 'Association défaite : ses paiements sont de nouveau libres.')
+  }
+
   async function ecarterLaProposition(propositionId: string) {
     await sousVerrou(setActionMouvementEnCours, async () => {
       const { error } = await supabase.rpc('retirer_proposition', argumentsDeRetirer(dossierId, propositionId))
@@ -809,7 +870,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // rattacher une contre-passation — par les MÊMES fonctions —, ou ouvrir la fenêtre des encaissements sur la
   // contre-passation d'un encaissement — déclaré, ou, depuis l'étape VF5d2, jamais déclaré —, ce débit imposé. L'une des
   // deux fiches rend toujours « aucun » : un mouvement est l'un ou l'autre.
-  const gestesDuCreditDe = (ligne: LigneBancaire) => gestesDuCredit(ventes, lectureVentes, ligne, anneesValidees, modele.plan)
+  const gestesDuCreditDe = (ligne: LigneBancaire) =>
+    gestesDuCredit(ventes, lectureVentes, ligne, anneesValidees, modele.plan, associesAssuranceMaladie)
   const gestesDuDebitDe = (ligne: LigneBancaire) =>
     gestesDuDebit(ventes, lectureVentes, ligne, anneesValidees, modele.plan, aujourdHuiAParis())
   const gestesDe = (ligne: LigneBancaire) => {
@@ -2677,6 +2739,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             onDemanderAuClient={(texte) => demanderAuClient(ligneOuverte.id, texte)}
             onEcarterProposition={(propositionId) => { void ecarterLaProposition(propositionId) }}
             onSupprimerMessage={(messageId) => { void supprimerLeMessage(messageId) }}
+            assuranceMaladie={{
+              fiche: assuranceMaladieDeLaFiche(rapprochementAssuranceMaladie, ligneOuverte),
+              occupe: associationAssuranceMaladieOccupee,
+              erreur: erreurAssuranceMaladie,
+              onAssocier: (groupe) => associerAssuranceMaladie([groupe]),
+              onDefaire: defaireAssuranceMaladie,
+            }}
           />
         </PanneauDroit>
       )}
@@ -2704,9 +2773,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         document.body,
       )}
 
-      {/* Les paiements de l'assurance maladie (NOE4) : une section à part, sous son drapeau ; elle ne touche ni au relevé ni
-          au rapprochement (l'association viendra avec NOE5). */}
-      <PaiementsAssuranceMaladie espace="cabinet" dossierId={dossierId} />
+      {/* Les paiements de l'assurance maladie (NOE4) : une section à part, sous son drapeau, sur la lecture de l'onglet ; sous
+          les imports, l'association au relevé (NOE5b) : ses contrôles et le lot des concordances. Elle ne touche ni au
+          classement des crédits ni au rapprochement des pièces. */}
+      <PaiementsAssuranceMaladie espace="cabinet" dossierId={dossierId} partagee={paiementsAssuranceMaladie}>
+        <AssociationDansLaSection
+          rapprochement={rapprochementAssuranceMaladie} occupe={associationAssuranceMaladieOccupee}
+          erreur={erreurAssuranceMaladie} message={messageAssuranceMaladie} onAssocierLeLot={associerAssuranceMaladie}
+        />
+      </PaiementsAssuranceMaladie>
     </>
   )
 }

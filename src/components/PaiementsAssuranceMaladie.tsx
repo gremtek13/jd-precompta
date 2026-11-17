@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
+import { useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
@@ -18,7 +18,9 @@ import {
   refusDeLaTailleDesPaiements, reglageChoisi, reglageVide, rejetsDits, totalDesPaiements, type ReglageDUnePartALEcran,
   type UsageDUneColonne,
 } from '../lib/paiementsAssuranceMaladieVue'
-import { lireLesPaiementsAssuranceMaladie, type PaiementsLus } from '../lib/paiementsAssuranceMaladieLecture'
+import type { PaiementsLus } from '../lib/paiementsAssuranceMaladieLecture'
+import { useLesPaiementsAssuranceMaladie } from '../lib/lecturePaiementsAssuranceMaladie'
+import { importsAssocies, refusDuRetraitDImportDit } from '../lib/associationsAssuranceMaladieVue'
 import BandeauLecturePartielle from './BandeauLecturePartielle'
 import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/types'
 
@@ -32,17 +34,39 @@ import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/ty
 //
 // UN VERROU (`ecritureEnCours`) pour les deux gestes, importer et retirer, relâché après la relecture. Une liste lue en partie
 // n'offre aucun geste : un paiement déjà en base passerait pour nouveau, et l'aperçu dirait faux.
+//
+// LA LECTURE PARTAGÉE (NOE5b) : l'onglet Banque tient la lecture (la fiche d'un crédit et les candidats d'une vente la lisent
+// aussi) et la passe ici, avec, en `children`, l'association des paiements au relevé ; « Ma banque » ne passe rien, et la
+// section lit elle-même. Sous `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` levé, les associations se lisent avec les paiements :
+// lues en partie, aucun geste ; un import dont un paiement est associé n'offre pas « Retirer », et dit pourquoi.
 
-type Etat = { cle: string; lu: PaiementsLus } | null
-
-export default function PaiementsAssuranceMaladie({ espace, dossierId }: { espace: EspaceVentes; dossierId: string }) {
-  if (!PAIEMENTS_ASSURANCE_MALADIE_PREVUS) return null
-  return <Section key={dossierId} espace={espace} dossierId={dossierId} />
+export interface LecturePartagee {
+  lu: PaiementsLus | null
+  relire: () => Promise<void>
 }
 
-function Section({ espace, dossierId }: { espace: EspaceVentes; dossierId: string }) {
+export default function PaiementsAssuranceMaladie({ espace, dossierId, partagee, children }: {
+  espace: EspaceVentes
+  dossierId: string
+  /** La lecture que l'écran qui monte la section tient déjà ; absente, la section lit elle-même. */
+  partagee?: LecturePartagee
+  /** Ce qui se montre sous les imports, sur des lectures entières (l'association, côté cabinet). */
+  children?: ReactNode
+}) {
+  if (!PAIEMENTS_ASSURANCE_MALADIE_PREVUS) return null
+  if (partagee) return <Section key={dossierId} espace={espace} dossierId={dossierId} lecture={partagee}>{children}</Section>
+  return <SectionAutonome key={dossierId} espace={espace} dossierId={dossierId} />
+}
+
+function SectionAutonome({ espace, dossierId }: { espace: EspaceVentes; dossierId: string }) {
+  const lecture = useLesPaiementsAssuranceMaladie(dossierId, espace)
+  return <Section espace={espace} dossierId={dossierId} lecture={lecture} />
+}
+
+function Section({ espace, dossierId, lecture, children }: {
+  espace: EspaceVentes; dossierId: string; lecture: LecturePartagee; children?: ReactNode
+}) {
   const client = espace === 'client'
-  const [lecture, setLecture] = useState<Etat>(null)
   const [fenetre, setFenetre] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const [apres, setApres] = useState<string | null>(null)
@@ -50,19 +74,12 @@ function Section({ espace, dossierId }: { espace: EspaceVentes; dossierId: strin
   const ecritureEnCours = useRef(false)
   const [enCours, setEnCours] = useState(false)
 
-  useEffect(() => {
-    let annule = false
-    lireLesPaiementsAssuranceMaladie(dossierId, espace).then((lu) => { if (!annule) setLecture({ cle: dossierId, lu }) })
-    return () => { annule = true }
-  }, [dossierId, espace])
-
-  async function relire() {
-    const lu = await lireLesPaiementsAssuranceMaladie(dossierId, espace)
-    setLecture({ cle: dossierId, lu })
-  }
-
-  const lu = lecture?.cle === dossierId && lecture.lu.dossierId === dossierId ? lecture.lu : null
-  const entier = lu?.etat === 'lus' && lu.imports.complete && lu.paiements.complete ? lu : null
+  const relire = lecture.relire
+  const lu = lecture.lu?.dossierId === dossierId ? lecture.lu : null
+  const entier = lu?.etat === 'lus' && lu.imports.complete && lu.paiements.complete
+    && (lu.associations === null || lu.associations.complete) ? lu : null
+  // Les imports dont un paiement est associé à un crédit : leur retrait se refuse, et se dit avant le clic.
+  const associes = entier ? importsAssocies(entier.paiements.lignes, entier.associations) : null
 
   async function importer(imp: ImportAEnvoyer) {
     if (ecritureEnCours.current || !entier) return
@@ -139,6 +156,15 @@ function Section({ espace, dossierId }: { espace: EspaceVentes; dossierId: strin
               ? 'Ils ne s’affichent pas, et rien ne t’est proposé : un paiement déjà importé passerait pour nouveau. Recharge la page.'
               : 'Ils ne s’affichent pas, et aucun geste n’est offert : un paiement déjà importé passerait pour nouveau.'}
           />
+          {lu.associations && (
+            <BandeauLecturePartielle
+              quoi={client ? 'Les associations de tes paiements à ton relevé' : 'Les associations des paiements au relevé'} accord="lues"
+              motif={lu.associations.motif} technique={false}
+              consequence={client
+                ? 'Rien ne t’est proposé : un import associé paraîtrait libre. Recharge la page.'
+                : 'Aucun geste n’est offert : un import associé paraîtrait libre, un paiement associé se proposerait de nouveau.'}
+            />
+          )}
           {apres && <p role="status">{apres}</p>}
           {erreur && !fenetre && <p className="error-text" role="alert">{erreur}</p>}
           {entier && (
@@ -150,8 +176,10 @@ function Section({ espace, dossierId }: { espace: EspaceVentes; dossierId: strin
               </div>
               <ListeDesImports
                 espace={espace} imports={entier.imports.lignes} paiements={entier.paiements.lignes} enCours={enCours}
+                associes={associes ?? new Set()}
                 aRetirer={aRetirer} onDemanderRetrait={setARetirer} onRetirer={(id) => { void retirer(id) }}
               />
+              {children}
             </>
           )}
         </>
@@ -168,18 +196,20 @@ function Section({ espace, dossierId }: { espace: EspaceVentes; dossierId: strin
   )
 }
 
-function ListeDesImports({ espace, imports, paiements, enCours, aRetirer, onDemanderRetrait, onRetirer }: {
+function ListeDesImports({ espace, imports, paiements, enCours, associes, aRetirer, onDemanderRetrait, onRetirer }: {
   espace: EspaceVentes
   imports: readonly ImportAssuranceMaladie[]
   paiements: readonly PaiementAssuranceMaladie[]
   enCours: boolean
+  /** Les imports dont un paiement est associé à un crédit du relevé : « Retirer » s'y refuse, avant le clic. */
+  associes: ReadonlySet<string>
   aRetirer: string | null
   onDemanderRetrait: (id: string | null) => void
   onRetirer: (id: string) => void
 }) {
   if (imports.length === 0) return <p className="muted" style={{ margin: 0 }}>{VIDE_DIT[espace]}</p>
   const recents = [...imports].reverse()
-  const enConfirmation = recents.find((i) => i.id === aRetirer) ?? null
+  const enConfirmation = recents.find((i) => i.id === aRetirer && !associes.has(i.id)) ?? null
   return (
     <>
       <h4 style={{ marginBottom: 6 }}>Les imports</h4>
@@ -197,9 +227,13 @@ function ListeDesImports({ espace, imports, paiements, enCours, aRetirer, onDema
                   <td data-libelle="Total">{montantDit(totalDesPaiements(siens))}</td>
                   <td data-libelle="Rejets">{rejetsDits({ nombre: i.nombre_de_rejets, montant_centimes: i.montant_rejete_centimes })}</td>
                   <td data-libelle="">
-                    <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => onDemanderRetrait(i.id)}>
-                      Retirer
-                    </button>
+                    {associes.has(i.id) ? (
+                      <span className="muted" style={{ fontSize: '0.85rem' }}>{refusDuRetraitDImportDit(espace)}</span>
+                    ) : (
+                      <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => onDemanderRetrait(i.id)}>
+                        Retirer
+                      </button>
+                    )}
                   </td>
                 </tr>
               )

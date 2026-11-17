@@ -69,6 +69,9 @@ const LECTEURS_PERMIS: Readonly<Record<string, string>> = {
   'src/components/PaiementsAssuranceMaladie.test.tsx': 'les essais de l’écran d’import',
   'src/lib/rapprochementAssuranceMaladie.ts': 'le rapprochement (NOE5), qui propose et contrôle sans rien compter (conception 53, § 8), et nomme sa migration',
   'src/lib/rapprochementAssuranceMaladie.test.ts': 'les essais du rapprochement, qui relisent les mots de sa migration',
+  'src/pages/dossier/BanqueTab.tsx': 'l’onglet Banque (NOE5b), qui appelle les deux fonctions de l’association, au cabinet seul ; '
+    + 'il ne compte rien des paiements : la fiche et la section les montrent, les candidats d’une vente écartent un crédit associé',
+  'src/pages/dossier/BanqueTab.assuranceMaladie.test.tsx': 'les essais de l’association dans l’onglet Banque',
 }
 
 function fichiers(dossier: string): string[] {
