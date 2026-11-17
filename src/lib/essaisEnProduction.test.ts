@@ -471,7 +471,10 @@ describe('les essais de la base, rejoués en production', () => {
     // après sa migration préparée ; SÛR au banc, sur une copie de la réplique à 234.
     // Trente le 17/11/2026 : `auteurDeChaqueSeuil` sorti (CA2-Q1 en production, 20261117133253 ; il ne cherche aucun semis, il se
     // joue comme un essai de la production).
-    expect(cas.length).toBe(30)
+    // Trente et un le même jour : `sousDossierDansSonDossier` (DOCF-Q1-B, `sous_dossier_dans_son_dossier`) entré dans la
+    // famille « apres », après sa migration préparée ; joué sur une copie de la réplique à 236 (27 verdicts sur 27), le banc
+    // reste à rejouer.
+    expect(cas.length).toBe(31)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

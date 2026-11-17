@@ -53551,3 +53551,21 @@ entier) ; la confirmation nomme ce qui part et ce qui reste dans le fichier ; un
 la relecture ; la phrase de NOE3-Q1 après l'import. Les mots dans `lib/paiementsAssuranceMaladieVue.ts`, la lecture dans
 `lib/paiementsAssuranceMaladieLecture.ts` ; quatre fichiers de plus dans la liste des lecteurs des deux tables. La migration
 préparée suffit à l'écran. Restent NOE5 (l'association au relevé), NOE6, NOE7, et la levée du drapeau avec la migration (NOE8).
+
+### 17/11/2026 — DOCF-Q1-B : LE SOUS-DOSSIER TENU DANS SON DOSSIER, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) Sur « (A) Préparer la contrainte en base ». `sous_dossier_dans_son_dossier`
+(préparée, par l'outil : ni retrait, ni vidage, ni « delete », ni barre oblique inverse) pose une garde `security definer`
+sur `documents_divers` et `pieces` (insertion, ou mise à jour du sous-dossier ou du dossier d'une ligne qui en a un, tirant
+juste après la porte) : le sous-dossier est du dossier de la ligne, lu `for share`, un identifiant inconnu refusé sous les
+mêmes mots (la clé étrangère, jugée hors de la RLS, disait au client si un sous-dossier existe ailleurs) ; et une garde
+`security invoker` sur `sous_dossiers` : occupé, il ne change pas de dossier. Clé composite écartée : `relationsDuSchema`
+(six tests, dont le harnais des Edge Functions) refuse une clé à deux colonnes, `socle.sql` aurait rendu un
+`create table` changé pour `documents_divers` et `sous_dossiers`, et `on delete set null` sur deux colonnes met le dossier à
+nul (il faut `set null (sous_dossier_id)`) ; la forme d'A8Q5-Q4, elle, ne touche ni le socle ni les clés simples, qui
+restent (la pièce mise à nul, le document qui retient la suppression d'un sous-dossier, comme hier). Garde de tête : le
+relevé de zéro ligne fautive (réplique : 0 sous-dossier, 0 fautive). Réplique 227 + l'export à 236 : `sousDossierDansSonDossier.sql`
+27 sur 27, EN ATTENTE sans elle ; mutations 9 tuées sur 10 (l'autre, le retour anticipé, ne change que des verrous) ; deux
+sessions : le déplacement ou le rangement, le second refusé ; sans `for share`, les deux passent (l'état faux). Simulée dans
+l'export : dérive 237 = 237, socle 83 inchangé, inventaire 3 220 → 3 225 égal des deux côtés ; `accesAvantLesGardes.sql`
+sans faute. Module `lib/sousDossierDansSonDossier.ts` (drapeau baissé) et son test ; le banc du leurre reste à rejouer.
