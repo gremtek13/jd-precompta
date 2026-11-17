@@ -329,8 +329,12 @@ describe('les essais de la base, rejoués en production', () => {
     // Le trente-cinquième, ecrituresLibres, le 17/11/2026 (EL2, migration `ecritures_libres`) : il crée des dossiers, des pièces,
     // des à-nouveaux et un exercice validé fictifs, et mute des fonctions et une garde. Son catalogue et ses profils se
     // rejoueront partout par le bloc de rls.sql que pose EL8 ; jusque-là, l'essai seul, sur une réplique.
+    // Le trente-sixième, associationPaiementsAssuranceMaladieSuppression, le 17/11/2026 (NOE5, la migration de
+    // l’association des paiements de l’assurance maladie) : il retire une association en direct, un mouvement, un paiement, un import
+    // et un dossier jetable, sous la garde ESSAI_HORS_REPLIQUE ; son compagnon, associationPaiementsAssuranceMaladie.sql, se
+    // joue en production (aucune suppression).
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
+      'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'associationPaiementsAssuranceMaladieSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'ecrituresLibres (son en-tête)', 'exercicesDuDossier (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'hausseDuChiffreDAffairesSuppression (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
