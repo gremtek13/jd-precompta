@@ -53627,3 +53627,17 @@ divers, non 627), la dépense de janvier comptée en N (EL-Q3). Ambiguës, gard�
 des exonérations (la somme proposée abandonnée), l'impayé, le prorata de l'estimation. Sources relues : la notice 2035-NOT-SD
 2026 (renvoi 10, le barème qui couvre l'amortissement, la ligne 13 ouverte) ; le BOFiP injoignable. Quatre lots (L1 avant le
 20/11, sans base sauf la date de valeur ; L2 avant la validation de 2025) et cinq questions au cabinet, EXP58-Q1 à Q5.
+
+### 17/11/2026 — LA PRIORITÉ DU 17/11/2026 : L'OFFRE DE L'EXPERT-COMPTABLE D'ABORD, LE PLAN INITIAL GARDÉ
+
+Après le rendez-vous du 17/11/2026 avec l'expert-comptable, le cabinet a fixé : priorité à ce qu'il a demandé — une
+précomptabilité qui envoie ses écritures à son logiciel (ACD), la plateforme agréée, et l'import des paiements de
+l'assurance maladie pour rapprocher ce qu'elle paie de ce qu'elle doit, pour les BNC de santé —, « sans oublier le plan
+initial ». Le cabinet ne partage pas l'idée de se limiter aux BNC de santé : tout choix qui fermerait les autres
+professions ou les sociétés se signale avant d'être fait. Il a aussi demandé des fonctionnalités en option, choisies
+cabinet par cabinet (conception 56), et de ne plus solliciter l'expert-comptable : ses réponses du jour (une quarantaine
+sur cinquante, conception 58) s'emploient telles quelles, le reste se cherche dans les sources publiques (conception 57 :
+ACD importe un FEC en archive avec ses pièces). Ordre retenu : l'export vers ACD (EXP1), NOEMIE jusqu'au rapprochement
+(NOE5), ce que l'assurance maladie doit payer (OPT-Q6), les options (OPT1 à OPT7), les corrections tirées des réponses
+(L1 avant le 20/11, dont la date de valeur gardée à l'import, accordée le jour même). Le même jour : EL-Q1 confirmée de
+vive voix (tout compte du cabinet qui suit le dossier écrit librement) ; la demande 378 fusionnée.
