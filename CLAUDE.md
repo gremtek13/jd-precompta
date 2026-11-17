@@ -530,6 +530,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   L'AUTEUR DE CHAQUE SEUIL », « L'ALERTE
   DE HAUSSE DU CHIFFRE D'AFFAIRES (MVP) », « L'ALERTE DU CHIFFRE D'AFFAIRES REPRISE », « L'ALERTE DU CHIFFRE D'AFFAIRES EN
   PRODUCTION ».
+- **La déclaration principale n° 2035-SD** (17/11/2026, cerfa 11176*28 ; `2035-sd-2026.pdf` n'est que la liasse des annexes) :
+  l'identité, la ligne 1 (CP ou CR) et le tableau I tiré du registre, sa colonne 7 redisant CH ; le reste vide ou « à saisir »
+  (`lib/gabarit2035SD.ts`, `FORMULAIRE_2035_SD_OFFERT` levé ; 2035SD-Q1 à Q3, E1 à E4) → « LA DÉCLARATION PRINCIPALE N° 2035-SD ».
 - **L'import NOEMIE et les paiements de l'assurance maladie** (demande et décision du cabinet du 16/11/2026 : les chiffres
   seuls, aucune donnée de patient ; au MVP, en entier, NOE-Q5) : conçus (`docs/conceptions/53-import-noemie-et-remboursements.md`,
   les réponses au §10) — le fichier lu dans le navigateur de celui qui importe (le praticien sous « Banque », ou le cabinet,

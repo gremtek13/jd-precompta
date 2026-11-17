@@ -53459,3 +53459,18 @@ droite du libellé, ne porte que la grille — exactement quinze filets, aucun t
 moins et de trois médianes au plus ; sinon rien. Le nom va passé le filet qui ferme la cellule de son libellé (x ≈ 236 en
 page 2), la page 1 identique au point près (pdftotext -bbox). La 2035-E portait déjà les deux. Le second signalement (lignes 34
 à 47 absentes de la page 2) ne s'est pas reproduit : CA, CE, CH, CN et CP s'impriment sur la chaîne entière ; tests ajoutés.
+
+### 17/11/2026 — LA DÉCLARATION PRINCIPALE N° 2035-SD
+
+(Agent architecte ; rien en production.) Le cabinet trouvait la 2035-A et pas la 2035-SD : relu page par page, le fichier
+`public/formulaires/2035-sd-2026.pdf` n'est que la liasse des annexes (2035-A, B, E, F, G ; cerfa 15945*08). La déclaration,
+cerfa 11176*28 (impots.gouv.fr, `2035-sd_5382.pdf`, quatre pages ; notice `2035-sd_5385.pdf`), est livrée à son empreinte dans
+`2035-sd-declaration-2026.pdf`. Elle n'a ni champs ni codes de case : `lib/gabarit2035SD.ts` repère une case par son libellé et
+les deux filets à sa droite, la grille du SIRET de la page 4 au pas irrégulier (15 à 30 points), le tableau I par les numéros
+de ses colonnes ; son corps n'a aucune ligne tracée (vingt biens à pas de 10 points, puis des copies vierges de la page 3 en
+états annexes). Rempli : l'identité, la ligne 1 (CP ou CR), le tableau I tiré du registre par le calcul de CH, sa colonne 7
+répartie au plus fort reste pour redire CH (arrondies seules, trois dotations à 0,50 € la faisaient dépasser d'un euro),
+l'écart dit sinon ; « à saisir » pour les colonnes 2 et 3 d'un redevable et la ligne (B) d'un véhicule sous le barème. Le reste
+vide (conception 55). Le bouton de Clôture, sous `FORMULAIRE_2035_SD_OFFERT` levé. Preuves : quatre fichiers de tests (le
+gabarit relu sur le vrai formulaire, le PDF produit relu par pdf.js, la confrontation à CH par le vrai moteur de la 2035),
+quatre tests d'écran ; les mutations (répartition, filtre du registre, verrou, blocage) mordent.
