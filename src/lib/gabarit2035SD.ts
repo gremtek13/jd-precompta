@@ -191,7 +191,7 @@ export interface PlanDeRemplissage2035SD {
   /** « à saisir », en rouge, dans la case qui l'attend. */
   aSaisir: Inscription2035SD[]
   /** Les mentions de l'application, en rouge au bas de chaque page (numéro → lignes). */
-  notes: Map<number, string[]>
+  mentionsDeBasDePage: Map<number, string[]>
   /** Combien de copies de la page 3 ajouter en fin de document comme états annexes (pages 5 et suivantes). */
   etatsAnnexes: number
   /** Un cadre dont une valeur existait mais dont la case n'a pas été retrouvée sur le formulaire. Jamais tu. */
@@ -217,9 +217,9 @@ export function planDeRemplissage2035SD(
 ): PlanDeRemplissage2035SD {
   const inscriptions: Inscription2035SD[] = []
   const aSaisir: Inscription2035SD[] = []
-  const notes = new Map<number, string[]>()
+  const mentionsDeBasDePage = new Map<number, string[]>()
   const libellesSansAncrage: string[] = []
-  const noter = (page: number, lignes: readonly string[]) => notes.set(page, [...(notes.get(page) ?? []), ...lignes])
+  const noter = (page: number, lignes: readonly string[]) => mentionsDeBasDePage.set(page, [...(mentionsDeBasDePage.get(page) ?? []), ...lignes])
 
   const montantA = (page: number, x: number, y: number, valeur: Montant2035SD, taille: number) => {
     if (valeur === 0) return
@@ -347,5 +347,5 @@ export function planDeRemplissage2035SD(
 
   noter(1, notesDeLaPremierePage())
   if (avisDuTableau.length > 0) noter(PAGE_DU_TABLEAU, avisDuTableau)
-  return { inscriptions, aSaisir, notes, etatsAnnexes, libellesSansAncrage }
+  return { inscriptions, aSaisir, mentionsDeBasDePage, etatsAnnexes, libellesSansAncrage }
 }

@@ -118,7 +118,7 @@ export async function remplir2035SD(
       mention.forEach((ligne, k) => ligneRouge(numero, ligne, haut - 14 - k * 9))
     }
   }
-  for (const [numero, lignes] of plan.notes) lignes.forEach((ligne, k) => ligneRouge(numero, ligne, 80 - k * 9))
+  for (const [numero, lignes] of plan.mentionsDeBasDePage) lignes.forEach((ligne, k) => ligneRouge(numero, ligne, 80 - k * 9))
 
   return { pdf: await pdf.save(), libellesSansAncrage: plan.libellesSansAncrage, etatsAnnexes: plan.etatsAnnexes }
 }
