@@ -725,6 +725,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'components/HaussesDuChiffreDAffaires.tsx': 'drapeau `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` baissé : ne rend ni ne lit rien ; levé, '
     + 'son propre test (HaussesDuChiffreDAffaires.test.tsx) éprouve le silence avant les lectures et une ligne discrète sur une '
     + 'lecture ratée, jamais « aucune hausse »',
+  'components/PaiementsAssuranceMaladie.tsx': 'drapeau `PAIEMENTS_ASSURANCE_MALADIE_PREVUS` baissé : ne rend ni ne lit rien ; '
+    + 'levé, son propre test (PaiementsAssuranceMaladie.test.tsx) éprouve « Chargement… » avant la lecture, aucun geste sur une '
+    + 'lecture partielle, et un seul envoi pour deux clics',
   'components/CopieDesFichiers.tsx': 'drapeau `COPIE_DES_FICHIERS_PREVUE` baissé : ne rend ni ne lit rien ; levé, son propre test '
     + '(CopieDesFichiers.test.tsx) éprouve la lecture avant le rappel, et le geste sur une lecture partielle (aucun ZIP)',
   'components/DeuxFacteursDesComptes.tsx': 'drapeau `DEUX_FACTEURS_EXIGES_EXPORTE` baissé : ne rend ni ne lit rien ; levé, '

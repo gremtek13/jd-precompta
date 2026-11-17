@@ -53536,3 +53536,18 @@ bas de la page 3. CADRE7-Q3, « à déconseiller » : au-delà de deux véhicule
 total A dans la cellule de la ligne 23 (x 249,2–348,4), repérées par le libellé et ses filets, relues sur le PDF produit.
 2035SD-Q1 (A) : la date de début de la profession reprend `debuts_d_activite`, lue au clic, vide si postérieure à l'exercice ou
 illisible (dit) ; Q2 et Q3 (A) : rien ne change. Ouverte : CADRE7Q4-Q1 (la ligne 24 = BJ − total A).
+
+### 17/11/2026 — NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE (DERRIÈRE SON DRAPEAU)
+
+(Agent dev ; rien en production, la migration NOE3 toujours préparée.) Les réponses du cabinet du jour : NOE1-Q1 « l'écran
+d'abord, l'en-tête ensuite », NOE2-Q1 « l'export CSV seul », NOE3-Q1 « une phrase et le conseil de supprimer le fichier »,
+NOE-migration « l'appliquer avec l'écran ». Une section des deux espaces, `components/PaiementsAssuranceMaladie.tsx` (`espace`
+obligatoire), montée en bas de l'onglet Banque et de « Ma banque » (la case relue à la base avec les deux tables), qui ne rend
+ni ne lit rien sous `PAIEMENTS_ASSURANCE_MALADIE_PREVUS` baissé. Le fichier se décode et se découpe comme l'import des clients,
+dans le navigateur ; l'écran n'en montre que les en-têtes et leur genre (une colonne de noms se dit « texte »), jamais une
+valeur ; le réglage des colonnes part VIDE (rien de deviné) ; l'aperçu, les agrégats par journée, organisme et part, les
+écarts comptés par ligne, les rejets ; les refus de la base dits avant le clic (`refusAvantLEnvoi`, sur les paiements lus en
+entier) ; la confirmation nomme ce qui part et ce qui reste dans le fichier ; un verrou pour importer et retirer, relâché après
+la relecture ; la phrase de NOE3-Q1 après l'import. Les mots dans `lib/paiementsAssuranceMaladieVue.ts`, la lecture dans
+`lib/paiementsAssuranceMaladieLecture.ts` ; quatre fichiers de plus dans la liste des lecteurs des deux tables. La migration
+préparée suffit à l'écran. Restent NOE5 (l'association au relevé), NOE6, NOE7, et la levée du drapeau avec la migration (NOE8).

@@ -545,8 +545,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   NOE1-NOE2 en module (`lib/paiementsAssuranceMaladie.ts`, sans sortie : `paiementsAssuranceMaladieSansSortie.test.ts`) :
   l'export CSV par un réglage des colonnes ; le fichier brut 576/580 ARRÊTÉ (le cahier public n'en cède aucun droit,
   NOE2-Q1). NOE3 préparée, par l'outil, son drapeau baissé (`paiements_assurance_maladie`, `PAIEMENTS_ASSURANCE_MALADIE_PREVUS`,
-  NOE-migration) ; l'association au relevé remise à NOE5 → « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
-  DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE ».
+  NOE-migration, à appliquer avec l'écran) ; NOE4, l'écran, derrière le même drapeau (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
+  section de l'onglet Banque et de « Ma banque » : en-têtes et genres seuls, réglage vide, agrégats avant le clic, la phrase de
+  NOE3-Q1) ; l'association au relevé remise à NOE5 → « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
+  DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE »,
+  « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE ».
 - **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
   une OD source du brouillon, écrite par le chef du cabinet seul en base ; en trésorerie, chaque ligne de résultat sous un poste
   de la 2035 ou « hors de la 2035 » ; EL1 à EL8, EL-Q1 à Q12, EL-E1 à E5 → « L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE : LA CONCEPTION ».
