@@ -553,8 +553,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE »,
   « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE ».
 - **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
-  une OD source du brouillon, écrite par le chef du cabinet seul en base ; en trésorerie, chaque ligne de résultat sous un poste
-  de la 2035 ou « hors de la 2035 » ; EL1 à EL8, EL-Q1 à Q12, EL-E1 à E5 → « L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE : LA CONCEPTION ».
+  une OD source du brouillon ; en trésorerie, chaque ligne de résultat sous un poste de la 2035 ou « hors de la 2035 » ; EL-Q1 à
+  Q12 tranchées le 17/11/2026 — tout compte du cabinet qui suit le dossier l'écrit (EL-Q1, `admin_du_dossier`, l'auteur posé par
+  la base), un dégel du dernier exercice validé par le chef, conçu, pas codé (EL-Q10 (B), EL10-Q1 à Q7 ouvertes, lot EL9). EL1 en
+  module (`lib/ecritureLibre.ts`) ; EL2 préparée, à coller (`ecritures_libres`, `ECRITURES_LIBRES_PREVUES` baissé ; les quatre
+  sources neuves sœurs la tolèrent, `stocks.test.ts`) ; le plan de sauvegarde et `rls.sql` à EL8 → « L'ÉCRITURE LIBRE DE
+  L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION ».
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
   levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la

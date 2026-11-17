@@ -53569,3 +53569,18 @@ relevé de zéro ligne fautive (réplique : 0 sous-dossier, 0 fautive). Répliqu
 sessions : le déplacement ou le rangement, le second refusé ; sans `for share`, les deux passent (l'état faux). Simulée dans
 l'export : dérive 237 = 237, socle 83 inchangé, inventaire 3 220 → 3 225 égal des deux côtés ; `accesAvantLesGardes.sql`
 sans faute. Module `lib/sousDossierDansSonDossier.ts` (drapeau baissé) et son test ; le banc du leurre reste à rejouer.
+### 17/11/2026 — EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) Le cabinet a tranché EL-Q1 à Q12 : dix à la recommandation ; EL-Q1 sans option, une
+note — « les comptables peuvent faire les ecritures libre » —, un revirement sur la parole du 16/11 que la réponse la plus
+récente emporte : tout compte du cabinet qui suit le dossier écrit (`admin_du_dossier`), la traçabilité (`cree_par`,
+`modifie_par`, posés par la base) portant ce que le droit réservé portait ; EL-Q10 (B), un dégel par le chef, conçu (§ 6.1 de la
+conception 54 : le dernier exercice validé, son instantané et son FEC archivés dans une table immuable, la frontière qui recule,
+la revalidation par `valider_exercice` inchangée), pas codé, sept questions EL10-Q1 à Q7. EL1 : `src/lib/ecritureLibre.ts`
+(vingt-quatre refus dans l'ordre de la base, les avertissements, la règle de la trésorerie devant une charge rattachée, la
+composition). EL2 : `20261117120000_ecritures_libres` (préparée, À COLLER : ses fonctions suppriment), `ECRITURES_LIBRES_PREVUES`
+baissé ; l'extourne dans la même ligne (`avec_extourne`, le patron d'INV2), `contre_passe_id` remis à EL7 ; les quatre sœurs
+(MCB5g, INV2, LIA2, AFF2) tolèrent la colonne neuve et posent leur paire avec elle. Le plan de sauvegarde, tenté, cassait trois
+gardes (l'ordre de la caisse, le filtre « liste par liste », l'essai de restauration) : il va à EL8 avec le bloc de
+`restauration.sql`. Sur une copie de `replique_227` portée à 236 : l'essai 67/67, six mutations sur six ; le retour puis EL2 de
+nouveau ; les cinq sources dans les deux ordres, dix paires ; l'essai d'INV2 92/92 et 14/14 à côté.
