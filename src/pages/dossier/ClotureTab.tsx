@@ -25,7 +25,6 @@ import { remplir2035 } from '../../lib/remplir2035'
 import { avertissementDuFormulaire } from '../../lib/modeles2035'
 import { FORMULAIRE_2035_SD_OFFERT, avertissementDuFormulaire2035SD } from '../../lib/modeles2035SD'
 import { avisDuTableauDesImmobilisations, calculer2035SD, type Declaration2035SD } from '../../lib/declaration2035SD'
-import { remplir2035SD } from '../../lib/remplir2035SD'
 import { SAISIES_2035E_ABSENTES, calculer2035E, forfaitKilometriqueDesPostes, type Annexe2035E } from '../../lib/declaration2035E'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
@@ -929,6 +928,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     setError(null)
     try {
       const declarant = instantane ? instantane.entete : entete
+      // Chargé au clic : pdf.js touche au navigateur dès son import, et l'écran n'en a besoin qu'ici.
+      const { remplir2035SD } = await import('../../lib/remplir2035SD')
       const { pdf, libellesSansAncrage } = await remplir2035SD(declaration, {
         nom: declarant.nom, activite: declarant.activite, siret: declarant.siret,
         // L'adresse est celle d'aujourd'hui, même pour un exercice validé : l'instantané ne la garde pas (comme la 2035-E).
