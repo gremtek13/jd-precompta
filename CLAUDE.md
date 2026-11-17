@@ -572,12 +572,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   saisis), les justificatifs en ZIP sous leur PieceRef, sans rien changer au FEC ; restent l'essai chez l'expert-comptable et EXP-Q2 à Q5
   → « EXP1 : L'EXPORT VERS UN LOGICIEL COMPTABLE, PROFIL ACD ».
 - **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
-  une OD source du brouillon ; en trésorerie, chaque ligne de résultat sous un poste de la 2035 ou « hors de la 2035 » ; EL-Q1 à
+  une OD source du brouillon ; en trésorerie, chaque ligne de résultat sous un poste de la 2035 ou « hors de la 2035 », une charge
+  ou un produit rattaché hors de la 2035 seulement (`rattacheeComptee`, EXP58-Q3 (A) : la désignation « contre la règle »
+  retirée, la préparée récrite, md5 `485ecc9f…`) ; EL-Q1 à
   Q12 tranchées le 17/11/2026 — tout compte du cabinet qui suit le dossier l'écrit (EL-Q1, `admin_du_dossier`, l'auteur posé par
   la base), un dégel du dernier exercice validé par le chef, conçu, pas codé (EL-Q10 (B), EL10-Q1 à Q7 ouvertes, lot EL9). EL1 en
   module (`lib/ecritureLibre.ts`) ; EL2 préparée, à coller (`ecritures_libres`, `ECRITURES_LIBRES_PREVUES` baissé ; les quatre
   sources neuves sœurs la tolèrent, `stocks.test.ts`) ; le plan de sauvegarde et `rls.sql` à EL8 → « L'ÉCRITURE LIBRE DE
-  L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION ».
+  L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION », « EXP58-Q3 ET NOE4-Q1 ».
 - **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
   (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
   les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».

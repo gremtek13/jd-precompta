@@ -5,7 +5,10 @@
 // (`enregistrer_ecriture_libre`, migration préparée `ecritures_libres`, EL2) redit ; il compose les écritures que la base
 // recompose et compare en multiensemble ; il dit les avertissements, qui ne refusent rien. Les réponses du cabinet du
 // 17/11/2026 : EL-Q1 (tout compte du cabinet qui suit le dossier l'écrit, la base le vérifie par `admin_du_dossier`), EL-Q2
-// (A), EL-Q3 (A), EL-Q4 (A), EL-Q5 (A), EL-Q6 (A), EL-Q7 (A), EL-Q8 (A), EL-Q9 (A).
+// (A), EL-Q3 (A), EL-Q4 (A), EL-Q5 (A), EL-Q6 (A), EL-Q7 (A), EL-Q8 (A), EL-Q9 (A) ; et EXP58-Q3 (A), le même jour, qui retire
+// la désignation « contre la règle de la trésorerie » qu'EL-Q3 (A) permettait : une charge ou un produit rattaché ne compte
+// jamais dans la 2035 de l'année de l'écriture, il se passe hors de la 2035 (l'expert-comptable ne la passe pas ;
+// BOI-BNC-BASE-40-10 § 260). Conception 58, § 5.
 //
 // SOURCES. CGI, art. 93, 1 et 93 A ; BOI-BNC-BASE-40-10 § 260 (en trésorerie, une dépense compte l'année où elle est
 // effectivement acquittée) ; PCG (règlement ANC n° 2014-03, numérotation du 1er janvier 2026), art. 1121-1 (la liste des
@@ -37,16 +40,14 @@ export interface LigneDEcritureLibre {
   compteLib: string | null
 }
 
-/** La saisie : une date (AAAA-MM-JJ), un libellé (qui part au FEC), un motif (qui n'y part jamais), les lignes, l'extourne au
- *  1er janvier qui suit une écriture du 31 décembre, et la désignation explicite « contre la règle de la trésorerie » qu'exige
- *  une charge ou un produit rattaché compté dans la 2035 (EL-Q3 (A)). */
+/** La saisie : une date (AAAA-MM-JJ), un libellé (qui part au FEC), un motif (qui n'y part jamais), les lignes, et l'extourne
+ *  au 1er janvier qui suit une écriture du 31 décembre (proposée devant une charge ou un produit rattaché, jamais exigée). */
 export interface SaisieDEcritureLibre {
   date: string
   libelle: string
   motif: string
   lignes: readonly LigneDEcritureLibre[]
   avecExtourne: boolean
-  contreLaRegle: boolean
 }
 
 /** Ce que l'écran lit avant de juger : le mode du dossier, sa frontière de validation (le 31 décembre du dernier exercice
@@ -159,11 +160,8 @@ export const MOTS_DES_REFUS = {
   libelleDuCompte: 'Le libellé d’un compte tient en 1 à 200 caractères, sur une ligne.',
   deuxLibelles: 'Un même compte porte deux libellés dans cette écriture.',
   desequilibre: 'L’écriture n’est pas équilibrée : au moins un débit et un crédit, la somme des débits égale à celle des crédits, au centime.',
-  contreLaRegleIllisible: 'La désignation « contre la règle de la trésorerie » se donne ou ne se donne pas : vrai ou faux.',
-  contreLaRegleExigee: 'Une charge ou un produit rattaché compté dans la 2035 demande la désignation explicite « contre la règle de la '
-    + 'trésorerie » et son extourne au 1er janvier.',
-  contreLaRegleSansObjet: 'La désignation « contre la règle de la trésorerie » ne vaut que pour une charge ou un produit rattaché compté '
-    + 'dans la 2035.',
+  rattacheeComptee: 'En trésorerie, une charge ou un produit rattaché ne compte pas dans la 2035 de l’année de l’écriture : ses '
+    + 'lignes de charge ou de produit se passent hors de la 2035.',
 } as const
 
 /** Les mots que la base seule dit (la pièce, la version, la recomposition), et ceux de ses deux gardes. */
@@ -183,7 +181,7 @@ export const AVERTISSEMENT_DU_LIBELLE =
   'Ce libellé part au FEC et à la piste d’audit : il ne porte jamais le nom d’un patient, ni celui d’un client qui n’est pas une '
   + 'entreprise. Le motif, lui, reste au cabinet.'
 
-/** Les mots des avertissements (EL-Q5 (A), EL-Q6 (A), EL-Q3 (A)) : ils disent ce qui ne suivra pas. */
+/** Les mots des avertissements (EL-Q5 (A), EL-Q6 (A), EL-Q3 (A) et EXP58-Q3 (A)) : ils disent ce qui ne suivra pas. */
 export const MOTS_DES_AVERTISSEMENTS = {
   tva: 'La CA3 se calcule des sources et ne verra pas cette ligne ; le compte ne se soldera plus par la liquidation. Une '
     + 'correction de TVA se déclare sur la CA3 de la période où elle se constate.',
@@ -197,8 +195,6 @@ export const MOTS_DES_AVERTISSEMENTS = {
   chargeRattachee: 'En trésorerie, une dépense compte dans la 2035 de l’année où elle est payée, une recette dans celle où elle '
     + 'est encaissée (CGI, art. 93 ; BOI-BNC-BASE-40-10 § 260) : cette charge ou ce produit rattaché change les comptes, pas la '
     + '2035. Proposé hors de la 2035, avec son extourne au 1er janvier.',
-  contreLaRegle: 'Contraire à la règle de la trésorerie, sauf option pour les créances-dettes (CGI, art. 93 A), que ce dossier '
-    + 'n’a pas : la 2035 de l’année compte cette ligne, et son extourne la décompte de l’année suivante.',
 } as const
 
 // ── Les petites règles ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -241,8 +237,9 @@ export function estRattachee(lignes: readonly LigneDEcritureLibre[], mode: ModeC
     && lignes.some((l) => sousLaRacine(l.compte, RACINES_DE_RATTACHEMENT))
 }
 
-/** Rattachée ET comptée : ce qu'exige la désignation explicite et l'extourne (EL-Q3 (A)). */
-export function estCompteeContreLaRegle(lignes: readonly LigneDEcritureLibre[], mode: ModeComptableDeLEcriture): boolean {
+/** Rattachée ET comptée : ce que la base refuse depuis EXP58-Q3 (A) — la 2035 de l'année ne compte pas une dépense payée, ni
+ *  une recette encaissée, l'année suivante (CGI, art. 93 ; BOI-BNC-BASE-40-10 § 260). */
+export function estRattacheeComptee(lignes: readonly LigneDEcritureLibre[], mode: ModeComptableDeLEcriture): boolean {
   return estRattachee(lignes, mode) && lignes.some((l) => comptee(l, mode))
 }
 
@@ -309,16 +306,14 @@ export function refusDeLEcritureLibre(saisie: SaisieDEcritureLibre, contexte: Co
   const debit = lisibles ? saisie.lignes.filter((l) => l.sens === 'debit').reduce((s, l) => s + l.centimes, 0) : NaN
   const credit = lisibles ? saisie.lignes.filter((l) => l.sens === 'credit').reduce((s, l) => s + l.centimes, 0) : NaN
   if (lisibles && (debit === 0 || credit === 0 || debit !== credit || !Number.isSafeInteger(debit))) r('desequilibre')
-  // 7. La règle de la trésorerie (EL-Q3 (A)) : rattachée et comptée, la désignation explicite et l'extourne ; sans objet,
-  //    la désignation se refuse.
-  if (typeof saisie.contreLaRegle !== 'boolean') r('contreLaRegleIllisible')
-  else if (estCompteeContreLaRegle(saisie.lignes, contexte.mode)) {
-    if (!saisie.contreLaRegle || saisie.avecExtourne !== true) r('contreLaRegleExigee')
-  } else if (saisie.contreLaRegle) r('contreLaRegleSansObjet')
+  // 7. La règle de la trésorerie (EXP58-Q3 (A)) : une charge ou un produit rattaché ne compte pas dans la 2035 ; aucune
+  //    désignation ne le permet plus.
+  if (estRattacheeComptee(saisie.lignes, contexte.mode)) r('rattacheeComptee')
   return refus
 }
 
-/** Les avertissements, ligne par ligne puis pour l'écriture ; ils ne refusent rien (EL-Q5 (A), EL-Q6 (A), EL-Q3 (A)). */
+/** Les avertissements, ligne par ligne puis pour l'écriture ; ils ne refusent rien (EL-Q5 (A), EL-Q6 (A), EL-Q3 (A)). La règle
+ *  de la trésorerie se dit devant toute charge ou tout produit rattaché, compté ou non : compté, le refus la redit. */
 export function avertissementsDeLEcritureLibre(saisie: SaisieDEcritureLibre, mode: ModeComptableDeLEcriture): AvertissementDEcritureLibre[] {
   const A = MOTS_DES_AVERTISSEMENTS
   const avis: AvertissementDEcritureLibre[] = []
@@ -334,8 +329,7 @@ export function avertissementsDeLEcritureLibre(saisie: SaisieDEcritureLibre, mod
     if (mode === 'engagement' && sousLaRacine(c, ['486', '487', '408', '418', '44586', '44587', '151', '491'])) a('inventaire', i)
     if (mode === 'tresorerie' && classeDeResultat(c) != null && l.poste2035 == null) a('horsDeLa2035', i)
   })
-  if (estCompteeContreLaRegle(saisie.lignes, mode)) a('contreLaRegle')
-  else if (estRattachee(saisie.lignes, mode)) a('chargeRattachee')
+  if (estRattachee(saisie.lignes, mode)) a('chargeRattachee')
   return avis
 }
 
@@ -347,7 +341,6 @@ export function propositionDeLaRegle(saisie: SaisieDEcritureLibre, mode: ModeCom
     ...saisie,
     lignes: saisie.lignes.map((l) => (classeDeResultat(l.compte) != null ? { ...l, poste2035: null } : l)),
     avecExtourne: /-12-31$/.test(saisie.date),
-    contreLaRegle: false,
   }
 }
 
@@ -381,7 +374,7 @@ export function composerEcrituresLibres(saisie: SaisieDEcritureLibre, contexte: 
 export function ecritureLibrePourLaBase(saisie: SaisieDEcritureLibre, id: string | null, pieceCiteeId: string | null) {
   return {
     id, date: saisie.date, libelle: saisie.libelle.trim(), motif: saisie.motif.trim(), piece_citee_id: pieceCiteeId,
-    avec_extourne: saisie.avecExtourne, contre_la_regle: saisie.contreLaRegle,
+    avec_extourne: saisie.avecExtourne,
     lignes: saisie.lignes.map((l) => ({
       compte: l.compte, sens: l.sens, centimes: l.centimes, poste_2035: l.poste2035, compte_lib: l.compteLib?.trim() ?? null,
     })),

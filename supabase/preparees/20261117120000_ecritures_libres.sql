@@ -1,4 +1,5 @@
--- EL2 : L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE, EN BASE — PRÉPARÉE le 17/11/2026, PAS APPLIQUÉE. À COLLER : ses deux fonctions
+-- EL2 : L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE, EN BASE — PRÉPARÉE le 17/11/2026, récrite le même jour (EXP58-Q3 (A) : la
+-- désignation « contre la règle de la trésorerie » retirée), PAS APPLIQUÉE. À COLLER : ses deux fonctions
 -- retirent les lignes qu'elles remplacent (le mot de la suppression retient `apply_migration`). Rien de ce qui existe ne se
 -- détruit : une table, une colonne, des contraintes, deux déclencheurs et quatre fonctions s'ajoutent ; aucune ligne, aucune
 -- colonne ni aucun objet ne se retire ni ne change.
@@ -33,9 +34,10 @@
 --      `composerEcrituresLibres`) et leur comparaison en MULTIENSEMBLE (date, compte, sens, centimes), le journal OD, les
 --      libellés au caractère près.
 --   5. Les refus du module (EL-Q4 (A) : la banque, la caisse et le résultat ; EL-Q2 (A) : le poste d'une ligne de résultat en
---      trésorerie, dans la liste fermée de la base ; EL-Q3 (A) : une charge ou un produit rattaché compté dans la 2035 exige
---      la désignation explicite et l'extourne). Les avertissements (EL-Q5, EL-Q6) ne sont qu'à l'écran : la base ne redit que
---      les refus.
+--      trésorerie, dans la liste fermée de la base ; EL-Q3 (A) et EXP58-Q3 (A) : une charge ou un produit rattaché ne compte
+--      pas dans la 2035 de l'année de l'écriture, aucune désignation ne le permet — l'expert-comptable ne passe pas une
+--      dépense de janvier dans la 2035 de l'année d'avant, conception 58 § 5). Les avertissements (EL-Q5, EL-Q6) ne sont qu'à
+--      l'écran : la base ne redit que les refus.
 --   6. Le gel : une écriture d'un exercice validé ne s'écrit, ne change ni ne se retire plus (23514) ; ses lignes, figées par
 --      la garde des écritures validées. Le verrou PARTAGÉ de la validation (`cle_validation`) se prend avant toute lecture du
 --      gel.
@@ -279,7 +281,7 @@ revoke execute on function public.garder_ecriture_libre_du_brouillon() from publ
 
 -- ══ 5. Enregistrer une écriture libre, et son extourne ══
 -- p_ecriture : { id (nul : une nouvelle), date, libelle, motif, lignes: [{ compte, sens, centimes, poste_2035, compte_lib }],
--- avec_extourne, contre_la_regle, piece_citee_id } (`ecritureLibrePourLaBase`) ; p_ecritures : les écritures que compose
+-- avec_extourne, piece_citee_id } (`ecritureLibrePourLaBase`) ; p_ecritures : les écritures que compose
 -- `composerEcrituresLibres` ({ date, journal, libelle, lignes: [{ compte, sens, centimes }] }) ; p_version_lue : la version que
 -- la saisie remplace (nulle pour une nouvelle). Les refus, dans l'ordre du module : la date, l'extourne, le libellé, le motif,
 -- les lignes (leur nombre, puis chacune : le compte, le sens, le montant, le poste, le libellé du compte), un compte sous deux
@@ -299,7 +301,6 @@ declare
   v_frontiere date;
   v_ouverture date;
   v_extourne boolean;
-  v_contre boolean;
   v_libelle text;
   v_motif text;
   v_l jsonb;
@@ -475,21 +476,12 @@ begin
       using errcode = '22023';
   end if;
 
-  -- 7. La règle de la trésorerie (EL-Q3 (A)) : une charge ou un produit rattaché (une ligne de classe 6 ou 7 en face d'un compte
-  --    de rattachement) compté dans la 2035 exige la désignation explicite et l'extourne ; sans objet, la désignation se refuse.
-  v_contre := case when jsonb_typeof(p_ecriture -> 'contre_la_regle') = 'boolean' then (p_ecriture ->> 'contre_la_regle')::boolean end;
-  if v_contre is null then
-    raise exception '%', 'La désignation « contre la règle de la trésorerie » se donne ou ne se donne pas : vrai ou faux.'
-      using errcode = '22023';
-  end if;
+  -- 7. La règle de la trésorerie (EXP58-Q3 (A)) : une charge ou un produit rattaché (une ligne de classe 6 ou 7 en face d'un
+  --    compte de rattachement) ne compte pas dans la 2035 de l'année de l'écriture (CGI, art. 93 ; BOI-BNC-BASE-40-10 § 260) ;
+  --    ses lignes de résultat se passent hors de la 2035. Aucune désignation ne le permet plus.
   if v_mode = 'tresorerie' and v_resultat and v_rattachement and v_poste_compte then
-    if not v_contre or not v_extourne then
-      raise exception '%', 'Une charge ou un produit rattaché compté dans la 2035 demande la désignation explicite « contre la règle de la '
-        || 'trésorerie » et son extourne au 1er janvier.' using errcode = '22023';
-    end if;
-  elsif v_contre then
-    raise exception '%', 'La désignation « contre la règle de la trésorerie » ne vaut que pour une charge ou un produit rattaché compté '
-      || 'dans la 2035.' using errcode = '22023';
+    raise exception '%', 'En trésorerie, une charge ou un produit rattaché ne compte pas dans la 2035 de l’année de l’écriture : ses '
+      || 'lignes de charge ou de produit se passent hors de la 2035.' using errcode = '22023';
   end if;
 
   -- 8. La pièce citée, facultative : une pièce de ce dossier.

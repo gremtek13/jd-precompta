@@ -6,7 +6,8 @@
 -- le même membre sur un dossier qui ne lui est pas assigné ; un client qui a un accès au dossier ; l'anonyme) :
 --   EL-A. l'accès (EL-Q1) : le chef et le membre assigné écrivent et lisent, l'auteur posé par la base ; le membre non assigné,
 --         le client et l'anonyme n'écrivent ni ne lisent rien ;
---   EL-B. chaque refus de `enregistrer_ecriture_libre`, sous son code et ses MOTS (ceux de src/lib/ecritureLibre.ts), puis ceux
+--   EL-B. chaque refus de `enregistrer_ecriture_libre`, sous son code et ses MOTS (ceux de src/lib/ecritureLibre.ts ; la charge
+--         ou le produit rattaché compté dans la 2035 refusé sans désignation possible, EXP58-Q3 (A), 17/11/2026), puis ceux
 --         que la base seule dit ;
 --   EL-C. la recomposition : les lignes écrites au centime, à leurs dates et sous leurs libellés, l'extourne comprise ; un
 --         centime de moins, une extourne absente, un libellé recopié, un autre journal refusés ; le remplacement contre la
@@ -73,10 +74,10 @@ end
 $$;
 
 -- L'écriture telle que `ecritureLibrePourLaBase` la donne : `lignes` = [[compte, sens, centimes, poste, libellé du compte]…].
-create function pg_temp.ecriture(p_id uuid, p_date text, p_libelle text, p_lignes jsonb, p_extourne boolean, p_contre boolean)
+create function pg_temp.ecriture(p_id uuid, p_date text, p_libelle text, p_lignes jsonb, p_extourne boolean)
 returns jsonb language sql as $$
   select jsonb_build_object('id', p_id, 'date', p_date, 'libelle', p_libelle, 'motif', 'Motif de l''essai.',
-    'avec_extourne', p_extourne, 'contre_la_regle', p_contre, 'piece_citee_id', null,
+    'avec_extourne', p_extourne, 'piece_citee_id', null,
     'lignes', (select jsonb_agg(jsonb_build_object('compte', l ->> 0, 'sens', l ->> 1, 'centimes', (l -> 2),
                                                    'poste_2035', l -> 3, 'compte_lib', l -> 4) order by r)
                  from jsonb_array_elements(p_lignes) with ordinality x(l, r)))
@@ -102,8 +103,8 @@ $$;
 
 -- L'appel complet d'une saisie : l'écriture et les écritures que l'application en compose.
 create function pg_temp.saisie(p_dossier uuid, p_id uuid, p_date text, p_libelle text, p_lignes jsonb, p_extourne boolean,
-  p_contre boolean, p_version integer) returns text language sql as $$
-  select pg_temp.appel(p_dossier, pg_temp.ecriture(p_id, p_date, p_libelle, p_lignes, p_extourne, p_contre),
+  p_version integer) returns text language sql as $$
+  select pg_temp.appel(p_dossier, pg_temp.ecriture(p_id, p_date, p_libelle, p_lignes, p_extourne),
                        pg_temp.ecritures(p_date, p_libelle, p_lignes, p_extourne), p_version)
 $$;
 
@@ -146,9 +147,7 @@ declare
   m_lib_compte text := 'Le libellé d’un compte tient en 1 à 200 caractères, sur une ligne.';
   m_deux_libelles text := 'Un même compte porte deux libellés dans cette écriture.';
   m_desequilibre text := 'L’écriture n’est pas équilibrée : au moins un débit et un crédit, la somme des débits égale à celle des crédits, au centime.';
-  m_contre_illisible text := 'La désignation « contre la règle de la trésorerie » se donne ou ne se donne pas : vrai ou faux.';
-  m_contre_exigee text := 'Une charge ou un produit rattaché compté dans la 2035 demande la désignation explicite « contre la règle de la trésorerie » et son extourne au 1er janvier.';
-  m_contre_sans_objet text := 'La désignation « contre la règle de la trésorerie » ne vaut que pour une charge ou un produit rattaché compté dans la 2035.';
+  m_rattachee_comptee text := 'En trésorerie, une charge ou un produit rattaché ne compte pas dans la 2035 de l’année de l’écriture : ses lignes de charge ou de produit se passent hors de la 2035.';
   m_acces text := 'Accès refusé à ce dossier.';
   m_acces_ecriture text := 'Accès refusé à cette écriture libre.';
   m_piece text := 'La pièce citée n’est pas une pièce de ce dossier.';
@@ -163,6 +162,8 @@ declare
   -- L'exemple du cabinet : une charge payée en janvier 2026, rattachée à 2025 (408 au crédit).
   rattachee jsonb := '[["622600","debit",50000,null],["408100","credit",50000,null]]';
   rattachee_comptee jsonb := '[["622600","debit",50000,"Honoraires ne constituant pas des rétrocessions"],["408100","credit",50000,null]]';
+  -- Un produit à recevoir (418 au débit) compté dans les recettes.
+  produit_compte jsonb := '[["706000","credit",30000,"Recettes"],["418000","debit",30000,null]]';
   a_venir text := (extract(year from (now() at time zone 'Europe/Paris'))::integer + 1) || '-01-15';
   issue text;
   id_a uuid;
@@ -191,20 +192,20 @@ begin
     (dov, '2025-01-01', '101000', 'credit', 100, 'essai', repeat('a', 64));
 
   -- ══ EL-A. L'accès (EL-Q1) ══
-  issue := pg_temp.fait(chef, pg_temp.saisie(dt, null, '2025-06-30', 'Reclassement des fournitures', reclassement, false, false, null));
+  issue := pg_temp.fait(chef, pg_temp.saisie(dt, null, '2025-06-30', 'Reclassement des fournitures', reclassement, false, null));
   id_a := case when issue like 'OK %' then substr(issue, 4)::uuid end;
   perform pg_temp.verdict('EL-A1. le chef enregistre un reclassement (le contrôle positif)', issue, id_a is not null);
-  issue := pg_temp.fait(membre, pg_temp.saisie(dt, null, '2025-12-31', 'Charge à payer — honoraires de décembre', rattachee, true, false, null));
+  issue := pg_temp.fait(membre, pg_temp.saisie(dt, null, '2025-12-31', 'Charge à payer — honoraires de décembre', rattachee, true, null));
   id_b := case when issue like 'OK %' then substr(issue, 4)::uuid end;
   perform pg_temp.verdict('EL-A2. un membre assigné enregistre une charge rattachée, hors de la 2035, avec son extourne (EL-Q1)', issue, id_b is not null);
   select count(*) into n from ecritures_libres where (id = id_a and cree_par = chef and numero = 1 and exercice = 2025 and version = 1)
     or (id = id_b and cree_par = membre and numero = 2 and exercice = 2025 and avec_extourne);
   perform pg_temp.verdict('EL-A3. l''auteur et le numéro posés par la base, jamais par l''appelant', n::text, n = 2);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dn, null, '2025-06-30', 'Reclassement', reclassement, false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dn, null, '2025-06-30', 'Reclassement', reclassement, false, null));
   perform pg_temp.verdict('EL-A4. le membre sur un dossier qui ne lui est pas assigné (42501)', issue, issue = '42501 ' || m_acces);
-  issue := pg_temp.tente(client, pg_temp.saisie(dt, null, '2025-06-30', 'Reclassement', reclassement, false, false, null));
+  issue := pg_temp.tente(client, pg_temp.saisie(dt, null, '2025-06-30', 'Reclassement', reclassement, false, null));
   perform pg_temp.verdict('EL-A5. le client du dossier (42501)', issue, issue = '42501 ' || m_acces);
-  issue := pg_temp.tente(null, pg_temp.saisie(dt, null, '2025-06-30', 'Reclassement', reclassement, false, false, null));
+  issue := pg_temp.tente(null, pg_temp.saisie(dt, null, '2025-06-30', 'Reclassement', reclassement, false, null));
   perform pg_temp.verdict('EL-A6. l''anonyme (42501, l''exécution retirée)', issue, issue like '42501 %');
   issue := pg_temp.tente(membre, format('select count(*)::text from ecritures_libres where dossier_id = %L', dt));
   perform pg_temp.verdict('EL-A7. le membre assigné lit les écritures de son dossier', issue, issue = 'OK 2');
@@ -214,67 +215,68 @@ begin
   perform pg_temp.verdict('EL-A9. l''anonyme n''en lit rien', issue, issue = 'OK 0' or issue like '42501 %');
 
   -- ══ EL-B. Les refus, sous leurs mots et leurs codes ══
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-02-30', 'X', reclassement, false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-02-30', 'X', reclassement, false, null));
   perform pg_temp.verdict('EL-B1. une date qui n''existe pas', issue, issue = '22023 ' || m_date);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dov, null, '2024-06-30', 'X', reclassement, false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dov, null, '2024-06-30', 'X', reclassement, false, null));
   perform pg_temp.verdict('EL-B2. une date avant l''ouverture du dossier', issue, issue = '22023 ' || m_ouverture);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, a_venir, 'X', reclassement, false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, a_venir, 'X', reclassement, false, null));
   perform pg_temp.verdict('EL-B3. une date après le 31 décembre de l''année en cours', issue, issue = '22023 ' || m_a_venir);
-  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-12-31', 'X', reclassement, false, false), '{avec_extourne}', '"oui"'),
+  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-12-31', 'X', reclassement, false), '{avec_extourne}', '"oui"'),
     pg_temp.ecritures('2025-12-31', 'X', reclassement, false), null));
   perform pg_temp.verdict('EL-B4. une extourne illisible', issue, issue = '22023 ' || m_ext_illisible);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', reclassement, true, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', reclassement, true, null));
   perform pg_temp.verdict('EL-B5. une extourne hors du 31 décembre', issue, issue = '22023 ' || m_ext_hors);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', '   ', reclassement, false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', '   ', reclassement, false, null));
   perform pg_temp.verdict('EL-B6. un libellé vide', issue, issue = '22023 ' || m_libelle);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'Deux' || chr(10) || 'lignes', reclassement, false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'Deux' || chr(10) || 'lignes', reclassement, false, null));
   perform pg_temp.verdict('EL-B7. un libellé sur deux lignes', issue, issue = '22023 ' || m_libelle);
-  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false, false), '{motif}', '" "'),
+  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false), '{motif}', '" "'),
     pg_temp.ecritures('2025-06-30', 'X', reclassement, false), null));
   perform pg_temp.verdict('EL-B8. un motif vide', issue, issue = '22023 ' || m_motif);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debit",100,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debit",100,null]]', false, null));
   perform pg_temp.verdict('EL-B9. une seule ligne', issue, issue = '22023 ' || m_nombre);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["801000","debit",100,null],["606300","credit",100,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["801000","debit",100,null],["606300","credit",100,null]]', false, null));
   perform pg_temp.verdict('EL-B10. un compte de la classe 8', issue, issue = '22023 ' || m_compte);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["512100","debit",100,null],["108000","credit",100,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["512100","debit",100,null],["108000","credit",100,null]]', false, null));
   perform pg_temp.verdict('EL-B11. la banque refusée (EL-Q4 (A))', issue, issue = '22023 ' || m_banque);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["108000","debit",100,null],["530000","credit",100,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["108000","debit",100,null],["530000","credit",100,null]]', false, null));
   perform pg_temp.verdict('EL-B12. la caisse refusée (EL-Q4 (A))', issue, issue = '22023 ' || m_caisse);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["129000","debit",100,null],["108000","credit",100,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["129000","debit",100,null],["108000","credit",100,null]]', false, null));
   perform pg_temp.verdict('EL-B13. le résultat refusé', issue, issue = '22023 ' || m_resultat);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debut",100,null],["606300","credit",100,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debut",100,null],["606300","credit",100,null]]', false, null));
   perform pg_temp.verdict('EL-B14. un sens illisible', issue, issue = '22023 ' || m_sens);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debit",1.5,null],["606300","credit",1.5,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debit",1.5,null],["606300","credit",1.5,null]]', false, null));
   perform pg_temp.verdict('EL-B15. des centimes qui ne sont pas un entier', issue, issue = '22023 ' || m_montant);
-  issue := pg_temp.tente(membre, pg_temp.saisie(de, null, '2025-06-30', 'X', reclassement, false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(de, null, '2025-06-30', 'X', reclassement, false, null));
   perform pg_temp.verdict('EL-B16. un poste en engagement', issue, issue = '22023 ' || m_poste_eng);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debit",100,"Achats"],["108000","credit",100,"Achats"]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debit",100,"Achats"],["108000","credit",100,"Achats"]]', false, null));
   perform pg_temp.verdict('EL-B17. un poste sur une ligne de bilan', issue, issue = '22023 ' || m_poste_bilan);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["706000","credit",100,"Achats"],["108000","debit",100,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["706000","credit",100,"Achats"],["108000","debit",100,null]]', false, null));
   perform pg_temp.verdict('EL-B18. un poste de dépense sur une recette', issue, issue = '22023 ' || m_poste_inconnu);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["471100","debit",100,null,"Att\nente"],["108000","credit",100,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["471100","debit",100,null,"Att\nente"],["108000","credit",100,null]]', false, null));
   perform pg_temp.verdict('EL-B19. le libellé d''un compte sur deux lignes', issue, issue = '22023 ' || m_lib_compte);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["471100","debit",100,null,"Attente A"],["471100","credit",50,null,"Attente B"],["108000","credit",50,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["471100","debit",100,null,"Attente A"],["471100","credit",50,null,"Attente B"],["108000","credit",50,null]]', false, null));
   perform pg_temp.verdict('EL-B20. un compte sous deux libellés', issue, issue = '22023 ' || m_deux_libelles);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debit",100,null],["606300","credit",99,null]]', false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["606400","debit",100,null],["606300","credit",99,null]]', false, null));
   perform pg_temp.verdict('EL-B21. un centime d''écart', issue, issue = '22023 ' || m_desequilibre);
-  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-12-31', 'X', rattachee_comptee, true, false), '{contre_la_regle}', 'null'),
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-12-31', 'X', rattachee_comptee, false, null));
+  perform pg_temp.verdict('EL-B22. une charge rattachée comptée dans la 2035, sans extourne (EXP58-Q3 (A))', issue, issue = '22023 ' || m_rattachee_comptee);
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-12-31', 'X', rattachee_comptee, true, null));
+  perform pg_temp.verdict('EL-B23. la même avec son extourne : refusée de même (EXP58-Q3 (A))', issue, issue = '22023 ' || m_rattachee_comptee);
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-12-31', 'X', produit_compte, true, null));
+  perform pg_temp.verdict('EL-B24. un produit rattaché compté dans les recettes', issue, issue = '22023 ' || m_rattachee_comptee);
+  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-12-31', 'X', rattachee_comptee, true), '{contre_la_regle}', 'true'),
     pg_temp.ecritures('2025-12-31', 'X', rattachee_comptee, true), null));
-  perform pg_temp.verdict('EL-B22. la désignation illisible', issue, issue = '22023 ' || m_contre_illisible);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-12-31', 'X', rattachee_comptee, true, false, null));
-  perform pg_temp.verdict('EL-B23. une charge rattachée comptée sans la désignation (EL-Q3 (A))', issue, issue = '22023 ' || m_contre_exigee);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-12-31', 'X', rattachee_comptee, false, true, null));
-  perform pg_temp.verdict('EL-B24. désignée, mais sans son extourne', issue, issue = '22023 ' || m_contre_exigee);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', reclassement, false, true, null));
-  perform pg_temp.verdict('EL-B25. la désignation sans objet', issue, issue = '22023 ' || m_contre_sans_objet);
-  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false, false), '{piece_citee_id}', to_jsonb(pb::text)),
+  perform pg_temp.verdict('EL-B25. l''ancienne désignation « contre la règle » envoyée : la base ne la lit plus, le refus reste', issue,
+    issue = '22023 ' || m_rattachee_comptee);
+  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false), '{piece_citee_id}', to_jsonb(pb::text)),
     pg_temp.ecritures('2025-06-30', 'X', reclassement, false), null));
   perform pg_temp.verdict('EL-B26. la pièce d''un autre dossier', issue, issue = '22023 ' || m_piece);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, id_a, '2025-06-30', 'Reclassement des fournitures', reclassement, false, false, 7));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, id_a, '2025-06-30', 'Reclassement des fournitures', reclassement, false, 7));
   perform pg_temp.verdict('EL-B27. une version dépassée (40001)', issue, issue = '40001 ' || m_version);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', reclassement, false, false, 1));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', reclassement, false, 1));
   perform pg_temp.verdict('EL-B28. une écriture nouvelle avec une version lue', issue, issue = '22023 ' || m_nouvelle);
-  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false, false), '{piece_citee_id}', to_jsonb(pa::text)),
+  issue := pg_temp.tente(membre, pg_temp.appel(dt, jsonb_set(pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false), '{piece_citee_id}', to_jsonb(pa::text)),
     pg_temp.ecritures('2025-06-30', 'X', reclassement, false), null));
   perform pg_temp.verdict('EL-B29. la pièce du dossier citée (le contrôle positif)', issue, issue like 'OK %');
 
@@ -288,29 +290,31 @@ begin
   perform pg_temp.verdict('EL-C2. la charge rattachée et son extourne au 1er janvier, au sens inverse', texte,
     texte = '2025-12-31 408100 credit 500.00 Charge à payer — honoraires de décembre / 2025-12-31 622600 debit 500.00 Charge à payer — honoraires de décembre / '
          || '2026-01-01 408100 debit 500.00 Extourne — Charge à payer — honoraires de décembre / 2026-01-01 622600 credit 500.00 Extourne — Charge à payer — honoraires de décembre');
-  issue := pg_temp.fait(membre, pg_temp.saisie(dt, null, '2025-12-31', 'Charge comptée contre la règle', rattachee_comptee, true, true, null));
+  issue := pg_temp.fait(membre, pg_temp.saisie(dt, null, '2025-11-30', 'Charge rattachée sans extourne', rattachee, false, null));
   id_r := case when issue like 'OK %' then substr(issue, 4)::uuid end;
-  select (lignes -> 0 ->> 'poste_2035') || ' ' || coalesce(lignes -> 1 ->> 'poste_2035', 'nul') into texte from ecritures_libres where id = id_r;
-  perform pg_temp.verdict('EL-C3. comptée contre la règle, désignée, avec son extourne : le poste gardé dans ses lignes', issue || ' ' || coalesce(texte, ''),
-    texte = 'Honoraires ne constituant pas des rétrocessions nul');
-  issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false, false),
+  select coalesce(lignes -> 0 ->> 'poste_2035', 'nul') || ' ' || coalesce(lignes -> 1 ->> 'poste_2035', 'nul') || ' ' || avec_extourne::text
+    || ' ' || (select count(*) from ecritures_brouillon b where b.ecriture_libre_id = id_r)
+    into texte from ecritures_libres where id = id_r;
+  perform pg_temp.verdict('EL-C3. une charge rattachée hors de la 2035, sans extourne : permise (l''extourne proposée, jamais exigée), ses lignes sans poste',
+    issue || ' ' || coalesce(texte, ''), texte = 'nul nul false 2');
+  issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false),
     pg_temp.ecritures('2025-06-30', 'X', '[["606400","debit",12000],["606300","credit",11999]]', false), null));
   perform pg_temp.verdict('EL-C4. un centime de moins dans ce que l''application propose', issue, issue = '22023 ' || m_ecritures);
-  issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-12-31', 'X', rattachee, true, false),
+  issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-12-31', 'X', rattachee, true),
     pg_temp.ecritures('2025-12-31', 'X', rattachee, false), null));
   perform pg_temp.verdict('EL-C5. une extourne absente de ce que l''application propose', issue, issue = '22023 ' || m_ecritures);
-  issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false, false),
+  issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false),
     pg_temp.ecritures('2025-06-30', 'Y', reclassement, false), null));
   perform pg_temp.verdict('EL-C6. un autre libellé', issue, issue = '22023 ' || m_ecritures);
-  issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false, false),
+  issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false),
     jsonb_set(pg_temp.ecritures('2025-06-30', 'X', reclassement, false), '{0,journal}', '"AC"'), null));
   perform pg_temp.verdict('EL-C7. un autre journal', issue, issue = '22023 ' || m_ecritures);
   issue := pg_temp.fait(membre, pg_temp.saisie(dt, id_a, '2025-07-31', 'Reclassement des fournitures, corrigé',
-    '[["606400","debit",15000,"Fournitures de bureau"],["606300","credit",15000,"Petit outillage"]]', false, false, 1));
+    '[["606400","debit",15000,"Fournitures de bureau"],["606300","credit",15000,"Petit outillage"]]', false, 1));
   select count(*) into n from ecritures_libres e where e.id = id_a and e.version = 2 and e.modifie_par = membre and e.numero = 1
     and e.date = '2025-07-31' and (select count(*) from ecritures_brouillon b where b.ecriture_libre_id = id_a and b.montant = 150 and b.date = '2025-07-31') = 2;
   perform pg_temp.verdict('EL-C8. le remplacement contre la version lue : version 2, son auteur, le numéro gardé, les lignes remplacées', issue || ' ' || n, n = 1);
-  issue := pg_temp.fait(membre, pg_temp.saisie(dt, id_a, '2024-12-15', 'Reclassement des fournitures, corrigé', reclassement, false, false, 2));
+  issue := pg_temp.fait(membre, pg_temp.saisie(dt, id_a, '2024-12-15', 'Reclassement des fournitures, corrigé', reclassement, false, 2));
   select count(*) into n from ecritures_libres e where e.id = id_a and e.exercice = 2024 and e.numero = 1 and e.version = 3;
   perform pg_temp.verdict('EL-C9. passée dans une autre année : le numéro suivant de cette année-là', issue || ' ' || n, n = 1);
 
@@ -325,19 +329,19 @@ begin
     issue = 'OK 4' and n = 0 and not exists (select 1 from ecritures_libres where id = id_b));
   -- (Une ligne d'exercices_valides posée par le propriétaire, sans la validation : seul compte ici le gel ; « engagement », qui
   -- n'exige pas de déclaration 2035.)
-  issue := pg_temp.fait(membre, pg_temp.saisie(dv, null, '2024-06-30', 'Écriture de 2024', reclassement, false, false, null));
+  issue := pg_temp.fait(membre, pg_temp.saisie(dv, null, '2024-06-30', 'Écriture de 2024', reclassement, false, null));
   id_v := case when issue like 'OK %' then substr(issue, 4)::uuid end;
   insert into exercices_valides (dossier_id, annee, valide_le, valide_par, mode_comptable, nb_lignes, nb_ecritures, total_debit, total_credit, empreinte)
     values (dv, 2024, now(), chef, 'engagement', 0, 0, 0, 0, repeat('0', 64));
-  issue := pg_temp.tente(membre, pg_temp.saisie(dv, null, '2024-09-30', 'Encore 2024', reclassement, false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dv, null, '2024-09-30', 'Encore 2024', reclassement, false, null));
   perform pg_temp.verdict('EL-D4. un exercice validé ne reçoit plus d''écriture libre (23514)', issue, id_v is not null and issue = '23514 ' || m_fige);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dv, id_v, '2024-06-30', 'Écriture de 2024, changée', reclassement, false, false, 1));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dv, id_v, '2024-06-30', 'Écriture de 2024, changée', reclassement, false, 1));
   perform pg_temp.verdict('EL-D5. son écriture ne change plus (23514)', issue, issue = '23514 ' || m_fige);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dv, id_v, '2025-06-30', 'Écriture déplacée en 2025', reclassement, false, false, 1));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dv, id_v, '2025-06-30', 'Écriture déplacée en 2025', reclassement, false, 1));
   perform pg_temp.verdict('EL-D6. ni ne quitte son exercice (23514)', issue, issue = '23514 ' || m_fige);
   issue := pg_temp.tente(membre, format('select public.retirer_ecriture_libre(%L::uuid, 1)::text', id_v));
   perform pg_temp.verdict('EL-D7. ni ne se retire (23514)', issue, issue = '23514 ' || m_fige);
-  issue := pg_temp.tente(membre, pg_temp.saisie(dv, null, '2025-01-15', 'Écriture de 2025', reclassement, false, false, null));
+  issue := pg_temp.tente(membre, pg_temp.saisie(dv, null, '2025-01-15', 'Écriture de 2025', reclassement, false, null));
   perform pg_temp.verdict('EL-D8. l''exercice suivant reste ouvert', issue, issue like 'OK %');
 
   -- ══ EL-E. Les gardes ══
@@ -397,7 +401,7 @@ begin
   begin
     execute replace(pg_get_functiondef('public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)'::regprocedure),
       'if starts_with(v_compte, ''512'') then', 'if false then');
-    issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["512100","debit",100,null],["108000","credit",100,null]]', false, false, null));
+    issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-06-30', 'X', '[["512100","debit",100,null],["108000","credit",100,null]]', false, null));
     raise exception 'ANNULATION_MUTATION';
   exception when others then if sqlerrm <> 'ANNULATION_MUTATION' then issue := sqlstate || ' ' || sqlerrm; end if;
   end;
@@ -406,7 +410,7 @@ begin
   begin
     execute replace(pg_get_functiondef('public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)'::regprocedure),
       'or not coalesce(public.admin_du_dossier(p_dossier_id), false)', '');
-    issue := pg_temp.tente(membre, pg_temp.saisie(dn, null, '2025-06-30', 'X', reclassement, false, false, null));
+    issue := pg_temp.tente(membre, pg_temp.saisie(dn, null, '2025-06-30', 'X', reclassement, false, null));
     raise exception 'ANNULATION_MUTATION';
   exception when others then if sqlerrm <> 'ANNULATION_MUTATION' then issue := sqlstate || ' ' || sqlerrm; end if;
   end;
@@ -415,7 +419,7 @@ begin
   begin
     execute replace(pg_get_functiondef('public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)'::regprocedure),
       'if not coalesce(v_conforme, false) then', 'if false then');
-    issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false, false),
+    issue := pg_temp.tente(membre, pg_temp.appel(dt, pg_temp.ecriture(null, '2025-06-30', 'X', reclassement, false),
       pg_temp.ecritures('2025-06-30', 'X', '[["606400","debit",12000],["606300","credit",11999]]', false), null));
     raise exception 'ANNULATION_MUTATION';
   exception when others then if sqlerrm <> 'ANNULATION_MUTATION' then issue := sqlstate || ' ' || sqlerrm; end if;
@@ -424,12 +428,12 @@ begin
   -- M-EL4 : la règle de la trésorerie oubliée.
   begin
     execute replace(pg_get_functiondef('public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)'::regprocedure),
-      'if not v_contre or not v_extourne then', 'if false then');
-    issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-12-31', 'X', rattachee_comptee, true, false, null));
+      'if v_mode = ''tresorerie'' and v_resultat and v_rattachement and v_poste_compte then', 'if false then');
+    issue := pg_temp.tente(membre, pg_temp.saisie(dt, null, '2025-12-31', 'X', rattachee_comptee, true, null));
     raise exception 'ANNULATION_MUTATION';
   exception when others then if sqlerrm <> 'ANNULATION_MUTATION' then issue := sqlstate || ' ' || sqlerrm; end if;
   end;
-  insert into el_mutation (mutation, observe, mord) values ('M-EL4 — la charge rattachée comptée sans désignation (EL-B23)', issue, issue like 'OK %');
+  insert into el_mutation (mutation, observe, mord) values ('M-EL4 — la charge rattachée comptée dans la 2035 (EL-B23)', issue, issue like 'OK %');
   -- M-EL5 : la garde des lignes ouverte au membre.
   begin
     execute replace(replace(pg_get_functiondef('public.garder_ecriture_libre_du_brouillon()'::regprocedure),
