@@ -53519,3 +53519,20 @@ lit dans `cabinet_admins`, sinon « le cabinet », jamais le début d'un identif
 `vue_par`) ; la lecture du réglage demande l'équipe une fois pour les auteurs des seuils et des marques. Les retours restent
 dans `supabase/preparees/retour/`. Reste : `hausseDuChiffreDAffaires` encore dans la famille « apres », sa migration en
 production depuis le 16/11/2026.
+
+### 17/11/2026 — LE CADRE 7 ET LA 2035-SD : LES RÉPONSES DU CABINET (CADRE7-Q1 À Q4, 2035SD-Q1 À Q3)
+
+(Agent dev.) CADRE7-Q1, une note : « péage et stationnement c'est en frais de déplacement et pas en frais de véhicule » — la
+ligne des frais réels du cadre 7 reste vide, le total A et la ligne 23 portent le barème seul, les péages vont en ligne 24 par
+leurs postes ; la carte Véhicules le dit. CADRE7-Q2 (A) : « Au registre » et « Amort. à réintégrer » dans la carte Véhicules,
+sur `inscrit_immobilisations` et `amortissements_a_reintegrer` de la migration du 16/09/2026 (aucune contrainte, aucune
+garde hors de l'exercice figé : sans migration, vérifié dans l'export) ; décocher efface le montant dans la même écriture
+(`completerModificationVehicule`), le montant s'écrit à la sortie du champ (`amortissementsSaisis`). Le total B est la somme,
+« à saisir » tant qu'un inscrit n'a pas son montant, ou qu'aucun n'est dit inscrit alors qu'un bien 2182 est amorti l'année
+du barème — la case vaut « non » par défaut et la base ne distingue pas « non » de « pas dit ». Il devient la ligne (B) de la
+2035-SD, la dotation nette A − B, et son écart avec CH (qui compte toute la dotation du registre) se dit avant le clic et en
+bas de la page 3. CADRE7-Q3, « à déconseiller » : au-delà de deux véhicules au barème, un avis en attention
+(`avisAuDelaDesLignes`), rien de refusé. CADRE7-Q4 (A) : la croix dans la case « évaluation forfaitaire » (x 209,6–229,5) et le
+total A dans la cellule de la ligne 23 (x 249,2–348,4), repérées par le libellé et ses filets, relues sur le PDF produit.
+2035SD-Q1 (A) : la date de début de la profession reprend `debuts_d_activite`, lue au clic, vide si postérieure à l'exercice ou
+illisible (dit) ; Q2 et Q3 (A) : rien ne change. Ouverte : CADRE7Q4-Q1 (la ligne 24 = BJ − total A).
