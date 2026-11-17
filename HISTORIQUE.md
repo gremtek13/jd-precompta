@@ -53584,3 +53584,17 @@ baissé ; l'extourne dans la même ligne (`avec_extourne`, le patron d'INV2), `c
 gardes (l'ordre de la caisse, le filtre « liste par liste », l'essai de restauration) : il va à EL8 avec le bloc de
 `restauration.sql`. Sur une copie de `replique_227` portée à 236 : l'essai 67/67, six mutations sur six ; le retour puis EL2 de
 nouveau ; les cinq sources dans les deux ordres, dix paires ; l'essai d'INV2 92/92 et 14/14 à côté.
+
+### 17/11/2026 — LES OPTIONS PAR CABINET : LA CONCEPTION
+
+(Agent architecte ; rien en base ni à l'écran.) Demande du cabinet : « que je puisse choisir quelle option a chaque cabinet »,
+motivée par un expert-comptable qui veut « la PA + precompta + Noemi ». `docs/conceptions/56-options-par-cabinet.md` : le socle
+(la précomptabilité, dont le brouillon et le FEC) et huit modules (tenue et déclarations, facturation, facture électronique,
+assurance maladie, espace client étendu, assistant, honoraires, connexion bancaire), leurs dépendances tirées de
+`ongletsDossier.ts`, des routes de `App.tsx`, des cases de `droitsAcces.ts` et des seize Edge Functions. Une table à part,
+`options_des_cabinets`, écrite par le super-administrateur seul : pas une colonne de `cabinets`, que `cabinets_update` ouvre au
+chef en entier — ce qui révèle, dans l'export, que le chef peut lever ses propres plafonds de l'assistant (`limite_ia_*`), à
+confirmer en base (OPT-Q7). Le refus gradué : écran et Edge Functions toujours ; en base, la seule frontière de la tenue, par
+des déclencheurs sur `exercices_valides`, `situations_publiees`, `ecritures_libres`, pour ne pas heurter les cinq remplacements
+préparés de `valider_exercice` ; aucune lecture refusée. Les données d'une option éteinte ne se suppriment ni ne cessent de
+compter. L'import de bordereau heurte RGPD.md §8.7 : exposé, pas tranché (OPT-Q6). Sept lots, sept questions, aucun au MVP.
