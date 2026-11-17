@@ -5449,7 +5449,10 @@ describe('BanqueTab — une pièce figée par un exercice validé', () => {
     await ouvrir('VIR REMBOURSEMENT FRAIS')
     expect(within(volet()).queryByRole('button', { name: 'Associer cette pièce' })).toBeNull()
     expect(within(volet()).queryByLabelText('Pièce')).toBeNull()
-    expect(texte()).toMatch(/Restaurant du Port \(30\/12\/2025, 1 000,00 €\), du même montant, porte une écriture d’un exercice validé : elle ne se rapproche plus d’aucun mouvement\. Si ce mouvement rembourse cette note de frais, classe-le en virement personnel\./)
+    // Une note de frais de l'exploitant, en trésorerie, ne se propose plus à aucun mouvement (conception 58, § 2.1) : la fiche
+    // propose le virement personnel à la place, figée ou non.
+    expect(texte()).toMatch(/Une note de frais de l’exploitant du 30\/12\/2025, de 1 000,00 €, est peut-être remboursée par ce mouvement\./)
+    expect(within(volet()).getByRole('button', { name: 'Classer en virement personnel' })).toBeTruthy()
     // « Déjà rapprochées » serait faux : la note n'est payée par rien.
     expect(texte()).toMatch(/déjà rapprochées d’un autre mouvement, ou figées par un exercice validé/)
     await act(async () => { within(volet()).getByRole('button', { name: 'Régler plusieurs pièces…' }).click() })
@@ -5463,9 +5466,11 @@ describe('BanqueTab — une pièce figée par un exercice validé', () => {
     expect(screen.queryByRole('button', { name: /Tout rapprocher automatiquement/ })).toBeNull()
   })
 
-  // Le garde symétrique : la même note, sans exercice validé, est proposée — le jeu la propose bien.
-  it('sans écriture validée, la même note est proposée, et rien n’est dit de la validation', async () => {
+  // Le garde symétrique : la même pièce, sans exercice validé, est proposée — le jeu la propose bien. Un achat : la note de
+  // frais de l'exploitant, en trésorerie, n'est plus proposée du tout (le cas suivant).
+  it('sans écriture validée, la même pièce est proposée, et rien n’est dit de la validation', async () => {
     preparer({ figee: false })
+    faux.pieces = [{ ...NOTE, type_piece: 'achat' }]
     rendre(TRESORERIE, false, [2025])
     await ouvrir('VIR REMBOURSEMENT FRAIS')
     expect(within(volet()).getByRole('button', { name: 'Associer cette pièce' })).toBeTruthy()
@@ -5482,7 +5487,40 @@ describe('BanqueTab — une pièce figée par un exercice validé', () => {
     rendre(TRESORERIE, false, [2025])
     await ouvrir('VIR REMBOURSEMENT FRAIS')
     expect(texte()).toMatch(/porte une écriture d’un exercice validé : elle ne se rapproche plus d’aucun mouvement\./)
-    expect(texte()).not.toMatch(/classe-le en virement personnel/)
+    expect(texte()).not.toMatch(/est peut-être remboursée par ce mouvement/)
+    expect(within(volet()).queryByRole('button', { name: 'Classer en virement personnel' })).toBeNull()
+  })
+
+  // CONCEPTION 58, § 2.1 : en trésorerie, la note de frais de l'exploitant n'est le justificatif d'aucun mouvement, figée ou
+  // non. Ni proposée, ni au choix, ni au règlement groupé, ni dans les lots ; la fiche propose le virement personnel.
+  it('en trésorerie, une note non figée n’est ni proposée, ni au choix, ni dans les lots ; le virement personnel l’est', async () => {
+    preparer({ figee: false })
+    rendre(TRESORERIE, false, [2025])
+    await ouvrir('VIR REMBOURSEMENT FRAIS')
+    expect(within(volet()).queryByRole('button', { name: 'Associer cette pièce' })).toBeNull()
+    expect(within(volet()).queryByLabelText('Pièce')).toBeNull()
+    expect(texte()).not.toMatch(/exercice validé/)
+    expect(texte()).toMatch(/Une note de frais de l’exploitant du 30\/12\/2025, de 1 000,00 €, est peut-être remboursée par ce mouvement\./)
+    await act(async () => { within(volet()).getByRole('button', { name: 'Régler plusieurs pièces…' }).click() })
+    const options = [...(within(volet()).getByLabelText('Pièce 1') as HTMLSelectElement).options].map((o) => o.value)
+    expect(options).not.toContain('note-1')
+    expect(ligneDuReleve('VIR REMBOURSEMENT FRAIS').textContent).not.toMatch(/suggestion/)
+    expect(screen.queryByRole('button', { name: /Tout rapprocher automatiquement/ })).toBeNull()
+  })
+
+  it('« Classer en virement personnel » classe le mouvement par le geste du virement personnel', async () => {
+    preparer({ figee: false })
+    rendre(TRESORERIE, false, [2025])
+    await ouvrir('VIR REMBOURSEMENT FRAIS')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Classer en virement personnel' }).click() })
+    await waitFor(() => expect(faux.rpcs.filter((r) => r.nom === 'classer_virement_personnel')).toHaveLength(1))
+  })
+
+  it('un crédit du même montant qu’une note ne propose pas le virement personnel', async () => {
+    preparer({ figee: false, montant: 1000 })
+    rendre(TRESORERIE, false, [2025])
+    await ouvrir('VIR REMBOURSEMENT FRAIS')
+    expect(texte()).not.toMatch(/est peut-être remboursée par ce mouvement/)
   })
 
   it('en engagement, la facture figée se règle — sans s’aligner sur le montant de la banque', async () => {
@@ -5546,6 +5584,8 @@ describe('BanqueTab — une pièce figée par un exercice validé', () => {
 
   it('une lecture partielle des pièces figées le dit, et suspend le rapprochement automatique en trésorerie', async () => {
     preparer({ figee: false })
+    // Un achat : en trésorerie, la note de frais de l'exploitant n'entre dans aucun lot (conception 58, § 2.1).
+    faux.pieces = [{ ...NOTE, type_piece: 'achat' }]
     faux.immobilisations = [{ id: 'bien-1', piece_id: null }, { id: 'bien-2', piece_id: null }]
     faux.muet = { immobilisations: 1 }
     rendre(TRESORERIE, false, [2025])
@@ -5570,7 +5610,7 @@ describe('BanqueTab — une pièce figée par un exercice validé', () => {
     rendre(TRESORERIE, false, [2025])
     expect(await screen.findByText('Affectations proposées par vos règles (0)')).toBeTruthy()
     expect(screen.getByText(/1 mouvement à rapprocher plutôt qu'affecter/)).toBeTruthy()
-    expect(screen.getByText(/Une note de frais du même montant, d’un exercice validé, est peut-être remboursée par ce mouvement : à classer en virement personnel, pas à affecter/)).toBeTruthy()
+    expect(screen.getByText(/Une note de frais de l’exploitant du même montant est peut-être remboursée par ce mouvement : à classer en virement personnel, pas à affecter/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^Affecter les / })).toBeNull()
   })
 
@@ -5581,7 +5621,7 @@ describe('BanqueTab — une pièce figée par un exercice validé', () => {
     faux.reglesAffectation = [regleDeTest({ motif: 'remboursement', sens: 'decaissement', categorie_id: 'cat-frais' })]
     rendre(TRESORERIE, false, [2025])
     expect(await screen.findByText('Affectations proposées par vos règles (1)')).toBeTruthy()
-    expect(screen.queryByText(/Une note de frais du même montant, d’un exercice validé/)).toBeNull()
+    expect(screen.queryByText(/Une note de frais de l’exploitant du même montant/)).toBeNull()
   })
 
   // « Déjà rapprochées » quand rien n'est figé : la phrase d'avant, sans parler de validation.

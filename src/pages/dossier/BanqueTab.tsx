@@ -49,8 +49,11 @@ import {
 } from '../../lib/suiteDesReleves'
 import {
   analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE,
-  libelleExploitable, lotDesCertains, piecesDuMemeMontant, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
+  libelleExploitable, lotDesCertains, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
+import {
+  horsDesNotesDeLExploitant, notesRembourseesPeutEtre, RAISON_REMBOURSEMENT_D_UNE_NOTE, refusNoteDeFraisAuReleve,
+} from '../../lib/noteDeFraisEnTresorerie'
 import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar, restesAReglerDesPieces } from '../../lib/controles'
 import { ecritureDuMouvement, mouvementsAffectes, recettesAffecteesSansTaux, refusAffectation } from '../../lib/affectationBanque'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, refusVirementPersonnel } from '../../lib/virementPersonnel'
@@ -170,8 +173,6 @@ function EcartDeLaValidation({ resume, paires }: {
 }
 
 const AUCUNE_PIECE_FIGEE: LecturePiecesFigees = { figees: new Map(), avecEcritureValidee: new Set(), motif: null }
-const REMBOURSEMENT_D_UNE_NOTE_FIGEE = 'Une note de frais du même montant, d’un exercice validé, est peut-être remboursée par ce '
-  + 'mouvement : à classer en virement personnel, pas à affecter — la dépense compterait deux fois.'
 
 // `modele` : le modèle comptable du dossier (lib/engagement.ts). En trésorerie, un rapprochement
 // écrit la contrepartie banque de la pièce ; en engagement, le RÈGLEMENT de la facture — le compte de
@@ -575,6 +576,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // des pièces déjà relues par le cabinet : rapprocher sur de l'OCR non validé reviendrait à écrire
   // une écriture comptable sur un montant que personne n'a confirmé.
   const piecesValidees = useMemo(() => pieces.filter((p) => p.statut === 'validee'), [pieces])
+  // EN TRÉSORERIE, LA NOTE DE FRAIS DE L'EXPLOITANT NE JUSTIFIE AUCUN MOUVEMENT (conception 58, § 2.1 ;
+  // lib/noteDeFraisEnTresorerie.ts) : ni proposée, ni rapprochée par un lot. Son remboursement est un virement personnel.
+  const justificatifsDuReleve = useMemo(() => horsDesNotesDeLExploitant(piecesValidees, modele.mode), [piecesValidees, modele.mode])
   // Les paiements de chaque pièce : les mouvements rapprochés d'elle, les parts des virements qui en
   // règlent plusieurs, et ce que les virements mixtes paient des exemplaires (étape VF5h) (lib/rattachement.ts). Une
   // pièce payée, en tout ou en partie, n'est plus candidate : une pièce réglée par la part d'un virement groupé se
@@ -711,7 +715,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // pièces triées par score, et propose de voir le justificatif avant de confirmer.
   function suggestion(ligne: LigneBancaire): Piece | null {
     if (ligne.statut !== 'non_rapprochee') return null
-    return candidatsPieces(ligne, piecesValidees, piecesHorsRapprochement, facturesSources)[0] ?? null
+    return candidatsPieces(ligne, justificatifsDuReleve, piecesHorsRapprochement, facturesSources)[0] ?? null
   }
 
   function suggestionCotisation(ligne: LigneBancaire): CotisationDeclaree | null {
@@ -997,6 +1001,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // proposition du client — une seconde ceinture, que les mots de la garde disent.
     const exemplaire = exemplairesDesSources.raisons.get(pieceId)
     if (exemplaire !== undefined) { window.alert(exemplaire); return false }
+    // En trésorerie, la note de frais de l'exploitant (conception 58, § 2.1) : la fiche ne l'offre pas, ni au choix ni au
+    // règlement groupé — une seconde ceinture, pour une proposition du client.
+    const refusNote = refusNoteDeFraisAuReleve(pieceAvant, modele.mode)
+    if (refusNote) { window.alert(refusNote); return false }
     // La banque du mouvement qui ne se sait pas (MCB5, quatrième partie) : sa contrepartie ne saurait sur quel 512 s'écrire,
     // et rien ne se lie plutôt qu'un rapprochement sans son écriture. Jamais drapeau baissé.
     const banqueInconnue = ligne ? planDuMouvement(modele.plan, ligne, banquesDesMouvements) : null
@@ -1324,6 +1332,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     }
     const refus = refusReglementGroupe(ligne, parts, pieces, paiements)
       ?? parts.map((part) => exemplairesDesSources.raisons.get(part.piece_id)).find((r) => r !== undefined)
+      ?? parts.map((part) => refusNoteDeFraisAuReleve(pieces.find((p) => p.id === part.piece_id), modele.mode)).find((r) => r !== null)
     if (refus) { window.alert(refus); return false }
     const avant = reglements.flatMap((r) => (r.ligne_bancaire_id === ligne.id && r.piece_id ? [r.piece_id] : []))
     const { error } = await supabase.rpc('regler_pieces_par_mouvement', {
@@ -1594,10 +1603,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // les lignes en « consommant » les pièces au passage, si bien que le premier mouvement rencontré
   // emportait la pièce : pas un choix, un effet de l'ordre de tri, en masse et sur un seul clic.
   const planAuto = useMemo(
-    () => planRapprochementAutomatique(nonRapprochees, piecesValidees, cotisations, {
+    () => planRapprochementAutomatique(nonRapprochees, justificatifsDuReleve, cotisations, {
       pieces: piecesHorsRapprochement, cotisations: cotisationsRapprochees,
     }, horsDesLotsEtCandidats, facturesSources),
-    [nonRapprochees, piecesValidees, cotisations, piecesHorsRapprochement, cotisationsRapprochees, horsDesLotsEtCandidats, facturesSources],
+    [nonRapprochees, justificatifsDuReleve, cotisations, piecesHorsRapprochement, cotisationsRapprochees, horsDesLotsEtCandidats, facturesSources],
   )
   const suggestionsAutomatiques = planAuto.retenus
   const ecartDuLotAutomatique = ecartDuLot(planAuto.ecartesParLesVentes, horsDesLotsEtCandidats)
@@ -1610,8 +1619,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // — ou déjà rapprochée — que le lot « Valider et rapprocher » rattacherait à un second mouvement du même
   // montant serait payée deux fois.
   const { certains: appariementsCertains, aArbitrer: appariementsDouteux } = useMemo(
-    () => analyserAppariements(pieces.filter((p) => !piecesHorsRapprochement.has(p.id)), lignes, facturesSources),
-    [pieces, lignes, piecesHorsRapprochement, facturesSources],
+    () => analyserAppariements(
+      horsDesNotesDeLExploitant(pieces, modele.mode).filter((p) => !piecesHorsRapprochement.has(p.id)), lignes, facturesSources,
+    ),
+    [pieces, lignes, piecesHorsRapprochement, facturesSources, modele.mode],
   )
   // Sans les paires dont le mouvement porte des encaissements de factures (étape VF5a2), ni celles dont la pièce ne se
   // validerait pas (G3, étape VF6d), que la carte dit à part.
@@ -1650,28 +1661,25 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // prélèvement qui paie exactement une déclaration de TVA (`paiementTvaPlausible`) : la TVA compterait en
   // charge, et la déclaration resterait impayée au 445510.
   //
-  // Et en trésorerie, un paiement du même montant qu'une NOTE DE FRAIS figée : il en est peut-être le remboursement, un
-  // virement personnel. Affecté à une charge, la dépense compterait deux fois — dans l'exercice validé et dans celui-ci.
-  const notesFigees = useMemo(
-    () => piecesValidees.filter((p) => p.type_piece === 'note_frais' && piecesFigeesHorsRapprochement.has(p.id)),
-    [piecesValidees, piecesFigeesHorsRapprochement],
-  )
+  // Et en trésorerie, un débit du même montant qu'une NOTE DE FRAIS de l'exploitant (conception 58, § 2.1) : il en est peut-être
+  // le remboursement, un virement personnel. Affecté à une charge, la dépense compterait deux fois — à la date de la note et à
+  // celle du remboursement. La note n'est pas un justificatif possible du mouvement : la raison dite est le virement personnel.
   const planRegles = useMemo(() => {
     const justificatifs = {
-      pieces, piecesRapprochees: piecesHorsRapprochement, restesARegler, paiements, cotisations, cotisationsRapprochees, ventes: candidats,
+      pieces: horsDesNotesDeLExploitant(pieces, modele.mode), piecesRapprochees: piecesHorsRapprochement, restesARegler, paiements, cotisations, cotisationsRapprochees, ventes: candidats,
       facturesSources,
     }
     return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva, (l) => {
       const justificatif = justificatifPossible(l, justificatifs)
       if (justificatif) return justificatif
-      // La question large (`piecesDuMemeMontant`) : un justificatif POSSIBLE retient le lot, à la fenêtre de l'appariement.
-      if (piecesDuMemeMontant(l, notesFigees, piecesRapprochees, facturesSources).length > 0) return REMBOURSEMENT_D_UNE_NOTE_FIGEE
+      // La question large (`piecesDuMemeMontant`, par `notesRembourseesPeutEtre`) : un remboursement POSSIBLE retient le lot.
+      if (notesRembourseesPeutEtre(l, pieces, piecesRapprochees, facturesSources, modele.mode).length > 0) return RAISON_REMBOURSEMENT_D_UNE_NOTE
       const emprunt = empruntPlausible(l, emprunts, lignes)
       if (emprunt) return raisonEmpruntPlausible(emprunt)
       // Un prélèvement qui paie exactement une déclaration de TVA : une règle au nom du Trésor le rangerait en charge.
       return raisonPaiementTvaPlausible(l, suivisTva)
     }, horsDesLots)
-  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, paiements, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva, horsDesLots, candidats, facturesSources])
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, paiements, modele.mode, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts, suivisTva, horsDesLots, candidats, facturesSources])
   const ecartDuLotDesRegles = ecartDuLot(planRegles.ecartesParLesVentes, horsDesLots)
   const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
   const idsEmpruntPlausible = useMemo(
