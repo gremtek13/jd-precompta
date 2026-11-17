@@ -140,8 +140,8 @@ describe('planDeRemplissage2035SD', () => {
     expect(plan.inscriptions.some((i) => i.alignement === 'droite' && i.texte === '0')).toBe(false)
     expect(plan.aSaisir).toEqual([])
     // Les mentions de l'application : page 1 toujours, page 3 seulement avec des avis.
-    expect(plan.notes.get(1)?.length).toBe(2)
-    expect(plan.notes.has(3)).toBe(false)
+    expect(plan.mentionsDeBasDePage.get(1)?.length).toBe(2)
+    expect(plan.mentionsDeBasDePage.has(3)).toBe(false)
   })
 
   it('« à saisir » en rouge dans la case qui l’attend, jamais 0 : colonnes 2 et 3 d’un redevable, (B) et la dotation nette', () => {
@@ -154,7 +154,7 @@ describe('planDeRemplissage2035SD', () => {
     expect(plan.aSaisir.filter((i) => dans(i, 160.8, 217.7))).toHaveLength(2)
     expect(plan.aSaisir.filter((i) => dans(i, 217.7, 274.7))).toHaveLength(2)
     expect(plan.aSaisir.filter((i) => i.y === g.b.y || i.y === g.nette.y)).toHaveLength(2)
-    expect(plan.notes.get(3)).toEqual(['avis du tableau'])
+    expect(plan.mentionsDeBasDePage.get(3)).toEqual(['avis du tableau'])
   })
 
   it('au-delà de vingt biens, un état annexe : la page 3 reporte son total, l’annexe porte le reste', () => {
@@ -171,7 +171,7 @@ describe('planDeRemplissage2035SD', () => {
     expect(enColonne7(5, g.total)).toBe('30')
     expect(enColonne7(5, g.report)).toBeUndefined()
     expect(enColonne7(5, g.a.y)).toBeUndefined()
-    expect(plan.notes.get(5)?.[0]).toMatch(/État annexe n° 1/)
+    expect(plan.mentionsDeBasDePage.get(5)?.[0]).toMatch(/État annexe n° 1/)
     // L'état annexe dit son déclarant.
     expect(plan.inscriptions.filter((i) => i.page === 5 && /^\d$/.test(i.texte))).toHaveLength(14)
   })
