@@ -284,3 +284,20 @@ garde aux droits de l'appelant (aucune réécriture, aucune écriture hors de l'
 Edge Functions). **L'association à un crédit du relevé est remise à NOE5**, avec sa propre migration : ses règles (un ou deux
 crédits, la règle G2, les sommes) dépendent des signaux de NOE5 et du premier relevé réel ; sa clé étrangère retiendra le
 retrait d'un import associé.
+
+## 11. NOE5, fait le 17/11/2026 (préparé, pas appliqué)
+
+- **Le module** `src/lib/rapprochementAssuranceMaladie.ts` (pur, testé à côté) : les candidats (§ 5, signal 1 et 3 : la somme au
+  centime d'un paiement seul ou des deux parts d'une journée et d'un organisme, de zéro à cinq jours après la journée), la
+  référence qui départage, la proposition et sa justification, le lot (trois signaux, un seul candidat dans les deux sens), les
+  contrôles de NOE6 calculés (crédit sans paiement, écart, paiement sans crédit par ancienneté, association incohérente ou
+  contredite), muet sur une lecture partielle ; les refus de la base redits avant le clic.
+- **La migration** `supabase/preparees/20261117160000_association_paiements_assurance_maladie.sql` (à coller après NOE3) : la table
+  `paiements_assurance_maladie_mouvements` du § 4, deux fonctions (`associer_paiements_assurance_maladie`, tout ou rien, le lot
+  compris ; `defaire_association_assurance_maladie`), le cabinet seul ; la lecture du client « Banque » (NOE5-Q1). Écarts du
+  § 4 : l'exercice validé fige l'association par l'année du CRÉDIT, pas de la journée comptable (la réponse de
+  l'expert-comptable du 17/11/2026 : la recette est à la date du crédit ; NOE5-Q2) ; la règle G2 n'est tenue en base que dans un
+  sens (une association ne prend pas un mouvement retenu par les ventes ; l'inverse reste à l'écran).
+- **Restent** : NOE5b, l'écran (la fiche d'un crédit et la section NOEMIE : la proposition justifiée, « Associer », « Défaire »,
+  le lot, les contrôles ; `candidatsDuMouvement` qui écarte un crédit associé) ; à NOE8, la table au plan de sauvegarde et son
+  bloc dans `rls.sql`, avec le drapeau `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES`.

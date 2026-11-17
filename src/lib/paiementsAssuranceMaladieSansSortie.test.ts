@@ -67,6 +67,8 @@ const LECTEURS_PERMIS: Readonly<Record<string, string>> = {
   'src/lib/paiementsAssuranceMaladieLecture.test.ts': 'les essais de cette lecture',
   'src/components/PaiementsAssuranceMaladie.tsx': 'l’écran d’import (NOE4), qui appelle la fonction d’import et celle du retrait',
   'src/components/PaiementsAssuranceMaladie.test.tsx': 'les essais de l’écran d’import',
+  'src/lib/rapprochementAssuranceMaladie.ts': 'le rapprochement (NOE5), qui propose et contrôle sans rien compter (conception 53, § 8), et nomme sa migration',
+  'src/lib/rapprochementAssuranceMaladie.test.ts': 'les essais du rapprochement, qui relisent les mots de sa migration',
 }
 
 function fichiers(dossier: string): string[] {

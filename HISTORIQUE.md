@@ -53641,3 +53641,24 @@ ACD importe un FEC en archive avec ses pièces). Ordre retenu : l'export vers AC
 (NOE5), ce que l'assurance maladie doit payer (OPT-Q6), les options (OPT1 à OPT7), les corrections tirées des réponses
 (L1 avant le 20/11, dont la date de valeur gardée à l'import, accordée le jour même). Le même jour : EL-Q1 confirmée de
 vive voix (tout compte du cabinet qui suit le dossier écrit librement) ; la demande 378 fusionnée.
+### 17/11/2026 — NOE5 : L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production, NOE3 toujours préparée.) Le module `lib/rapprochementAssuranceMaladie.ts`, pur (ni
+`Date`, ni base : le jour vient de l'appelant) : les candidats d'un mouvement sont les groupes de paiements libres dont la somme
+fait son montant au centime — un paiement seul, ou les deux parts d'une journée et d'un organisme — à zéro à cinq jours après la
+journée comptable ; la référence (les six derniers chiffres AAMMJJ d'une suite du libellé) ne fait jamais un candidat, elle
+départage et le lot l'exige (trois signaux, un seul candidat dans les deux sens) ; à égalité, rien de proposé. Contrôles : un
+crédit dont le libellé nomme un organisme d'une liste FERMÉE sans paiement (ou un écart quand sa référence désigne une journée
+importée), un paiement sans crédit par ancienneté (et si le relevé couvre sa date), une association incohérente ou contredite
+par le classement ; muet sur toute lecture partielle (cinq raisons). Mesuré : 3 000 mouvements et 1 500 paiements en 19 ms.
+La migration `20261117160000_association_paiements_assurance_maladie` (À COLLER : `defaire_…` supprime) : la table
+`paiements_assurance_maladie_mouvements`, HORS de `lignes_bancaires_un_seul_rapprochement` (le crédit se classe en recette
+comme hier), un paiement au plus une fois, un groupe par mouvement écrit et défait d'un seul tenant, la somme au centime en
+entiers ; le cabinet seul associe et défait (conception, § 4), le client « Banque » lit (NOE5-Q1) ; figée par l'année du CRÉDIT
+(la recette, la réponse de l'expert-comptable du jour), pas de la journée (NOE5-Q2) ; la règle G2 refusée dans ce sens seul
+(l'autre reste à l'écran) ; la clé vers le paiement sans action à la suppression retient le retrait d'un import, un déclencheur
+le dit en mots. Version d'abord prise (150000) par DOCF-Q1-B : `versionsDesPreparees.test.ts` l'a vu. Sur une copie de
+`replique_227` portée à 236 puis NOE3 : l'essai 42/42, la suppression (réplique seulement) 6/6 — la cascade du dossier passe
+malgré la clé qui retient ; 19 mutations sur 19 tuées ; le retour puis la migration de nouveau ; une seconde application
+refusée. Restent : l'écran (NOE5b), la sauvegarde et le bloc de `rls.sql` (NOE8), le banc du leurre (il ne connaît pas
+encore l'essai), l'autre sens de G2 en base.
