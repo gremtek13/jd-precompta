@@ -282,6 +282,8 @@ describe('le rangement des contrôles existants', () => {
   const RANGEMENT: Record<CycleRevision, string[]> = {
     tresorerie: [
       'releve-incoherent', 'releves-en-rupture', 'releves-inconnus', 'mouvements-a-traiter', 'lignes-non-rapprochees', 'mouvements-ignores',
+      // Conception 58, § 2.1 (17/11/2026) : la note de frais de l'exploitant rapprochée de son remboursement.
+      'notes-de-frais-rapprochees',
       'rapproches-sans-objet', 'ventilations-incoherentes', 'reglements-groupes-incoherents', 'affectes-perimes',
       'ventiles-perimes', 'comptes-de-bilan-perimes', 'montant-suspect', 'banque',
       // Étape VF5f : le mouvement du relevé que des encaissements de factures réservent, à classer.

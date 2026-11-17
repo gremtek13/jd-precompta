@@ -7,6 +7,9 @@ import { IconAttention, IconChevron, IconCoche, IconPrecedent } from '../../comp
 import {
   candidatsCotisations, candidatsPieces, ecartEnJours, libelleExploitable, sensCoherent, tiersConfirmeParBanque,
 } from '../../lib/appariementBanque'
+import {
+  estNoteDeLExploitant, horsDesNotesDeLExploitant, notesRembourseesPeutEtre, phraseDuRemboursementDUneNote,
+} from '../../lib/noteDeFraisEnTresorerie'
 import { natureDuCompte, refusAffectation, sensInhabituel } from '../../lib/affectationBanque'
 import {
   justificatifPossible, motifPropose, mouvementsCouverts, normaliserPourRegle, refusMotif, regleApplicable, sensDuMouvement,
@@ -882,7 +885,7 @@ export default function FicheMouvement({
   // (voir `justificatifPossible`). Dit avant le clic, jamais refusé : c'est l'opérateur qui sait.
   const justificatifAttendu = aTraiter
     ? justificatifPossible(ligne, {
-      pieces, piecesRapprochees: horsRapprochement, restesARegler, paiements, cotisations, cotisationsRapprochees, ventes: candidatsDeLaVente,
+      pieces: horsDesNotesDeLExploitant(pieces, modeComptable), piecesRapprochees: horsRapprochement, restesARegler, paiements, cotisations, cotisationsRapprochees, ventes: candidatsDeLaVente,
       facturesSources: exemplairesDesSources.sources,
     })
     : null
@@ -894,9 +897,16 @@ export default function FicheMouvement({
   // avec une autre pièce. Le retirer ici promouvait l'autre en « Pièce proposée » sous le bouton principal, ou, seul
   // candidat, laissait la place à « Ignorer, comme les N précédents » — le geste que C6 écarte. Il ne se retire qu'à
   // l'affichage des cartes, puisque la section C6 le montre déjà, et rien d'autre n'est alors proposé (`proposeeParLEncaissement`).
+  // En trésorerie, la note de frais de l'exploitant n'est le justificatif d'aucun mouvement (conception 58, § 2.1 ;
+  // lib/noteDeFraisEnTresorerie.ts) : ni proposée, ni au choix, ni au règlement groupé. Le débit qui la rembourse peut-être
+  // se propose en virement personnel (`noteRembourseePeutEtre`).
+  const justificatifsDuReleve = horsDesNotesDeLExploitant(piecesValidees, modeComptable)
   const piecesCandidates = aTraiter
-    ? candidatsPieces(ligne, piecesValidees, horsRapprochement, exemplairesDesSources.sources)
+    ? candidatsPieces(ligne, justificatifsDuReleve, horsRapprochement, exemplairesDesSources.sources)
     : []
+  const noteRembourseePeutEtre = aTraiter
+    ? notesRembourseesPeutEtre(ligne, pieces, piecesRapprochees, exemplairesDesSources.sources, modeComptable)[0] ?? null
+    : null
   const proposeeParLEncaissement = aTraiter && rapprochementPropose?.pieceId != null
   const piecesCandidatesAffichees = proposeeParLEncaissement
     ? piecesCandidates.filter((p) => p.id !== rapprochementPropose?.pieceId)
@@ -904,7 +914,7 @@ export default function FicheMouvement({
   // La pièce figée qu'on aurait proposée : elle ne se rapproche plus, et la fiche le dit au lieu de la taire — un mouvement
   // du même montant qu'une note de frais d'un exercice validé en est souvent le remboursement.
   const figeeDeMemeMontant = aTraiter && piecesFigees.size > 0
-    ? candidatsPieces(ligne, piecesValidees.filter((p) => piecesFigees.has(p.id)), piecesRapprochees, exemplairesDesSources.sources)[0] ?? null
+    ? candidatsPieces(ligne, justificatifsDuReleve.filter((p) => piecesFigees.has(p.id)), piecesRapprochees, exemplairesDesSources.sources)[0] ?? null
     : null
   const echeancesCandidates = aTraiter && piecesCandidates.length === 0 && !proposeeParLEncaissement
     ? candidatsCotisations(ligne, cotisations, cotisationsRapprochees)
@@ -943,7 +953,7 @@ export default function FicheMouvement({
     : new Set([...horsRapprochement].filter((id) => !restesARegler.has(id) || piecesFigees.has(id)))
   const montantAttendu = (p: Piece) => restesARegler.get(p.id) ?? p.montant_ttc
   const piecesAuChoix = aTraiter
-    ? pieces.filter((p) => !horsChoix.has(p.id) && !exemplaireDUneSource(p, exemplairesDesSources.sources))
+    ? pieces.filter((p) => !horsChoix.has(p.id) && !exemplaireDUneSource(p, exemplairesDesSources.sources) && !estNoteDeLExploitant(p, modeComptable))
         .sort((a, b) => scoreCorrespondance(montantAttendu(a), a.date_piece, ligne) - scoreCorrespondance(montantAttendu(b), b.date_piece, ligne))
     : []
   const pieceChoisieDejaPayee = pieceChoisie && restesARegler.has(pieceChoisie)
@@ -996,9 +1006,8 @@ export default function FicheMouvement({
   // Les pièces qu'un règlement groupé peut offrir : pas une pièce figée, sauf si ce règlement la porte déjà — ses parts
   // doivent rester lisibles.
   const dansCeReglement = new Set(reglements.map((r) => r.piece_id))
-  const piecesReglables = piecesFigees.size === 0
-    ? pieces
-    : pieces.filter((p) => !piecesFigees.has(p.id) || dansCeReglement.has(p.id))
+  const piecesReglables = pieces.filter((p) => dansCeReglement.has(p.id)
+    || (!piecesFigees.has(p.id) && !estNoteDeLExploitant(p, modeComptable)))
   // Une pièce que le client a proposée, et pas retirée, est une proposition aussi : « Aucune pièce proposée » la
   // contredirait, et le choix à la main devient celui d'une AUTRE pièce.
   const proposeeParLeClient = envoisDuClient.etat === 'lus'
@@ -1788,8 +1797,16 @@ export default function FicheMouvement({
         {figeeDeMemeMontant && (
           <p className="fiche-mouvement-note">
             {`${nomDeLaPiece(figeeDeMemeMontant)} (${formatDate(figeeDeMemeMontant.date_piece)}, ${formatMoney(figeeDeMemeMontant.montant_ttc)}), du même montant, porte une écriture d’un exercice validé : elle ne se rapproche plus d’aucun mouvement.`}
-            {figeeDeMemeMontant.type_piece === 'note_frais' && ' Si ce mouvement rembourse cette note de frais, classe-le en virement personnel.'}
           </p>
+        )}
+
+        {noteRembourseePeutEtre && (
+          <div className="fiche-mouvement-note" role="note">
+            <p>{phraseDuRemboursementDUneNote(noteRembourseePeutEtre)}</p>
+            <button type="button" className="btn btn-primary btn-sm" disabled={occupe} onClick={onVirementPersonnel}>
+              Classer en virement personnel
+            </button>
+          </div>
         )}
 
         {aTraiter && piecesRetenues && (

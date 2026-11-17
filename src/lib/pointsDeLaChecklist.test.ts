@@ -1193,3 +1193,26 @@ describe('pointsDeLaChecklist : un compte de charge sur plusieurs lignes de la 2
     expect(pointsDeLaChecklist(memePoste, CONTEXTE).tousLesPointsATraiter.find((p) => p.id === 'comptes-sur-plusieurs-postes')?.nb).toBe(0)
   })
 })
+
+// LA NOTE DE FRAIS DE L'EXPLOITANT RAPPROCHÉE DE SON REMBOURSEMENT (conception 58, § 2.1 ; lib/noteDeFraisEnTresorerie.ts).
+describe('pointsDeLaChecklist : une note de frais de l’exploitant rapprochée d’un mouvement, en trésorerie', () => {
+  const note: Piece = {
+    id: 'n1', dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: 'd1/n1.pdf', nom_fichier: 'n1.pdf', storage_hash: null,
+    date_piece: '2026-02-20', tiers: null, montant_ht: null, montant_tva: null, montant_ttc: 40, devise: 'EUR', montant_devise: null,
+    taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'note_frais', statut: 'validee',
+    confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
+    created_at: '2026-02-20T09:00:00Z', updated_at: '2026-02-20T09:00:00Z',
+  }
+  const d = donnees({ piecesValidees: [note], lignes: [ligne({ id: 'm1', date: '2026-03-02', montant: -40, statut: 'rapprochee', piece_id: 'n1' })] })
+  const point = (c: ContexteDeLaChecklist) => pointsDeLaChecklist(d, c).tousLesPointsATraiter.find((p) => p.id === 'notes-de-frais-rapprochees')
+
+  it('se dit en attention, mène à Banque et nomme la note et son mouvement', () => {
+    expect(point(CONTEXTE)).toMatchObject({ nb: 1, severite: 'attention', cible: 'banque' })
+    expect(point(CONTEXTE)?.detail).toContain('la note du 20/02/2026')
+  })
+
+  it('se tait en engagement', () => {
+    expect(point({ ...CONTEXTE, modele: { ...CONTEXTE.modele, mode: 'engagement', compteNotesDeFrais: '455000' } })?.nb).toBe(0)
+  })
+})

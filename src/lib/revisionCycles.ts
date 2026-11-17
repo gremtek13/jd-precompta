@@ -186,6 +186,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'ouverture-a-eclater': 'tresorerie',
   'mouvements-a-traiter': 'tresorerie',
   'lignes-non-rapprochees': 'tresorerie',
+  // La note de frais de l'exploitant rapprochée de son remboursement, en trésorerie (conception 58, § 2.1) : un mouvement à reclasser.
+  'notes-de-frais-rapprochees': 'tresorerie',
   // Un mouvement du relevé que des encaissements de factures réservent, à classer (étape VF5f) : ce que le relevé porte.
   'mouvements-reserves': 'tresorerie',
   'mouvements-ignores': 'tresorerie',

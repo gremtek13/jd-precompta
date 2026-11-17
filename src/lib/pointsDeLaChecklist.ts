@@ -1,5 +1,6 @@
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { detailDesNotesRapprochees, LIBELLE_NOTES_RAPPROCHEES, notesDeFraisRapprochees } from './noteDeFraisEnTresorerie'
 import { comptesSurPlusieursPostes, detailDesComptesSurPlusieursPostes, LIBELLE_COMPTES_SUR_PLUSIEURS_POSTES } from './unCompteUnPoste'
 import type { ModeleComptable } from './engagement'
 import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
@@ -403,6 +404,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // chaque COMPTE sur une ligne de la 2035. Un compte qui en alimente deux dans un même exercice ne redonnerait pas notre 2035.
   // Les opérations de la caisse lue en entier seulement ; lue en partie, leurs lignes n'apportent aucun poste. Un exercice validé
   // est figé, son FEC remis : il ne se dit plus.
+  // Les notes de frais de l'exploitant qu'un ancien rapprochement fait payer par le relevé, en trésorerie (conception 58, § 2.1).
+  const notesRapprochees = notesDeFraisRapprochees(piecesValidees, paiements, modele.mode, anneesValidees)
   const comptesMultiPostes = comptesSurPlusieursPostes({
     ecritures, categories, pieces: toutesPieces, mouvements: lignes, ventilations,
     operationsDeCaisse: caisseLue === null ? [] : caisseLue.operations, plan: modele.plan,
@@ -938,6 +941,12 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       action: 'Voir les écritures à rapprocher', nb: nbSansContrepartie, cible: 'banque', severite: 'attention',
     },
     { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', action: 'Voir les opérations à rapprocher', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
+    // En trésorerie, la note de frais de l'exploitant rapprochée de son remboursement (conception 58, § 2.1 ;
+    // lib/noteDeFraisEnTresorerie.ts) : sa charge tombe à la date du virement. Dit, à reclasser, jamais réécrit seul.
+    {
+      id: 'notes-de-frais-rapprochees', label: LIBELLE_NOTES_RAPPROCHEES, action: 'Voir ces mouvements',
+      nb: notesRapprochees.length, cible: 'banque', severite: 'attention', detail: detailDesNotesRapprochees(notesRapprochees),
+    },
     // LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, étape VF5f ; lib/ventesDeLaChecklist.ts). « Attention »
     // jusqu'à VF7, qui les rendra préalables à la validation (conception d'EC-Q3, § 11) ; prealablesValidation.test.ts les
     // tient pour écartés d'ici là. Un mouvement réservé se voit dans Banque, sous sa pastille, et sa fiche le classe.

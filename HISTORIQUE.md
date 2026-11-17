@@ -53738,3 +53738,20 @@ réponse. Non trouvé : les colonnes des bordereaux et du journal des lots. Le d
 Proposé (`docs/conceptions/59-…`) : deux agrégats sans texte, jamais de numéro de lot (conception 53), donc un rapprochement par
 organisme et par part, le reste dû LU, le calcul en contrôle ; un gabarit fermé par état, une liste blanche des genres, un
 canari ; BOR0 à BOR7, BOR-Q1 à Q9. Le cahier du GIE (droits réservés) et ameli.fr (403) ne sont pas exploités.
+
+### 17/11/2026 — L1 : LA NOTE DE FRAIS REMBOURSÉE EN VIREMENT PERSONNEL, ET UN COMPTE POUR UN SEUL POSTE
+
+(Agent architecte, lot L1, points 1 et 2 de la conception 58 ; sans base ni migration.) **§ 2.1** : en trésorerie, une note de
+frais rapprochée du virement qui la rembourse perdait sa part « note de frais » et sa charge tombait à la date du virement
+(l'exercice suivant pour une dépense de décembre) ; pour l'expert-comptable, ce virement est un prélèvement de l'exploitant (CGI
+art. 93, 1 : la dépense est acquittée par lui, à sa date). `lib/noteDeFraisEnTresorerie.ts` : la note de l'exploitant n'est
+proposée ni choisie comme justificatif d'aucun mouvement (fiche, choix, règlement groupé, « Tout rapprocher », « Valider et
+rapprocher ») et `rapprocher` / `reglerEnGroupe` la refusent (seconde ceinture, une proposition du client) ; un débit du même
+montant dit la note et offre « Classer en virement personnel », et le lot des règles le retient (la raison d'hier, réservée aux
+notes figées, vaut pour toutes) ; un ancien rapprochement se dit (`notes-de-frais-rapprochees`, attention, Banque), jamais
+réécrit. L'engagement et B7/B8 ne changent pas. **§ 1.3** : `lib/unCompteUnPoste.ts`, le point `comptes-sur-plusieurs-postes`
+(attention, paramétrage) : par exercice ouvert, un compte de classe 6 ou 7 que des sources de postes différents alimentent, les
+postes comparés à la LIGNE du formulaire (`posteDuFormulaire` : « Recettes » et une vente facturée sont la ligne 1) ; une source
+non lue n'apporte rien. Hors du lot : l'assistant (`agent-comptable`, aucun rapprochement de pièce proposé) et la validation, qui
+ne relit pas ces deux points (la conception le demandait aussi « avant la validation » pour le § 1.3) ; B8 reprendra la note du
+dirigeant (lot L3).
