@@ -167,7 +167,7 @@ function rendre(ventesParLesFactures = false, modele: ModeleComptable = TRESORER
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={[]}>
-        <BanqueTab dossierId={D} modele={modele} assujettiTva={false} ventesParLesFactures={ventesParLesFactures} statutTva="redevable" />
+        <BanqueTab dossierId={D} modele={modele} assujettiTva={false} ventesParLesFactures={ventesParLesFactures} statutTva="redevable" codeNaf="86.90D" />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,

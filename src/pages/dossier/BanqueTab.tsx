@@ -87,6 +87,7 @@ import { AssociationDansLaSection } from '../../components/AssociationsAssurance
 import { useLesPaiementsAssuranceMaladie } from '../../lib/lecturePaiementsAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, type GroupeAAssocier } from '../../lib/rapprochementAssuranceMaladie'
 import { assuranceMaladieDeLaFiche, associesPourLesVentes, rapprochementDeLOnglet } from '../../lib/associationsAssuranceMaladieVue'
+import { sectionAssuranceMaladie } from '../../lib/sectionAssuranceMaladie'
 import PanneauDroit from '../../components/PanneauDroit'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
 import { usePanneauDroit } from '../../lib/panneauDroit'
@@ -192,8 +193,11 @@ const COLONNES_DES_MOUVEMENTS: ColonneTriable<LigneBancaire>[] = [
   { cle: 'statut', libelle: 'Statut', type: 'rang', valeur: (l) => l.statut, ordre: ['non_rapprochee', 'rapprochee', 'ignoree'] },
 ]
 
-export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLesFactures, statutTva }: {
+export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLesFactures, statutTva, codeNaf }: {
   dossierId: string; modele: ModeleComptable; assujettiTva: boolean; ventesParLesFactures: boolean; statutTva: StatutTva | null
+  /** `dossiers.code_naf` tel que la page l'a lu (`undefined` : pas encore lu) : la section des paiements de l'assurance
+   *  maladie et leur association ne s'offrent que sur un code de santé (NOE4-Q1 (C)). */
+  codeNaf: string | null | undefined
 }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   // Ce que le rapprochement écrit au brouillon, nommé comme le modèle le nomme dans les messages.
@@ -548,6 +552,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // crédit associé n'est candidat d'aucune vente (NOE5-Q4 (A)) ; des associations illisibles, et aucun crédit ne se propose
   // à une vente. Le relevé ne se dit lu en entier qu'hors d'une lecture en vol : avant, tout paiement paraîtrait sans crédit.
   const paiementsAssuranceMaladie = useLesPaiementsAssuranceMaladie(dossierId, 'cabinet')
+  // Sur un code NAF de santé seulement (NOE4-Q1 (C)) : hors de lui, ni la section ni la fiche d'un crédit n'OFFRENT
+  // l'association ; la lecture, elle, continue — un crédit déjà associé reste hors des candidats d'une vente.
+  const associationOfferte = sectionAssuranceMaladie(codeNaf).offerte
   const associesAssuranceMaladie = useMemo(
     () => associesPourLesVentes(ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, paiementsAssuranceMaladie.lu),
     [paiementsAssuranceMaladie.lu],
@@ -2748,7 +2755,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             onEcarterProposition={(propositionId) => { void ecarterLaProposition(propositionId) }}
             onSupprimerMessage={(messageId) => { void supprimerLeMessage(messageId) }}
             assuranceMaladie={{
-              fiche: assuranceMaladieDeLaFiche(rapprochementAssuranceMaladie, ligneOuverte),
+              fiche: associationOfferte ? assuranceMaladieDeLaFiche(rapprochementAssuranceMaladie, ligneOuverte) : { genre: 'rien' },
               occupe: associationAssuranceMaladieOccupee,
               erreur: erreurAssuranceMaladie,
               onAssocier: (groupe) => associerAssuranceMaladie([groupe]),
@@ -2784,7 +2791,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       {/* Les paiements de l'assurance maladie (NOE4) : une section à part, sous son drapeau, sur la lecture de l'onglet ; sous
           les imports, l'association au relevé (NOE5b) : ses contrôles et le lot des concordances. Elle ne touche ni au
           classement des crédits ni au rapprochement des pièces. */}
-      <PaiementsAssuranceMaladie espace="cabinet" dossierId={dossierId} partagee={paiementsAssuranceMaladie}>
+      <PaiementsAssuranceMaladie espace="cabinet" dossierId={dossierId} codeNaf={codeNaf} partagee={paiementsAssuranceMaladie}>
         <AssociationDansLaSection
           rapprochement={rapprochementAssuranceMaladie} occupe={associationAssuranceMaladieOccupee}
           erreur={erreurAssuranceMaladie} message={messageAssuranceMaladie} onAssocierLeLot={associerAssuranceMaladie}

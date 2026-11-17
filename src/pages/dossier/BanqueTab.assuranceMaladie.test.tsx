@@ -134,11 +134,12 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); drapeaux.paiements = false; d
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 
-function rendre() {
+// Le code NAF lu par la page, dans une boîte : `undefined` (pas lu) ne doit pas prendre la valeur par défaut.
+function rendre(naf: { lu: string | null | undefined } = { lu: '86.90D' }) {
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={[]}>
-        <BanqueTab dossierId={D} modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} statutTva="exonere" />
+        <BanqueTab dossierId={D} modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} statutTva="exonere" codeNaf={naf.lu} />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,
@@ -164,6 +165,21 @@ describe('l’association des paiements de l’assurance maladie, dans l’ongle
     expect(faux.tables.filter((t) => /assurance_maladie/.test(t))).toEqual([])
     expect(screen.queryByRole('heading', { name: /Paiements? de l’assurance maladie/ })).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Le rapprochement avec le relevé' })).toBeNull()
+  })
+
+  it('hors d’un code NAF de santé (NOE4-Q1 (C)) : ni la section ni la fiche n’offrent rien ; la lecture continue', async () => {
+    for (const codeNaf of ['69.20Z', null, undefined, 'santé']) {
+      const vue = rendre({ lu: codeNaf })
+      await ouvrir('VIR CPAM 0012345678260303')
+      // La lecture continue : un crédit déjà associé resterait hors des candidats d'une vente.
+      await waitFor(() => expect(faux.tables).toContain('paiements_assurance_maladie_mouvements'))
+      expect(screen.queryAllByRole('heading').map((h) => `${String(codeNaf)} : ${h.textContent}`).filter((t) => /assurance maladie/.test(t))).toEqual([])
+      expect(screen.queryByRole('heading', { name: 'Le rapprochement avec le relevé' })).toBeNull()
+      expect(within(volet()).queryByRole('button', { name: /^Associer/ })).toBeNull()
+      expect(sans(volet().textContent)).not.toContain('assurance maladie')
+      vue.unmount()
+      poser()
+    }
   })
 
   it('NOE5 baissé : les paiements se lisent, pas les associations, et la fiche ne propose rien', async () => {

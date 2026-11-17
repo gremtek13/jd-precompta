@@ -23,6 +23,8 @@ import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 // même famille que le bilan d'un pack : un livrable incomplet le DIT, il ne se contente pas d'être
 // incomplet.
 const faux = vi.hoisted(() => ({
+  // Le drapeau de la section des paiements de l'assurance maladie (NOE3/NOE4), joué dans ses deux états.
+  paiementsAssuranceMaladie: false,
   bilan: { demandes: 0, retires: 0, echecs: [] as unknown[], inventaireIncomplet: false },
   message: '',
   navigations: [] as string[],
@@ -80,6 +82,10 @@ vi.mock('../../lib/dossierDuCabinetLecture', async (original) => {
   }
 })
 
+vi.mock('../../lib/paiementsAssuranceMaladie', async (original) => ({
+  ...await original<typeof import('../../lib/paiementsAssuranceMaladie')>(),
+  get PAIEMENTS_ASSURANCE_MALADIE_PREVUS() { return faux.paiementsAssuranceMaladie },
+}))
 vi.mock('../../lib/informationsDossier', () => ({
   chargerInformationsDossier: () => Promise.resolve(faux.lecture),
   enregistrerInformationsDossier: (_id: string, saisie: unknown) => {
@@ -223,6 +229,7 @@ function monter(
       dossierRcsVille={null}
       dossierFormeJuridique={null}
       dossierCapital={null}
+      dossierCodeNaf={null}
       modele={modele}
       onIdentiteUpdated={(rendue) => { faux.identitesRendues.push(rendue) }}
       onReglageUpdated={(id, reglage) => { faux.reglagesRendus.push([id, reglage]) }}
@@ -492,6 +499,37 @@ describe('la carte « Numérotation des factures » (A9b, offerte depuis A9B-Q0)
   it('se monte avec le dossier de l’onglet', async () => {
     monter()
     expect(await screen.findByText('Numérotation des factures — d1')).toBeTruthy()
+  })
+})
+
+describe('la phrase des paiements de l’assurance maladie (NOE4-Q1 (C)) : au cabinet, jamais le silence', () => {
+  const titre = () => screen.queryByRole('heading', { name: 'Paiements de l’assurance maladie' })
+  it('drapeau baissé : la section n’existe nulle part, et rien ne se dit', async () => {
+    faux.paiementsAssuranceMaladie = false
+    monter(undefined, { dossierCodeNaf: '86.90D' })
+    expect(await screen.findByText('Numérotation des factures — d1')).toBeTruthy()
+    expect(titre()).toBeNull()
+  })
+
+  it('drapeau levé : offerte sur un code de santé, et sinon pourquoi — hors santé, absent, illisible, pas lu', async () => {
+    faux.paiementsAssuranceMaladie = true
+    try {
+      const cas: [string | null | undefined, RegExp][] = [
+        ['86.90D', /est offerte : le code NAF du dossier \(86\.90D\)/],
+        ['69.20Z', /n’est pas offerte : le code NAF du dossier \(69\.20Z\) n’est pas celui d’une activité de santé/],
+        [null, /n’est pas offerte : le dossier n’a pas de code NAF/],
+        ['Infirmier', /n’est pas offerte : le code NAF enregistré n’a pas la forme d’un code NAF/],
+        [undefined, /n’est pas offerte : le code NAF du dossier n’a pas été lu/],
+      ]
+      for (const [code, phrase] of cas) {
+        const vue = monter(undefined, { dossierCodeNaf: code })
+        const carte = (await screen.findByRole('heading', { name: 'Paiements de l’assurance maladie' })).closest('.card') as HTMLElement
+        expect(within(carte).getByText(phrase)).toBeTruthy()
+        vue.unmount()
+      }
+    } finally {
+      faux.paiementsAssuranceMaladie = false
+    }
   })
 })
 

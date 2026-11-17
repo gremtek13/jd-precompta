@@ -53791,14 +53791,15 @@ retours restent dans `supabase/preparees/retour/` (à coller). Reste CFCS2-Q1 (A
 du dernier segment des originaux repris), à préparer.
 ### 17/11/2026 — EXP58-Q3 ET NOE4-Q1 : LA DÉSIGNATION RETIRÉE DE L'ÉCRITURE LIBRE, LES PAIEMENTS DE L'ASSURANCE MALADIE SUR UN CODE NAF DE SANTÉ
 
-**EXP58-Q3 (A)** (conception 58, § 5) : l'expert-comptable ne passe pas une dépense de janvier dans la 2035 de l'année d'avant,
-et BOI-BNC-BASE-40-10 § 260 rattache une dépense à l'année de son paiement. La désignation « contre la règle de la trésorerie »
-(`contreLaRegle`, `contre_la_regle`) sort du module (`lib/ecritureLibre.ts`) et de la migration préparée
-`20261117120000_ecritures_libres`, récrite avant tout collage (md5 `485ecc9f3fc134f1f38efa8888f8a52a`, d'abord
-`ea217cd7…`) : ses trois refus deviennent un seul, `rattacheeComptee` (22023, le dernier contrôle, après l'équilibre) ; une
-charge ou un produit rattaché reste permis HORS de la 2035, l'extourne proposée, jamais exigée ; l'avertissement « contre la
-règle » disparaît, `chargeRattachee` se dit compté ou non. La base ne lit plus la clé : envoyée par un appelant d'avant, elle
-n'ouvre rien (EL-B25). Le retour ne change pas (la table n'a jamais porté la désignation). Éprouvé sur une copie de
-`replique_227` portée à 237 par l'export : l'essai 67 sur 67, six mutations sur six (M-EL4 vise la nouvelle condition) ; le
-retour rend le schéma d'avant (le `pg_dump --schema-only` égal à celui d'une seconde copie jamais migrée, une fois retirée la
-ligne `\restrict` que pg_dump tire au hasard) ; EL2 recollée, l'essai de nouveau juste.
+**EXP58-Q3 (A)** (conception 58, § 5 ; BOI-BNC-BASE-40-10 § 260) : la désignation « contre la règle de la trésorerie » sort du
+module (`lib/ecritureLibre.ts`) et de la préparée `20261117120000_ecritures_libres`, récrite avant tout collage (md5
+`485ecc9f3fc134f1f38efa8888f8a52a`, d'abord `ea217cd7…`) ; ses trois refus deviennent `rattacheeComptee` (22023, le dernier) :
+une charge ou un produit rattaché reste permis hors de la 2035, l'extourne proposée, jamais exigée ; la clé envoyée par un
+appelant d'avant n'ouvre rien (EL-B25) ; le retour inchangé. Sur une copie de `replique_227` portée à 237 : l'essai 67 sur 67,
+six mutations sur six ; le retour rend le schéma d'avant (`pg_dump --schema-only` égal à une copie jamais migrée, sa ligne
+`\restrict` aléatoire retirée). **NOE4-Q1 (C)** : `lib/sectionAssuranceMaladie.ts` (pur) offre la section sur un code NAF lu
+(« 86.90D », ou sans le point) de la division 86 (NAF rév. 2, INSEE) ; absent, illisible ou pas lu, rien. `codeNaf` est
+obligatoire pour la section, et l'association de NOE5b suit (son lot vit dans la section ; la fiche d'un crédit la tait,
+`associationOfferte`) ; la lecture continue, un crédit associé reste hors des candidats d'une vente. Le cabinet passe la ligne
+lue, l'onglet Informations dit pourquoi en une phrase (sous le drapeau de NOE3) ; le client lit la seule colonne
+(`lib/codeNafDuDossierLecture.ts`), sans un mot. Les deux gardes mordent ; la suite : 923 fichiers, 23 137 tests.

@@ -205,7 +205,7 @@ function rendre(o: { ventesParLesFactures?: boolean; valides?: readonly number[]
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={o.valides ?? []}>
-        <BanqueTab dossierId={D} modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={o.ventesParLesFactures ?? true} statutTva="redevable" />
+        <BanqueTab dossierId={D} modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={o.ventesParLesFactures ?? true} statutTva="redevable" codeNaf="86.90D" />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,

@@ -36,6 +36,8 @@ import {
 import BarreRecherche from '../components/BarreRecherche'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import PaiementsAssuranceMaladie from '../components/PaiementsAssuranceMaladie'
+import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from '../lib/paiementsAssuranceMaladie'
+import { useCodeNafDuDossier } from '../lib/codeNafDuDossierLecture'
 
 // « MA BANQUE » (espace client, étape P9 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU
 // CLIENT : LA CONCEPTION », §2.5 et §6). L'écran du client qui porte la case « Banque » sur la société AFFICHÉE : les
@@ -226,6 +228,9 @@ export default function ClientBanque() {
   const dossierId = dossierActifId
   const moi = session?.user.id ?? null
   const [lecture, setLecture] = useState<Etat>({ etat: 'chargement' })
+  // Le code NAF du dossier (NOE4-Q1 (C)) : la section des paiements de l'assurance maladie ne s'offre que sur un code de santé ;
+  // lu sous le drapeau de la section seulement.
+  const codeNaf = useCodeNafDuDossier(dossierId, PAIEMENTS_ASSURANCE_MALADIE_PREVUS)
   // La période : une année du relevé, ou toutes. Nulle tant que le client n'a rien choisi : la plus récente.
   const [periode, setPeriode] = useState<number | 'toutes' | null>(null)
   const [filtre, setFiltre] = useState<FiltreEtat>('tous')
@@ -386,9 +391,9 @@ export default function ClientBanque() {
           onPreciser={preciser}
         />
       )}
-      {/* Les paiements de l'assurance maladie (NOE4), sous « Banque » : la section ne se monte que sous son drapeau, et relit
-          la case à la base avec ses tables. */}
-      {lecture.etat === 'lu' && <PaiementsAssuranceMaladie espace="client" dossierId={dossierId} />}
+      {/* Les paiements de l'assurance maladie (NOE4), sous « Banque » : la section ne se monte que sous son drapeau, sur un code
+          NAF de santé (NOE4-Q1 (C) ; ailleurs, rien ne se dit au client), et relit la case à la base avec ses tables. */}
+      {lecture.etat === 'lu' && <PaiementsAssuranceMaladie espace="client" dossierId={dossierId} codeNaf={codeNaf} />}
     </>
   )
 }
