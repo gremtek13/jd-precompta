@@ -98,6 +98,13 @@ const faux = vi.hoisted(() => ({
   // Le drapeau `SAISIES_2035E_EXPORTEES`, levé le 13/11/2026 : ce fichier garde son état d'avant éprouvé (baissé par défaut)
   // et ne le lève que le temps d'un test (le mock du module le lit ici).
   saisies2035E: false,
+  // La déclaration principale n° 2035-SD (`FORMULAIRE_2035_SD_OFFERT`, levé le 17/11/2026) : son drapeau, que le mock du module
+  // lit ici pour jouer aussi l'état d'avant, et ce que `remplir2035SD` a reçu.
+  formulaire2035SDOffert: true,
+  declarations2035SD: [] as { annee: number; benefice: number; deficit: number; immobilisations: Record<string, unknown> }[],
+  entetes2035SD: [] as Record<string, unknown>[],
+  // Une promesse qui retient le remplissage : de quoi cliquer deux fois pendant qu'il court.
+  attente2035SD: null as Promise<void> | null,
   // Les mises à jour envoyées, table et valeurs : l'enregistrement d'un poste manquant.
   misesAJour: [] as { table: string; valeurs: unknown }[],
   // Ce que l'écran croit de qui regarde (`useAuth().isSuperAdmin`), et ce qu'en sait la BASE : la policy d'écriture
@@ -229,6 +236,24 @@ vi.mock('../../lib/remplir2035', () => ({
     faux.entetes.push(entete)
     faux.annexes.push(annexe)
     return Promise.resolve({ pdf: new Uint8Array(), codesSansAncrage: faux.codesSansAncrage, codesSansAncrage2035E: [] })
+  },
+}))
+
+vi.mock('../../lib/modeles2035SD', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../lib/modeles2035SD')>()
+  const module = { ...original }
+  Object.defineProperty(module, 'FORMULAIRE_2035_SD_OFFERT', { get: () => faux.formulaire2035SDOffert, enumerable: true })
+  return module
+})
+
+// La 2035-SD importe pdf.js comme la 2035 : sa doublure retient ce que l'écran lui envoie ; le dessin est éprouvé sur le vrai
+// formulaire par gabarit2035SD.test.ts et remplir2035SD.test.ts.
+vi.mock('../../lib/remplir2035SD', () => ({
+  remplir2035SD: async (declaration: (typeof faux.declarations2035SD)[number], entete: Record<string, unknown>) => {
+    faux.declarations2035SD.push(declaration)
+    faux.entetes2035SD.push(entete)
+    if (faux.attente2035SD) await faux.attente2035SD
+    return { pdf: new Uint8Array(), libellesSansAncrage: [], etatsAnnexes: 0 }
   },
 }))
 
@@ -3767,5 +3792,81 @@ describe('ClotureTab — les recettes de caisse', () => {
     monter(2025)
     await screen.findByText('Chargement…')
     expect(screen.queryByText(/Report sur la déclaration des revenus/)).toBeNull()
+  })
+})
+
+// LA DÉCLARATION PRINCIPALE N° 2035-SD (demande du cabinet du 17/11/2026, docs/conceptions/55-formulaire-2035-sd.md). Ce qui se
+// joue ici est le CÂBLAGE : que l'écran envoie les cases que le PDF de la 2035-A/B porte et le registre lu en entier, sous un
+// verrou, et qu'une lecture partielle retienne le bouton.
+describe('ClotureTab — la déclaration 2035-SD', () => {
+  function preparer() {
+    faux.formulaire2035SDOffert = true
+    faux.declarations2035SD = []
+    faux.entetes2035SD = []
+    faux.attente2035SD = null
+    URL.createObjectURL = () => 'blob:declaration'
+    URL.revokeObjectURL = () => {}
+  }
+
+  it('envoie la ligne 1 et le tableau tirés des cases du formulaire et du registre, et le déclarant', async () => {
+    preparer()
+    poser({}, [immobilisation({ date_acquisition: '2025-07-01' })])
+    const clic = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter()
+    const bouton = await screen.findByRole('button', { name: /Déclaration 2035-SD/ })
+    expect(bouton.hasAttribute('disabled')).toBe(false)
+    await act(async () => { bouton.click() })
+
+    expect(faux.declarations2035SD).toHaveLength(1)
+    const d = faux.declarations2035SD[0]
+    expect(d.annee).toBe(2025)
+    // La dotation proratisée du bien (1 200 €) : la case CH que la carte montre, que le tableau redit.
+    expect(d.immobilisations).toMatchObject({ totalGeneral: 1200, dotationNette: 1200, ch: 1200, concorde: true })
+    // Une dépense de 120 € et 1 200 € de dotation : la 2035-B est en déficit, la ligne 1 le reporte.
+    expect(d.benefice).toBe(0)
+    expect(d.deficit).toBeGreaterThan(0)
+    // Dossier redevable (`assujettiTva` par défaut du montage) : les colonnes 2 et 3 sont à saisir, et c'est dit avant le clic.
+    expect(screen.getByText(/2035-SD : Dossier redevable de la TVA/)).toBeTruthy()
+    expect(faux.entetes2035SD[0]).toMatchObject({ nom: 'Dossier de test', activite: 'Infirmier', siret: '12345678901234' })
+    expect(clic).toHaveBeenCalledTimes(1)
+    vi.restoreAllMocks()
+  })
+
+  it('deux clics dans le même geste ne remplissent qu’une déclaration', async () => {
+    preparer()
+    let relacher = () => {}
+    faux.attente2035SD = new Promise<void>((r) => { relacher = r })
+    poser()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter()
+    const bouton = await screen.findByRole('button', { name: /Déclaration 2035-SD/ })
+    await act(async () => {
+      fireEvent.click(bouton)
+      fireEvent.click(bouton)
+    })
+    expect(faux.declarations2035SD).toHaveLength(1)
+    await act(async () => { relacher() })
+    vi.restoreAllMocks()
+  })
+
+  it('est retenue quand le registre des immobilisations n’est lu qu’en partie', async () => {
+    preparer()
+    poser({ immobilisations: 1 }, [immobilisation({ id: 'i1' }), immobilisation({ id: 'i2' })])
+    monter()
+    await screen.findByText(/n'a pas pu être lue en entier/)
+    const bouton = await screen.findByRole('button', { name: /Déclaration 2035-SD/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { fireEvent.click(bouton) })
+    expect(faux.declarations2035SD).toHaveLength(0)
+  })
+
+  it('drapeau baissé, aucun bouton : l’écran d’avant', async () => {
+    preparer()
+    faux.formulaire2035SDOffert = false
+    poser()
+    monter()
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryByRole('button', { name: /Déclaration 2035-SD/ })).toBeNull()
+    faux.formulaire2035SDOffert = true
   })
 })
