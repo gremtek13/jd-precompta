@@ -232,7 +232,9 @@ export function mettreEnFormePourAcd(fec: string, reglages: ReglagesDuProfil): E
   if (tousLesRefus.length > 0) return { ok: false, refus: tousLesRefus }
   if (sortie.length === 1) return { ok: false, refus: ['Aucune écriture à exporter.'] }
 
-  const texte = sortie.join('\r\n')
+  // Le fichier finit par une fin de ligne, comme celui qu'ACD produit lui-même (relevé du 17/11/2026) : sa dernière écriture
+  // se termine comme les autres.
+  const texte = sortie.join('\r\n') + '\r\n'
   return {
     ok: true, texte, octets: encoderWindows1252(texte), ecritures: numeros.size, lignes: sortie.length - 1, numeros,
     comptes: [...comptes].map(([nous, euxCompte]) => ({ nous, eux: euxCompte })).sort((a, b) => a.nous.localeCompare(b.nous)),

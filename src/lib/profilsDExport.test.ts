@@ -14,7 +14,8 @@ import {
 // tout fichier, chacun nommé par sa ligne ; les justificatifs sous la référence neutre de leur pièce.
 
 const decoder = new TextDecoder('windows-1252')
-const colonnesDe = (texte: string) => texte.split('\r\n').map((l) => l.split('\t'))
+// Le fichier finit par une fin de ligne (comme celui d'ACD) : la dernière, vide, n'est pas une ligne du fichier.
+const colonnesDe = (texte: string) => texte.replace(/\r\n$/, '').split('\r\n').map((l) => l.split('\t'))
 const reglages = (o: Partial<ReglagesDuProfil> = {}): ReglagesDuProfil => ({ ...REGLAGES_PROPOSES_ACD, ...o })
 
 const ENTETE_18 = ['JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate', 'CompteNum', 'CompteLib', 'CompAuxNum', 'CompAuxLib',
