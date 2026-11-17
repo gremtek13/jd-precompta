@@ -1151,6 +1151,26 @@ begin
   end if;
 end $$;
 
+-- ══ Les paiements de l'assurance maladie (NOE3, 16/11/2026) ══ Au plan du code quand `PAIEMENTS_ASSURANCE_MALADIE_PREVUS`
+-- est levé — c'est-à-dire quand leur migration est en base : le script met leurs deux tables juste après
+-- `controles_releves_bancaires` (ORDRE_RESTAURATION_PREVU : une place qu'aucun voisin ne fixe, après une table que toute
+-- base porte), l'import puis ses paiements ; les tables qui suivent reculent de deux rangs ; leurs chemins. Aucune vague.
+-- Absentes de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du
+-- code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.paiements_assurance_maladie') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'controles_releves_bancaires';
+    update essai_restauration._ordre set rang = -(rang + 2) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'imports_assurance_maladie');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 2, 'paiements_assurance_maladie');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('imports_assurance_maladie','direct',null,null),('paiements_assurance_maladie','direct',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

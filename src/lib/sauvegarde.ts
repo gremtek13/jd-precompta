@@ -45,6 +45,7 @@ import { ORIGINAUX_RETENUS_PREVUS, TABLES_DES_ORIGINAUX_LIBERES } from './origin
 import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
 import { HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE } from './hausseDuChiffreDAffaires'
+import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from './paiementsAssuranceMaladie'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -243,6 +244,23 @@ export const TABLES_DE_LA_HAUSSE_DU_CHIFFRE_D_AFFAIRES: readonly string[] = ['se
 /** Une table au plan, côté alerte de hausse : toutes, sauf les siennes tant que sa migration n'est pas en base. */
 export function auPlanDeLaHausseDuChiffreDAffaires(table: string, prevue: boolean): boolean {
   return prevue || !TABLES_DE_LA_HAUSSE_DU_CHIFFRE_D_AFFAIRES.includes(table)
+}
+
+// LES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, NOE3 ; migration `paiements_assurance_maladie`, PRÉPARÉE le
+// 16/11/2026, supabase/preparees/20261116190000_paiements_assurance_maladie.sql) : les imports d'un dossier et les paiements
+// agrégés qu'ils ont apportés, sans aucune donnée de patient. Sous le drapeau de la migration
+// (`PAIEMENTS_ASSURANCE_MALADIE_PREVUS`, src/lib/paiementsAssuranceMaladie.ts), baissé : la production n'a pas les tables, et
+// les lire ferait échouer toute sauvegarde. Leurs relations (au dossier, en cascade ; le paiement à son import, en cascade,
+// sa garde le tenant dans le dossier de son import), leur rang (juste après `controles_releves_bancaires`, une place qu'aucun
+// voisin ne fixe, l'import avant ses paiements), leurs chemins ; aucune vague ; leur clé est la commune, `id`. La
+// restauration les réinsère par la porte que leur garde et leurs policies ouvrent au super-administrateur.
+// sauvegardePaiementsAssuranceMaladie.test.ts éprouve le plan prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DES_PAIEMENTS_ASSURANCE_MALADIE: readonly string[] = ['imports_assurance_maladie', 'paiements_assurance_maladie']
+
+/** Une table au plan, côté paiements de l'assurance maladie : toutes, sauf les leurs tant que leur migration n'est pas en
+ *  base. */
+export function auPlanDesPaiementsAssuranceMaladie(table: string, prevus: boolean): boolean {
+  return prevus || !TABLES_DES_PAIEMENTS_ASSURANCE_MALADIE.includes(table)
 }
 
 // LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, en production depuis le 07/11/2026,
@@ -619,6 +637,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesSituationsPubliees(table, SITUATIONS_PUBLIEES_EXPORTEES)
     && auPlanDesPrevisionsPubliees(table, PREVISIONS_PUBLIEES_PREVUES)
     && auPlanDeLaHausseDuChiffreDAffaires(table, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE)
+    && auPlanDesPaiementsAssuranceMaladie(table, PAIEMENTS_ASSURANCE_MALADIE_PREVUS)
     && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
     && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
@@ -830,6 +849,11 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   // L'alerte de hausse du chiffre d'affaires (préparée) : le seuil et les marques de son dossier.
   { enfant: 'seuils_du_chiffre_d_affaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'hausses_vues_avec_le_client', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // Les paiements de l'assurance maladie (NOE3, préparée) : l'import et ses paiements, à leur dossier ; le paiement à son
+  // import, en cascade (sa garde le tient dans le dossier de son import).
+  { enfant: 'imports_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'paiements_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'paiements_assurance_maladie', parent: 'imports_assurance_maladie', colonne: 'import_id', aLaSuppression: 'cascade' },
   { enfant: 'saisies_2035', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'saisies_2035e', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'exercices', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -1211,6 +1235,10 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'connexions_bancaires',
   'connexions_plateformes',
   'controles_releves_bancaires',
+  // Les paiements de l'assurance maladie (NOE3, préparée) : après le dossier, l'import avant ses paiements ; une place
+  // qu'aucun voisin ne fixe — l'essai de restauration les met après `controles_releves_bancaires`.
+  'imports_assurance_maladie',
+  'paiements_assurance_maladie',
   'cotisations_declarees',
   'declarations_tva',
   'dossier_assignations',
@@ -1832,6 +1860,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   previsions_publiees: { acces: 'direct' },
   seuils_du_chiffre_d_affaires: { acces: 'direct' },
   hausses_vues_avec_le_client: { acces: 'direct' },
+  imports_assurance_maladie: { acces: 'direct' },
+  paiements_assurance_maladie: { acces: 'direct' },
   saisies_2035: { acces: 'direct' },
   saisies_2035e: { acces: 'direct' },
   stocks_de_cloture: { acces: 'direct' },

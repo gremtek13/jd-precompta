@@ -53435,3 +53435,17 @@ seconde application refusée ; `rls.sql` entier 259 lignes, 0 en faute sur 1 205
 banc du leurre SÛR pour les deux essais ; le retour (des `drop`, à coller) rend la signature d'avant, neuf familles. Migration
 `27e0ae12…` (sans le dernier saut de ligne), retour `17498b01…`. Questions : CA2Q1-migration ; CA2Q1-Q1 (la marque « vue avec
 le client » montre encore le début de l'identifiant d'un autre compte).
+### 16/11/2026 — NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 234, puis supprimée.) Les réponses du cabinet du
+soir (conception 53, §10) : NOE-Q1 « le praticien et le cabinet », NOE-Q2 « les deux », NOE-Q5 « au MVP, en entier ». Le
+fichier brut est ARRÊTÉ : le cahier NOEMIE PS de 2004 se dit copropriété de l'assurance maladie, sans cession de droits, et
+interdit la copie ; ameli.fr refuse encore la lecture (NOE2-Q1). `lib/paiementsAssuranceMaladie.ts`, pur, sans sortie (un
+relevé du texte, trois défauts plantés ; un second : seuls six fichiers de `src/` nomment les tables) : l'export CSV par un
+réglage des colonnes, une liste fermée de statuts, des écarts comptés sous leur ligne, jamais la valeur ; un export fabriqué
+(noms, NIR, numéros faux) n'en laisse sortir aucune. `paiements_assurance_maladie` : deux tables sans texte libre, deux
+fonctions (importer tout ou rien, au cabinet et à « Banque » ; retirer), une garde aux droits de l'appelant qui tient aussi
+le paiement dans le dossier de son import (une clé étrangère sur deux colonnes, que le relevé des relations de la sauvegarde
+refuse, écartée) ; l'association au relevé remise à NOE5. Preuves : l'essai 53/53, 18 mutations sur 18, la suppression
+directe refusée et la cascade du dossier, `rls.sql` 263/0 et 152 sur 152 (260/0, 150 sur 150 sans elle), le retour rend la signature d'avant ; 200 imports
+fictifs jugés par la base, rejugés à l'identique par le module (`paiementsAssuranceMaladie.releve.json`).

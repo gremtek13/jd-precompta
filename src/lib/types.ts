@@ -2484,6 +2484,37 @@ export interface StockDeCloture {
   modifie_le: string
 }
 
+// LES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, NOE3 ; migration `paiements_assurance_maladie`, préparée, pas
+// appliquée — lib/paiementsAssuranceMaladie.ts). Un import et les paiements agrégés qu'il a apportés : des dates, des
+// entiers, une part de la liste, AUCUN texte, aucune donnée de patient. Écrits par `importer_paiements_assurance_maladie`,
+// retirés ensemble par `retirer_import_assurance_maladie` ; aucune mise à jour. Ils ne comptent dans aucun moteur.
+export interface ImportAssuranceMaladie {
+  id: string
+  dossier_id: string
+  periode_du: string
+  periode_au: string
+  /** Nuls quand le fichier ne dit pas les rejets — jamais zéro sur un non-dit. Une part rejetée d'une facture compte un rejet. */
+  nombre_de_rejets: number | null
+  montant_rejete_centimes: number | null
+  importe_par: string
+  importe_le: string
+}
+
+export interface PaiementAssuranceMaladie {
+  id: string
+  dossier_id: string
+  import_id: string
+  date_journee_comptable: string
+  regime: number | null
+  caisse: number | null
+  part: 'obligatoire' | 'complementaire' | 'forfait'
+  /** Le net, régularisations déduites, en centimes. */
+  montant_centimes: number
+  /** Négatif ou nul, en centimes. */
+  regularisations_centimes: number
+  nombre_de_factures: number
+}
+
 // L'AFFECTATION DU RÉSULTAT ET L'APPROBATION DES COMPTES (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`,
 // préparée). Une décision par version, immuable : elle se remplace ou se retire, jamais ne se supprime. Ce qu'elle a lu est
 // figé avec elle (`soldes_lus` aux noms de `SoldesAvantAffectation`, src/lib/affectationDuResultat.ts).
