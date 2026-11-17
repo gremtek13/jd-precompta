@@ -5,7 +5,8 @@ remboursements sécu » (les dossiers BNC des praticiens de santé : infirmiers,
 trésorerie). **Sa décision, du même jour, qui fixe l'architecture** : « pour l'import NOEMIE on récupère que les chiffres et on
 stocke pas de données patients ».
 
-Rien n'est écrit : ni code, ni migration. Cette page dit ce qu'on garde, la preuve qu'aucune valeur gardée n'identifie un
+Le 16/11/2026 au soir, le cabinet a répondu aux questions (§10) ; NOE1, NOE2 (en module) et NOE3 (la migration, préparée,
+pas appliquée) sont faits le même jour. Cette page dit ce qu'on garde, la preuve qu'aucune valeur gardée n'identifie un
 patient, le rapprochement avec les crédits du relevé, les lots NOE1 à NOE8 et les questions qui restent ouvertes.
 
 ## 1. La contrainte qui décide : pas d'hébergeur HDS, pas de patient en base
@@ -147,10 +148,12 @@ import se retire et se refait). Au plan de sauvegarde derrière le drapeau (`sau
 la restauration écrit en super-administrateur. Le figement de l'exercice validé les couvre (un paiement dont la journée
 comptable est dans une année validée ne se retire ni ne s'associe plus).
 
-**Qui importe** (NOE-Q1) : **le praticien, depuis son espace client** — le cabinet ne voit jamais le fichier, seulement les
-agrégats. C'est ce qui tient la consigne du 24/09/2026 : le praticien ne transmet pas ses retours à son expert-comptable.
-Le cabinet n'a pas d'écran d'import du fichier NOEMIE ; il pourrait importer un relevé déjà agrégé (B), sans patient, s'il
-en existe un (NOE-Q2).
+**Qui importe** (NOE-Q1, réponse du 16/11/2026 : « Le praticien et le cabinet », contre la recommandation) : **le praticien
+depuis son espace client, sous la case « Banque », et le cabinet du dossier** ; le fichier se lit dans le navigateur de celui
+qui importe, et rien d'autre que des agrégats n'en sort. Quand le cabinet importe, il a le fichier en main : la consigne du
+24/09/2026 (le praticien ne transmet pas ses retours) devient un choix du praticien, que l'écran du cabinet rappelle (NOE4).
+La migration préparée ouvre au client la lecture des imports et des paiements de son dossier, et les deux gestes (importer,
+retirer) : présentés au cabinet avant d'être appliqués (la fiche NOE-migration).
 
 ## 5. Le rapprochement avec les crédits du relevé
 
@@ -228,7 +231,8 @@ fichier reconnu comme un retour NOEMIE, et de l'écarter à la réception par e-
 | NOE7 | Le refus d'un retour NOEMIE au dépôt et à la réception par e-mail | NOE-Q6 |
 | NOE8 | La mise en production : la migration par l'outil, le drapeau levé, les essais et les trois contrôles de l'export | tout |
 
-**Le MVP** (NOE-Q5) : la 2035 de 2026 n'en dépend pas — les recettes viennent des crédits du relevé, et le SNIR les recoupe
+**Le MVP** (NOE-Q5, réponse du 16/11/2026 : « Au MVP, en entier », contre la recommandation) : l'import et le contrôle
+entrent au MVP. Ce qui suit était la recommandation : la 2035 de 2026 n'en dépend pas — les recettes viennent des crédits du relevé, et le SNIR les recoupe
 déjà. Recommandé : NOE1 tout de suite (une question au praticien, sans code), le reste après la répétition générale, et le
 contrôle de l'exercice 2026 avant la 2035 de mai 2027.
 
@@ -249,3 +253,34 @@ Au cabinet : NOE-Q1 (qui importe), NOE-Q2 (quel fichier lire d'abord), NOE-Q3 (l
 NOE-Q5 (le MVP), NOE-Q6 (le dépôt accidentel), NOE-Q7 (le libellé et le FEC). À l'expert-comptable : NOE-E1 (le contrôle contre
 le SNIR), NOE-E2 (la frontière du 31 décembre), NOE-E3 (le paiement comme justificatif dans le FEC). Leurs fiches sont dans la
 page « Arbitrages du cabinet ».
+
+## 10. Les réponses du cabinet (16/11/2026 au soir) et ce qu'elles changent
+
+- **NOE-Q1** « Le praticien et le cabinet » : §4. Le droit du praticien est « Banque » (la case qui ouvre déjà ses crédits du
+  relevé) ; la lecture et les deux gestes du client se présentent au cabinet avant l'application (NOE-migration).
+- **NOE-Q2** « Les deux » : l'export CSV du logiciel du praticien se lit par un **réglage des colonnes** choisi à l'écran
+  (`lib/paiementsAssuranceMaladie.ts` : une ligne est une facture, chaque part — obligatoire, complémentaire — a sa colonne de
+  montant, de journée comptable, et au choix de statut et d'organisme ; les statuts, une liste fermée de mots ; le genre des
+  colonnes montré sans une valeur). Le nom du logiciel et ses en-têtes restent à recevoir (NOE1) : le réglage les attend sans
+  les deviner. **Le fichier brut (576, 580) est ARRÊTÉ** : le seul cahier public lisible (NOEMIE PS, mai 2004,
+  sesam-vitale.fr) se déclare, en page 2, « la copropriété » de la CNAMTS, de la CCMSA, de l'AMPI et de l'UNRS, « titulaires
+  des droits d'auteur », sa publication « n'entraîn[ant] aucune cession des droits d'auteurs » ; il est protégé contre la copie
+  (Acrobat : copie interdite) ; la version de 2016 (ameli.fr) refuse toujours la lecture automatique (403). Aucune source dont
+  les conditions permettent l'exploitation ne donne la disposition des zones : la question revient au cabinet (NOE2-Q1).
+- **NOE-Q3** « la date de journée comptable seule » : appliquée (aucune référence de virement en base).
+- **NOE-Q4** « le nombre et le montant total par import » : `nombre_de_rejets` et `montant_rejete_centimes` de l'import ; une
+  part rejetée d'une facture (obligatoire ou complémentaire) compte un rejet ; nuls quand le fichier ne dit pas les statuts.
+- **NOE-Q5** « Au MVP, en entier » : §7.
+- **NOE-Q6** « Refuser au dépôt et écarter à la réception » : NOE7 ; il attend la forme du fichier (les en-têtes de l'export,
+  NOE1 ; le brut, NOE2-Q1) — reconnaître un retour sans la connaître serait deviner.
+- **NOE-Q7** « Inchangé, cité dans la piste d'audit », **NOE-E3** « La piste d'audit seule » : NOE6 ; le FEC ne change pas.
+- **NOE-E1** « Ne pas comparer » : le contrôle contre le SNIR est retiré de NOE6. **NOE-E2** (la frontière du 31 décembre) :
+  sans réponse ; la base fige un paiement par l'année de sa journée comptable (l'exercice validé retient l'import et le
+  retrait), le contrôle de NOE6 jugera la frontière sur la date du crédit.
+
+**Ce que NOE3 pose, en écart de §4** : deux tables (l'import ; ses paiements, sous la clé TOTALE et la clé étrangère (import,
+dossier)), deux fonctions (`importer_paiements_assurance_maladie`, tout ou rien ; `retirer_import_assurance_maladie`) et une
+garde aux droits de l'appelant (aucune réécriture, aucune écriture hors de l'import et de la restauration, même pour le rôle des
+Edge Functions). **L'association à un crédit du relevé est remise à NOE5**, avec sa propre migration : ses règles (un ou deux
+crédits, la règle G2, les sommes) dépendent des signaux de NOE5 et du premier relevé réel ; sa clé étrangère retiendra le
+retrait d'un import associé.

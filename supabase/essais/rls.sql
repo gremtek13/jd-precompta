@@ -185,6 +185,10 @@
 --  14. La prévision de trésorerie publiée (bloc PP, après celui des situations ; migration `previsions_publiees`, C8-Q2,
 --      préparée) : le client « Banque » ne lit que la prévision EN COURS de son dossier, ni celle qu'elle remplace ni sans
 --      la case ; il ne l'écrit pas en direct ; le catalogue. Deux mutations ; avant la migration, une ligne « EN ATTENTE ».
+--  15. Les paiements de l'assurance maladie (bloc AM, en fin de fichier ; migration `paiements_assurance_maladie`, NOE3,
+--      préparée) : le client « Banque » lit les imports et les paiements de son dossier, rien sans la case ; il ne les écrit
+--      pas en direct (la garde) ; le catalogue. Deux mutations ; la section P7 compte les deux tables parmi celles de la
+--      banque ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -812,6 +816,13 @@
 -- la compte parmi les tables de la banque (3bis, 3bis+ sur ses prévisions en cours, 4bis, M3bis-b qui lui ôte aussi
 -- `prevision_publiee_en_cours`) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 15/11/2026 — C8-Q2 : LA
 -- PRÉVISION DE TRÉSORERIE PUBLIÉE AU CLIENT ».
+--
+-- 16/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (NOE3 : migration `paiements_assurance_maladie`, PRÉPARÉE, pas appliquée),
+-- qui crée `imports_assurance_maladie` et `paiements_assurance_maladie` — la lecture du cabinet du dossier, celle d'un accès
+-- « Banque », l'insertion de restauration du super-administrateur, une garde aux droits de l'appelant. Le bloc AM (AM1 à
+-- AM3, M-AM1, M-AM2) ; la section P7 les compte parmi les tables de la banque (3bis, 3bis+, 4bis, M3bis, M4bis) ; EN ATTENTE
+-- sans la migration. Ce qu'il rend : HISTORIQUE.md, « 16/11/2026 — NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE
+-- MALADIE ET LEUR TABLE (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
 -- 07/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (B1 : migration `trois_cases_de_l_acces`, PRÉPARÉE, pas appliquée, après
 -- P1-trace et C4a), qui pose trois cases de l'accès client — « Achats », « Notes de frais », « Documents » — qu'aucune
@@ -1623,13 +1634,19 @@ declare
     || case when to_regclass('public.comptes_bancaires') is not null then array['comptes_bancaires'] else '{}'::text[] end
     -- La prévision de trésorerie publiée (C8-Q2 ; migration `previsions_publiees`, PRÉPARÉE) : le client « Banque » lit celle
     -- EN COURS de son dossier, dès que la migration est en base.
-    || case when to_regclass('public.previsions_publiees') is not null then array['previsions_publiees'] else '{}'::text[] end;
+    || case when to_regclass('public.previsions_publiees') is not null then array['previsions_publiees'] else '{}'::text[] end
+    -- Les paiements de l'assurance maladie (NOE3 ; migration `paiements_assurance_maladie`, PRÉPARÉE) : le client « Banque »
+    -- lit les imports et les paiements de son dossier, dès que la migration est en base.
+    || case when to_regclass('public.paiements_assurance_maladie') is not null
+            then array['imports_assurance_maladie', 'paiements_assurance_maladie'] else '{}'::text[] end;
   banque_lues text[];
   -- Ce que « toutes les lignes de ses dossiers » compte d'une table de la banque : toutes, sauf pour la prévision publiée,
   -- dont la policy n'ouvre que les publications EN COURS (`prevision_publiee_en_cours`).
   en_cours_seules constant text := ' and x.geste = ''publication'' and not exists '
     || '(select 1 from public.previsions_publiees r where r.remplace_id = x.id)';
   mvt_client uuid; mvt_client_2 uuid; mvt_autre uuid; piece_client uuid; piece_autre uuid;
+  -- Un import de l'assurance maladie par dossier (NOE3), dès sa migration.
+  import_client uuid := gen_random_uuid(); import_autre uuid := gen_random_uuid();
   t record; p record; n bigint; ses bigint; hors bigint; touchees int; motif text;
   verdicts jsonb := '[]'::jsonb;  -- {controle, cible, observe, ok}
   mutations jsonb := '[]'::jsonb; -- {mutation, attendu, observe, mord}
@@ -1689,6 +1706,19 @@ begin
       end loop;
       perform set_config('jd.previsions_publiees', '', true);
     end if;
+    -- Les paiements de l'assurance maladie (NOE3), dès leur migration : un import et un paiement dans chaque dossier, posés
+    -- par le propriétaire sous le réglage de l'import (la garde n'admet que lui et la restauration).
+    if to_regclass('public.paiements_assurance_maladie') is not null then
+      for p in select * from (values (dossier_du_client, import_client), (autre_dossier, import_autre)) as v(dossier, ligne) loop
+        perform set_config('jd.paiements_assurance_maladie', p.ligne::text, true);
+        execute format('insert into public.imports_assurance_maladie (id, dossier_id, periode_du, periode_au, importe_par) values (%L, %L, %L, %L, %L)',
+          p.ligne, p.dossier, '2026-01-12', '2026-01-12', chef);
+        execute format('insert into public.paiements_assurance_maladie (dossier_id, import_id, date_journee_comptable, regime, caisse, part, '
+          || 'montant_centimes, regularisations_centimes, nombre_de_factures) values (%L, %L, %L, 1, 691, %L, 1234, 0, 1)',
+          p.dossier, p.ligne, '2026-01-12', 'obligatoire');
+      end loop;
+      perform set_config('jd.paiements_assurance_maladie', '', true);
+    end if;
 
     -- « Ventes » ne se porte que sur un accès d'un dossier basculé (garder_droit_ventes, étape VF8f) : les dossiers du
     -- client basculent, le jeu posé, par le propriétaire sans session, le temps de la sous-transaction.
@@ -1738,6 +1768,16 @@ begin
     if to_regclass('public.previsions_publiees') is not null then
       ecritures := ecritures || format('insert into previsions_publiees (dossier_id, geste, contenu, auteur) values (%L, %L, %L, %L)',
         dossier_du_client, 'publication', '{"version": 1}', client);
+    end if;
+    -- Les paiements de l'assurance maladie (NOE3), dès leur migration : un import, et un paiement d'une autre journée dans
+    -- l'import posé, insérés en direct.
+    if to_regclass('public.paiements_assurance_maladie') is not null then
+      ecritures := ecritures
+        || format('insert into imports_assurance_maladie (dossier_id, periode_du, periode_au, importe_par) values (%L, %L, %L, %L)',
+             dossier_du_client, '2026-01-13', '2026-01-13', client)
+        || format('insert into paiements_assurance_maladie (dossier_id, import_id, date_journee_comptable, regime, caisse, part, '
+             || 'montant_centimes, regularisations_centimes, nombre_de_factures) values (%L, %L, %L, 1, 691, %L, 99, 0, 1)',
+             dossier_du_client, import_client, '2026-01-13', 'obligatoire');
     end if;
     for t in select e as sql, split_part(split_part(e, 'insert into ', 2), ' ', 1) as nom from unnest(ecritures) e loop
       motif := null;
@@ -11855,6 +11895,164 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $hc$;
+
+-- ══ AM. Les paiements de l'assurance maladie (NOE3 ; migration `paiements_assurance_maladie`, PRÉPARÉE) ═══════════
+-- Deux tables que le client LIT sous sa case « Banque » — les imports et les paiements de son dossier —, que le cabinet du
+-- dossier lit entières, et que personne n'écrit en direct : leurs deux fonctions, ou la restauration. La section P7 les
+-- compte parmi les tables de la banque (3bis, 3bis+, 4bis, M3bis, M4bis) ; ce bloc juge ce qui leur est propre.
+--   AM1. Un import et deux paiements dans le dossier du client : le client « Banque » les lit (le contrôle POSITIF) ; la case
+--        décochée, il n'en lit rien ; l'anonyme non plus.
+--   AM2. Le client ne les écrit pas en direct (42501, la garde, sous ses mots).
+--   AM3. Le catalogue : la RLS active, trois policies par table à authenticated seul, hors la restrictive `deux_facteurs`
+--        (C7), la garde avant chaque écriture.
+-- Deux mutations, qui doivent mordre : M-AM1 (la lecture du client ouverte à tout accès du dossier : sans la case, il lit),
+-- M-AM2 (la lecture du client fermée : la case cochée, il ne lit plus). Avant la migration, une ligne dit que le bloc attend.
+do $am$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  import_essai uuid := gen_random_uuid();
+  acces uuid; avec_case text; sans_case text; de_l_anon text; ecrite text; elargie bigint; fermee bigint;
+  n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.paiements_assurance_maladie') is null then
+    insert into rls_verdict values ('AM. les paiements de l''assurance maladie : EN ATTENTE de la migration paiements_assurance_maladie',
+      'imports_assurance_maladie, paiements_assurance_maladie', 'absentes : elles se jugent dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : un import et deux paiements, posés par le propriétaire sous le réglage de l'import (la garde n'admet que
+    -- lui et la restauration) ; la case « Banque » cochée sur l'accès du client ──
+    perform set_config('request.jwt.claims', '', true);
+    select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
+    perform set_config('jd.paiements_assurance_maladie', import_essai::text, true);
+    execute format('insert into public.imports_assurance_maladie (id, dossier_id, periode_du, periode_au, importe_par) values (%L, %L, %L, %L, %L)',
+      import_essai, dossier_du_client, '2026-02-02', '2026-02-03', chef);
+    execute format('insert into public.paiements_assurance_maladie (dossier_id, import_id, date_journee_comptable, regime, caisse, part, '
+      || 'montant_centimes, regularisations_centimes, nombre_de_factures) values (%L, %L, %L, 1, 691, %L, 1500, 0, 2), (%L, %L, %L, 1, 691, %L, 300, 0, 2)',
+      dossier_du_client, import_essai, '2026-02-02', 'obligatoire', dossier_du_client, import_essai, '2026-02-03', 'complementaire');
+    perform set_config('jd.paiements_assurance_maladie', '', true);
+    update memberships set droit_banque = true where id = acces;
+    construit := true;
+
+    -- AM1 : le client avec la case, sans elle ; l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select (select count(*) from imports_assurance_maladie i where i.id = import_essai) || ' '
+        || (select count(*) from paiements_assurance_maladie p where p.import_id = import_essai) into avec_case;
+    reset role;
+    update memberships set droit_banque = false where id = acces;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select (select count(*) from imports_assurance_maladie i where i.id = import_essai) || ' '
+        || (select count(*) from paiements_assurance_maladie p where p.import_id = import_essai) into sans_case;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select (select count(*) from imports_assurance_maladie) || ' ' || (select count(*) from paiements_assurance_maladie) into de_l_anon;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'AM1. le client « Banque » lit l''import et les paiements de son dossier (le contrôle positif) ; sans la case, rien ; l''anonyme rien',
+      'cible', 'imports_assurance_maladie, paiements_assurance_maladie',
+      'observe', 'avec la case : ' || coalesce(avec_case, '?') || ' | sans : ' || coalesce(sans_case, '?') || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', avec_case = '1 2' and sans_case = '0 0' and de_l_anon = '0 0');
+
+    -- AM2 : le client n'écrit pas en direct, même « Banque ».
+    update memberships set droit_banque = true where id = acces;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into paiements_assurance_maladie (dossier_id, import_id, date_journee_comptable, regime, caisse, part,
+        montant_centimes, regularisations_centimes, nombre_de_factures)
+      values (dossier_du_client, import_essai, '2026-02-04', 1, 691, 'obligatoire', 100, 0, 1);
+      ecrite := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if ecrite is null then ecrite := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'AM2. le client n''écrit pas un paiement en direct (42501, la garde)',
+      'cible', 'paiements_assurance_maladie', 'observe', coalesce(ecrite, '?'),
+      'ok', ecrite = '42501 Les paiements de l''assurance maladie ne s''écrivent que par leur import.');
+
+    -- M-AM1 : la lecture du client ouverte à tout accès du dossier — sans la case, il lit.
+    begin
+      update memberships set droit_banque = false where id = acces;
+      alter policy paiements_assurance_maladie_lecture_banque on public.paiements_assurance_maladie
+        using (client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from paiements_assurance_maladie where import_id = import_essai;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-AM1 — la lecture des paiements ouverte à tout accès du dossier',
+      'attendu', 'le client sans la case lit les paiements', 'observe', coalesce(elargie::text, '?') || ' lu(s)', 'mord', coalesce(elargie = 2, false));
+
+    -- M-AM2 : la lecture du client fermée — la case cochée, il ne lit plus.
+    begin
+      alter policy paiements_assurance_maladie_lecture_banque on public.paiements_assurance_maladie using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from paiements_assurance_maladie where import_id = import_essai;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-AM2 — la lecture des paiements du client fermée',
+      'attendu', 'le client « Banque » ne lit plus les paiements', 'observe', coalesce(fermee::text, '?') || ' lu(s)', 'mord', coalesce(fermee = 0, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- AM3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename in ('imports_assurance_maladie', 'paiements_assurance_maladie')
+     and p.roles = array['authenticated']::name[] and p.permissive = 'PERMISSIVE'
+     and ((p.policyname = p.tablename || '_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = p.tablename || '_lecture_banque' and p.cmd = 'SELECT' and p.with_check is null
+           and p.qual = 'client_du_dossier(dossier_id, ''banque''::text)')
+       or (p.policyname = p.tablename || '_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'AM3. la RLS active ; trois policies par table à authenticated seul : la lecture du cabinet, celle d''un accès « Banque », l''insertion du super-administrateur ; la garde avant chaque écriture (lecture du catalogue)',
+    'cible', 'imports_assurance_maladie, paiements_assurance_maladie',
+    'observe', n || ' sur 6, ' || (select count(*) from pg_policies p where p.schemaname = 'public'
+                                     and p.tablename in ('imports_assurance_maladie', 'paiements_assurance_maladie')
+                                     and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, '
+      || (select count(*) from pg_trigger t where not t.tgisinternal and t.tgtype = 31
+            and t.tgfoid = 'public.garder_paiements_assurance_maladie()'::regprocedure) || ' garde(s), RLS '
+      || (select bool_and(c.relrowsecurity)::text from pg_class c
+           where c.oid in ('public.imports_assurance_maladie'::regclass, 'public.paiements_assurance_maladie'::regclass)),
+    'ok', n = 6 and (select count(*) from pg_policies p where p.schemaname = 'public'
+                       and p.tablename in ('imports_assurance_maladie', 'paiements_assurance_maladie')
+                       and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 6
+      and (select count(*) from pg_trigger t where not t.tgisinternal and t.tgtype = 31
+             and t.tgfoid = 'public.garder_paiements_assurance_maladie()'::regprocedure) = 2
+      and (select bool_and(c.relrowsecurity) from pg_class c
+            where c.oid in ('public.imports_assurance_maladie'::regclass, 'public.paiements_assurance_maladie'::regclass)));
+  verdicts := verdicts || jsonb_build_object('controle', 'AM. le jeu d''essai des paiements de l''assurance maladie s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $am$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

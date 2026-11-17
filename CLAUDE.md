@@ -531,11 +531,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   DE HAUSSE DU CHIFFRE D'AFFAIRES (MVP) », « L'ALERTE DU CHIFFRE D'AFFAIRES REPRISE », « L'ALERTE DU CHIFFRE D'AFFAIRES EN
   PRODUCTION ».
 - **L'import NOEMIE et les paiements de l'assurance maladie** (demande et décision du cabinet du 16/11/2026 : les chiffres
-  seuls, aucune donnée de patient) : conçus (`docs/conceptions/53-import-noemie-et-remboursements.md`) — le fichier lu
-  dans le navigateur du praticien, des agrégats par journée comptable, organisme et part, aucune colonne de texte en base,
-  ni numéro de facture ou de lot ; le paiement justifie et contrôle le crédit du relevé, il ne compte dans aucun moteur ;
-  rien d'associé sans clic ; NOE1 à NOE8, NOE-Q1 à Q7, NOE-E1 à E3 → « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES
-  PAIEMENTS DE L'ASSURANCE MALADIE : LA CONCEPTION ».
+  seuls, aucune donnée de patient ; au MVP, en entier, NOE-Q5) : conçus (`docs/conceptions/53-import-noemie-et-remboursements.md`,
+  les réponses au §10) — le fichier lu dans le navigateur de celui qui importe (le praticien sous « Banque », ou le cabinet,
+  NOE-Q1), des agrégats par journée comptable, organisme et part, aucune colonne de texte en base, ni numéro de facture ou de
+  lot ; le paiement justifie et contrôle le crédit du relevé, il ne compte dans aucun moteur ; rien d'associé sans clic.
+  NOE1-NOE2 en module (`lib/paiementsAssuranceMaladie.ts`, sans sortie : `paiementsAssuranceMaladieSansSortie.test.ts`) :
+  l'export CSV par un réglage des colonnes ; le fichier brut 576/580 ARRÊTÉ (le cahier public n'en cède aucun droit,
+  NOE2-Q1). NOE3 préparée, par l'outil, son drapeau baissé (`paiements_assurance_maladie`, `PAIEMENTS_ASSURANCE_MALADIE_PREVUS`,
+  NOE-migration) ; l'association au relevé remise à NOE5 → « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
+  DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE ».
 - **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
   une OD source du brouillon, écrite par le chef du cabinet seul en base ; en trésorerie, chaque ligne de résultat sous un poste
   de la 2035 ou « hors de la 2035 » ; EL1 à EL8, EL-Q1 à Q12, EL-E1 à E5 → « L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE : LA CONCEPTION ».
