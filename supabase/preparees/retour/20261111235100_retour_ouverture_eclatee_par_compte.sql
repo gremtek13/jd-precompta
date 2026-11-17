@@ -30,5 +30,6 @@ alter table public.ecritures_brouillon drop constraint ecritures_brouillon_ouver
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_inventaire_hors_de_l_ouverture;
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_stock_hors_de_l_ouverture;
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_affectation_hors_de_l_ouverture;
+alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_libre_hors_de_l_ouverture;
 drop index public.ecritures_brouillon_ouverture_compte_bancaire_id_idx;
 alter table public.ecritures_brouillon drop column ouverture_compte_bancaire_id;

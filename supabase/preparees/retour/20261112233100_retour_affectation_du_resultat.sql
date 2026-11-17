@@ -35,6 +35,7 @@ drop function public.affectation_entier(jsonb);
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_affectation_hors_de_l_ouverture;
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_inventaire_hors_de_l_affectation;
 alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_stock_hors_de_l_affectation;
+alter table public.ecritures_brouillon drop constraint if exists ecritures_brouillon_libre_hors_de_l_affectation;
 alter table public.ecritures_brouillon drop constraint ecritures_brouillon_affectation_sans_autre_source;
 drop index public.ecritures_brouillon_affectation;
 alter table public.ecritures_brouillon drop column affectation_id;

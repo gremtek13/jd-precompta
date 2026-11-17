@@ -7,6 +7,13 @@ pouvoir le faire. limité a l'expert comptable et pas au comptable mais l'expert
 sur le bilan ». Conception rendue le 16/11/2026 par l'architecte, sans code de l'application ni écriture en base. Le
 récit court : HISTORIQUE.md, « L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE : LA CONCEPTION ».
 
+**Les réponses du cabinet du 17/11/2026 (§ 10.0) changent deux choses** : l'écriture libre s'ouvre à tout compte du cabinet
+qui suit le dossier, le comptable compris (EL-Q1, un revirement : la réponse la plus récente l'emporte sur la parole du 16/11),
+et un exercice validé peut être DÉGELÉ par le chef du cabinet (EL-Q10 (B), contre la recommandation), conçu au § 6.1, pas codé,
+ses choix ouverts posés en EL10-Q1 à Q7. Les dix autres suivent la recommandation. EL1 (le module) et EL2 (la migration,
+préparée) sont faits le même jour (§ 7.1) ; ce qui, plus bas, disait « le chef seul » pour ÉCRIRE se lit « le cabinet du
+dossier » (`admin_du_dossier`), le texte d'origine barré là où il fixait le droit.
+
 Ce qui se lit avant : HISTORIQUE.md → « L'OPÉRATION DÉCOUVERTE APRÈS COUP », « UN EXERCICE VALIDÉ SE FIGE EN BASE », « LA
 2035 SE COMPARE AUX ÉCRITURES », « LE FEC SUIT L'ARTICLE A47 A-1 », « Une piste d'audit se PRODUIT » ; et
 docs/conceptions/35-inventaire.md, dont cette conception reprend le patron (une table source, une colonne du brouillon,
@@ -17,9 +24,9 @@ une fonction qui recompose, une garde).
 1. Une écriture libre est une écriture en partie double, saisie compte par compte par l'expert-comptable, que rien dans
    l'application ne produit : une table source à elle (`ecritures_libres`), ses lignes au brouillon qui la CITENT
    (`ecriture_libre_id`), écrites, remplacées et retirées par deux fonctions `security definer` seules.
-2. Le droit est en base : `est_chef_du_cabinet` du cabinet du dossier (le super-administrateur compris), vérifié avant
-   toute autre lecture ; le membre d'équipe la LIT (elle est dans la balance, le bilan et le FEC qu'il voit), ne l'écrit
-   jamais ; le client n'en lit rien.
+2. Le droit est en base : ~~`est_chef_du_cabinet`~~ `admin_du_dossier` depuis EL-Q1 (17/11/2026) — tout compte du cabinet
+   qui suit le dossier, son chef, un membre assigné, le super-administrateur —, vérifié avant toute autre lecture ; l'auteur
+   de chaque version posé par la base ; le client n'en lit rien. Le DÉGEL d'un exercice validé reste au chef seul (§ 6.1).
 3. Équilibrée au centime, une seule date, au journal OD, sous une pièce produite par l'application (« EL2026-0003 »,
    l'état des écritures libres : le motif, l'auteur, l'instant), une pièce du dossier citée si l'expert le veut.
 4. Les comptes : tout compte des classes 1 à 7 au format de l'application ; REFUSÉS, la banque et la caisse (l'argent ne
@@ -39,7 +46,8 @@ une fonction qui recompose, une garde).
 9. Le FEC : une sorte `libre`, journal OD, PieceRef son numéro, les vingt-deux champs d'un BNC tirés des valeurs que la
    base admet déjà ; la piste d'audit la cite comme justifiée par l'état et, s'il y en a une, par la pièce citée.
 10. La validation fige l'écriture et ses lignes ; après, elle ne change plus : on la CONTRE-PASSE dans un exercice ouvert
-    (PCG, art. 1031-3 et 122-6). Aucun dégel (EL-Q10) ; un effet sur la 2035 d'un exercice validé relève de B9.
+    (PCG, art. 1031-3 et 122-6), ou le chef du cabinet DÉGÈLE le dernier exercice validé (EL-Q10 (B), § 6.1, lot EL9) ; un
+    effet sur la 2035 d'un exercice validé et non dégelé relève de B9.
 11. `valider_exercice` n'est PAS remplacée : sa numérotation couvre déjà toute ligne du brouillon, et ses contrôles
     (équilibre, une date, une pièce, les champs BNC) valent pour la sorte neuve.
 12. Neuf lots, EL1 à EL8 et EL2b, environ douze jours ; EL1 à EL5 et EL8 entrent au MVP (EL2b aussi si EL-Q11 (A)),
@@ -148,8 +156,8 @@ une garde à part (EL2b, EL-Q11).
 | `motif` | text not null | 1 à 2 000 caractères ; la justification de l'expert, imprimée sur l'état des écritures libres, jamais au FEC |
 | `lignes` | jsonb not null | un tableau de 2 à 200 lignes `{ rang, compte, sens, centimes, poste_2035 }` (§ 3.2) ; la forme jugée par la fonction, un `check (jsonb_typeof(lignes) = 'array')` en base |
 | `piece_citee_id` | uuid | facultative ; `references pieces` sans action, une pièce du même dossier (contrôle) |
-| `extourne_de_id` | uuid | facultative ; `references ecritures_libres`, l'écriture du 31 décembre dont celle-ci est l'extourne au 1er janvier suivant (§ 5.1) : la paire naît, change et se retire ensemble, dans le même appel ; unique (une extourne par écriture) |
-| `contre_passe_id` | uuid | facultative ; `references ecritures_libres`, une écriture libre VALIDÉE du même dossier qu'elle contre-passe (EL7) |
+| `avec_extourne` | boolean not null | (EL2, 17/11/2026, au lieu d'une `extourne_de_id`) l'écriture du 31 décembre porte ELLE-MÊME son extourne au 1er janvier suivant : ses lignes inverses s'écrivent au brouillon à cette date, sous « Extourne — » et le libellé. La paire naît, change et se retire ensemble par construction (le patron d'INV2), sans clé auto-référencée ni seconde ligne à geler |
+| `contre_passe_id` | uuid | facultative ; `references ecritures_libres`, une écriture libre VALIDÉE du même dossier qu'elle contre-passe — posée par EL7, pas par EL2 (rien ne l'écrit avant) |
 | `version` | integer not null default 1 | incrémentée à chaque remplacement ; la saisie retient la version lue |
 | `cree_par`, `cree_le`, `modifie_par`, `modifie_le` | | posés par la fonction (`auth.uid()`, `now()`), jamais par l'appelant |
 
@@ -167,9 +175,10 @@ veut `poste_rattache` nul sur une ligne proposée) —, et la fonction tient les
 - L'écriture : au moins un débit et un crédit, la somme des débits égale à celle des crédits au centime (le FEC rejette une
   écriture déséquilibrée, et `valider_exercice` le refuse : « Une écriture n'est pas équilibrée au centime. ») ; deux
   lignes identiques (compte, sens) se fondent dans l'écran avant l'envoi, jamais en base.
-- `enregistrer_ecriture_libre(p_dossier_id uuid, p_ecriture jsonb, p_version_lue integer) returns uuid` (`security
-  definer`, `set search_path = public`, `revoke execute … from public, anon`) : lit le cabinet du dossier et refuse en
-  42501 tout autre que son chef AVANT toute autre lecture (le patron de `valider_exercice`) ; prend le verrou consultatif
+- `enregistrer_ecriture_libre(p_dossier_id uuid, p_ecriture jsonb, p_ecritures jsonb, p_version_lue integer) returns uuid`
+  (`security definer`, `set search_path = public`, `revoke execute … from public, anon`) — `p_ecritures`, les écritures que
+  l'application compose (`composerEcrituresLibres`), comparées en multiensemble (le patron d'INV2) : refuse en 42501 tout
+  compte que `admin_du_dossier` ne reconnaît pas (EL-Q1 ; ~~tout autre que son chef~~) AVANT toute autre lecture ; prend le verrou consultatif
   PARTAGÉ de la validation (`cle_validation`) ; juge la date (§ 3.3), les comptes au plan et leur refus (§ 3.4), les
   montants, l'équilibre, le libellé, le motif, la pièce citée (même dossier), les postes, la version lue ; RECOMPOSE les
   lignes du brouillon depuis `lignes` (une ligne du brouillon par ligne de l'écriture, `montant` = centimes / 100, le
@@ -281,10 +290,21 @@ passes ou par vagues ») → `ecritures_brouillon` ; `sauvegardeEcrituresLibres.
 
 ## 4. Le droit, en base
 
-- **Écrire** (enregistrer, remplacer, retirer, contre-passer) : `est_chef_du_cabinet(cabinet du dossier)` — le rôle
-  `comptable_en_chef` de `cabinet_admins`, ou le super-administrateur —, vérifié dans chaque fonction avant toute autre
-  lecture, refus 42501 « Seul l'expert-comptable du cabinet passe une écriture libre. ». AUCUNE policy d'écriture sur
+- **Écrire** (enregistrer, remplacer, retirer, contre-passer) : depuis EL-Q1 (17/11/2026, « les comptables peuvent faire
+  les ecritures libre »), `admin_du_dossier(dossier)` — le chef du cabinet, un membre assigné au dossier, le
+  super-administrateur —, vérifié dans chaque fonction avant toute autre lecture, refus 42501 « Accès refusé à ce dossier. »
+  (~~`est_chef_du_cabinet`, « Seul l'expert-comptable du cabinet passe une écriture libre. »~~). AUCUNE policy d'écriture sur
   `ecritures_libres` : les fonctions seules, et les gardes refusent l'écriture directe d'une ligne qui la cite.
+- **Ce qu'EL-Q1 change.** (1) La TRAÇABILITÉ porte la responsabilité que le droit réservé portait : `cree_par` et
+  `modifie_par` (posés par la base, jamais par l'appelant) disent QUI a écrit chaque version ; l'état des écritures libres
+  nomme l'auteur de la création et celui de la dernière version (l'adresse lue de `cabinet_admins` sous la session de qui
+  regarde, sinon « Le cabinet », le patron de P1TQ2Q1-Q1) ; EL-Q9 (A) ne garde pas les versions intermédiaires — un membre qui
+  remplace l'écriture du chef efface la version du chef, seul son auteur reste nommé (`cree_par`) : un risque accepté en
+  tranchant EL-Q9. (2) EL2b ne se justifie plus par « réservée à l'expert » mais par « toute écriture sans source passe par la
+  fonction qui la VÉRIFIE et la TRACE » : une ligne insérée par l'API n'a ni motif, ni auteur, ni équilibre vérifié, ni effet
+  sur la 2035 dit — EL-Q11 (A) reste entière. (3) Le DÉGEL reste au chef seul (EL-Q10 (B) : « par le chef du cabinet ») :
+  écrire dans un exercice ouvert n'est pas rouvrir un exercice validé. (4) La proposition par le membre (l'ancienne option (B)
+  d'EL-Q1) devient sans objet.
 - **Lire** : une policy `for select to authenticated using (admin_du_dossier(dossier_id))`. Le membre d'équipe assigné lit
   les écritures libres et leur motif : elles sont dans la balance, le bilan et le FEC qu'il prépare, et il doit savoir ce
   que l'expert a passé. Le chef lit tout.
@@ -455,7 +475,57 @@ libre. « Mes comptes » (une situation publiée) montre des soldes.
   table `regularisations` et l'écriture libre se rejoignent : une régularisation qui n'a ni pièce ni ligne dans
   l'application est, en pratique, une écriture libre avec une date de survenance. Recommandé : la colonne
   `date_survenance` de B9 s'ajoutera alors à `ecritures_libres`, pas avant.
-- **Aucun dégel** n'est proposé ; la question est posée (EL-Q10), avec la recommandation de ne jamais rouvrir.
+- **Le dégel** : le cabinet l'a choisi (EL-Q10 (B), 17/11/2026), contre la recommandation de ne jamais rouvrir ; § 6.1.
+
+### 6.1 Le dégel d'un exercice validé par le chef du cabinet (EL-Q10 (B)) : la conception, pas le code
+
+Ce qui le cadre. Un exercice validé est figé PAR LA BASE : les déclencheurs des écritures validées
+(`ecritures_brouillon_intangibles`), la garde de chaque table qui fige à la frontière (`frontiere_validation`, le 31 décembre du
+dernier `exercices_valides`), l'empreinte en forme 2 chaînée à celle de l'exercice précédent, qui scelle aussi les pièces
+citées et la 2035 (INAL2), le fichier d'une pièce figée gardé par le stockage (`fichier_fige`, INAL1). Le PCG veut que la
+validation interdise toute modification ou suppression (art. 1031-3, cité par la conception, NON RELU ce jour) et que la
+clôture d'une période se fasse au plus tard avant l'expiration de la suivante (art. 1031-4, idem). Le dégel est donc une
+EXCEPTION tracée, jamais un retour silencieux : la version validée ne disparaît pas, elle s'ARCHIVE.
+
+- **Qui** : le chef du cabinet du dossier seul (`est_chef_du_cabinet`, le super-administrateur compris), vérifié en base avant
+  toute lecture ; jamais un membre (EL-Q1 ouvre l'ÉCRITURE, pas le dégel), jamais le client ; sous la double authentification
+  quand elle sera exigée ; un MOTIF obligatoire (20 à 2 000 caractères) ; une confirmation qui nomme l'exercice, ce qui se
+  défait et ce qui reste déposé.
+- **Quoi** : le DERNIER exercice validé seul (EL10-Q1 (A)) — dégeler N quand N+1 est validé casserait l'ouverture et l'empreinte
+  de N+1 ; dégeler N−1 demande de dégeler N d'abord.
+- **Ce qu'il défait**, d'un seul tenant, par une fonction `degeler_exercice(p_dossier_id, p_annee, p_motif)` : la ligne
+  `exercices_valides` de N (la frontière recule au 31 décembre de N−1, et avec elle TOUTES les gardes qui la lisent : pièces,
+  cotisations, encaissements, désignations, écritures libres, inventaire) ; le statut des lignes de N (`validee` →
+  `proposee`), leur numéro, leur date de validation et les cinq champs BNC (la contrainte `ecritures_brouillon_champs_bnc_du_fec`
+  les veut nuls sur une ligne proposée) ; les soldes reportés de N vers N+1 (`soldes_reportes`), que la revalidation récrira.
+  Elle SUPPRIME : sa migration se collera.
+- **Ce qu'il garde** : une table IMMUABLE `degels_d_exercice` (aucune policy de mise à jour ni de suppression ; lue par le
+  cabinet du dossier ; au plan de sauvegarde et au paquet d'archive d'un départ) — le dossier, l'année, qui a dégelé, quand, le
+  motif, et l'INSTANTANÉ archivé de la validation : qui l'avait faite et quand, ses totaux, sa déclaration 2035 (version 2),
+  son empreinte, celle du FEC validé, et les lignes validées elles-mêmes (le FEC de N tel qu'il a été figé, reproductible à
+  l'identique, EL10-Q6 (A)) ; les soldes reportés défaits. L'empreinte de N−1 et toute la chaîne d'avant restent intactes :
+  la revalidation de N se chaîne de nouveau à N−1, et l'archive dit quelle empreinte de N a été remplacée et pourquoi.
+- **Ce qu'il ne touche pas** : une facture validée (figée pour elle-même) ; les déclarations de TVA enregistrées et leur
+  liquidation, l'e-reporting déclaré, la 2035 DÉPOSÉE (EL10-Q5 (A) : elles restent et se DISENT — « la 2035 déposée reste
+  celle d'avant ; la revalidation en produira une autre, à déposer en rectificative ») ; les fichiers des pièces citées, qui
+  restent gardés tant qu'une archive les cite (EL10-Q4 (A)) ; les situations publiées au client (des instantanés).
+- **La numérotation** : à la revalidation, recomposée entière par `valider_exercice` comme à la première (EL10-Q3 (A)) — le FEC
+  d'un exercice est un tout, que l'article A47 A-1 veut numéroté en continu (à relire avant EL9) ; l'ancien FEC reste
+  produisible depuis l'archive, sous son empreinte.
+- **Jusqu'à quand** : tant que l'exercice suivant n'est pas validé (EL10-Q2 (A)) ; après le dépôt de la 2035 ou la date limite
+  de mai, le dégel reste possible mais sa confirmation dit la 2035 rectificative à déposer.
+- **Comment il se trace** : la ligne de `degels_d_exercice` ; la Vue d'ensemble, Clôture et l'onglet de la validation disent
+  « Exercice dégelé le … par … : motif » jusqu'à la revalidation, puis « revalidé le … (dégelé le … par …) » ; la piste d'audit
+  et le paquet d'archive portent les deux versions ; l'assistant n'en reçoit que le fait et la date, jamais le motif.
+- **Comment il se revalide** : par `valider_exercice`, inchangée, sous les mêmes préalables ; l'écran montre avant le clic
+  l'écart avec la version archivée (les cases de la 2035, les totaux, les écritures ajoutées, changées, retirées), et la
+  confirmation nomme la 2035 rectificative si la première a été déposée.
+- **Les risques** : un FEC remis à l'expert-comptable ou à l'administration avant le dégel ne correspond plus à la comptabilité
+  revalidée (l'archive le reproduit) ; une garde qui lirait le gel autrement que par la frontière resterait figée (EL9 les relit
+  toutes) ; le retour arrière d'EL9 serait destructif (la table d'archive).
+- **Le lot** : EL9, après EL1 à EL5 : une migration (`degels_d_exercice`, `degeler_exercice`, la relecture de chaque garde qui
+  lit la frontière) préparée sur une réplique avec toute la rigueur, un essai, puis l'écran ; rien ne se code avant que le
+  cabinet tranche EL10-Q1 à Q7.
 
 ---
 
@@ -463,17 +533,19 @@ libre. « Mes comptes » (une situation publiée) montre des soldes.
 
 | Lot | Contenu | Jours | Drapeau | Dépend de | MVP |
 |---|---|---|---|---|---|
-| EL1 | `lib/ecritureLibre.ts`, pur, en centimes : la saisie (comptes par `lireCompteSaisi`), l'équilibre, les refus et les avertissements dans l'ordre et leurs mots, la fenêtre des dates, le poste proposé, le compte de rattachement reconnu, l'extourne composée ; ses tests | 1 | aucun (module) | — | oui |
-| EL2 | Migration `ecritures_libres` : la table, la colonne, la contrainte et les paires, les deux gardes, la porte, la restrictive sous condition, `enregistrer_ecriture_libre`, `retirer_ecriture_libre`, la policy de lecture ; les quatre préparées sœurs mises à jour ; `ecrituresLibres.sql` (quatre profils : chef, membre assigné refusé en 42501, membre non assigné, client ; chaque refus avec sa raison ; écritures annulées par sous-transaction), le bloc de `rls.sql` ; sauvegarde derrière `ECRITURES_LIBRES_PREVUES` ; `types.ts` | 2,5 | `ECRITURES_LIBRES_PREVUES` baissé | EL1 | oui |
+| EL1 — **fait le 17/11/2026** | `lib/ecritureLibre.ts`, pur, en centimes : la saisie (comptes par `lireCompteSaisi`), l'équilibre, les refus et les avertissements dans l'ordre et leurs mots, la fenêtre des dates, le poste proposé, le compte de rattachement reconnu, l'extourne composée ; ses tests | 1 | aucun (module) | — | oui |
+| EL2 — **préparée le 17/11/2026** (§ 7.1) | Migration `ecritures_libres` : la table, la colonne, la contrainte et les paires, les deux gardes, la porte, la restrictive sous condition, `enregistrer_ecriture_libre`, `retirer_ecriture_libre`, la policy de lecture ; les quatre préparées sœurs mises à jour ; `ecrituresLibres.sql` (quatre profils : chef, membre assigné refusé en 42501, membre non assigné, client ; chaque refus avec sa raison ; écritures annulées par sous-transaction), le bloc de `rls.sql` ; sauvegarde derrière `ECRITURES_LIBRES_PREVUES` ; `types.ts` | 2,5 | `ECRITURES_LIBRES_PREVUES` baissé | EL1 | oui |
 | EL2b | La garde qui refuse toute ligne NOUVELLE sans source au brouillon, la restauration exceptée (§ 1.3, EL-Q11) — après la mesure en base et la relecture de chaque écriture directe du navigateur | 1 | — | EL2 | oui, si EL-Q11 (A) |
 | EL3 | Le FEC (sorte `libre`, ses champs BNC), la numérotation de la validation, la piste d'audit, `absenceFec`, le lettrage ; l'état des écritures libres (PDF, CSV par `champCsv`, BOM) | 1,5 | le même | EL2 | oui |
 | EL4 | La 2035 (la source neuve, ses contributions), la concordance (le motif déclaré, `concorde` hors des écarts déclarés si EL-Q6 (A)), `prealablesValidation.ts`, Clôture, la situation intermédiaire et l'estimation ; un test qui garde la CA3 aveugle | 2 | le même | EL2 | oui |
 | EL5 | L'écran : une section « Écritures de l'expert-comptable » de l'onglet Écritures — la liste de l'exercice, lue en entier (partielle : aucun geste) ; la saisie compte par compte au chef seul (un membre la lit, sans formulaire), l'équilibre affiché, les avertissements sous chaque ligne, le poste proposé, l'extourne proposée ; une confirmation qui NOMME les lignes, les totaux et l'effet sur la 2035 ; un verrou `useRef` par geste ; ses tests d'écran | 2 | `ECRITURES_LIBRES_EXPORTEES` baissé | EL3, EL4 | oui |
 | EL6 | Le détail de la balance et du bilan, la révision (preuve, travail), l'assistant (lecture sans libellé) et son redéploiement | 1 | — | EL5 | non |
 | EL7 | La contre-passation d'une écriture validée, d'un geste, dans un exercice ouvert (`contre_passe_id`) | 0,5 | — | EL5 | non |
-| EL8 | La mise en production : simulation (fichiers posés, drapeaux levés, suite entière), collage par le cabinet (les fonctions suppriment), les trois contrôles de l'export, `rejouer.py`, essais rejoués, drapeaux levés | 0,5 | levés | EL2 à EL5 | oui |
+| EL8 | La mise en production : la table au plan de sauvegarde derrière `ECRITURES_LIBRES_PREVUES` AVEC son bloc de l'essai de restauration (restauration.sql, que restaurationEssai.test.ts confronte au plan prévu), le bloc de `rls.sql` ; simulation (fichiers posés, drapeaux levés, suite entière), collage par le cabinet (les fonctions suppriment), les trois contrôles de l'export, `rejouer.py`, essais rejoués, drapeaux levés | 0,5 | levés | EL2 à EL5 | oui |
+| EL9 | Le dégel d'un exercice validé par le chef (EL-Q10 (B), § 6.1) : `degels_d_exercice`, `degeler_exercice`, la relecture des gardes qui lisent la frontière, l'archive au plan de sauvegarde et au paquet d'archive, l'écran (le motif, l'écart avant la revalidation) | 2 | `DEGEL_PREVU` baissé | EL10-Q1 à Q7 | selon EL10-Q7 |
 
-Environ douze jours. L'ordre : EL1 → EL2 (→ EL2b) → (EL3 ∥ EL4) → EL5 → EL8, puis EL6 et EL7. EL2 se prépare et se
+Environ quatorze jours, EL9 compris. L'ordre : EL1 → EL2 (→ EL2b) → (EL3 ∥ EL4) → EL5 → EL8, puis EL6 et EL7 ; EL9 après
+EL5, une fois EL10-Q1 à Q7 tranchées. EL2 se prépare et se
 rejoue sur une réplique en PostgreSQL 17 (ICU `en-US`) avec toute la rigueur (mutations, banc du leurre), jamais appliquée
 avant l'accord du cabinet ; EL4, qui touche la 2035, aussi (les mutations qui mordent, la concordance rejouée sur le banc
 de charge d'une année, `outils/charge/`).
@@ -486,6 +558,26 @@ EL-Q11 (A) ; EL6 et EL7 après le MVP. Le FEC importé par l'expert (MVP-D5) por
 qu'il connaît.
 
 ---
+
+### 7.1 EL1 et EL2, le 17/11/2026 : ce qui a été fait, et ce qui a changé en route
+
+- **EL1** (`src/lib/ecritureLibre.ts`, `ecritureLibre.test.ts`) : `refusDeLEcritureLibre` (vingt-quatre refus, l'ordre de la
+  base, 22023 ou 23514), `avertissementsDeLEcritureLibre` (TVA, tiers, immobilisations, emprunt, passage, inventaire en
+  engagement, hors de la 2035, charge rattachée, contre la règle), `propositionDeLaRegle` (hors de la 2035 et l'extourne devant
+  une charge rattachée), `posteProposeDuCompte`, `composerEcrituresLibres`, `ecritureLibrePourLaBase`, `ecartDeclare`. Les
+  longueurs se comptent en points de code, comme `char_length`. Les postes acceptés sont la liste fermée de la contrainte
+  `ecritures_brouillon_champs_bnc_du_fec`, recopiée et confrontée (`ecritureLibreEnBase.test.ts`).
+- **EL2** (`supabase/preparees/20261117120000_ecritures_libres.sql`, son retour, `supabase/essais/ecrituresLibres.sql`) : la
+  table, la colonne, la contrainte « sans autre source », les quatre paires, les deux gardes, la porte, la restrictive sous
+  condition, les deux fonctions. Trois écarts à la conception, choisis : l'extourne vit dans la MÊME ligne (`avec_extourne`, le
+  patron d'INV2) plutôt qu'une `extourne_de_id` ; `contre_passe_id` attend EL7 ; la désignation « contre la règle de la
+  trésorerie » (EL-Q3 (A)) est un booléen de la SAISIE (`contre_la_regle`), exigé quand une ligne de résultat comptée fait face à
+  un compte de rattachement, refusé sinon, non gardé (la base le redéduit des lignes). Les quatre préparées sœurs (MCB5g, INV2,
+  LIA2, AFF2) tolèrent `ecriture_libre_id` dans leur garde de tête et posent leur paire avec elle (`stocks.test.ts` : dix paires,
+  vingt poses). Le plan de sauvegarde et le bloc de `rls.sql` vont à EL8, avec le bloc de l'essai de restauration.
+- **Le banc** : une copie de `replique_227` portée à 236 : l'essai 67 sur 67, six mutations sur six qui mordent ; le retour puis
+  EL2 de nouveau ; EL2 avant puis après les quatre sœurs, les dix paires posées dans les deux ordres, l'essai juste ; l'essai
+  d'INV2 92 sur 92 et 14 mutations sur 14 à côté d'EL2.
 
 ## 8. Les risques
 
@@ -523,6 +615,18 @@ qu'il connaît.
 - Le texte des articles 2 et 20 de l'ordonnance du 19 septembre 1945, cités de mémoire.
 
 ## 10. Les questions
+
+### 10.0 Les réponses du cabinet (17/11/2026)
+
+- **EL-Q1** : aucune option cochée, une note — « les comptables peuvent faire les ecritures libre ». Un REVIREMENT sur la parole
+  du 16/11 (« réservée à l'expert-comptable ») : la plus récente l'emporte. Tout compte du cabinet qui suit le dossier écrit
+  (`admin_du_dossier`) ; ce que cela change : § 4.
+- **EL-Q2** (A) le poste choisi, ou hors de la 2035 ; **EL-Q3** (A) permise, hors de la 2035 par défaut, comptée seulement sur
+  désignation explicite avec extourne obligatoire ; **EL-Q4** (A) banque et caisse refusées ; **EL-Q5** (A) permis et avertis ;
+  **EL-Q6** (A) l'écart déclaré ne retient pas la validation ; **EL-Q7** (A) le texte de l'expert sous un avertissement ;
+  **EL-Q8** (A) l'état produit, la pièce citée facultative ; **EL-Q9** (A) la dernière version seulement ; **EL-Q11** (A) la
+  garde des lignes sans source, après la mesure ; **EL-Q12** (A) au MVP, avant la validation de 2025.
+- **EL-Q10** : (B) « Un dégel par le chef du cabinet », contre la recommandation : § 6.1, ses choix ouverts au § 10.3.
 
 ### 10.1 Au cabinet
 
@@ -619,3 +723,31 @@ quelle ligne de la CA3 vous la déclarez, avant que l'application ne la propose.
 
 **EL-E5 — Le journal.** Toutes les écritures libres au journal OD, numérotées avec les autres OD, PieceRef
 « EL<année>-<numéro> ». Recommandation : OD ; un journal propre seulement si votre logiciel en a besoin.
+
+### 10.3 Les questions du dégel (17/11/2026)
+
+**EL10-Q1 — Quel exercice se dégèle ?** (A) le dernier validé seul, un exercice plus ancien après le dégel de ceux qui le
+suivent ; (B) n'importe lequel, les suivants dégelés en cascade. Recommandation : (A) — l'ouverture et l'empreinte de N+1
+reposent sur N validé.
+
+**EL10-Q2 — Jusqu'à quand ?** (A) tant que l'exercice suivant n'est pas validé, la 2035 rectificative dite après le dépôt ; (B)
+seulement avant le dépôt de la 2035 ; (C) sans limite. Recommandation : (A) — la clôture d'une période se fait avant
+l'expiration de la suivante (PCG, art. 1031-4, à relire).
+
+**EL10-Q3 — La numérotation à la revalidation ?** (A) recomposée entière, l'ancien FEC archivé sous son empreinte ; (B) les
+numéros d'avant gardés, les écritures nouvelles à la suite. Recommandation : (A) — le FEC d'un exercice est un tout numéroté en
+continu (LPF, art. A47 A-1, à relire).
+
+**EL10-Q4 — Les fichiers des pièces figées ?** (A) ils restent gardés tant qu'une archive de dégel les cite, les lignes des
+pièces redevenant modifiables ; (B) tout se dégèle. Recommandation : (A) — l'archive doit rester justifiable.
+
+**EL10-Q5 — Les déclarations déjà faites (CA3, e-reporting, 2035 déposée) ?** (A) le dégel les laisse intactes et les dit,
+la liquidation de TVA reste figée ; (B) le dégel se refuse tant qu'une CA3 de l'exercice est enregistrée. Recommandation : (A).
+
+**EL10-Q6 — L'archive ?** (A) l'instantané validé ET les lignes validées (le FEC de N reproductible), dans une table immuable,
+au plan de sauvegarde et au paquet d'archive ; (B) l'instantané seul. Recommandation : (A) — la valeur probante de ce qui a été
+validé, puis remplacé.
+
+**EL10-Q7 — Quand ?** (A) avant la validation de 2025 de la répétition générale, avec EL1 à EL5 : un écart trouvé en comparant
+la 2035 validée à la 2035 déposée se corrigerait sinon dans 2026, l'exercice réel ; (B) après le MVP. Recommandation : (A), si
+EL10-Q1 à Q6 sont tranchées à temps ; sinon, ne valider 2025 qu'après la comparaison.
