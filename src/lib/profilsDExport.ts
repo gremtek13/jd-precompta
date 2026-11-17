@@ -21,10 +21,11 @@ import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from './cheminDuDossier
 // lib/exportVersUnLogicielLecture.ts.
 
 /**
- * Le drapeau de l'écran : baissé, l'onglet Écritures ne montre rien de cet export. Il se lève quand l'essai d'import chez
- * l'expert-comptable (EXP-E1, EXP-E4) a dit que le fichier passe, et que le cabinet a tranché EXP-Q2 et EXP-Q5.
+ * Le drapeau de l'écran : baissé, l'onglet Écritures ne montre rien de cet export. LEVÉ le 17/11/2026 sur la demande du
+ * cabinet, pour l'essayer sur le dossier fictif, avant l'essai d'import chez l'expert-comptable (EXP-E1, EXP-E4) ; EXP-Q2 et
+ * EXP-Q5 restent ouvertes, l'écran garde leurs options recommandées (les justificatifs sur une case, nos valeurs par défaut).
  */
-export const EXPORT_VERS_UN_LOGICIEL_OFFERT: boolean = false
+export const EXPORT_VERS_UN_LOGICIEL_OFFERT: boolean = true
 
 // ── L'ENCODAGE WINDOWS-1252 ──────────────────────────────────────────────────────────────────────────────────────────
 

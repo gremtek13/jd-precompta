@@ -240,11 +240,11 @@ vi.mock('../../lib/fec', async (vrai) => ({
 }))
 
 // L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP1) : le drapeau `EXPORT_VERS_UN_LOGICIEL_OFFERT` joué par un accesseur — le vrai
-// (baissé) tant qu'un cas ne le lève pas.
+// est levé depuis le 17/11/2026 ; ici il reste BAISSÉ tant qu'un cas ne le lève pas, pour garder l'état d'avant éprouvé.
 const drapeauExport = vi.hoisted(() => ({ leve: undefined as undefined | boolean }))
 vi.mock('../../lib/profilsDExport', async (original) => {
   const vrai = await original<typeof import('../../lib/profilsDExport')>()
-  return { ...vrai, get EXPORT_VERS_UN_LOGICIEL_OFFERT() { return drapeauExport.leve ?? vrai.EXPORT_VERS_UN_LOGICIEL_OFFERT } }
+  return { ...vrai, get EXPORT_VERS_UN_LOGICIEL_OFFERT() { return drapeauExport.leve ?? false } }
 })
 afterEach(() => { drapeauExport.leve = undefined })
 

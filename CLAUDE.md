@@ -567,7 +567,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE
   L'ASSURANCE MALADIE ET LEUR TABLE », « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE », « NOE5 : L'ASSOCIATION
   DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ ».
-- **L'export vers un logiciel comptable** (EXP1, 17/11/2026, derrière `EXPORT_VERS_UN_LOGICIEL_OFFERT` baissé) : le FEC de l'onglet Écritures
+- **L'export vers un logiciel comptable** (EXP1, 17/11/2026, `EXPORT_VERS_UN_LOGICIEL_OFFERT` levé le soir même sur la demande du cabinet) : le FEC de l'onglet Écritures
   remis en forme par un profil (`lib/profilsDExport.ts`, ACD : Windows-1252, comptes à la longueur choisie, numéro continu, journaux
   saisis), les justificatifs en ZIP sous leur PieceRef, sans rien changer au FEC ; restent l'essai chez l'expert-comptable et EXP-Q2 à Q5
   → « EXP1 : L'EXPORT VERS UN LOGICIEL COMPTABLE, PROFIL ACD ».

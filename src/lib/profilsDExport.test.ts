@@ -27,8 +27,8 @@ const ligne18 = (o: { journal?: string; num?: string; compte?: string; libelle?:
 const fec18 = (...lignes: string[]) => [ENTETE_18.join('\t'), ...lignes].join('\r\n')
 
 describe('le drapeau', () => {
-  it('est baissé : l’onglet Écritures ne montre rien de cet export', () => {
-    expect(EXPORT_VERS_UN_LOGICIEL_OFFERT).toBe(false)
+  it('est levé depuis le 17/11/2026, sur l’accord du cabinet : l’onglet Écritures offre l’export', () => {
+    expect(EXPORT_VERS_UN_LOGICIEL_OFFERT).toBe(true)
   })
 })
 
