@@ -792,7 +792,8 @@ function preuveDuRegistreAmortissements(compte: string, soldeCentimes: number, d
         `${pluriel(horsRegistre.length, 'écriture', 'écritures')} de l’exercice sur ce compte sans bien du registre amorti à ce compte, ${soldeEnMots(sommeEcritures(horsRegistre))}.`,
         sommeEcritures(horsRegistre), horsRegistre.length))
     }
-    const repris = biens.filter((b) => reprise !== null && b.date_acquisition < reprise)
+    // Un bien qui porte le cumul repris de l'ancien tableau (EXP58-Q5) n'est pas recalculé : son plan continue depuis lui.
+    const repris = biens.filter((b) => reprise !== null && b.date_acquisition < reprise && b.cumul_repris_au == null)
     if (repris.length > 0) {
       faits.push(fait('biens-repris',
         `${pluriel(repris.length, 'bien acquis', 'biens acquis')} avant la reprise du dossier : ${accord(repris.length, 'son', 'leur')} amortissement antérieur est celui de la balance reprise, que la preuve recalcule.`,

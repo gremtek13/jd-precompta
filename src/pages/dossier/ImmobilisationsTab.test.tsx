@@ -139,6 +139,14 @@ vi.mock('../../lib/supabase', async () => {
   }
 })
 
+// LE DRAPEAU DU CUMUL REPRIS (EXP58-Q5, `CUMUL_REPRIS_PREVU`, baissé jusqu'à sa migration) : ses deux états se jouent ici, par
+// un accesseur — baissé à chaque `poser`, l'écran d'hier ; levé dans la section qui le dit.
+const drapeauCumul = vi.hoisted(() => ({ leve: false }))
+vi.mock('../../lib/cumulRepris', async (original) => {
+  const module = await original<typeof import('../../lib/cumulRepris')>()
+  return { ...module, get CUMUL_REPRIS_PREVU() { return drapeauCumul.leve } }
+})
+
 // Typés sans `as` : le compilateur confronte chaque champ du jeu d'essai à la table.
 //
 // LE DÉFAUT DU BIEN DÉSIGNE SA PIÈCE ET SA NATURE, comme tout bien que cet écran crée depuis le 01/10/2026 :
@@ -190,6 +198,7 @@ function poser(immos: Immobilisation[], o: { pieces?: Piece[]; ecritures?: Ecrit
   faux.retenirLectures = false
   faux.relacher = null
   faux.retenue = null
+  drapeauCumul.leve = false
 }
 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
@@ -1200,5 +1209,171 @@ describe('ImmobilisationsTab — les candidates ne sont que des achats', () => {
     monter()
     await screen.findByText('MATÉRIEL FICTIF')
     for (const tiers of ['RELEVÉ DE RECETTES FICTIF', 'NOTE FICTIVE', 'BAILLEUR FICTIF']) expect(screen.queryByText(tiers)).toBeNull()
+  })
+})
+
+// LE CUMUL REPRIS D'UN BIEN, LE PLAN CONTINUÉ (EXP58-Q5 ; la migration préparée `cumul_repris_des_biens`). Le drapeau BAISSÉ :
+// ni champ, ni colonne écrite — l'insertion et la modification d'hier, à la clé près. LEVÉ : le champ « Amortissements
+// cumulés au 31/12/… » dans « Ajouter un bien repris » et dans la fiche d'un bien acquis au plus tard ce jour-là, écrit avec sa
+// date, ses refus dits avant le clic. Le moteur, lui, lit le cumul d'un bien qui en porte un, drapeau baissé comme levé.
+describe('ImmobilisationsTab — le cumul repris d’un bien (EXP58-Q5)', () => {
+  const OUVERTURE = '2025-01-01'
+  const BIEN_REPRIS = immobilisation({ piece_id: null, valeur: 4800, date_acquisition: '2022-03-15', duree_annees: 5 })
+
+  async function ouvrirLeFormulaire() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Ajouter un bien repris' }))
+    return within(screen.getByRole('form', { name: 'Ajouter un bien repris' }))
+  }
+  // Un champ numérique rend sa valeur au point (`input.value`), comme un navigateur : la virgule n'y arrive pas.
+  function remplir(f: ReturnType<typeof within>, o: { miseEnService?: string; cumul?: string } = {}) {
+    fireEvent.change(f.getByLabelText('Libellé'), { target: { value: 'Fauteuil repris' } })
+    fireEvent.change(f.getByLabelText('Nature'), { target: { value: 'n-propre' } })
+    fireEvent.change(f.getByLabelText('Valeur brute'), { target: { value: '4800' } })
+    fireEvent.change(f.getByLabelText('Acquisition'), { target: { value: '2022-03-15' } })
+    if (o.miseEnService) fireEvent.change(f.getByLabelText('Mise en service'), { target: { value: o.miseEnService } })
+    if (o.cumul !== undefined) fireEvent.change(f.getByLabelText('Amortissements cumulés au 31/12/2024'), { target: { value: o.cumul } })
+  }
+  // La ligne d'un bien du registre, le tableau une fois lu.
+  const ligneDe = async (libelle: string) => {
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+    return (await registre().findByText(libelle)).closest('tr')!
+  }
+  const ficheDe = async (libelle: string) => {
+    fireEvent.click(within(await ligneDe(libelle)).getByRole('button', { name: 'Modifier' }))
+    return within(screen.getByRole('form', { name: `Modifier ${libelle}` }))
+  }
+
+  it('drapeau baissé : ni champ ni colonne, à l’inscription comme à la modification', async () => {
+    poser([BIEN_REPRIS], { ouverture: OUVERTURE })
+    monter()
+    const f = await ouvrirLeFormulaire()
+    expect(f.queryByLabelText(/Amortissements cumulés/)).toBeNull()
+    remplir(f)
+    fireEvent.click(f.getByRole('button', { name: 'Inscrire le bien repris' }))
+    await waitFor(() => expect(faux.inserees).toHaveLength(1))
+    expect(Object.keys(faux.inserees[0].valeur).filter((c) => c.startsWith('cumul'))).toEqual([])
+
+    const fiche = await ficheDe('Ordinateur')
+    expect(fiche.queryByLabelText(/Amortissements cumulés/)).toBeNull()
+    fireEvent.click(fiche.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(faux.modifiees).toHaveLength(1))
+    expect(Object.keys(faux.modifiees[0].valeur).filter((c) => c.startsWith('cumul'))).toEqual([])
+  })
+
+  it('drapeau levé : le champ au 31 décembre de la reprise, et le cumul écrit avec sa date ; vide, les deux colonnes nulles', async () => {
+    poser([], { ouverture: OUVERTURE })
+    drapeauCumul.leve = true
+    monter()
+    const f = await ouvrirLeFormulaire()
+    screen.getByText(/Les amortissements cumulés au 31\/12\/2024, ceux de l’ancien tableau : le plan continue depuis eux/)
+    remplir(f, { cumul: '2000.50' })
+    fireEvent.click(f.getByRole('button', { name: 'Inscrire le bien repris' }))
+    await waitFor(() => expect(faux.inserees).toHaveLength(1))
+    expect(faux.inserees[0].valeur).toMatchObject({ valeur: 4800, cumul_repris: 2000.5, cumul_repris_au: '2024-12-31' })
+
+    const g = await ouvrirLeFormulaire()
+    remplir(g)
+    fireEvent.click(g.getByRole('button', { name: 'Inscrire le bien repris' }))
+    await waitFor(() => expect(faux.inserees).toHaveLength(2))
+    expect(faux.inserees[1].valeur).toMatchObject({ cumul_repris: null, cumul_repris_au: null })
+  })
+
+  it('refuse avant le clic un cumul plus grand que la valeur, au millième, ou positif d’un bien pas encore en service', async () => {
+    poser([], { ouverture: OUVERTURE })
+    drapeauCumul.leve = true
+    monter()
+    const f = await ouvrirLeFormulaire()
+    const bouton = () => f.getByRole('button', { name: 'Inscrire le bien repris' })
+
+    remplir(f, { cumul: '4800.01' })
+    screen.getByText(/^Le cumul repris ne dépasse pas la valeur du bien, 4\s800,00\s€ : c’est elle qui s’amortit\.$/)
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    remplir(f, { cumul: '100.005' })
+    screen.getByText('Le cumul repris se saisit au centime.')
+    remplir(f, { cumul: '100', miseEnService: '2025-01-01' })
+    screen.getByText(/^Le bien est mis en service après le 31\/12\/2024 : rien n’en était amorti ce jour-là\./)
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    fireEvent.submit(screen.getByRole('form', { name: 'Ajouter un bien repris' }))
+    expect(faux.inserees).toHaveLength(0)
+  })
+
+  it('la fiche d’un bien repris : le cumul prérempli, changé, puis retiré — chaque fois avec sa date ou nul', async () => {
+    poser([{ ...BIEN_REPRIS, cumul_repris: 2000, cumul_repris_au: '2024-12-31' }], { ouverture: OUVERTURE })
+    drapeauCumul.leve = true
+    monter()
+    const fiche = await ficheDe('Ordinateur')
+    const champ = fiche.getByLabelText('Amortissements cumulés au 31/12/2024') as HTMLInputElement
+    expect(champ.value).toBe('2000')
+    fireEvent.change(champ, { target: { value: '2100' } })
+    fireEvent.click(fiche.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(faux.modifiees).toHaveLength(1))
+    expect(faux.modifiees[0].valeur).toMatchObject({ cumul_repris: 2100, cumul_repris_au: '2024-12-31' })
+
+    const encore = await ficheDe('Ordinateur')
+    fireEvent.change(encore.getByLabelText('Amortissements cumulés au 31/12/2024'), { target: { value: '' } })
+    fireEvent.click(encore.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(faux.modifiees).toHaveLength(2))
+    expect(faux.modifiees[1].valeur).toMatchObject({ cumul_repris: null, cumul_repris_au: null })
+  })
+
+  it('la fiche d’un bien acquis après le 31 décembre de la reprise : ni champ, ni colonne écrite', async () => {
+    poser([immobilisation({ date_acquisition: '2025-07-01' })], { ouverture: OUVERTURE })
+    drapeauCumul.leve = true
+    monter()
+    const fiche = await ficheDe('Ordinateur')
+    expect(fiche.queryByLabelText(/Amortissements cumulés/)).toBeNull()
+    fireEvent.click(fiche.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(faux.modifiees).toHaveLength(1))
+    expect(Object.keys(faux.modifiees[0].valeur).filter((c) => c.startsWith('cumul'))).toEqual([])
+  })
+
+  it('une valeur ramenée sous le cumul, ou un exercice validé qui suit sa date : le refus dit avant le clic, rien n’est écrit', async () => {
+    poser([{ ...BIEN_REPRIS, cumul_repris: 2000, cumul_repris_au: '2024-12-31' }], { ouverture: OUVERTURE })
+    drapeauCumul.leve = true
+    monter(false, [2025])
+    const fiche = await ficheDe('Ordinateur')
+    // Le cumul inchangé : rien à juger, la fiche s'enregistre.
+    expect(fiche.getByRole('button', { name: 'Enregistrer' }).hasAttribute('disabled')).toBe(false)
+    fireEvent.change(fiche.getByLabelText('Amortissements cumulés au 31/12/2024'), { target: { value: '2100' } })
+    screen.getByText('L\'exercice 2025 est validé : le cumul repris d’un bien ne change plus.')
+    expect(fiche.getByRole('button', { name: 'Enregistrer' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.change(fiche.getByLabelText('Amortissements cumulés au 31/12/2024'), { target: { value: '2000' } })
+    fireEvent.change(fiche.getByLabelText('Valeur'), { target: { value: '1999.99' } })
+    screen.getByText(/^Le cumul repris ne dépasse pas la valeur du bien, 1\s999,99\s€/)
+    fireEvent.submit(screen.getByRole('form', { name: 'Modifier Ordinateur' }))
+    expect(faux.modifiees).toHaveLength(0)
+  })
+
+  it('un cumul daté d’un autre jour que la reprise se dit dans la fiche, et ses dotations se disent sans s’écrire', async () => {
+    poser([{ ...BIEN_REPRIS, cumul_repris: 2000, cumul_repris_au: '2023-12-31' }], { ouverture: OUVERTURE })
+    drapeauCumul.leve = true
+    monter()
+    await screen.findAllByText('Le cumul repris de ce bien est daté du 31/12/2023 : l’ouverture du dossier, le 01/01/2025, en demande un au 31/12/2024.')
+    expect(screen.queryByRole('button', { name: /^Écrire/ })).toBeNull()
+    const fiche = await ficheDe('Ordinateur')
+    fiche.getByText(/Ce cumul est daté du 31\/12\/2023 : l’ouverture du dossier en demande un\s+au 31\/12\/2024/)
+  })
+
+  // Le moteur, sans drapeau : un bien qui porte un cumul (il n'en existe qu'après la migration) a son tableau continué et ses
+  // dotations composées depuis lui — et la base les reçoit telles.
+  it('le tableau d’amortissement : la ligne de l’ancien tableau, puis le plan continué, et les dotations écrites sur lui', async () => {
+    poser([{ ...BIEN_REPRIS, cumul_repris: 2000, cumul_repris_au: '2024-12-31' }], { ouverture: OUVERTURE })
+    monter()
+    const ligne = await ligneDe('Ordinateur')
+    within(ligne).getByText('Cumul repris')
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Tableau' }))
+    const tableau = within(screen.getByRole('table', { name: 'Tableau d’amortissement de Ordinateur' }))
+    const lignes = tableau.getAllByRole('row').slice(1).map((r) => [...r.querySelectorAll('td')].map((td) => td.textContent ?? ''))
+    expect(lignes[0][0]).toBe('Repris au 31/12/2024')
+    expect(lignes[0][2]).toMatch(euros('2 000,00'))
+    expect(lignes[0][3]).toMatch(euros('2 800,00'))
+    expect(lignes.slice(1).map((l) => l[0])).toEqual(['2025', '2026', '2027'])
+    expect(lignes[1][1]).toMatch(euros('1 269,52'))
+    expect(lignes[3][1]).toMatch(euros('260,96'))
+
+    fireEvent.click(carte().getByRole('button', { name: 'Écrire les 2' }))
+    await waitFor(() => expect(faux.rpcs).toHaveLength(2))
+    expect(faux.rpcs.map((r) => [r.args.p_annee, (r.args.p_ecritures as { montant: number }[]).map((e) => e.montant)]))
+      .toEqual([[2025, [1269.52, 1269.52]], [2026, [1269.52, 1269.52]]])
   })
 })

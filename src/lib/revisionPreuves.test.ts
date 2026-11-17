@@ -603,6 +603,20 @@ describe('le registre des immobilisations, amortissements (28…)', () => {
     expect(faitDe(p, 'biens-repris')?.nombre).toBe(1)
   })
 
+  // EXP58-Q5 : un bien repris qui porte le cumul de l'ancien tableau compte ce cumul, continué — la preuve ne le recalcule pas,
+  // et ne le dit pas recalculé.
+  it('un bien repris qui porte son cumul repris compte le plan continué, et ne se dit pas recalculé', () => {
+    const ancien = bien({ id: 'b0', nature_id: 'n-info', valeur: 300, date_acquisition: '2020-01-01', cumul_repris: 250, cumul_repris_au: '2023-12-31' })
+    const p = preuve('281830', -1000, {
+      natures: [informatique], immobilisations: [ancien],
+      reprise: [aNouveau({ date: '2024-01-01', compte: '281830', sens: 'credit', montant: 250 })],
+    })
+    // Le plan du registre (300 € sur cinq ans depuis 2020) est fini fin 2024 : les 50 € restants sont dotés en 2024, le
+    // cumul au 31 décembre de l'exercice est la valeur.
+    expect(p.attenduCentimes).toBe(-30000)
+    expect(cles(p)).not.toContain('biens-repris')
+  })
+
   it('un bien sans nature se dit, son compte d’amortissement n’étant pas connu', () => {
     const p = preuve('281830', -1000, { natures: [informatique], immobilisations: [bien({ id: 'b-sn', nature_id: null, valeur: 30 })] })
     expect(faitDe(p, 'biens-sans-nature')).toMatchObject({ nombre: 1, montantCentimes: null })

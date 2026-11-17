@@ -27,8 +27,10 @@ import type { ANouveau, Immobilisation, NatureImmobilisation } from './types'
 // bien porte alors une dotation validée et ne se modifie plus (`garder_bien_valide`) : un point que rien ne lève resterait pour
 // toujours. L'appelant le tait aussi sur une lecture partielle du registre, des natures ou de la reprise.
 //
-// PLUS TARD, PAS ICI (IMMO-Q1) : une colonne « amortissement antérieur » au registre, si la répétition générale montre des
-// écarts de plus de quelques euros — une migration.
+// LE CUMUL REPRIS D'UN BIEN (EXP58-Q5, la colonne qu'IMMO-Q1 renvoyait à plus tard ; la migration préparée
+// `cumul_repris_des_biens`) : un bien qui porte le cumul de l'ancien tableau au 31 décembre de la reprise compte ici ce cumul
+// même (`amortissementCumuleCentimes` le rend à son jour) — la confrontation devient celle de la somme des cumuls saisis, et
+// des cumuls recalculés des autres biens, au 28 repris, ce que l'expert-comptable vérifie. Son plan continue depuis lui.
 
 /** En dessous d'un euro, un écart est l'arrondi d'un autre logiciel. */
 export const SEUIL_ECART_REPRISE_CENTIMES = 100
@@ -131,13 +133,21 @@ export function confronterLesAmortissementsRepris(
 
 const euros = (centimes: number) => formatMoney(centimes / 100)
 
-/** Le détail du point des écarts : chaque compte, ses deux cumuls, l'écart ; puis ce que le cabinet y fait. */
-export function detailDesEcartsDeLaReprise(c: ConfrontationDesAmortissementsRepris): string {
+/** Le détail du point des écarts : chaque compte, ses deux cumuls, l'écart ; puis ce que le cabinet y fait. `cumulReprisOffert` :
+ *  l'écran offre-t-il le cumul repris d'un bien (`CUMUL_REPRIS_PREVU`, src/lib/cumulRepris.ts) — sans quoi la phrase ne le
+ *  propose pas. */
+export function detailDesEcartsDeLaReprise(c: ConfrontationDesAmortissementsRepris, cumulReprisOffert: boolean): string {
   const comptes = c.ecarts.map((e) =>
     `${e.compte} : registre ${euros(e.registreCentimes)}, balance reprise ${euros(e.repriseCentimes)}, écart ${euros(Math.abs(e.ecartCentimes))}`
     + ` (le registre ${e.ecartCentimes > 0 ? 'au-dessus' : 'en dessous'})`).join(' ; ')
   const sansCompte = c.biensSansCompte.length === 0 ? ''
     : ` ${c.biensSansCompte.length} bien(s) du registre sans nature : leur cumul n’est rangé sous aucun compte.`
+  if (cumulReprisOffert) {
+    return `Cumuls au ${formatDate(c.date)} — ${comptes}.${sansCompte} Le registre recalcule en 30/360 depuis la mise en service le `
+      + `cumul d’un bien qui n’a pas de cumul repris : saisir dans sa fiche celui de l’ancien tableau au ${formatDate(c.date)}, et `
+      + 'le plan continue depuis lui ; sinon corriger sa valeur, ses dates ou sa durée. Faute de quoi l’écart demeure chaque année '
+      + 'et la case CH compte la dotation du registre.'
+  }
   return `Cumuls au ${formatDate(c.date)} — ${comptes}.${sansCompte} Le registre calcule chaque dotation en 30/360 depuis la mise `
     + 'en service : corriger la valeur, les dates ou la durée d’un bien pour retrouver l’ancien tableau d’amortissement, sinon '
     + 'l’écart demeure chaque année et la case CH compte la dotation du registre.'

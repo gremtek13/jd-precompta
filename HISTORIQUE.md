@@ -53803,3 +53803,18 @@ obligatoire pour la section, et l'association de NOE5b suit (son lot vit dans la
 `associationOfferte`) ; la lecture continue, un crédit associé reste hors des candidats d'une vente. Le cabinet passe la ligne
 lue, l'onglet Informations dit pourquoi en une phrase (sous le drapeau de NOE3) ; le client lit la seule colonne
 (`lib/codeNafDuDossierLecture.ts`), sans un mot. Les deux gardes mordent ; la suite : 923 fichiers, 23 137 tests.
+### 17/11/2026 — EXP58-Q5 : LE CUMUL REPRIS D'UN BIEN, LE PLAN CONTINUÉ (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, lot L2 point 7, conception 58 § 3.1 ; EXP58-Q5 (A).) Un bien d'avant la reprise porte le cumul de l'ancien
+tableau au 31/12 qui précède l'année de l'ouverture (`cumul_repris`, `cumul_repris_au`) ; ses dotations partent de la valeur
+nette restante sur les jours restants du plan, le cumul arrondi, la dernière annuité soldant (PCG 2026, art. 214-13 et 214-14 :
+le plan, et sa révision prospective) ; sans lui, le calcul d'hier. Écartés : « la même annuité jusqu'à la VNC nulle » (le plan déborderait sa durée) et un cumul à toute date
+(il recalculerait l'histoire). Migration `cumul_repris_des_biens` (préparée, COLLÉE : le corps remplacé retire l'écriture) : deux
+colonnes, trois contraintes de la ligne sans fonction, `amortissement_cumule_continue_centimes` et `dotation_amortissement_continue`,
+`ecrire_dotation_amortissement` (empreinte vérifiée ; un cumul daté d'un autre jour ou sans ouverture n'écrit rien),
+`garder_cumul_repris` (figé dès qu'un exercice qui suit sa date est validé). Copie de `replique_227` portée à 237 : l'essai neuf
+34/34, six mutations mordent ; `dotations.sql` 32/32, `laBaseLitLePlan` et `accesAvantLesGardes` verts, `validationExercice`
+identique avant et après (son 141 déjà rouge : `hausses_vues_avec_le_client_garde` n'y est pas) ; le retour rend la signature
+d'avant ; inventaire 3 222 → 3 231. Module : la table de parité relevée (14 biens), le tableau de la 2035-SD, IMMO-Q1 et la preuve
+de la Révision la lisent ; l'écran derrière `CUMUL_REPRIS_PREVU`. Reste : la copie de l'assistant (bloc AMORTISSEMENT), à
+reprendre et redéployer avec la levée.
