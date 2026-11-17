@@ -53724,3 +53724,17 @@ prennent les crédits associés en paramètre obligatoire ; illisibles (nul), au
 les tiennent à l'écart (les candidats bruts) — le côté fermé des deux. Le retrait d'un import associé se dit refusé avant le clic,
 dans les deux espaces (NOE5-Q1 : la lecture du client, dans la migration, reste à présenter au cabinet). Restent : NOE6 (les
 contrôles dans la Vue d'ensemble et la Révision, la piste d'audit), NOE8 (la levée, la sauvegarde, `rls.sql`).
+
+### 17/11/2026 — BOR : CE QUI EST FACTURÉ À L'ASSURANCE MALADIE, LES BORDEREAUX DE TÉLÉVITALE : LA RECHERCHE
+
+(Agent de recherche ; aucun code, aucune migration.) Le cabinet veut rapprocher ce que l'assurance maladie paie (NOEMIE) de ce
+qu'elle doit ; son logiciel est Télévitale, ses bordereaux en PDF. Établi dans les documents publics de l'éditeur
+(`televitale.org`, sa FAQ, ses tutoriels PDF) : un logiciel Windows installé, agréé SESAM-Vitale 1.40, de Télévitale SAS (1993),
+aujourd'hui « Topaze Télévitale » du groupe Sofia, pour infirmiers, kinés, orthophonistes, médecins, dentistes. « Bordereau » y
+nomme DEUX états : le bordereau de télétransmission (par lot, le facturé, nominatif) et le bordereau des paiements (« Paiement
+Noemie par journée comptable », le payé). Le reste dû est dans le « Tableau de suivi tiers payant » (nominatif) ; sans patient :
+« Chiffre d'affaires par caisse » et « Outils › Requêtes » (export Excel). Aucun export CSV des retours : NOE1 attend la même
+réponse. Non trouvé : les colonnes des bordereaux et du journal des lots. Le droit : sept jours ouvrés (CSS, D. 161-13-3).
+Proposé (`docs/conceptions/59-…`) : deux agrégats sans texte, jamais de numéro de lot (conception 53), donc un rapprochement par
+organisme et par part, le reste dû LU, le calcul en contrôle ; un gabarit fermé par état, une liste blanche des genres, un
+canari ; BOR0 à BOR7, BOR-Q1 à Q9. Le cahier du GIE (droits réservés) et ameli.fr (403) ne sont pas exploités.

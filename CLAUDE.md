@@ -558,7 +558,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` : la fiche d'un crédit, la section NOEMIE et son lot, un crédit associé hors des
   candidats d'une vente, `lib/associationsAssuranceMaladieVue.ts`) → « NOE5B : L'ÉCRAN DE L'ASSOCIATION », « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
   DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE »,
-  « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE ».
+  « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE ». Le facturé (BOR, 17/11/2026), recherché, rien d'écrit
+  (`docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md`) : Télévitale ne documente que des PDF et nomme « bordereau » deux
+  états (le facturé par lot, le payé par journée comptable) ; le reste dû se lit, par organisme et par part, jamais par lot ; BOR0
+  (une page rendue anonyme, qui sert aussi NOE1) à BOR7, BOR-Q1 à Q9 → « BOR : CE QUI EST FACTURÉ À L'ASSURANCE MALADIE ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ».
   NOE3-Q1) ; NOE5 préparée le 17/11/2026 (`lib/rapprochementAssuranceMaladie.ts` ; `association_paiements_assurance_maladie`, à
