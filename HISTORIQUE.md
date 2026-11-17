@@ -53598,3 +53598,17 @@ confirmer en base (OPT-Q7). Le refus gradué : écran et Edge Functions toujours
 des déclencheurs sur `exercices_valides`, `situations_publiees`, `ecritures_libres`, pour ne pas heurter les cinq remplacements
 préparés de `valider_exercice` ; aucune lecture refusée. Les données d'une option éteinte ne se suppriment ni ne cessent de
 compter. L'import de bordereau heurte RGPD.md §8.7 : exposé, pas tranché (OPT-Q6). Sept lots, sept questions, aucun au MVP.
+### 17/11/2026 — LES EXPORTS VERS LES LOGICIELS COMPTABLES : LA RECHERCHE
+
+Demande du cabinet : « envoyer » les écritures au logiciel de production de l'expert-comptable, ACD d'abord, puis « les plus
+grands logiciels ». Recherche documentaire sur sources publiques, sans code (`docs/conceptions/57-exports-vers-les-logiciels-comptables.md`).
+ACD importe le FEC en archive ZIP avec les justificatifs (case « Reprise des pièces jointes », deux guides de tiers), a un
+« format IN » (`.auto`) dont la structure n'est publiée nulle part, et une API (`POST /v1/compta/ecriture`, GED) sur le serveur
+i-Suite de chaque cabinet. Le FEC « avec pièces » est le pivot : ACD, Sage Génération Experts, EBP, Tiime Expert (`NumDoc`),
+MyUnisoft (`PieceJointe`), Cegid Loop par API. Formats propres décrits par l'éditeur : l'ASCII de Cegid Quadra (la pièce en 8+3,
+position 182) et le TRA de Cegid Expert (enregistrement `G`) ; non trouvés : le `.ECR` d'Isacompta, le format IN. Relevé de
+FORME sur un FEC produit par ACD pour un BNC (le fichier hors du dépôt) : nos vingt-deux colonnes, mais en Windows-1252, comptes
+sur huit chiffres, un journal par banque, ModeRglt en une lettre, NatOp et IdClient vides. Ordre recommandé : EXP1 le FEC avec
+pièces au profil ACD, sur la numérotation existante ; EXP2 ses variantes ; EXP3 Quadra ; EXP4 TRA ; les API après le MVP. Sept
+demandes à l'expert-comptable (EXP-E1 à E7), huit questions au cabinet (EXP-Q1 à Q8). Fermés à la session (403) : Qonto, iDocus,
+EBP, Chaintrust, lus par résumé de recherche.
