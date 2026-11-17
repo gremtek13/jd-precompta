@@ -13,13 +13,13 @@ import { parseDateBancaire } from './csv'
 // non plus (sa seconde date peut être une date d'achat rappelée). Jamais devinée : une cellule vide n'en donne pas, une date
 // qui ne se lit pas, ou trop loin de la date d'opération, s'écarte et se COMPTE — le mouvement s'importe sans elle.
 
-/** Le drapeau de la migration `date_de_valeur_des_mouvements` (EXP58-Q4, préparée le 17/11/2026, pas appliquée) : baissé,
+/** Le drapeau de la migration `date_de_valeur_des_mouvements` (EXP58-Q4, en production depuis le 17/11/2026, 237) : baissé,
  *  l'import lit, montre et écrit ce qu'il lisait hier, à l'octet, et la fiche d'un mouvement ne dit rien de plus — la colonne
  *  n'existe pas encore, et un lot qui la nommerait serait refusé en entier. Il se lève le jour de la migration. */
-export const DATE_DE_VALEUR_PREVUE = false
+export const DATE_DE_VALEUR_PREVUE = true
 
 /** L'écart le plus grand, en jours, entre la date de valeur et la date d'opération, AVANT OU APRÈS : la borne de la
- *  contrainte `lignes_bancaires_date_valeur_proche` (supabase/preparees/20261117170000_date_de_valeur_des_mouvements.sql),
+ *  contrainte `lignes_bancaires_date_valeur_proche` (supabase/schema/20261117180150_date_de_valeur_des_mouvements.sql),
  *  jugée ici avant le clic, pour que la base n'ait rien à refuser. Un trimestre : l'écart réglementaire d'un paiement est
  *  d'un jour ouvré (Code monétaire et financier, art. L. 133-14 ; L. 131-1-1 pour un chèque), un débit différé de carte
  *  d'un mois et quelques jours. */

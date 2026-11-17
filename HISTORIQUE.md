@@ -53693,3 +53693,17 @@ comptée illisible ou hors borne, écrite avec le mouvement ; hors du dédoublon
 que les autres serait prise pour un solde (`lignesDeSolde`) — un fichier qui porte DTAVAIL rend toutes ses opérations sur
 quatre colonnes. Copie de `replique_227` portée à 236 : l'essai 17/17, EN ATTENTE sans elle ; vingt et un essais voisins
 identiques avec et sans la migration ; simulée : dérive 237, socle 83 (`0d869764…`), inventaire 3 222, égaux des deux côtés.
+
+### 17/11/2026 — EXP58-Q4 EN PRODUCTION : LA DATE DE VALEUR DES MOUVEMENTS (237)
+
+Sur l'accord du cabinet du jour (« ok pour la date de valeur fait la migration »), `date_de_valeur_des_mouvements`
+appliquée par l'outil (20261117180150), texte du fichier à l'identique : l'empreinte de sa ligne d'historique égale à
+celle du fichier (`ee8e4a8972651b90b3899edf34e1d143`, sans le dernier saut de ligne). Le fichier entre dans
+`supabase/schema/` sous sa version ; le socle régénéré de ses deux lignes (la colonne et sa borne dans le
+`create table` de `lignes_bancaires`). Les trois contrôles, égaux des deux côtés : la dérive, 237 migrations,
+`ffd0f120b216231e022b3c6f0989a706` ; le socle, 83 instructions, `0d8697646512e0ee88d40eb17141df5b` ; l'inventaire,
+3 222 objets, `e7ad6a4bcf32849f2e460e8d1eb6217a` — les valeurs que la simulation de l'architecte annonçait pour le socle
+et l'inventaire. Aucun mouvement ne porte encore de date de valeur. `DATE_DE_VALEUR_PREVUE` levé dans le même lot,
+l'essai sorti de la famille « apres » du banc (31). Reste : le banc du leurre à rejouer, EXP58Q4-Q1 et Q2 au cabinet
+(le format des relevés du praticien : CSV ou OFX d'abord, le PDF ne porte pas la date de valeur).
+
