@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
 import ClotureTab from './ClotureTab'
 import type { Immobilisation } from '../../lib/types'
+import type { Cadre7ARemplir } from '../../lib/cadre7'
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
@@ -91,6 +92,10 @@ const faux = vi.hoisted(() => ({
   // Et l'exercice qui choisit le millésime du modèle (étape 2035S6).
   exercicesRemplis: [] as number[],
   entetes: [] as unknown[],
+  // Le cadre 7 de la 2035-B que reçoit `remplir2035` (lib/cadre7.ts), et ce que sa doublure en rend (17/11/2026).
+  cadres7: [] as unknown[],
+  vehiculesSansLigne: [] as string[],
+  cadre7Repere: true,
   // Et l'annexe 2035-E portée en page 3, ou null quand elle n'est pas due.
   annexes: [] as ({
     valeurs: ReadonlyMap<string, number | null>; aSaisir: readonly string[]; cadre: unknown; entete: Record<string, unknown>
@@ -230,12 +235,17 @@ vi.mock('../../lib/remplir2035', () => ({
     entete: unknown,
     annexe: { valeurs: ReadonlyMap<string, number | null>; aSaisir: readonly string[]; cadre: unknown; entete: Record<string, unknown> } | null,
     annee: number,
+    cadre7: unknown,
   ) => {
     faux.exercicesRemplis.push(annee)
+    faux.cadres7.push(cadre7)
     faux.remplies.push(valeurs)
     faux.entetes.push(entete)
     faux.annexes.push(annexe)
-    return Promise.resolve({ pdf: new Uint8Array(), codesSansAncrage: faux.codesSansAncrage, codesSansAncrage2035E: [] })
+    return Promise.resolve({
+      pdf: new Uint8Array(), codesSansAncrage: faux.codesSansAncrage, codesSansAncrage2035E: [],
+      vehiculesSansLigne: faux.vehiculesSansLigne, cadre7Repere: faux.cadre7Repere,
+    })
   },
 }))
 
@@ -1957,6 +1967,46 @@ describe('ClotureTab — l’amortissement d’un véhicule déduit avec le bar�
     monter()
 
     expect(await screen.findByText(TITRE)).toBeDefined()
+  })
+
+  it('envoie le cadre 7 au formulaire : le véhicule, le total A égal au forfait de BJ, « à saisir » au total B', async () => {
+    poser({}, [VOITURE])
+    faux.parTable.natures_immobilisation = [TRANSPORT]
+    faux.parTable.vehicules = [VEHICULE]
+    faux.cadres7 = []
+    faux.remplies = []
+    URL.createObjectURL = () => 'blob:formulaire'
+    URL.revokeObjectURL = () => {}
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    await act(async () => { bouton.click() })
+
+    expect(faux.cadres7).toHaveLength(1)
+    const cadre = faux.cadres7[0] as Cadre7ARemplir
+    // Barème 2025, 4 CV, 8 000 km : 8 000 × 0,340 + 1 330 = 4 050 €, la seule part de BJ ici.
+    expect(cadre.lignes.map((l) => [l.modele, l.type, l.puissanceFiscale, l.kilometres, l.indemnite])).toEqual([['Clio', 'T', 4, 8000, 4050]])
+    expect(cadre.totalA).toBe(4050)
+    expect(faux.remplies[0].get('BJ')).toBe(4050)
+    expect(cadre.totalB).toBe('a_saisir')
+  })
+
+  it('dit le véhicule qui n’a pas trouvé de ligne sur le formulaire', async () => {
+    poser({}, [])
+    faux.parTable.vehicules = [VEHICULE]
+    faux.vehiculesSansLigne = ['Clio']
+    URL.createObjectURL = () => 'blob:formulaire'
+    URL.revokeObjectURL = () => {}
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try {
+      monter()
+      const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+      await act(async () => { bouton.click() })
+      expect(await screen.findByText(/Cadre 7 : le formulaire n’offre pas de ligne pour Clio/)).toBeDefined()
+    } finally {
+      faux.vehiculesSansLigne = []
+    }
   })
 
   it('dit une lecture partielle des natures', async () => {

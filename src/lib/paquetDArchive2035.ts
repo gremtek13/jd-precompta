@@ -9,7 +9,8 @@ import type { Pdf2035DuPaquet } from './paquetDArchive'
 // livré, l'avertissement écrit sur chaque page par remplir2035.ts et rendu ici pour le manifeste (2035S-Q5).
 //
 // La page 3 (annexe 2035-E) reste vierge : la validation ne la fige pas — ses lignes se tirent de saisies et du forfait
-// kilométrique tels qu'ils sont au jour du calcul —, et le paquet ne porte que ce que l'exercice validé a scellé.
+// kilométrique tels qu'ils sont au jour du calcul —, et le paquet ne porte que ce que l'exercice validé a scellé. Le cadre 7
+// de la 2035-B aussi (lib/cadre7.ts, 17/11/2026) : l'instantané n'en garde que le total, pas les véhicules ligne par ligne.
 //
 // Ne lève jamais : un instantané illisible, un modèle introuvable ou que pdf.js ne lit pas rendent un motif, que le paquet
 // écrit dans son manifeste (lib/paquetDArchive.ts dit pourquoi il part alors sans le PDF).
@@ -27,7 +28,7 @@ export async function la2035DuPaquet(declaration: unknown, annee: number): Promi
   }
   try {
     const { remplir2035 } = await import('./remplir2035')
-    const { pdf, codesSansAncrage } = await remplir2035(casesDeLInstantane(instantane.formulaire), instantane.entete, null, annee)
+    const { pdf, codesSansAncrage } = await remplir2035(casesDeLInstantane(instantane.formulaire), instantane.entete, null, annee, null)
     return { etat: 'rempli', octets: pdf, casesNonPlacees: [...codesSansAncrage], avertissement: avertissementDuFormulaire(annee) }
   } catch (e) {
     return { etat: 'impossible', motif: messageErreur(e, 'le formulaire 2035 n’a pas pu être rempli') }

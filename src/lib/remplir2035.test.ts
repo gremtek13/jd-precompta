@@ -5,6 +5,11 @@ import { createHash } from 'node:crypto'
 import { mentionDuPdf } from './modeles2035'
 import { SAISIE_2035E_VIDE, annexe2035EAvecSaisie, mentionDeLAnnexe2035E } from './saisies2035E'
 import { formaterMontant, texteCompatiblePdf } from './gabarit2035'
+import { geometrieDuCadre7 } from './gabaritCadre7'
+import type { GeometrieDuCadre7 } from './gabaritCadre7'
+import { cadre7DeLExercice } from './cadre7'
+import { indemniteKilometriqueCentimes, vehiculeDuDossier } from './baremeKilometrique'
+import type { VehiculeDossier } from './types'
 
 // REMPLIR2035 SUR LE VRAI FORMULAIRE (2035S-Q5, (B), 02/11/2026). Le pdf.js du navigateur touche au DOM dès l'import : il est
 // remplacé ici par sa version « legacy », celle que gabarit2035.test.ts lit déjà, et le fichier est servi depuis public/.
@@ -15,7 +20,7 @@ vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', async () => {
   return { default: pathToFileURL(createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')).href }
 })
 
-const { remplir2035 } = await import('./remplir2035')
+const { lirePage, remplir2035 } = await import('./remplir2035')
 
 const ENTETE = { nom: 'DUPONT', prenom: 'Jean', siret: '12345678900011' } as unknown as Parameters<typeof remplir2035>[1]
 
@@ -25,7 +30,7 @@ async function texteDeLaPage(pdf: Uint8Array, numero: number): Promise<string> {
 }
 
 async function remplir(annee: number) {
-  return remplir2035(new Map([['BA', 1000]]), ENTETE, null, annee)
+  return remplir2035(new Map([['BA', 1000]]), ENTETE, null, annee, null)
 }
 
 // Le remplissage et la lecture des deux PDF se paient une fois, dans un `beforeAll` : dans un test, sous la charge de la
@@ -97,7 +102,7 @@ describe('remplir2035 — l’annexe 2035-E et ce qui reste à saisir', () => {
   const cadreCoche = annexe2035EAvecSaisie(ENTREE_ANNEXE, { ...SAISIE_COMPLETE, monoEtablissement: true, effectif: 3 })
   const textes = (page: Fragment[]) => page.map((f) => f.texte)
   const remplirAnnexe = async (a: typeof complete) => fragmentsDeLaPage((await remplir2035(
-    new Map([['BA', 1000]]), ENTETE, { valeurs: a.lignes, aSaisir: a.aSaisir, cadre: a.cadre, entete: ENTETE_ANNEXE }, 2025,
+    new Map([['BA', 1000]]), ENTETE, { valeurs: a.lignes, aSaisir: a.aSaisir, cadre: a.cadre, entete: ENTETE_ANNEXE }, 2025, null,
   )).pdf, 3)
 
   beforeAll(async () => {
@@ -110,10 +115,10 @@ describe('remplir2035 — l’annexe 2035-E et ce qui reste à saisir', () => {
     try {
       const valeurs = new Map(complete.annexe.lignes)
       // Drapeau baissé : les lignes à l'euro du moteur, sans `null`, aucune ligne à saisir, aucun cadre.
-      sansAvertissement = (await remplir2035(new Map([['BA', 1000]]), ENTETE, { valeurs, aSaisir: [], cadre: null, entete: ENTETE_ANNEXE }, 2025)).pdf
+      sansAvertissement = (await remplir2035(new Map([['BA', 1000]]), ENTETE, { valeurs, aSaisir: [], cadre: null, entete: ENTETE_ANNEXE }, 2025, null)).pdf
       pageComplete = await fragmentsDeLaPage(sansAvertissement, 3)
       pageVierge = await fragmentsDeLaPage((await remplir2035(
-        new Map([['BA', 1000]]), ENTETE, { valeurs: new Map(), aSaisir: [], cadre: null, entete: ENTETE_ANNEXE }, 2025,
+        new Map([['BA', 1000]]), ENTETE, { valeurs: new Map(), aSaisir: [], cadre: null, entete: ENTETE_ANNEXE }, 2025, null,
       )).pdf, 3)
       pageSansSaisie = await remplirAnnexe(incomplete)
       pageCadreADire = await remplirAnnexe(cadreADire)
@@ -240,7 +245,7 @@ describe('remplir2035 — la page 2 porte le déclarant et les lignes 34 à 47',
       return { ok: true, status: 200, arrayBuffer: async () => octets.buffer.slice(octets.byteOffset, octets.byteOffset + octets.byteLength) }
     })
     try {
-      const r = await remplir2035(CASES, ENTETE_COMPLET, null, 2025)
+      const r = await remplir2035(CASES, ENTETE_COMPLET, null, 2025, null)
       sansAncrage = r.codesSansAncrage
       page1 = await fragmentsDeLaPage(r.pdf, 1)
       page2 = await fragmentsDeLaPage(r.pdf, 2)
@@ -304,5 +309,102 @@ describe('remplir2035 — la page 2 porte le déclarant et les lignes 34 à 47',
     expect(chiffres.map((f) => f.texte).join('')).toBe('12345678900011')
     chiffres.forEach((f, i) => expect(f.x + f.largeur / 2, `chiffre ${i + 1}`).toBeCloseTo((grille[i] + grille[i + 1]) / 2, 0))
     expect(page1.find((f) => f.texte === 'Infirmier libéral')!.x).toBeCloseTo(29.3 + 85.6 + 8, 0)
+  })
+})
+
+// LE CADRE 7 DE LA 2035-B SUR LE PDF PRODUIT (signalement du cabinet du 17/11/2026 : « sur le B il n'y a pas Total A ou B de
+// rempli »). Trois véhicules au barème pour deux lignes : les deux premiers dans leurs colonnes, le troisième dit ; le total A
+// dans la case qui suit la lettre A, égal à BJ ; « à saisir » au total B, un bien du matériel de transport étant amorti.
+describe('remplir2035 — le cadre 7 de la 2035-B', () => {
+  const vehicule = (i: number, o: Partial<VehiculeDossier>): VehiculeDossier => ({
+    id: `v${i}`, dossier_id: 'd1', annee: 2025, modele: null, type: 'voiture', puissance_fiscale: 5, bareme: 'bnc',
+    motorisation: 'thermique', carburant: 'diesel', km_professionnel: 0, inscrit_immobilisations: false,
+    amortissements_a_reintegrer: null, created_at: `2025-01-0${i + 1}T00:00:00Z`, updated_at: '2025-01-01T00:00:00Z', ...o,
+  })
+  const VEHICULES = [
+    vehicule(0, { modele: 'Peugeot 308 SW', km_professionnel: 8000 }),
+    vehicule(1, { type: 'moto', puissance_fiscale: 3, motorisation: 'electrique', carburant: null, bareme: 'bic', km_professionnel: 2500 }),
+    vehicule(2, { modele: 'Kangoo', km_professionnel: 1200 }),
+  ]
+  const attendu = VEHICULES.reduce((s, v) => s + Number(indemniteKilometriqueCentimes(vehiculeDuDossier(v), 2025)), 0)
+  const { cadre } = cadre7DeLExercice(VEHICULES, 2025, attendu, true)
+  let page2: Fragment[] = []
+  let sansBareme: Fragment[] = []
+  let vierge2: Fragment[] = []
+  let geometrie: GeometrieDuCadre7
+  let sansLigne: string[] = []
+  let repere = false
+
+  beforeAll(async () => {
+    vi.stubGlobal('fetch', async (chemin: string) => {
+      const octets = readFileSync(`public${chemin}`)
+      return { ok: true, status: 200, arrayBuffer: async () => octets.buffer.slice(octets.byteOffset, octets.byteOffset + octets.byteLength) }
+    })
+    try {
+      const cases = new Map([['AA', 60000], ['BJ', cadre!.totalA as number], ['BR', cadre!.totalA as number]])
+      const r = await remplir2035(cases, { nom: 'Dupont', activite: null, siret: null }, null, 2025, cadre)
+      sansLigne = r.vehiculesSansLigne
+      repere = r.cadre7Repere
+      page2 = await fragmentsDeLaPage(r.pdf, 2)
+      sansBareme = await fragmentsDeLaPage((await remplir2035(cases, { nom: 'Dupont', activite: null, siret: null }, null, 2025, null)).pdf, 2)
+      const vierge = new Uint8Array(readFileSync('public/formulaires/2035-sd-2026.pdf'))
+      vierge2 = await fragmentsDeLaPage(vierge, 2)
+      geometrie = geometrieDuCadre7(await lirePage(await pdfjs.getDocument({ data: vierge }).promise, 2))!
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  const ajoutes = (page: Fragment[]) => {
+    const reste = vierge2.map((f) => `${f.texte}@${Math.round(f.x)},${Math.round(f.y)}`)
+    return page.filter((f) => {
+      const k = reste.indexOf(`${f.texte}@${Math.round(f.x)},${Math.round(f.y)}`)
+      if (k < 0) return true
+      reste.splice(k, 1)
+      return false
+    })
+  }
+  const dansLeCadre = (f: Fragment) => f.y > 100 && f.y < 210
+
+  it('la valeur de chaque cellule, entière entre les filets de sa colonne et de sa ligne', () => {
+    expect(repere).toBe(true)
+    const attendus: [string, keyof GeometrieDuCadre7['colonnes'], number][] = [
+      ['Peugeot 308 SW', 'modele', 0], ['T', 'type', 0], ['5 CV', 'puissance', 0], ['X', 'bnc', 0], ['Thermique', 'motorisation', 0],
+      ['Diesel', 'carburant', 0], ['8 000', 'kilometres', 0], [formaterMontant(cadre!.lignes[0].indemnite as number), 'indemnites', 0],
+      ['M', 'type', 1], ['3 CV', 'puissance', 1], ['X', 'bic', 1], ['Électrique', 'motorisation', 1], ['2 500', 'kilometres', 1],
+      [formaterMontant(cadre!.lignes[1].indemnite as number), 'indemnites', 1],
+    ]
+    const ecrits = ajoutes(page2).filter((f) => dansLeCadre(f) && f.y > geometrie.lignes[1].bas)
+    expect(ecrits).toHaveLength(attendus.length)
+    for (const [texte, colonne, rang] of attendus) {
+      const f = ecrits.find((e) => e.texte === texte && e.y > geometrie.lignes[rang].bas && e.y < geometrie.lignes[rang].haut)
+      expect(f, `${texte} en ligne ${rang + 1}`).toBeDefined()
+      expect(f!.x, texte).toBeGreaterThan(geometrie.colonnes[colonne].gauche + 1)
+      expect(f!.x + f!.largeur, texte).toBeLessThan(geometrie.colonnes[colonne].droite - 1)
+    }
+  })
+
+  it('le troisième véhicule n’a pas de ligne : rien ne se tasse, et il est rendu pour être dit', () => {
+    expect(sansLigne).toEqual(['Kangoo'])
+    expect(page2.some((f) => f.texte === 'Kangoo')).toBe(false)
+  })
+
+  it('le total A, égal à BJ et à la somme des trois indemnités, dans la case de la lettre A ; « à saisir » au total B', () => {
+    const totalA = cadre!.totalA as number
+    expect(totalA * 100).toBeGreaterThanOrEqual(attendu - 50)
+    expect(totalA * 100).toBeLessThan(attendu + 50)
+    const ecrits = ajoutes(page2).filter((f) => dansLeCadre(f) && f.y < geometrie.lignes[1].bas)
+    const a = ecrits.find((f) => Math.abs(f.y - geometrie.totalA.y) < 1 && f.x > geometrie.totalA.gauche && f.x < geometrie.totalA.droite)!
+    expect(a.texte).toBe(formaterMontant(totalA))
+    expect(a.x + a.largeur).toBeLessThan(geometrie.totalA.droite)
+    const b = ecrits.find((f) => Math.abs(f.y - geometrie.totalB.y) < 1 && f.x > geometrie.totalB.gauche)!
+    expect(b.texte).toBe('à saisir')
+    expect(b.x + b.largeur).toBeLessThan(geometrie.totalB.droite)
+    // Et rien d'autre sous les lignes de véhicules : la ligne des frais réels reste vide.
+    expect(ecrits).toHaveLength(2)
+  })
+
+  it('un dossier sans barème n’imprime rien dans le cadre', () => {
+    expect(ajoutes(sansBareme).filter(dansLeCadre)).toEqual([])
   })
 })

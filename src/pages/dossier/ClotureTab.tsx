@@ -22,6 +22,8 @@ import {
 import { comptesPartagesEntreCases, concordance2035 } from '../../lib/concordance2035'
 import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
+import { cadre7DeLExercice } from '../../lib/cadre7'
+import type { Cadre7DeLExercice } from '../../lib/cadre7'
 import { avertissementDuFormulaire } from '../../lib/modeles2035'
 import { FORMULAIRE_2035_SD_OFFERT, avertissementDuFormulaire2035SD } from '../../lib/modeles2035SD'
 import { avisDuTableauDesImmobilisations, calculer2035SD, type Declaration2035SD } from '../../lib/declaration2035SD'
@@ -871,6 +873,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   async function telechargerFormulaire(
     annee: number, valeurs: Map<string, number>, instantane: Instantane2035 | null, annexe: Annexe2035E,
     annexeSaisie: Annexe2035ESaisie | null,
+    // Le cadre 7 de la 2035-B (lib/cadre7.ts), tiré de la 2035 montrée : le total A est la part de BJ venue du barème.
+    cadre7: Cadre7DeLExercice,
   ) {
     // Sans le millésime de l'exercice, le PDF s'imprime sur le dernier livré (2035S-Q5, (B)) : la carte l'a dit avant le clic.
     // Drapeau levé, une annexe due sans sa saisie lue en entier retomberait sur des zéros supposés : le bouton est retenu.
@@ -882,7 +886,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       const declarant = instantane ? instantane.entete : entete
       // Arrondi à l'euro AVANT le dessin : le formulaire dit « ne pas porter les centimes », et les
       // totaux sont recalculés depuis les cases arrondies pour que la colonne s'additionne.
-      const { pdf, codesSansAncrage, codesSansAncrage2035E } = await remplir2035(
+      const remplissage = await remplir2035(
         instantane ? casesDeLInstantane(instantane.formulaire) : arrondirPourFormulaire(valeurs, annee),
         declarant,
         // L'adresse est celle d'aujourd'hui, même pour un exercice validé : l'instantané ne la garde pas.
@@ -896,15 +900,28 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
           }
           : null,
         annee,
+        cadre7.cadre,
       )
       const manquantes = [
-        ...codesSansAncrage,
-        ...codesSansAncrage2035E.map((code) => `${code} (2035-E)`),
+        ...remplissage.codesSansAncrage,
+        ...remplissage.codesSansAncrage2035E.map((code) => `${code} (2035-E)`),
       ]
-      if (manquantes.length > 0) {
-        setError(`Cases non placées sur le formulaire : ${manquantes.join(', ')} — leur montant manque sur le PDF.`)
+      // Ce que le cadre 7 n'a pas pu porter se dit comme une case sans ancrage : rien ne se tasse, rien ne se tait.
+      const avisDuCadre7 = [
+        ...(cadre7.ecart ? [`Cadre 7 : les indemnités recalculées (${formatMoney(cadre7.ecart.calculeCentimes / 100)}) ne retrouvent pas `
+          + `celles de la 2035 montrée (${formatMoney(cadre7.ecart.attenduCentimes / 100)}) — leurs montants et le total A sont laissés vides.`] : []),
+        ...(!remplissage.cadre7Repere ? ['Cadre 7 non repéré sur le formulaire — ses véhicules manquent sur le PDF.']
+          : remplissage.vehiculesSansLigne.length > 0
+            ? [`Cadre 7 : le formulaire n’offre pas de ligne pour ${remplissage.vehiculesSansLigne.join(', ')} — à porter sur un état annexe.`]
+            : []),
+      ]
+      if (manquantes.length > 0 || avisDuCadre7.length > 0) {
+        setError([
+          ...(manquantes.length > 0 ? [`Cases non placées sur le formulaire : ${manquantes.join(', ')} — leur montant manque sur le PDF.`] : []),
+          ...avisDuCadre7,
+        ].join(' '))
       }
-      const url = URL.createObjectURL(new Blob([pdf as BlobPart], { type: 'application/pdf' }))
+      const url = URL.createObjectURL(new Blob([remplissage.pdf as BlobPart], { type: 'application/pdf' }))
       const lien = document.createElement('a')
       lien.href = url
       lien.download = `2035-${annee}-${((instantane ? instantane.entete.nom : null) ?? dossier?.nom ?? 'dossier').replace(/[^\w-]+/g, '-')}.pdf`
@@ -2043,7 +2060,10 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
                     }
                     : undefined}
                   genere={genere === annee}
-                  onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe, annexeSaisie)}
+                  onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane, annexe, annexeSaisie, cadre7DeLExercice(
+                    vehicules, annee, Math.round(forfaitKilometriqueDesPostes(postes) * 100),
+                    amortissementsSousLeBareme(immobilisations, natures, vehicules, annee).length > 0,
+                  ))}
                   declaration2035SD={declaration2035SD === null ? null : {
                     avis: [
                       ...(avertissementDuFormulaire2035SD(annee) === null ? [] : [avertissementDuFormulaire2035SD(annee)!]),
