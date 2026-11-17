@@ -238,6 +238,9 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'sans-categorie': 'depenses',
   'comptes-manquants': 'depenses',
   'postes-manquants': 'depenses',
+  // Un compte de charge ou de produit sur plusieurs lignes de la 2035 (conception 58, § 1.3) : le poste des catégories, comme
+  // celui qui manque.
+  'comptes-sur-plusieurs-postes': 'depenses',
   'sans-tva': 'depenses',
   'tva-impossible': 'depenses',
   'devise-non-convertie': 'depenses',

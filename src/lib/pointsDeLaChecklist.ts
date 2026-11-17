@@ -1,5 +1,6 @@
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { comptesSurPlusieursPostes, detailDesComptesSurPlusieursPostes, LIBELLE_COMPTES_SUR_PLUSIEURS_POSTES } from './unCompteUnPoste'
 import type { ModeleComptable } from './engagement'
 import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
 import { mouvementsSurUnCompteDeBilanDesynchronises } from './compteDeBilan'
@@ -398,6 +399,14 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   const caisseLue = caisseDuDossier.etat === 'lue' ? caisseDuDossier : null
   const recettesDeLaCaisse = caisseLue === null ? [] : recettesVivantes(caisseLue.operations)
   const catSansPoste = categoriesSansPoste(categories, validesQuiComptent, [...lignes, ...ventilations, ...recettesDeLaCaisse], pieceIdsImmobilisees)
+  // UN COMPTE, UN SEUL POSTE DE LA 2035 (conception 58, § 1.3 ; lib/unCompteUnPoste.ts) : le logiciel de l'expert-comptable range
+  // chaque COMPTE sur une ligne de la 2035. Un compte qui en alimente deux dans un même exercice ne redonnerait pas notre 2035.
+  // Les opérations de la caisse lue en entier seulement ; lue en partie, leurs lignes n'apportent aucun poste. Un exercice validé
+  // est figé, son FEC remis : il ne se dit plus.
+  const comptesMultiPostes = comptesSurPlusieursPostes({
+    ecritures, categories, pieces: toutesPieces, mouvements: lignes, ventilations,
+    operationsDeCaisse: caisseLue === null ? [] : caisseLue.operations, plan: modele.plan,
+  }).filter((c) => !anneesValidees.includes(c.annee))
   const sansTva = piecesSansTva(validesQuiComptent, assujettiTva)
   const sansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees, facturesSources)
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
@@ -916,6 +925,10 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     },
     { id: 'comptes-manquants', label: 'catégorie(s) sans compte comptable', action: 'Compléter le compte comptable', nb: catSansCompte.length, cible: 'ecritures', severite: 'attention' },
     { id: 'postes-manquants', label: 'catégorie(s) sans poste 2035', action: 'Compléter le poste 2035', nb: catSansPoste.length, cible: 'cloture', severite: 'attention' },
+    {
+      id: 'comptes-sur-plusieurs-postes', label: LIBELLE_COMPTES_SUR_PLUSIEURS_POSTES, action: 'Revoir le poste de ces catégories',
+      nb: comptesMultiPostes.length, cible: 'cloture', severite: 'attention', detail: detailDesComptesSurPlusieursPostes(comptesMultiPostes),
+    },
     { id: 'sans-tva', label: 'pièce(s) validée(s) sans TVA renseignée', action: 'Compléter la TVA', nb: sansTva.length, cible: 'ecritures', severite: 'attention' },
     {
       id: 'sans-contrepartie',
@@ -1021,7 +1034,7 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // courant du cabinet (à traiter au fil de l'eau), documents attendus (dépend du client, voir `items`
   // plus bas). Un déséquilibre ou une désynchronisation reste plus urgent qu'une case de paramétrage,
   // d'où la sévérité conservée à l'intérieur du groupe "Travail à effectuer".
-  const IDS_PARAMETRAGE = new Set(['statut-tva', 'comptes-manquants', 'postes-manquants'])
+  const IDS_PARAMETRAGE = new Set(['statut-tva', 'comptes-manquants', 'postes-manquants', 'comptes-sur-plusieurs-postes'])
   const pointsParametrage = pointsATraiter.filter((p) => IDS_PARAMETRAGE.has(p.id))
   const pointsTravail = pointsATraiter.filter((p) => !IDS_PARAMETRAGE.has(p.id))
 
