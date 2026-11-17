@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { POSTES_RATTACHES, posteRattache } from './cases2035'
 import * as champs from './champsBncDuFec'
@@ -8,10 +8,11 @@ import {
   champsDeLaTvaDUneFacture, champsDeLOuvertureEclatee, champsDesANouveaux, champsDUnEncaissement, champsDUneDotation, champsDUneLiquidation,
   champsDUneRegularisation,
   champsDUnForfait, champsDUnMouvementDesEncaissements, champsDUnMouvementDuReleve, champsDUneOperationDeCaisse,
-  champsDUnePiece, champsDUnPaiementPersonnel, identificationDuClient, natOpDeLaLigne, reglementsDeLaPieceALaDate,
+  champsDUnePiece, champsDUnPaiementPersonnel, identificationDuClient, modeRgltDuReleve, natOpDeLaLigne, reglementsDeLaPieceALaDate,
   type ChampsBnc, type ChoixChampsBnc, type EncaissementDuRegistre, type FactureDuClient, type LigneACaracteriser,
   type MouvementDuFec, type PieceDuFec, type PosteLu, type ReglementDUnePiece,
 } from './champsBncDuFec'
+import { MODES_D_UN_MOUVEMENT, type ModeDUnMouvement } from './modeDeReglement'
 import {
   POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_COTISATIONS, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
 } from './declaration2035'
@@ -27,6 +28,13 @@ import type { PaiementDePiece, PaiementParLeReleve } from './rattachement'
 
 const RACINE = new URL('../../', import.meta.url)
 const lire = (chemin: string) => readFileSync(new URL(chemin, RACINE), 'utf8')
+
+// Le drapeau du mode de règlement d'un mouvement (EXP58-Q1), joué par un accesseur : nul, sa vraie valeur (baissé).
+const drapeauDuMode = vi.hoisted(() => ({ leve: null as boolean | null }))
+vi.mock('./modeDeReglement', async (original) => {
+  const vrai = await original<typeof import('./modeDeReglement')>()
+  return { ...vrai, get MODE_DE_REGLEMENT_PREVU() { return drapeauDuMode.leve ?? vrai.MODE_DE_REGLEMENT_PREVU } }
+})
 
 // ── Les noms plantés, que rien ne doit rendre ──
 const NOMS = [
@@ -185,7 +193,8 @@ describe('IdClient (FEC22-Q4, (D)) : le SIREN d’une entreprise, sinon le numé
 describe('une pièce', () => {
   const lignesAchat = [ligne('charge', '606400', categorie('Fournitures de bureau', NOMS[4])), ligne('banque', '512000', AUCUN)]
   const base = (r: ReglementDUnePiece, p: PieceDuFec, exemplaireDe: FactureDuClient | null) => champsDUnePiece({
-    piece: p, reglement: r, dateDeLEcriture: '2027-01-01', cible: { immobilisation: false }, exemplaireDe, lignes: lignesAchat, choix: VIDES,
+    piece: p, reglement: r, dateDeLEcriture: '2027-01-01', cible: { immobilisation: false }, exemplaireDe, modesDuReleve: [],
+    lignes: lignesAchat, choix: VIDES,
   })
 
   it('payée par le relevé : la date du PAIEMENT (jamais celle de l’écriture), « Banque », « Dépense », aucun client', () => {
@@ -199,7 +208,7 @@ describe('une pièce', () => {
     expect(base({ par: 'releve', date: '2026-03-20' }, piece({ type_piece: 'vente' }), null).nature).toBe('Recette')
     const bien = champsDUnePiece({
       piece: piece({}), reglement: { par: 'releve', date: '2026-03-20' }, dateDeLEcriture: '2026-03-20', cible: { immobilisation: true },
-      exemplaireDe: null, lignes: [ligne('bien', '218300', categorie('Achats', 'x')), ligne('b', '512000', AUCUN)], choix: VIDES,
+      exemplaireDe: null, modesDuReleve: [], lignes: [ligne('bien', '218300', categorie('Achats', 'x')), ligne('b', '512000', AUCUN)], choix: VIDES,
     })
     expect(bien.nature).toBe("Acquisition d'immobilisation")
     expect(bien.natOp.get('bien')).toBe("Acquisition d'immobilisation")
@@ -234,7 +243,7 @@ describe('une pièce', () => {
     expect(base({ par: 'aucun' }, piece({}), null)).toMatchObject({ dateRglt: '', modeRglt: '' })
     const avecDate = champsDUnePiece({
       piece: piece({}), reglement: { par: 'aucun' }, dateDeLEcriture: '2026-03-02', cible: { immobilisation: false }, exemplaireDe: null,
-      lignes: lignesAchat, choix: DATE_ECRITURE,
+      modesDuReleve: [], lignes: lignesAchat, choix: DATE_ECRITURE,
     })
     expect(avecDate).toMatchObject({ dateRglt: '2026-03-02', modeRglt: 'Sans règlement', nature: 'Dépense', idClient: '' })
   })
@@ -255,8 +264,8 @@ describe('les règlements d’une pièce à une date, lus de ses paiements', () 
     const registre = [encaissement({ ligne_bancaire_id: 'm1', facture_id: 'autre', moyen: 'cheque' })]
     const [r] = reglementsDeLaPieceALaDate(piece({}), ps, '2026-03-20', registre)
     expect(champsDUnePiece({
-      piece: piece({}), reglement: r, dateDeLEcriture: '2026-03-20', cible: { immobilisation: false }, exemplaireDe: null, lignes: [],
-      choix: VIDES,
+      piece: piece({}), reglement: r, dateDeLEcriture: '2026-03-20', cible: { immobilisation: false }, exemplaireDe: null,
+      modesDuReleve: [], lignes: [], choix: VIDES,
     }).modeRglt).toBe('Banque')
   })
 
@@ -361,6 +370,82 @@ describe('un mouvement justifié par le relevé : « Banque », sa date, aucun c
       { declaration_tva_id: 'd' }, { ventilee: true }, { prelevement_personnel: true }]) {
       expect(releve(lien, [])).toMatchObject({ dateRglt: '2026-05-12', modeRglt: 'Banque', idClient: '' })
     }
+  })
+})
+
+describe('le mode de règlement d’un mouvement, posé par le cabinet (EXP58-Q1)', () => {
+  afterEach(() => { drapeauDuMode.leve = null })
+  const plan = { caisse: '530000' }
+  const affecte = (mode: ModeDUnMouvement | null | undefined, o: Partial<MouvementDuFec> = {}) =>
+    champsDUnMouvementDuReleve(mouvement({ categorie_id: 'cat', mode_reglement: mode, ...o }), [ligne('c', '606400', AUCUN), ligne('b', '512000', AUCUN)], plan)
+  const pieceReglee = (r: ReglementDUnePiece, modes: readonly (ModeDUnMouvement | null | undefined)[]) => champsDUnePiece({
+    piece: piece({}), reglement: r, dateDeLEcriture: '2026-03-20', cible: { immobilisation: false }, exemplaireDe: null,
+    modesDuReleve: modes, lignes: [], choix: VIDES,
+  })
+  const remise = (mode: ModeDUnMouvement | null) => ({
+    id: 'remise', date: '2026-04-12', montant: 230, libelle: NOMS[6], libelle_brut: NOMS[5], source_fichier: NOMS[7], mode_reglement: mode,
+  })
+
+  it('chaque mode d’un mouvement est un mode du FEC, et aucun n’est « Banque », la poche de l’exploitant, une compensation ni « Sans règlement »', () => {
+    for (const m of MODES_D_UN_MOUVEMENT) expect(MODES_REGLEMENT).toContain(m)
+    for (const m of ['Banque', 'Compte personnel', 'Compensation', 'Sans règlement']) expect(MODES_D_UN_MOUVEMENT).not.toContain(m)
+  })
+
+  it('le drapeau baissé : « Banque » partout, quoi que le mouvement porte — le fichier d’hier', () => {
+    expect(modeRgltDuReleve(['Carte bancaire'])).toBe('Banque')
+    expect(affecte('Chèque')?.modeRglt).toBe('Banque')
+    expect(pieceReglee({ par: 'releve', date: '2026-03-20' }, ['Prélèvement']).modeRglt).toBe('Banque')
+    expect(champsDUnMouvementDesEncaissements(remise('Chèque'), [], []).modeRglt).toBe('Banque')
+  })
+
+  it('le drapeau levé : un mode commun à tous les mouvements de l’écriture, sinon « Banque »', () => {
+    drapeauDuMode.leve = true
+    expect(modeRgltDuReleve([])).toBe('Banque')
+    expect(modeRgltDuReleve([null])).toBe('Banque')
+    expect(modeRgltDuReleve([undefined])).toBe('Banque')
+    expect(modeRgltDuReleve(['Carte bancaire'])).toBe('Carte bancaire')
+    expect(modeRgltDuReleve(['Chèque', 'Chèque'])).toBe('Chèque')
+    expect(modeRgltDuReleve(['Chèque', 'Virement'])).toBe('Banque')
+    expect(modeRgltDuReleve(['Chèque', null])).toBe('Banque')
+    expect(modeRgltDuReleve([null, 'Chèque'])).toBe('Banque')
+    for (const m of MODES_D_UN_MOUVEMENT) expect(modeRgltDuReleve([m])).toBe(m)
+  })
+
+  it('le drapeau levé : un mouvement justifié par le relevé porte son mode, le reste de l’écriture inchangé ; sans mode, « Banque »', () => {
+    drapeauDuMode.leve = true
+    const avec = affecte('Prélèvement')
+    const sans = affecte(null)
+    expect(avec).toMatchObject({ dateRglt: '2026-05-12', modeRglt: 'Prélèvement', nature: 'Dépense', idClient: '' })
+    expect(sans?.modeRglt).toBe('Banque')
+    expect({ ...avec, modeRglt: 'Banque' }).toEqual(sans)
+    // Le libellé de la banque ne pose jamais le mode : un « CB … » sans mode posé reste « Banque ».
+    expect(affecte(undefined, { libelle: 'CB AMAZON 12/03', libelle_brut: 'CB AMAZON 12/03' })?.modeRglt).toBe('Banque')
+    expect(affecte(null, { libelle: 'PRLV SEPA ASSURANCE' })?.modeRglt).toBe('Banque')
+  })
+
+  it('le drapeau levé : une pièce réglée par le relevé prend le mode de ses mouvements ; les autres règlements gardent le leur', () => {
+    drapeauDuMode.leve = true
+    expect(pieceReglee({ par: 'releve', date: '2026-03-20' }, ['Carte bancaire'])).toMatchObject({ dateRglt: '2026-03-20', modeRglt: 'Carte bancaire' })
+    expect(pieceReglee({ par: 'releve', date: '2026-03-20' }, ['Carte bancaire', 'Chèque']).modeRglt).toBe('Banque')
+    expect(pieceReglee({ par: 'releve', date: '2026-03-20' }, []).modeRglt).toBe('Banque')
+    expect(pieceReglee({ par: 'caisse', date: '2026-03-20' }, ['Virement']).modeRglt).toBe('Espèces')
+    expect(pieceReglee({ par: 'note_de_frais', date: '2026-03-20' }, ['Virement']).modeRglt).toBe('Compte personnel')
+    expect(pieceReglee({ par: 'virement_mixte', date: '2026-03-20', encaissement: encaissement({ moyen: 'cheque' }) }, ['Virement']).modeRglt)
+      .toBe('Chèque')
+    expect(pieceReglee({ par: 'virement_mixte', date: '2026-03-20', encaissement: null }, ['Virement']).modeRglt).toBe('')
+    expect(pieceReglee({ par: 'aucun' }, ['Virement']).modeRglt).toBe('')
+  })
+
+  it('le drapeau levé : le mouvement de ses encaissements — un seul moyen au registre l’emporte ; sinon, le mode posé', () => {
+    drapeauDuMode.leve = true
+    const cheques = [
+      encaissement({ id: 'a', ligne_bancaire_id: 'remise', moyen: 'cheque' }), encaissement({ id: 'b', ligne_bancaire_id: 'remise', moyen: 'cheque' }),
+    ]
+    expect(champsDUnMouvementDesEncaissements(remise('Virement'), cheques, []).modeRglt).toBe('Chèque')
+    const mixte = [...cheques, encaissement({ id: 'c', ligne_bancaire_id: 'remise', moyen: 'virement' })]
+    expect(champsDUnMouvementDesEncaissements(remise('Chèque'), mixte, []).modeRglt).toBe('Chèque')
+    expect(champsDUnMouvementDesEncaissements(remise(null), mixte, []).modeRglt).toBe('Banque')
+    expect(champsDUnMouvementDesEncaissements(remise('Virement'), [], []).modeRglt).toBe('Virement')
   })
 })
 
@@ -502,7 +587,8 @@ describe('aucun nom ne paraît dans les quatre valeurs', () => {
         piece: piece({ tiers: nom(), nom_fichier: nom(), type_piece: parmi(typesDePiece), facture_id: 'facture-1' }),
         reglement: parmi<ReglementDUnePiece>([{ par: 'releve', date: '2026-03-20' }, { par: 'aucun' }, { par: 'note_de_frais', date: '2026-03-01' },
           { par: 'virement_mixte', date: '2026-03-21', encaissement: enc() }, { par: 'caisse', date: '2026-03-22' }]),
-        dateDeLEcriture: '2026-03-20', cible: { immobilisation: parmi([true, false]) }, exemplaireDe: fac(), lignes: lignes(), choix: choix(),
+        dateDeLEcriture: '2026-03-20', cible: { immobilisation: parmi([true, false]) }, exemplaireDe: fac(),
+        modesDuReleve: parmi<(ModeDUnMouvement | null)[]>([[], [null], ['Carte bancaire'], ['Chèque', 'Virement']]), lignes: lignes(), choix: choix(),
       }),
       () => champsDUnMouvementDuReleve(mouvement({
         libelle: nom(), libelle_brut: nom(), source_fichier: nom(), montant: parmi([-30, 30]),

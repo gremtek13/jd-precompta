@@ -568,6 +568,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (une page rendue anonyme, qui sert aussi NOE1) à BOR7, BOR-Q1 à Q9 → « BOR : CE QUI EST FACTURÉ À L'ASSURANCE MALADIE ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ».
+- **Le mode de règlement d'un mouvement** (EXP58-Q1 (B)) : préparé, par l'outil, `MODE_DE_REGLEMENT_PREVU` baissé — `lignes_bancaires.mode_reglement` (sept ModeRglt), posé par `poser_modes_de_reglement`
+  seule sur un clic, la proposition du libellé jamais écrite ; le FEC remplace « Banque » par lui → « EXP58-Q1 : LE MODE DE RÈGLEMENT D'UN MOUVEMENT, EN BASE ».
 - **L'export vers un logiciel comptable** (EXP1, 17/11/2026, `EXPORT_VERS_UN_LOGICIEL_OFFERT` levé le soir même sur la demande du cabinet) : le FEC de l'onglet Écritures
   remis en forme par un profil (`lib/profilsDExport.ts`, ACD : Windows-1252, comptes à la longueur choisie, numéro continu, journaux
   saisis), les justificatifs en ZIP sous leur PieceRef, sans rien changer au FEC ; restent l'essai chez l'expert-comptable et EXP-Q2 à Q5

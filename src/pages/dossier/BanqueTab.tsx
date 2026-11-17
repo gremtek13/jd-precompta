@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
 import { colonneDeLaDateDeValeur, detectColumnMapping, lignesDeDonnees, parseCsv, type FormatDesMontants } from '../../lib/csv'
 import { DATE_DE_VALEUR_PREVUE, ECART_MAXIMAL_DE_LA_DATE_DE_VALEUR, phraseDesDatesDeValeur } from '../../lib/dateDeValeur'
+import { argumentsDuMode, MODE_DE_REGLEMENT_PREVU, modeDeLaFiche, type ModeDUnMouvement } from '../../lib/modeDeReglement'
 import { type EncodageLu } from '../../lib/decodageTexte'
 import {
   AUCUNE_DECISION, douteDuSens, interpreterReleve, operationsDuPdf, partagerParMultiplicite, phraseDesEcartees,
@@ -860,6 +861,24 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   function defaireAssuranceMaladie(mouvementId: string) {
     void ecrireAssuranceMaladie('defaire_association_assurance_maladie', { p_dossier_id: dossierId, p_ligne_bancaire_id: mouvementId },
       'L’association n’a pas pu se défaire.', 'Association défaite : ses paiements sont de nouveau libres.')
+  }
+
+  // LE MODE DE RÈGLEMENT D'UN MOUVEMENT (EXP58-Q1 ; lib/modeDeReglement.ts) : posé, corrigé ou retiré par
+  // `poser_modes_de_reglement` SEULE — la base refuse toute autre écriture du mode —, sur le clic du cabinet, sous le verrou
+  // des écritures du relevé, relâché après la relecture. L'état se rejuge au clic sur ce que l'onglet a lu (un mouvement figé
+  // ou lu sans sa colonne n'écrit rien) ; un refus de la base se dit dans la fiche, sous ses mots, et la relecture suit — le
+  // plus probable est une fiche en retard (un exercice validé entre-temps).
+  const [erreurModeDeReglement, setErreurModeDeReglement] = useState<{ ligneId: string; message: string } | null>(null)
+
+  async function poserModeDeReglement(ligne: LigneBancaire, mode: ModeDUnMouvement | null) {
+    if (ecritureEnCours.current) return
+    if (modeDeLaFiche(ligne, dateFigee(ligne.date, anneesValidees), modele.mode, MODE_DE_REGLEMENT_PREVU).etat !== 'ouvert') return
+    setErreurModeDeReglement(null)
+    await sousVerrou(setActionMouvementEnCours, async () => {
+      const { error } = await supabase.rpc('poser_modes_de_reglement', argumentsDuMode(dossierId, ligne.id, mode))
+      if (error) setErreurModeDeReglement({ ligneId: ligne.id, message: messageErreur(error, 'raison inconnue') })
+      return true
+    })
   }
 
   async function ecarterLaProposition(propositionId: string) {
@@ -2760,6 +2779,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
               erreur: erreurAssuranceMaladie,
               onAssocier: (groupe) => associerAssuranceMaladie([groupe]),
               onDefaire: defaireAssuranceMaladie,
+            }}
+            modeDeReglement={{
+              erreur: erreurModeDeReglement?.ligneId === ligneOuverte.id ? erreurModeDeReglement.message : null,
+              onPoser: (mode) => { void poserModeDeReglement(ligneOuverte, mode) },
             }}
           />
         </PanneauDroit>

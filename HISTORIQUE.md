@@ -53818,3 +53818,18 @@ identique avant et après (son 141 déjà rouge : `hausses_vues_avec_le_client_g
 d'avant ; inventaire 3 222 → 3 231. Module : la table de parité relevée (14 biens), le tableau de la 2035-SD, IMMO-Q1 et la preuve
 de la Révision la lisent ; l'écran derrière `CUMUL_REPRIS_PREVU`. Reste : la copie de l'assistant (bloc AMORTISSEMENT), à
 reprendre et redéployer avec la levée.
+### 17/11/2026 — EXP58-Q1 : LE MODE DE RÈGLEMENT D'UN MOUVEMENT, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) Le cabinet a dit (B). `20261117190000_mode_de_reglement_des_mouvements` (par l'outil) :
+`lignes_bancaires.mode_reglement`, `text` nullable, sept ModeRglt du FEC tels quels (`lignes_bancaires_mode_reglement_liste` :
+Virement, Prélèvement, Carte bancaire — CMF L. 314-1, II, 3° ; Chèque — L. 131-1 s. ; Espèces, versement ou retrait selon le signe
+— L. 314-1, II, 1° et 2° ; Effet — C. com. L. 511-1 s. ; Autre), nul pour « Banque » ; `poser_modes_de_reglement`, aux droits du
+propriétaire, tout ou rien, `admin_du_dossier` avant toute lecture, aucune branche client ; la garde `garder_mode_de_reglement`
+(invoker, deux déclencheurs sous condition) : la fonction seule change le mode, la restauration seule insère un mouvement qui en
+porte un, l'import jamais. Figé par `garder_mouvement_valide` (ligne entière, corps relu). Le retour (à coller) refuse un mode posé.
+Derrière `MODE_DE_REGLEMENT_PREVU` baissé (`lib/modeDeReglement.ts`) : la proposition par les seuls mots de type en tête du libellé
+(« VIR », « PRLV », « CB », « CHQ », « REM CHQ », « RETRAIT », un versement d'espèces ; jamais « Effet » ni « Autre ») ; le FEC
+(`modeRgltDuReleve`) remplace « Banque » par le mode commun aux mouvements de l'écriture, clés, scission et génération intactes ; la
+fiche d'un mouvement en trésorerie, sous `ecritureEnCours`. Copie de `replique_227` à 237 puis 238 : l'essai 28/28, cinq mutations
+mordent, vingt-huit essais voisins identiques avec et sans elle, le retour rend le socle et l'inventaire de 237 ; simulée : dérive
+238 (`9526ebe9…`), socle 83 (`43b8ad20…`), inventaire 3 228 (`ef15c311…`) ; banc du leurre SÛR. Restent le lot, EXP58Q1-Q1 à Q3.
