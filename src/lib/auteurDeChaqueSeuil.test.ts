@@ -78,12 +78,12 @@ describe('CA2-Q1 — la migration, son retour et son essai', () => {
     expect(MIGRATION).not.toMatch(/\b(drop|truncate)\b|delete\s+from/i)
     expect(MIGRATION).not.toContain('\\')
     expect(MIGRATION).not.toContain('\r')
-    const suspendue = MIGRATION.indexOf('alter table public.seuils_du_chiffre_d_affaires disable trigger seuils_du_chiffre_d_affaires_garde;')
-    const remise = MIGRATION.indexOf('alter table public.seuils_du_chiffre_d_affaires enable trigger seuils_du_chiffre_d_affaires_garde;')
+    const suspendue = MIGRATION.search(/alter table public\.seuils_du_chiffre_d_affaires disable trigger seuils_du_chiffre_d_affaires_garde;/i)
+    const remise = MIGRATION.search(/alter table public\.seuils_du_chiffre_d_affaires enable trigger seuils_du_chiffre_d_affaires_garde;/i)
     expect(suspendue).toBeGreaterThan(0)
     expect(remise).toBeGreaterThan(suspendue)
     expect(MIGRATION.slice(suspendue, remise).match(/;\n/g)).toHaveLength(2)
-    expect(RETOUR.split('\n').filter((l) => /^\s*drop /.test(l))).toEqual([
+    expect(RETOUR.split('\n').filter((l) => /^\s*drop /i.test(l))).toEqual([
       '  drop constraint seuils_du_chiffre_d_affaires_reglage_de_hausse,', '  drop constraint seuils_du_chiffre_d_affaires_reglage_de_baisse;',
       '  drop column seuil_de_hausse_regle_par,', '  drop column seuil_de_hausse_regle_le,', '  drop column seuil_de_baisse_regle_par,',
       '  drop column seuil_de_baisse_regle_le;',

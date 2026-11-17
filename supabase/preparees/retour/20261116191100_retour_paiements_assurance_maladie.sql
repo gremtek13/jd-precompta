@@ -1,6 +1,6 @@
 -- RETOUR ARRIÈRE DE `paiements_assurance_maladie` (conception 53, NOE3) — DESTRUCTIF, À ACCORDER PAR LE CABINET, À COLLER
 -- dans l'éditeur SQL de Supabase, dans une transaction, avec sa ligne d'historique (le texte retire deux tables, leur garde
--- et quatre fonctions). La migration : supabase/preparees/20261116190000_paiements_assurance_maladie.sql (préparée le
+-- et quatre fonctions). La migration : supabase/preparees/20261116191000_paiements_assurance_maladie.sql (préparée le
 -- 16/11/2026, sous une version provisoire) ; le récit : HISTORIQUE.md, « 16/11/2026 — NOE1 ET NOE3 : LA LECTURE DES
 -- PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE (PRÉPARÉE, PAS APPLIQUÉE) ».
 --

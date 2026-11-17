@@ -25,8 +25,8 @@ import {
 // que des agrégats ne sort ; les refus de la base, confrontés au texte de la migration préparée et redits sous ses mots ;
 // l'essai de la base : supabase/essais/paiementsAssuranceMaladie.sql, sur une réplique.
 
-const MIGRATION = 'supabase/preparees/20261116190000_paiements_assurance_maladie.sql'
-const RETOUR = 'supabase/preparees/retour/20261116190100_retour_paiements_assurance_maladie.sql'
+const MIGRATION = 'supabase/preparees/20261116191000_paiements_assurance_maladie.sql'
+const RETOUR = 'supabase/preparees/retour/20261116191100_retour_paiements_assurance_maladie.sql'
 const ESSAI = 'supabase/essais/paiementsAssuranceMaladie.sql'
 const texteDeLaMigration = readFileSync(resolve(process.cwd(), MIGRATION), 'utf8')
 
@@ -78,7 +78,7 @@ describe('le drapeau et les fichiers de la migration', () => {
   it('baissé, la migration préparée, son retour et son essai à côté, hors de l’export', () => {
     expect(PAIEMENTS_ASSURANCE_MALADIE_PREVUS).toBe(false)
     for (const f of [MIGRATION, RETOUR, ESSAI]) expect(existsSync(resolve(process.cwd(), f))).toBe(true)
-    expect(existsSync(resolve(process.cwd(), 'supabase/schema/20261116190000_paiements_assurance_maladie.sql'))).toBe(false)
+    expect(existsSync(resolve(process.cwd(), 'supabase/schema/20261116191000_paiements_assurance_maladie.sql'))).toBe(false)
   })
 })
 
