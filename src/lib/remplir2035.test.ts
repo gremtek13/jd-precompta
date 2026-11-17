@@ -126,7 +126,9 @@ describe('remplir2035 — l’annexe 2035-E et ce qui reste à saisir', () => {
 
   it('drapeau baissé : le PDF est celui d’avant, à l’octet près', () => {
     // Le haché relevé sur le code d'AVANT ce changement (mêmes lignes, même instant, dates figées) : toute dérive du dessin le fait rougir.
-    expect(createHash('sha256').update(sansAvertissement).digest('hex')).toBe('2ccaa861bfd7671e9e469663fea5b7c2f09b83e62c7ed81c5424934939ccaf5b')
+    // Relevé de nouveau le 17/11/2026 : la page 2 porte désormais le nom et le SIRET du déclarant (2ccaa861… avant) ; les
+    // pages 1 et 3 sont restées identiques (relues par pdftotext -bbox, et par le dernier bloc de ce fichier pour la page 1).
+    expect(createHash('sha256').update(sansAvertissement).digest('hex')).toBe('5691320782bb8d2bd2deb369e949b0469fa661f17d00eedf9c05f59dfda131c8')
   })
 
   it('une ligne à saisir porte « à saisir » dans sa case, et les totaux qui en dépendent aussi : ni 0, ni un total supposé', () => {
@@ -212,5 +214,95 @@ describe('remplir2035 — l’annexe 2035-E et ce qui reste à saisir', () => {
     expect(mentionDeLAnnexe2035E(['EN'], true)).toHaveLength(4)
     for (const ligne of mentionDeLAnnexe2035E(['EN', 'AH'], true)) expect(texteCompatiblePdf(ligne)).toBe(ligne)
     expect(annexe2035EAvecSaisie(ENTREE_ANNEXE, SAISIE_2035E_VIDE).aSaisir).toEqual(['EN', 'EK', 'EM', 'ER', 'EU', 'EV', 'AH'])
+  })
+})
+
+// LA PAGE 2 (2035-B-SD) RELUE SUR LE PDF PRODUIT (signalé par le cabinet le 17/11/2026). Le nom et le SIRET n'y étaient pas :
+// la boucle des en-têtes s'arrêtait à la page 1, et la grille du SIRET de la page 2, tracée de travers, ne se reconnaissait
+// pas (gabarit2035.ts, `grilleDeSaisie`). Relus ici par pdf.js : le nom passé le filet de sa cellule, chaque chiffre dans
+// SA case, et les lignes 34 à 47 — l'excédent, les deux totaux, la dotation, le bénéfice — à leur ligne. La page 1 reste
+// celle d'avant : le nom 8 points après son libellé, les chiffres aux centres de sa grille régulière.
+describe('remplir2035 — la page 2 porte le déclarant et les lignes 34 à 47', () => {
+  const ENTETE_COMPLET = { nom: 'Cabinet Dupont-Lefèvre', activite: 'Infirmier libéral', siret: '12345678900011' }
+  // Ce que `arrondirPourFormulaire` rend pour 80 000 € de recettes, 10 000 d'achats, 9 000 de cotisations et 3 000 de dotation.
+  const CASES = new Map([
+    ['AA', 80000], ['AD', 80000], ['AG', 80000], ['BA', 10000], ['BK', 9000], ['BR', 19000],
+    ['CA', 61000], ['CE', 61000], ['CH', 3000], ['CN', 3000], ['CP', 58000], ['DD', 67000],
+  ])
+  let page1: Fragment[] = []
+  let page2: Fragment[] = []
+  let vierge2: Fragment[] = []
+  let sansAncrage: string[] = ['non lu']
+
+  beforeAll(async () => {
+    vi.stubGlobal('fetch', async (chemin: string) => {
+      const octets = readFileSync(`public${chemin}`)
+      return { ok: true, status: 200, arrayBuffer: async () => octets.buffer.slice(octets.byteOffset, octets.byteOffset + octets.byteLength) }
+    })
+    try {
+      const r = await remplir2035(CASES, ENTETE_COMPLET, null, 2025)
+      sansAncrage = r.codesSansAncrage
+      page1 = await fragmentsDeLaPage(r.pdf, 1)
+      page2 = await fragmentsDeLaPage(r.pdf, 2)
+      vierge2 = await fragmentsDeLaPage(new Uint8Array(readFileSync('public/formulaires/2035-sd-2026.pdf')), 2)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // Ce que l'application a ajouté à une page : ses fragments moins ceux du formulaire vierge.
+  const ajoutes = (page: Fragment[], vierge: Fragment[]) => {
+    const reste = vierge.map((f) => `${f.texte}@${Math.round(f.x)},${Math.round(f.y)}`)
+    return page.filter((f) => {
+      const k = reste.indexOf(`${f.texte}@${Math.round(f.x)},${Math.round(f.y)}`)
+      if (k < 0) return true
+      reste.splice(k, 1)
+      return false
+    })
+  }
+
+  it('toutes les cases ont trouvé leur place', () => {
+    expect(sansAncrage).toEqual([])
+  })
+
+  it('porte la dénomination dans la zone qui suit son libellé, passé le filet (x ≈ 236)', () => {
+    const nom = page2.find((f) => f.texte.startsWith('Cabinet'))
+    expect(nom).toBeDefined()
+    expect(nom!.y).toBeCloseTo(735.9, 0)
+    expect(nom!.x).toBeGreaterThan(236 + 5)
+  })
+
+  it('porte le SIRET chiffre par chiffre, chacun dans sa case de la grille irrégulière', () => {
+    const cases = [70.3, 91.2, 112.2, 133.2, 151.2, 176, 218.5, 236, 257, 278, 286.2, 307.2, 333.4, 354.4, 375.3]
+    const chiffres = ajoutes(page2, vierge2).filter((f) => Math.abs(f.y - 723.2) < 1).sort((a, b) => a.x - b.x)
+    expect(chiffres.map((f) => f.texte).join('')).toBe('12345678900011')
+    chiffres.forEach((f, i) => {
+      // Le glyphe entier entre les deux filets de sa case, et centré sur elle.
+      expect(f.x, `chiffre ${i + 1}`).toBeGreaterThan(cases[i])
+      expect(f.x + f.largeur, `chiffre ${i + 1}`).toBeLessThan(cases[i + 1])
+      expect(f.x + f.largeur / 2, `chiffre ${i + 1}`).toBeCloseTo((cases[i] + cases[i + 1]) / 2, 0)
+    })
+  })
+
+  it('porte l’excédent, les totaux, la dotation et le bénéfice à la hauteur de leur code', () => {
+    const hauteur = (code: string) => vierge2.find((f) => f.texte === code && f.x > 470 && f.x < 500)!.y
+    const montant = (code: string) => page2.find((f) => Math.abs(f.y - hauteur(code)) < 1 && f.x > 500)?.texte
+    expect(montant('CA')).toBe(formaterMontant(61000))
+    expect(montant('CE')).toBe(formaterMontant(61000))
+    expect(montant('CH')).toBe(formaterMontant(3000))
+    expect(montant('CN')).toBe(formaterMontant(3000))
+    expect(montant('CP')).toBe(formaterMontant(58000))
+    expect(montant('CR')).toBeUndefined()
+  })
+
+  it('la page 1 est celle d’avant : le nom 8 points après son libellé, les chiffres aux centres de sa grille', () => {
+    const nom = page1.find((f) => f.texte.startsWith('Cabinet'))!
+    expect(nom.x).toBeCloseTo(50 + 157.8 + 8, 0)
+    expect(nom.y).toBeCloseTo(723.5, 0)
+    const grille = [69.7, 89.5, 109.4, 129.2, 149.1, 168.9, 188.8, 209.6, 229.5, 249.2, 269, 288.9, 308.7, 328.5, 348.4]
+    const chiffres = page1.filter((f) => Math.abs(f.y - 689.6) < 1 && /^\d$/.test(f.texte) && f.x > 69).sort((a, b) => a.x - b.x)
+    expect(chiffres.map((f) => f.texte).join('')).toBe('12345678900011')
+    chiffres.forEach((f, i) => expect(f.x + f.largeur / 2, `chiffre ${i + 1}`).toBeCloseTo((grille[i] + grille[i + 1]) / 2, 0))
+    expect(page1.find((f) => f.texte === 'Infirmier libéral')!.x).toBeCloseTo(29.3 + 85.6 + 8, 0)
   })
 })

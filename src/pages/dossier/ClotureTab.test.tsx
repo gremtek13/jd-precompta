@@ -86,6 +86,8 @@ const faux = vi.hoisted(() => ({
   muetApresParTable: {} as Record<string, number>,
   // Ce que `remplir2035` a reçu : les cases telles que le PDF les porterait, et le déclarant.
   remplies: [] as Map<string, number>[],
+  // Ce que la doublure de `remplir2035` rend comme cases qu'elle n'a pas su placer (vide : toutes placées).
+  codesSansAncrage: [] as string[],
   // Et l'exercice qui choisit le millésime du modèle (étape 2035S6).
   exercicesRemplis: [] as number[],
   entetes: [] as unknown[],
@@ -226,7 +228,7 @@ vi.mock('../../lib/remplir2035', () => ({
     faux.remplies.push(valeurs)
     faux.entetes.push(entete)
     faux.annexes.push(annexe)
-    return Promise.resolve({ pdf: new Uint8Array(), codesSansAncrage: [], codesSansAncrage2035E: [] })
+    return Promise.resolve({ pdf: new Uint8Array(), codesSansAncrage: faux.codesSansAncrage, codesSansAncrage2035E: [] })
   },
 }))
 
@@ -268,6 +270,7 @@ function poser(
   cotis: Record<string, unknown>[] = [cotisation('c1'), cotisation('c2')],
 ) {
   faux.muetApresParTable = muet
+  faux.codesSansAncrage = []
   faux.attentes = {}
   faux.misesAJour = []
   faux.superAdmin = true
@@ -1160,7 +1163,30 @@ describe('ClotureTab — le revenu brut social du cadre 8', () => {
     // Les mêmes 4 879 que le report : ce que l'écran annonce est ce que le PDF porte.
     expect(faux.remplies[0].get('DD')).toBe(4879)
     expect(faux.remplies[0].get('DC')).toBe(0)
+    // Et les lignes 34 à 47 de la 2035-B (signalé le 17/11/2026) : l'excédent, les deux totaux et le bénéfice partent avec
+    // le cadre 8, recalculés sur les mêmes cases arrondies.
+    const cases = faux.remplies[0]
+    expect(cases.get('CA')).toBeGreaterThan(0)
+    expect(cases.get('CE')).toBe((cases.get('CA') ?? 0) + (cases.get('CB') ?? 0) + (cases.get('CC') ?? 0) + (cases.get('CD') ?? 0))
+    expect(cases.get('CP')).toBe(4279)
+    expect(cases.get('CP')).toBe((cases.get('CE') ?? 0) - (cases.get('CN') ?? 0))
+    expect(cases.get('CR')).toBe(0)
     expect(clic).toHaveBeenCalledTimes(1)
+    vi.restoreAllMocks()
+  })
+
+  it('dit les cases que le formulaire n’a pas su placer, jamais en silence', async () => {
+    poserUnBenefice()
+    faux.codesSansAncrage = ['CA', 'CP']
+    URL.createObjectURL = () => 'blob:formulaire'
+    URL.revokeObjectURL = () => {}
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    await act(async () => { bouton.click() })
+
+    expect(await screen.findByText(/Cases non placées sur le formulaire : CA, CP — leur montant manque sur le PDF/)).toBeTruthy()
     vi.restoreAllMocks()
   })
 

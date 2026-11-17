@@ -145,6 +145,42 @@ describe('grilleDeSaisie', () => {
   it('renonce quand le libellé est absent', () => {
     expect(grilleDeSaisie({ fragments: [], filets: grille(70, 20, 14) }, 'N° SIRET', 14)).toBeNull()
   })
+
+  // LA GRILLE IRRÉGULIÈRE DE LA 2035-B (17/11/2026). Positions relevées sur la page 2 du formulaire livré : quatorze cases
+  // tracées de travers (42,5 points pour l'une, 8,2 pour une autre). Aucune suite régulière n'y atteint quinze filets.
+  describe('la grille irrégulière dont la ligne ne porte qu’elle', () => {
+    const page2 = [70.3, 91.2, 112.2, 133.2, 151.2, 176, 218.5, 236, 257, 278, 286.2, 307.2, 333.4, 354.4, 375.3]
+    const libelle2: FragmentTexte = { texte: 'N° SIRET', x: 29.3, y: 723.2, largeur: 29.7, hauteur: 7 }
+    const filets = (xs: number[]) => xs.map((x) => filet(x, { y0: 718.9, y1: 732.4 }))
+
+    it('rend le centre de chacune des quatorze cases, si inégales soient-elles', () => {
+      const centres = grilleDeSaisie({ fragments: [libelle2], filets: filets(page2) }, 'N° SIRET', 14)
+      expect(centres).toHaveLength(14)
+      expect(centres![5]).toBeCloseTo((176 + 218.5) / 2, 5)
+      expect(centres![9]).toBeCloseTo((278 + 286.2) / 2, 5)
+      expect(centres![13]).toBeCloseTo((354.4 + 375.3) / 2, 5)
+    })
+
+    it('renonce sur un filet de plus ou de moins', () => {
+      expect(grilleDeSaisie({ fragments: [libelle2], filets: filets([...page2, 420]) }, 'N° SIRET', 14)).toBeNull()
+      expect(grilleDeSaisie({ fragments: [libelle2], filets: filets(page2.filter((x) => x !== 257)) }, 'N° SIRET', 14)).toBeNull()
+    })
+
+    it('renonce quand un texte est imprimé dans la ligne : ce n’est pas une grille de saisie', () => {
+      const mot: FragmentTexte = { texte: 'AV', x: 300, y: 723.2, largeur: 10, hauteur: 7 }
+      expect(grilleDeSaisie({ fragments: [libelle2, mot], filets: filets(page2) }, 'N° SIRET', 14)).toBeNull()
+      // Un texte d'une autre ligne ne compte pas.
+      const ailleurs: FragmentTexte = { ...mot, y: 700 }
+      expect(grilleDeSaisie({ fragments: [libelle2, ailleurs], filets: filets(page2) }, 'N° SIRET', 14)).toHaveLength(14)
+    })
+
+    it('renonce sur une cellule trop étroite pour un chiffre, ou trop large pour une case', () => {
+      const etroite = page2.map((x) => (x === 286.2 ? 283 : x))
+      expect(grilleDeSaisie({ fragments: [libelle2], filets: filets(etroite) }, 'N° SIRET', 14)).toBeNull()
+      const zone = page2.map((x) => (x === 375.3 ? 440 : x))
+      expect(grilleDeSaisie({ fragments: [libelle2], filets: filets(zone) }, 'N° SIRET', 14)).toBeNull()
+    })
+  })
 })
 
 describe('ancragesDesCases — la géométrie déduite du formulaire', () => {
@@ -313,10 +349,33 @@ describe('sur le formulaire officiel livré dans le dépôt', () => {
     expect(dc.xDroite).toBeLessThan(cr.xDroite - 50)
   })
 
-  it('trouve le libellé d’en-tête sur lequel le nom s’ancre', async () => {
+  it('trouve le libellé d’en-tête sur lequel le nom s’ancre, sur la 2035-A comme sur la 2035-B', async () => {
+    // Jusqu'au 17/11/2026, la page 2 ne portait pas le nom : la boucle s'arrêtait à la première page qui l'imprime.
     const pages = await lireModele()
     const { inscriptions } = planDeRemplissage(new Map(), new Map(), { nom: 'Cabinet Test', activite: null, siret: null }, pages)
-    expect(inscriptions.map((i) => i.texte)).toEqual(['Cabinet Test'])
-    expect(inscriptions[0].page).toBe(1)
+    expect(inscriptions.map((i) => [i.texte, i.page])).toEqual([['Cabinet Test', 1], ['Cabinet Test', 2]])
+    // Page 1 : où il s'écrivait déjà, 8 points après le libellé (50,0 + 157,8). Page 2 : passé le filet qui ferme la
+    // cellule du libellé (x ≈ 236), jamais dessus.
+    expect(inscriptions[0].x).toBeCloseTo(50 + 157.8 + 8, 0)
+    expect(inscriptions[1].x).toBeGreaterThan(236 + 5)
+    expect(inscriptions[1].x).toBeLessThan(250)
+  })
+
+  it('trouve la grille du SIRET à quatorze cases sur les deux pages', async () => {
+    const pages = await lireModele()
+    const page1 = grilleDeSaisie(pages[0], 'N° SIRET', 14)
+    const page2 = grilleDeSaisie(pages[1], 'N° SIRET', 14)
+    expect(page1).toHaveLength(14)
+    expect(page2).toHaveLength(14)
+    // Chaque centre tombe entre deux filets consécutifs de sa ligne, une case par chiffre.
+    const label = pages[1].fragments.find((f) => f.texte.trim() === 'N° SIRET')!
+    const centre = label.y + label.hauteur / 2
+    const xs = [...new Set(pages[1].filets.filter((f) => f.x > label.x + label.largeur && f.y0 < centre && f.y1 > centre)
+      .map((f) => Math.round(f.x * 10) / 10))].sort((a, b) => a - b)
+    expect(xs).toHaveLength(15)
+    page2!.forEach((x, i) => {
+      expect(x, `case ${i + 1}`).toBeGreaterThan(xs[i])
+      expect(x, `case ${i + 1}`).toBeLessThan(xs[i + 1])
+    })
   })
 })
