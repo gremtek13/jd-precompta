@@ -556,7 +556,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   section de l'onglet Banque et de « Ma banque » : en-têtes et genres seuls, réglage vide, agrégats avant le clic, la phrase de
   NOE3-Q1) ; l'association au relevé, NOE5 (module et migration préparée) puis NOE5b, l'écran (17/11/2026, derrière
   `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` : la fiche d'un crédit, la section NOEMIE et son lot, un crédit associé hors des
-  candidats d'une vente, `lib/associationsAssuranceMaladieVue.ts`) → « NOE5B : L'ÉCRAN DE L'ASSOCIATION », « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
+  candidats d'une vente, `lib/associationsAssuranceMaladieVue.ts`) → « NOE5 : L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ », « NOE5B : L'ÉCRAN DE L'ASSOCIATION », « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
   DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE »,
   « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE ». Le facturé (BOR, 17/11/2026), recherché, rien d'écrit
   (`docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md`) : Télévitale ne documente que des PDF et nomme « bordereau » deux
@@ -564,12 +564,6 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (une page rendue anonyme, qui sert aussi NOE1) à BOR7, BOR-Q1 à Q9 → « BOR : CE QUI EST FACTURÉ À L'ASSURANCE MALADIE ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ».
-  NOE3-Q1) ; NOE5 préparée le 17/11/2026 (`lib/rapprochementAssuranceMaladie.ts` ; `association_paiements_assurance_maladie`, à
-  coller après NOE3, `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` baissé) : une table d'association HORS du seul rapprochement d'un
-  mouvement, la somme au centime, le cabinet seul, figée par l'année du crédit ; l'écran reste (NOE5b) → « L'IMPORT DES RETOURS
-  NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE
-  L'ASSURANCE MALADIE ET LEUR TABLE », « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE », « NOE5 : L'ASSOCIATION
-  DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ ».
 - **L'export vers un logiciel comptable** (EXP1, 17/11/2026, `EXPORT_VERS_UN_LOGICIEL_OFFERT` levé le soir même sur la demande du cabinet) : le FEC de l'onglet Écritures
   remis en forme par un profil (`lib/profilsDExport.ts`, ACD : Windows-1252, comptes à la longueur choisie, numéro continu, journaux
   saisis), les justificatifs en ZIP sous leur PieceRef, sans rien changer au FEC ; restent l'essai chez l'expert-comptable et EXP-Q2 à Q5
