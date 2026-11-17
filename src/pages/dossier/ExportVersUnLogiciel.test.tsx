@@ -142,7 +142,8 @@ describe('l’export vers un logiciel comptable, à l’écran', () => {
     expect([...octets]).toContain(0x97)
     expect([...octets]).toContain(0xe9)
     const texte = decoder.decode(octets)
-    const lignes = texte.split('\r\n').map((l) => l.split('\t'))
+    expect(texte.endsWith('\r\n')).toBe(true)
+    const lignes = texte.replace(/\r\n$/, '').split('\r\n').map((l) => l.split('\t'))
     expect(lignes[0].join('\t')).toBe(ENTETE)
     expect(lignes.slice(1).map((l) => [l[0], l[2], l[4], l[8], l[11]])).toEqual([
       ['HA', '1', '60610000', REF, '100,00'],
