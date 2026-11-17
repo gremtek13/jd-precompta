@@ -53,7 +53,7 @@ const declaration = (o: Partial<Declaration2035SD> = {}, lignes: LigneDesImmobil
   }
 }
 
-const ENTETE = { nom: 'Dupont Jeanne', activite: 'Activités des infirmiers', siret: '12345678900011', adresse: '3 rue des Lilas\n75011 Paris' }
+const ENTETE = { nom: 'Dupont Jeanne', activite: 'Activités des infirmiers', siret: '12345678900011', adresse: '3 rue des Lilas\n75011 Paris', debutDeLaProfession: '2019-09-01' }
 
 const dans = (i: Inscription2035SD | undefined, gauche: number, droite: number) =>
   !!i && (i.alignement === 'droite' ? i.x > gauche && i.x <= droite : i.x >= gauche && i.x < droite)
@@ -127,6 +127,11 @@ describe('planDeRemplissage2035SD', () => {
     expect(sur(3, 'Dupont Jeanne')).toBeDefined()
     expect(sur(4, 'Dupont Jeanne')).toBeDefined()
     expect(sur(1, 'Activités des infirmiers')?.largeurMax).toBeLessThan(230)
+    // 2035SD-Q1 (A) : la date de début de la profession dans la case tracée à droite de son libellé (x ≈ 440,4 à 580,5),
+    // entre les deux lignes de base du libellé (446,9 et 438,0).
+    const debut = sur(1, '01/09/2019')!
+    expect(dans(debut, 440.4, 580.5)).toBe(true)
+    expect(debut.y).toBeCloseTo(442.45, 1)
     // Le tableau : la nature, la date, les montants et le mode dans leurs colonnes ; le total, (A) et la dotation nette.
     const g = geometrieDuTableau(pages[2])!
     expect(dans(sur(3, 'Ordinateur'), 27.8, 103.8)).toBe(true)
@@ -184,7 +189,9 @@ describe('planDeRemplissage2035SD', () => {
   })
 
   it('sans SIRET lisible ni nom, rien ne s’écrit à leur place', () => {
-    const plan = planDeRemplissage2035SD(pages, declaration(), { nom: null, activite: null, siret: '123', adresse: null }, [])
+    const plan = planDeRemplissage2035SD(pages, declaration(), { nom: null, activite: null, siret: '123', adresse: null, debutDeLaProfession: null }, [])
+    // Sans début d'activité saisi, la case de la date reste vide.
+    expect(plan.inscriptions.some((i) => i.page === 1 && /^\d{2}\/\d{2}\/\d{4}$/.test(i.texte))).toBe(false)
     expect(plan.inscriptions.some((i) => /^\d$/.test(i.texte))).toBe(false)
     expect(plan.libellesSansAncrage).toEqual([])
   })

@@ -204,6 +204,7 @@ export function planDuCadre7(
     if (l.carburant) cellule(inscriptions, c.carburant, ligne, l.carburant, 'gauche')
     cellule(inscriptions, c.kilometres, ligne, formaterMontant(l.kilometres), 'droite')
     montant(c.indemnites, ligne, l.indemnite)
+    montant(c.amortissements, ligne, l.amortissements)
   })
 
   const total = (vers: Inscription[], caseDuTotal: CaseDeTotal, texte: string) => {
@@ -214,7 +215,72 @@ export function planDuCadre7(
   }
   if (typeof cadre.totalA === 'number') total(inscriptions, geometrie.totalA, formaterMontant(cadre.totalA))
   else if (cadre.totalA === 'a_saisir') total(aSaisir, geometrie.totalA, MOTS_A_SAISIR_DU_PDF)
-  if (cadre.totalB === 'a_saisir') total(aSaisir, geometrie.totalB, MOTS_A_SAISIR_DU_PDF)
+  if (typeof cadre.totalB === 'number') total(inscriptions, geometrie.totalB, formaterMontant(cadre.totalB))
+  else if (cadre.totalB === 'a_saisir') total(aSaisir, geometrie.totalB, MOTS_A_SAISIR_DU_PDF)
 
   return { inscriptions, aSaisir, vehiculesSansLigne, repere: true }
+}
+
+// ═══ La ligne 23 de la 2035-A (CADRE7-Q4 (A), réponse du cabinet du 17/11/2026) ═══════════════════════════════════════
+//
+// La notice 2035-NOT-SD 2026, renvoi (12) : l'option pour le barème « est concrétisée en cochant la case figurant en
+// ligne 23 ». Le cadre 7 dit « Total A à reporter ligne 23 ». La page 1 imprime, sous « 23 Frais de véhicules (12) », le
+// libellé « (cocher la case si évaluation forfaitaire) », puis à sa droite la case à cocher et la cellule du montant de la
+// ligne 23 — chacune entre deux filets verticaux qui traversent ce libellé (les deux premiers : la case ; les deux suivants :
+// la cellule). La case BJ, plus à droite, regroupe les lignes 23 et 24 et reste remplie par les codes de case.
+//
+// La croix dès qu'un cadre 7 existe (un véhicule au barème : l'option est prise, quel que soit son montant) ; le montant,
+// le total A tel que le cadre le porte — un nombre, « à saisir » en rouge, ou rien (l'écart avec une 2035 validée).
+// Les péages et le stationnement, frais de déplacement (CADRE7-Q1), n'y entrent pas.
+
+const LIBELLE_DE_LA_CASE_23 = '(cocher la case si évaluation forfaitaire)'
+
+export interface GeometrieDeLaLigne23 {
+  caseACocher: Bornes
+  montant: Bornes
+  // La ligne de base du libellé : la croix et le montant s'y posent.
+  y: number
+}
+
+export function geometrieDeLaLigne23(page: PageFormulaire): GeometrieDeLaLigne23 | null {
+  const libelle = seul(page, LIBELLE_DE_LA_CASE_23, () => true)
+  if (!libelle) return null
+  const centre = libelle.y + libelle.hauteur / 2
+  const xs = [...new Set(page.filets
+    .filter((f) => f.x > libelle.x + libelle.largeur && f.y0 < centre && f.y1 > centre)
+    .map((f) => Math.round(f.x * 10) / 10))].sort((a, b) => a - b)
+  if (xs.length < 4) return null
+  const caseACocher = { gauche: xs[0], droite: xs[1] }
+  const montant = { gauche: xs[2], droite: xs[3] }
+  // Une case à cocher a la largeur d'une case (une vingtaine de points), la cellule celle d'un montant : sinon le repérage a dérapé.
+  const largeurCase = caseACocher.droite - caseACocher.gauche
+  if (largeurCase < 8 || largeurCase > 30 || montant.droite - montant.gauche < 40) return null
+  return { caseACocher, montant, y: libelle.y }
+}
+
+export interface PlanDeLaLigne23 {
+  inscriptions: Inscription[]
+  aSaisir: Inscription[]
+  // Faux : la case ou la cellule n'ont pas été retrouvées sur la page, rien n'est écrit et l'écran le dit.
+  repere: boolean
+}
+
+export function planDeLaLigne23(page: PageFormulaire, numeroDePage: number, cadre: Cadre7ARemplir): PlanDeLaLigne23 {
+  const inscriptions: Inscription[] = []
+  const aSaisir: Inscription[] = []
+  const g = geometrieDeLaLigne23(page)
+  if (!g) return { inscriptions, aSaisir, repere: false }
+  inscriptions.push({
+    page: numeroDePage, texte: CROIX, x: (g.caseACocher.gauche + g.caseACocher.droite) / 2, y: g.y, alignement: 'centre',
+    taille: TAILLE_MONTANT,
+  })
+  const x = g.montant.droite - RETRAIT_DROITE
+  if (typeof cadre.totalA === 'number') {
+    if (cadre.totalA !== 0) {
+      inscriptions.push({ page: numeroDePage, texte: formaterMontant(cadre.totalA), x, y: g.y, alignement: 'droite', taille: TAILLE_MONTANT })
+    }
+  } else if (cadre.totalA === 'a_saisir') {
+    aSaisir.push({ page: numeroDePage, texte: MOTS_A_SAISIR_DU_PDF, x, y: g.y, alignement: 'droite', taille: TAILLE_MONTANT })
+  }
+  return { inscriptions, aSaisir, repere: true }
 }

@@ -5,6 +5,7 @@ import {
   BAREMES,
   baremeDeLAnnee,
   carburantApplicable,
+  amortissementsSaisis,
   completerModificationVehicule,
   exercicesProposables,
   indemniteKilometrique,
@@ -247,6 +248,20 @@ describe('cohérence de la fiche véhicule', () => {
   it('laisse la puissance fiscale tranquille sur une voiture ou une moto', () => {
     expect(completerModificationVehicule({ type: 'voiture' })).toEqual({ type: 'voiture' })
     expect(completerModificationVehicule({ type: 'moto' })).toEqual({ type: 'moto' })
+  })
+
+  it('efface le montant à réintégrer d’un véhicule qui n’est plus dit inscrit au registre (CADRE7-Q2)', () => {
+    expect(completerModificationVehicule({ inscrit_immobilisations: false }))
+      .toEqual({ inscrit_immobilisations: false, amortissements_a_reintegrer: null })
+    expect(completerModificationVehicule({ inscrit_immobilisations: true })).toEqual({ inscrit_immobilisations: true })
+  })
+
+  it('lit le montant à réintégrer au centime ; vide, « pas encore dit » ; négatif ou illisible, rien ne s’écrit', () => {
+    expect(amortissementsSaisis('1 200,456')).toBe(1200.46)
+    expect(amortissementsSaisis('0')).toBe(0)
+    expect(amortissementsSaisis('  ')).toBeNull()
+    expect(amortissementsSaisis('-3')).toBeUndefined()
+    expect(amortissementsSaisis('douze')).toBeUndefined()
   })
 
   it('efface le carburant d’un véhicule électrique ou à hydrogène', () => {

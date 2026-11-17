@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  avisDuTableauDesImmobilisations, calculer2035SD, modeLineaire, tableauDesImmobilisations, totauxDesLignes,
+  avisDuTableauDesImmobilisations, calculer2035SD, debutDeLaProfession, modeLineaire, tableauDesImmobilisations, totauxDesLignes,
 } from './declaration2035SD'
 import type { Entree2035SD } from './declaration2035SD'
 import { amortissementCumuleCentimes, dotationDeLExercice, rang360 } from './amortissements'
@@ -23,7 +23,7 @@ const bien = (o: Partial<Immobilisation>): Immobilisation => ({
 })
 
 const entree = (o: Partial<Entree2035SD>): Entree2035SD => ({
-  annee: 2025, formulaire: new Map(), immobilisations: [], assujettiTva: false, vehiculesSousLeBareme: false, ...o,
+  annee: 2025, formulaire: new Map(), immobilisations: [], assujettiTva: false, vehiculesSousLeBareme: 0, ...o,
 })
 
 const categories = [{ id: 'c-achats', poste_2035: 'Achats' }, { id: 'c-recettes', poste_2035: 'Recettes' }] as Categorie[]
@@ -107,10 +107,19 @@ describe('le tableau des immobilisations, confronté à la case CH du même jeu 
   })
 
   it('un véhicule amorti sous le barème : (B) et la dotation nette sont à saisir, A reste la somme', () => {
-    const r = tableauDesImmobilisations(entree({ formulaire, immobilisations: biens, vehiculesSousLeBareme: true }))
+    const r = tableauDesImmobilisations(entree({ formulaire, immobilisations: biens, vehiculesSousLeBareme: 'a_saisir' }))
     expect(r.vehiculesSousLeBareme).toBe('a_saisir')
     expect(r.dotationNette).toBe('a_saisir')
     expect(r.totalGeneral).toBe(formulaire.get('CH'))
+    expect(avisDuTableauDesImmobilisations(r).join(' ')).toMatch(/ne sont pas tous dits \(carte Véhicules\)/)
+  })
+
+  // CADRE7-Q2 (A), 17/11/2026 : le total B du cadre 7, dit dans la carte Véhicules, devient la ligne (B).
+  it('des amortissements à réintégrer dits : (B) les porte, la dotation nette est A − B, et l’écart avec CH se dit', () => {
+    const r = tableauDesImmobilisations(entree({ formulaire, immobilisations: biens, vehiculesSousLeBareme: 300 }))
+    expect(r.vehiculesSousLeBareme).toBe(300)
+    expect(r.dotationNette).toBe(r.totalGeneral - 300)
+    expect(avisDuTableauDesImmobilisations(r).join(' ')).toMatch(/n’est pas la case CH de la 2035-B/)
   })
 
   it('un tableau qui ne redit pas CH le dit, et ne force aucune ligne vers CH', () => {
@@ -141,5 +150,16 @@ describe('la récapitulation', () => {
   it('un registre vide : un tableau vide, A et la dotation nette à 0 (rien ne s’imprime), concordant avec CH nulle', () => {
     const t = calculer2035SD(entree({ formulaire: new Map() })).immobilisations
     expect(t).toMatchObject({ lignes: [], totalGeneral: 0, dotationNette: 0, concorde: true })
+  })
+})
+
+// 2035SD-Q1 (A), 17/11/2026 : la date de début de la profession reprend le début d'activité de l'onglet Cotisations.
+describe('debutDeLaProfession', () => {
+  it('reprend le début d’activité qui précède la fin de l’exercice, sinon rien', () => {
+    expect(debutDeLaProfession('2019-09-01', 2025)).toBe('2019-09-01')
+    expect(debutDeLaProfession('2025-12-31', 2025)).toBe('2025-12-31')
+    expect(debutDeLaProfession('2026-01-01', 2025)).toBeNull()
+    expect(debutDeLaProfession(null, 2025)).toBeNull()
+    expect(debutDeLaProfession('01/09/2019', 2025)).toBeNull()
   })
 })

@@ -408,3 +408,87 @@ describe('remplir2035 — le cadre 7 de la 2035-B', () => {
     expect(ajoutes(sansBareme).filter(dansLeCadre)).toEqual([])
   })
 })
+
+// CADRE7-Q2 (A) ET CADRE7-Q4 (A), réponses du cabinet du 17/11/2026, sur le PDF produit : les amortissements à réintégrer d'un
+// véhicule inscrit au registre et leur total B au cadre 7 ; la case « évaluation forfaitaire » cochée et le total A dans la
+// cellule de la ligne 23 de la 2035-A, la case BJ restant à sa place.
+describe('remplir2035 — les amortissements à réintégrer et la ligne 23', () => {
+  const vehicule = (i: number, o: Partial<VehiculeDossier>): VehiculeDossier => ({
+    id: `v${i}`, dossier_id: 'd1', annee: 2025, modele: null, type: 'voiture', puissance_fiscale: 5, bareme: 'bnc',
+    motorisation: 'thermique', carburant: 'diesel', km_professionnel: 8000, inscrit_immobilisations: false,
+    amortissements_a_reintegrer: null, created_at: `2025-01-0${i + 1}T00:00:00Z`, updated_at: '2025-01-01T00:00:00Z', ...o,
+  })
+  const VEHICULES = [vehicule(0, { modele: 'Clio', inscrit_immobilisations: true, amortissements_a_reintegrer: 1234.4 })]
+  const attendu = Number(indemniteKilometriqueCentimes(vehiculeDuDossier(VEHICULES[0]), 2025))
+  const { cadre } = cadre7DeLExercice(VEHICULES, 2025, attendu, true)
+  let page1: Fragment[] = []
+  let page2: Fragment[] = []
+  let page1SansBareme: Fragment[] = []
+  let vierge1: Fragment[] = []
+  let geometrie: GeometrieDuCadre7
+  let ligne23Reperee = false
+
+  beforeAll(async () => {
+    vi.stubGlobal('fetch', async (chemin: string) => {
+      const octets = readFileSync(`public${chemin}`)
+      return { ok: true, status: 200, arrayBuffer: async () => octets.buffer.slice(octets.byteOffset, octets.byteOffset + octets.byteLength) }
+    })
+    try {
+      const cases = new Map([['AA', 60000], ['BJ', (cadre!.totalA as number) + 37], ['BR', (cadre!.totalA as number) + 37]])
+      const r = await remplir2035(cases, { nom: 'Dupont', activite: null, siret: null }, null, 2025, cadre)
+      ligne23Reperee = r.ligne23Reperee
+      page1 = await fragmentsDeLaPage(r.pdf, 1)
+      page2 = await fragmentsDeLaPage(r.pdf, 2)
+      page1SansBareme = await fragmentsDeLaPage((await remplir2035(cases, { nom: 'Dupont', activite: null, siret: null }, null, 2025, null)).pdf, 1)
+      const vierge = new Uint8Array(readFileSync('public/formulaires/2035-sd-2026.pdf'))
+      vierge1 = await fragmentsDeLaPage(vierge, 1)
+      geometrie = geometrieDuCadre7(await lirePage(await pdfjs.getDocument({ data: vierge }).promise, 2))!
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  const ajoutesA = (page: Fragment[]) => {
+    const reste = vierge1.map((f) => `${f.texte}@${Math.round(f.x)},${Math.round(f.y)}`)
+    return page.filter((f) => {
+      const k = reste.indexOf(`${f.texte}@${Math.round(f.x)},${Math.round(f.y)}`)
+      if (k < 0) return true
+      reste.splice(k, 1)
+      return false
+    })
+  }
+  // La ligne du libellé « (cocher la case si évaluation forfaitaire) », relevée sur le millésime 2026 : y ≈ 258.
+  const surLaLigne23 = (f: Fragment) => Math.abs(f.y - 258.4) < 1.5
+
+  it('le véhicule inscrit porte son montant dans la colonne des amortissements, et le total B leur somme', () => {
+    expect(cadre!.totalB).toBe(1234)
+    const montant = page2.filter((f) => f.texte === '1 234')
+    expect(montant).toHaveLength(2)
+    const dansLaColonne = montant.find((f) => f.y > geometrie.lignes[0].bas && f.y < geometrie.lignes[0].haut)!
+    expect(dansLaColonne.x).toBeGreaterThan(geometrie.colonnes.amortissements.gauche)
+    expect(dansLaColonne.x + dansLaColonne.largeur).toBeLessThan(geometrie.colonnes.amortissements.droite)
+    const total = montant.find((f) => Math.abs(f.y - geometrie.totalB.y) < 1)!
+    expect(total.x).toBeGreaterThan(geometrie.totalB.gauche)
+    expect(total.x + total.largeur).toBeLessThan(geometrie.totalB.droite)
+  })
+
+  it('la croix dans la case de la ligne 23, le total A dans sa cellule, BJ à sa place', () => {
+    expect(ligne23Reperee).toBe(true)
+    const ajoutes = ajoutesA(page1).filter(surLaLigne23)
+    const croix = ajoutes.find((f) => f.texte === 'X')!
+    // La case à cocher, entre les filets x ≈ 209,6 et 229,5.
+    expect(croix.x).toBeGreaterThan(209.6)
+    expect(croix.x + croix.largeur).toBeLessThan(229.5)
+    const montant = ajoutes.find((f) => f.texte === formaterMontant(cadre!.totalA as number))!
+    // La cellule de la ligne 23, entre les filets x ≈ 249,2 et 348,4 : jamais la case BJ, plus à droite.
+    expect(montant.x).toBeGreaterThan(249.2)
+    expect(montant.x + montant.largeur).toBeLessThan(348.4)
+    expect(page1.some((f) => f.texte === formaterMontant((cadre!.totalA as number) + 37) && f.x > 472.5)).toBe(true)
+    // Et rien d'autre à gauche de la case BJ : la ligne 24 reste vide.
+    expect(ajoutes.filter((f) => f.x < 450)).toHaveLength(2)
+  })
+
+  it('sans barème, la ligne 23 reste vierge', () => {
+    expect(ajoutesA(page1SansBareme).filter((f) => surLaLigne23(f) && f.x < 450)).toEqual([])
+  })
+})

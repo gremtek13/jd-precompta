@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cadre7DeLExercice } from './cadre7'
+import { avisAuDelaDesLignes, cadre7DeLExercice } from './cadre7'
 import { calculerDeclaration2035, POSTE_INDEMNITES_KM } from './declaration2035'
 import { forfaitKilometriqueDesPostes } from './declaration2035E'
 import { arrondirPourFormulaire, valeursDesCases } from './cases2035'
@@ -118,12 +118,55 @@ describe('cadre7DeLExercice — ce que chaque ligne porte, et ce qui reste vide'
     expect(cadre!.totalA).toBe('a_saisir')
   })
 
-  it('le total B : « à saisir » quand un bien du matériel de transport est amorti l’année du barème, sinon rien — jamais un montant', () => {
+  it('aucun véhicule dit inscrit : le total B est « à saisir » quand un bien du matériel de transport est amorti l’année du barème, sinon vide', () => {
     const attendu = attenduDe(declaration([vehicule({})]))
     expect(cadre7DeLExercice([vehicule({})], 2025, attendu, true).cadre!.totalB).toBe('a_saisir')
     expect(cadre7DeLExercice([vehicule({})], 2025, attendu, false).cadre!.totalB).toBeNull()
-    // Même un montant dans la table, qu'aucun écran ne saisit, ne s'imprime pas.
+    expect(cadre7DeLExercice([vehicule({})], 2025, attendu, true).cadre!.lignes[0].amortissements).toBeNull()
+  })
+
+  // CADRE7-Q2 (A), 17/11/2026 : les deux champs de la carte Véhicules.
+  it('un véhicule inscrit au registre porte son montant, et le total B leur somme, la colonne s’additionnant au total', () => {
+    const a = vehicule({ id: 'v1', inscrit_immobilisations: true, amortissements_a_reintegrer: 600.5 })
+    const b = vehicule({ id: 'v2', created_at: '2025-02-01T00:00:00Z', inscrit_immobilisations: true, amortissements_a_reintegrer: 600.5 })
+    const vs = [a, b]
+    const { cadre } = cadre7DeLExercice(vs, 2025, attenduDe(declaration(vs)), true)
+    expect(cadre!.totalB).toBe(1201)
+    expect(cadre!.lignes.map((l) => l.amortissements)).toEqual([601, 600])
+  })
+
+  it('un véhicule inscrit sans montant : « à saisir » sur sa ligne et au total B ; un non inscrit reste vide', () => {
+    const inscrit = vehicule({ id: 'v1', inscrit_immobilisations: true, amortissements_a_reintegrer: null })
+    const autre = vehicule({ id: 'v2', created_at: '2025-02-01T00:00:00Z', inscrit_immobilisations: false, amortissements_a_reintegrer: null })
+    const vs = [inscrit, autre]
+    const { cadre } = cadre7DeLExercice(vs, 2025, attenduDe(declaration(vs)), false)
+    expect(cadre!.lignes.map((l) => l.amortissements)).toEqual(['a_saisir', null])
+    expect(cadre!.totalB).toBe('a_saisir')
+  })
+
+  it('un montant dit nul ne s’imprime pas, et un montant négatif ne se croit pas', () => {
+    const nul = vehicule({ inscrit_immobilisations: true, amortissements_a_reintegrer: 0 })
+    expect(cadre7DeLExercice([nul], 2025, attenduDe(declaration([nul])), true).cadre!.totalB).toBeNull()
+    const negatif = vehicule({ inscrit_immobilisations: true, amortissements_a_reintegrer: -5 })
+    expect(cadre7DeLExercice([negatif], 2025, attenduDe(declaration([negatif])), false).cadre!.totalB).toBe('a_saisir')
+  })
+
+  it('le total B s’imprime même quand les indemnités ne retrouvent pas la 2035 montrée', () => {
     const inscrit = vehicule({ inscrit_immobilisations: true, amortissements_a_reintegrer: 1200 })
-    expect(cadre7DeLExercice([inscrit], 2025, attendu, false).cadre!.totalB).toBeNull()
+    const { cadre, ecart } = cadre7DeLExercice([inscrit], 2025, 1, false)
+    expect(ecart).not.toBeNull()
+    expect(cadre!.totalA).toBeNull()
+    expect(cadre!.totalB).toBe(1200)
+  })
+})
+
+// CADRE7-Q3, 17/11/2026 (« à déconseiller ») : plus de deux véhicules au barème se disent, sans rien refuser.
+describe('avisAuDelaDesLignes', () => {
+  it('se tait jusqu’à deux véhicules au barème, et dit au-delà que c’est déconseillé', () => {
+    const v = (id: string, km = 4000) => vehicule({ id, km_professionnel: km })
+    expect(avisAuDelaDesLignes([v('a'), v('b')], 2025)).toBeNull()
+    expect(avisAuDelaDesLignes([v('a'), v('b'), v('c', 0)], 2025)).toBeNull()
+    expect(avisAuDelaDesLignes([v('a'), v('b'), v('c')], 2024)).toBeNull()
+    expect(avisAuDelaDesLignes([v('a'), v('b'), v('c')], 2025)).toMatch(/^3 véhicules au barème sur 2025 : déconseillé\./)
   })
 })

@@ -178,7 +178,21 @@ export function completerModificationVehicule(champs: Partial<VehiculeDossier>):
   const complet = { ...champs }
   if (champs.type === 'cyclomoteur') complet.puissance_fiscale = 0
   if (champs.motorisation !== undefined && SANS_CARBURANT.includes(champs.motorisation)) complet.carburant = null
+  // Un véhicule qui n'est plus dit inscrit au registre n'a plus d'amortissements à réintégrer (CADRE7-Q2) : le montant part
+  // avec la case, sans quoi il reviendrait au total B dès la case recochée, sans que personne ne l'ait redit.
+  if (champs.inscrit_immobilisations === false) complet.amortissements_a_reintegrer = null
   return complet
+}
+
+// Le montant à réintégrer tel que le champ le donne (CADRE7-Q2) : des euros, au centime (la colonne est `numeric(12, 2)`).
+// Un champ vidé vaut null (« pas encore dit », « à saisir » sur le cadre 7) ; un montant négatif ou illisible, `undefined` :
+// rien ne s'écrit, plutôt qu'un zéro qui se lirait « dit ».
+export function amortissementsSaisis(texte: string): number | null | undefined {
+  const t = texte.trim().replace(/\s/g, '').replace(',', '.')
+  if (t === '') return null
+  const n = Number(t)
+  if (!Number.isFinite(n) || n < 0 || n >= 1e10) return undefined
+  return Math.round(n * 100) / 100
 }
 
 // Le carburant a-t-il un sens pour cette motorisation ? Sert à griser le champ plutôt qu'à le masquer :

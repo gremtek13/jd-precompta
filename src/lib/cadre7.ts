@@ -21,16 +21,24 @@ import type { VehiculeDossier } from './types'
 // l'arrondi à l'euro (cadre7.test.ts le prouve contre `calculerDeclaration2035`).
 //
 // CE QU'ELLE NE SAIT PAS, et qui reste vide, jamais deviné ni écrit 0 :
-//   - la ligne « Frais réels non couverts par les barèmes » (péages, stationnement) : ces dépenses comptent en BJ par
-//     leurs propres postes (« Frais de déplacement »…), mêlées au train et à l'hôtel ; l'application ne sait pas les isoler.
-//     Le total A porte donc le barème seul, et BJ le tout — question CADRE7-Q1 ;
-//   - les amortissements à réintégrer, véhicule par véhicule, et leur total B : aucun écran ne les saisit (les colonnes
-//     `inscrit_immobilisations` et `amortissements_a_reintegrer` de la table restent à leur défaut), et le registre ne dit pas
-//     quel bien est quel véhicule. Quand un bien du matériel de transport est amorti l'année du barème
-//     (`amortissementsSousLeBareme`), la case du total B porte « à saisir » en rouge ; sinon elle reste vide — question
-//     CADRE7-Q2 ;
+//   - la ligne « Frais réels non couverts par les barèmes » : CADRE7-Q1, réponse du cabinet du 17/11/2026 — « péage et
+//     stationnement c'est en frais de déplacement et pas en frais de véhicule ». Ils comptent en BJ par leurs propres postes
+//     (ligne 24, « Autres frais de déplacements »), jamais au cadre 7 : la ligne reste vide, et le total A, reporté ligne 23,
+//     porte le barème seul ;
 //   - le modèle, la motorisation ou le carburant non saisis : la cellule reste vide (jamais « Voiture 5 CV », que
 //     `nomDuVehicule` compose pour un écran) ; la puissance d'un cyclomoteur, que le barème ignore : vide.
+//
+// LES AMORTISSEMENTS À RÉINTÉGRER ET LEUR TOTAL B (CADRE7-Q2 (A), 17/11/2026) : la carte Véhicules saisit, véhicule par
+// véhicule, s'il est inscrit au registre des immobilisations et le montant à réintégrer — les colonnes
+// `inscrit_immobilisations` et `amortissements_a_reintegrer` de la table, sans migration. Un véhicule inscrit porte son
+// montant, ou « à saisir » tant qu'il n'est pas dit ; le total B est leur somme. La case `inscrit_immobilisations` vaut
+// « non » par défaut : la base ne distingue pas « non inscrit » de « pas encore dit ». Quand aucun véhicule n'est dit inscrit
+// alors qu'un bien du matériel de transport est amorti l'année du barème (`amortissementsSousLeBareme`), le total B reste
+// donc « à saisir » : le défaut ne fait pas taire le registre.
+//
+// PLUS DE DEUX VÉHICULES AU BARÈME (CADRE7-Q3, réponse du cabinet du 17/11/2026 : « à déconseiller ») : le formulaire n'a que
+// deux lignes ; les autres se portent sur un état annexe que l'application n'imprime pas, et le total A les compte tous. La
+// carte Véhicules le dit en attention (`avisAuDelaDesLignes`), sans rien refuser.
 //
 // UN VÉHICULE DONT LE BARÈME NE CALCULE PAS L'INDEMNITÉ (barème de l'année absent, puissance hors des tranches) a sa ligne,
 // « à saisir » dans la colonne des indemnités, et le total A porte « à saisir » : la 2035 n'en compte rien, Clôture le dit
@@ -59,13 +67,15 @@ export interface LigneDuCadre7 {
   carburant: string | null
   kilometres: number
   indemnite: MontantDuCadre7
+  // Vide pour un véhicule qui n'est pas dit inscrit au registre ; « à saisir » pour un inscrit sans montant.
+  amortissements: MontantDuCadre7
 }
 
 export interface Cadre7ARemplir {
   lignes: LigneDuCadre7[]
   totalA: MontantDuCadre7
-  // Jamais un montant aujourd'hui (voir plus haut) : « à saisir » ou rien.
-  totalB: 'a_saisir' | null
+  // La somme des amortissements à réintégrer, « à saisir », ou rien (voir plus haut).
+  totalB: MontantDuCadre7
 }
 
 export interface Cadre7DeLExercice {
@@ -112,6 +122,50 @@ function ordreDeSaisie(a: VehiculeDossier, b: VehiculeDossier): number {
   return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
 
+// Les lignes de véhicules que le formulaire offre (le millésime 2026 en trace deux, que lib/gabaritCadre7.ts relit).
+export const LIGNES_DE_VEHICULES_DU_FORMULAIRE = 2
+
+// CADRE7-Q3 : plus de véhicules au barème que le formulaire n'a de lignes, sur un exercice. Dit en attention, jamais refusé.
+export function avisAuDelaDesLignes(vehicules: readonly VehiculeDossier[], annee: number): string | null {
+  const n = vehicules.filter((v) => v.annee === annee && v.km_professionnel > 0).length
+  if (n <= LIGNES_DE_VEHICULES_DU_FORMULAIRE) return null
+  return `${n} véhicules au barème sur ${annee} : déconseillé. Le cadre 7 de la 2035-B n'a que `
+    + `${LIGNES_DE_VEHICULES_DU_FORMULAIRE} lignes ; les autres véhicules se portent sur un état annexe, que l'application `
+    + "n'imprime pas, et le total A les compte tous."
+}
+
+// Le montant à réintégrer d'un véhicule inscrit, en centimes ; null quand il n'est pas dit, ou ne se croit pas (négatif).
+function amortissementsEnCentimes(v: VehiculeDossier): number | null {
+  const m = v.amortissements_a_reintegrer
+  if (m === null || !Number.isFinite(Number(m)) || Number(m) < 0) return null
+  return Math.round(Number(m) * 100)
+}
+
+// La colonne des amortissements, ligne par ligne dans l'ordre du cadre, et le total B. Un montant nul ne s'imprime pas.
+function amortissementsDuCadre(
+  auBareme: readonly VehiculeDossier[], amortissementsAReintegrer: boolean,
+): { parLigne: MontantDuCadre7[]; totalB: MontantDuCadre7 } {
+  // `undefined` : non inscrit ; `null` : inscrit, montant non dit.
+  const inscrits = auBareme.map((v) => (v.inscrit_immobilisations ? amortissementsEnCentimes(v) : undefined))
+  const dits = inscrits.filter((c): c is number => typeof c === 'number')
+  const manquant = inscrits.some((c) => c === null)
+  const totalEuros = eurosArrondis(dits.reduce((s, c) => s + c, 0))
+  const repartis = manquant ? dits.map(eurosArrondis) : repartirEnEuros(dits, totalEuros)
+  let k = 0
+  const parLigne = inscrits.map((c): MontantDuCadre7 => {
+    if (c === undefined) return null
+    if (c === null) return 'a_saisir'
+    const euros = repartis[k]
+    k += 1
+    return euros === 0 ? null : euros
+  })
+  const aucunInscrit = inscrits.every((c) => c === undefined)
+  const totalB: MontantDuCadre7 = manquant || (aucunInscrit && amortissementsAReintegrer)
+    ? 'a_saisir'
+    : totalEuros === 0 ? null : totalEuros
+  return { parLigne, totalB }
+}
+
 // Le cadre 7 de l'exercice. `attenduCentimes` : la part de BJ venue du barème que la 2035 montrée porte
 // (`forfaitKilometriqueDesPostes` sur ses postes, en centimes). `amortissementsAReintegrer` : un bien du matériel de transport
 // est amorti l'année du barème (`amortissementsSousLeBareme(...).length > 0`). Sans valeur par défaut, l'un et l'autre : un
@@ -146,6 +200,7 @@ export function cadre7DeLExercice(
     return euros
   }
 
+  const amortissements = amortissementsDuCadre(auBareme, amortissementsAReintegrer)
   const lignes = auBareme.map((v, i): LigneDuCadre7 => ({
     nom: nomDuVehicule(v),
     modele: v.modele?.trim() || null,
@@ -156,13 +211,14 @@ export function cadre7DeLExercice(
     carburant: v.carburant ? CARBURANTS[v.carburant] : null,
     kilometres: v.km_professionnel,
     indemnite: montantDe(indemnites[i]),
+    amortissements: amortissements.parLigne[i],
   }))
 
   return {
     cadre: {
       lignes,
       totalA: ecart ? null : toutesCalculees ? totalEuros : 'a_saisir',
-      totalB: amortissementsAReintegrer ? 'a_saisir' : null,
+      totalB: amortissements.totalB,
     },
     ecart,
   }

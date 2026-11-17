@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import type { ModeleComptable } from '../../lib/engagement'
@@ -198,7 +198,49 @@ describe('VehiculesCard', () => {
   it('dit ce que le barème couvre, et ce qu’il ne couvre pas', async () => {
     monter(2025)
     const phrase = await screen.findByText(/^Le barème couvre le carburant, l'entretien, les pneus, l'assurance et les réparations du véhicule/)
-    expect(phrase.textContent).toMatch(/se classent en prélèvement de\s+l'exploitant\. Il ne couvre ni les péages ni le stationnement, qui restent déductibles\.$/)
+    // CADRE7-Q1 (17/11/2026) : péages et stationnement en frais de déplacement, hors du cadre 7.
+    expect(phrase.textContent).toMatch(/se classent en prélèvement de\s+l'exploitant\. Il ne couvre ni les péages ni le stationnement, qui restent déductibles en frais de déplacement\s+\(ligne 24\), hors du cadre 7\.$/)
+  })
+
+  // CADRE7-Q2 (A), 17/11/2026 : les deux champs du véhicule inscrit au registre.
+  it('coche « Au registre », puis écrit le montant à réintégrer à la sortie du champ ; décochée, le montant part avec elle', async () => {
+    faux.vehicules = [vehicule()]
+    monter(2025)
+    const montant = await screen.findByLabelText(/Amortissements à réintégrer de Peugeot 308/) as HTMLInputElement
+    expect(montant.disabled).toBe(true)
+    await act(async () => { fireEvent.click(screen.getByLabelText(/Peugeot 308 inscrit au registre/)) })
+    expect(faux.modifiees.at(-1)).toEqual({ inscrit_immobilisations: true })
+    const actif = await screen.findByLabelText(/Amortissements à réintégrer de Peugeot 308/) as HTMLInputElement
+    await waitFor(() => expect(actif.disabled).toBe(false))
+    expect(actif.placeholder).toBe('à saisir')
+    fireEvent.change(actif, { target: { value: '1 200,50' } })
+    await act(async () => { fireEvent.blur(actif) })
+    expect(faux.modifiees.at(-1)).toEqual({ amortissements_a_reintegrer: 1200.5 })
+    await act(async () => { fireEvent.click(screen.getByLabelText(/Peugeot 308 inscrit au registre/)) })
+    expect(faux.modifiees.at(-1)).toEqual({ inscrit_immobilisations: false, amortissements_a_reintegrer: null })
+  })
+
+  it('un montant illisible ne s’écrit pas, et se dit', async () => {
+    faux.vehicules = [vehicule({ inscrit_immobilisations: true })]
+    monter(2025)
+    const champ = await screen.findByLabelText(/Amortissements à réintégrer de Peugeot 308/)
+    fireEvent.change(champ, { target: { value: '-12' } })
+    await act(async () => { fireEvent.blur(champ) })
+    expect(faux.modifiees).toEqual([])
+    expect(screen.getByText(/Montant à réintégrer illisible pour « Peugeot 308 »/)).toBeDefined()
+  })
+
+  // CADRE7-Q3 (« à déconseiller », 17/11/2026) : au-delà de deux véhicules au barème, un avis, rien de refusé.
+  it('dit déconseillé un troisième véhicule au barème, et laisse l’ajouter', async () => {
+    faux.vehicules = [vehicule(), vehicule({ id: 'v2', modele: 'Clio' })]
+    monter(2025)
+    await screen.findByLabelText(/Clio inscrit au registre/)
+    expect(screen.queryByText(/déconseillé/)).toBeNull()
+    faux.vehicules = [...faux.vehicules, vehicule({ id: 'v3', modele: 'Kangoo' })]
+    cleanup()
+    monter(2025)
+    expect(await screen.findByText(/3 véhicules au barème sur 2025 : déconseillé\./)).toBeDefined()
+    expect(screen.getByRole('button', { name: /Ajouter un véhicule sur 2025/ })).toBeDefined()
   })
 
   it("ne propose aucun ajout tant qu'aucun exercice n'est choisi", async () => {

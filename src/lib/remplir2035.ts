@@ -2,7 +2,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { ancragesDesCases, planDeRemplissage } from './gabarit2035'
 import type { EnteteDeclaration, FiletHorizontal, FiletVertical, FragmentTexte, Inscription, PageFormulaire } from './gabarit2035'
-import { planDuCadre7 } from './gabaritCadre7'
+import { planDeLaLigne23, planDuCadre7 } from './gabaritCadre7'
 import type { Cadre7ARemplir } from './cadre7'
 import { planDeRemplissage2035E } from './gabarit2035E'
 import type { EnteteAnnexe2035E } from './gabarit2035E'
@@ -85,6 +85,9 @@ export interface Remplissage2035 {
   // tous quand le cadre n'a pas été repéré (`cadre7Repere` faux) —, à dire à l'écran. Vides et vrai sans cadre à remplir.
   vehiculesSansLigne: string[]
   cadre7Repere: boolean
+  // La case « évaluation forfaitaire » et la cellule de la ligne 23 (CADRE7-Q4) : faux quand un cadre 7 était à reporter et
+  // qu'elles n'ont pas été retrouvées sur la page 1 — à dire à l'écran. Vrai sans cadre à remplir.
+  ligne23Reperee: boolean
 }
 
 // La page qui porte le cadre 7 : la 2035-B.
@@ -175,6 +178,16 @@ export async function remplir2035(
     vehiculesSansLigne = cadre7.lignes.map((l) => l.nom)
     cadre7Repere = false
   }
+  // La ligne 23 de la 2035-A (CADRE7-Q4) : la case de l'évaluation forfaitaire cochée et le total A, dès qu'un cadre 7 existe.
+  let ligne23Reperee = true
+  if (cadre7) {
+    const plan = pages[0] ? planDeLaLigne23(pages[0], 1, cadre7) : null
+    ligne23Reperee = plan?.repere ?? false
+    if (plan) {
+      inscriptions.push(...plan.inscriptions)
+      aSaisir.push(...plan.aSaisir)
+    }
+  }
 
   for (const i of inscriptions) dessiner(i, rgb(0, 0, 0.6))
   for (const i of aSaisir) dessiner(i, rgb(0.75, 0, 0))
@@ -202,5 +215,5 @@ export async function remplir2035(
     })
   }
 
-  return { pdf: await pdf.save(), codesSansAncrage, codesSansAncrage2035E, vehiculesSansLigne, cadre7Repere }
+  return { pdf: await pdf.save(), codesSansAncrage, codesSansAncrage2035E, vehiculesSansLigne, cadre7Repere, ligne23Reperee }
 }
