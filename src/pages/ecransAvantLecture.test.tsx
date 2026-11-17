@@ -792,6 +792,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'pages/dossier/SauvegardeCard.tsx': 'lit le dossier entier sur le clic « Télécharger la sauvegarde »',
   'pages/dossier/PaquetDArchiveBouton.tsx': 'lit l’exercice validé et ses pièces sur le clic « Paquet d’archive » '
     + '(lib/paquetDArchiveLecture.ts : lue en partie, aucun paquet ; PaquetDArchiveBouton.test.tsx) ; n’écrit rien en base',
+  'pages/dossier/ExportVersUnLogiciel.tsx': 'drapeau `EXPORT_VERS_UN_LOGICIEL_OFFERT` baissé : l’onglet Écritures ne le monte pas ; '
+    + 'levé, il reçoit le FEC de l’onglet, aux mêmes préalables, mesure le poids des justificatifs sur la case cochée et ne les lit '
+    + 'qu’au clic « Télécharger l’archive » (ExportVersUnLogiciel.test.tsx) ; n’écrit rien en base',
   'pages/dossier/AjouterDocumentsModal.tsx': 'lit et dépose sur un dépôt de fichiers',
   'pages/dossier/ImportDossierModal.tsx': 'lit et dépose sur le choix d’un dossier de fichiers',
   'pages/dossier/CategoriserTiersModal.tsx': 'reçoit pièces, catégories et règles de PiecesTab ; écrit sur un clic',
