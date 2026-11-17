@@ -5,8 +5,8 @@
 // LE CUMUL ET LA DISPENSE DES DÉBUTS D'UN MÉDECIN (RET-Q2). Leurs cases sont en base depuis le 15/11/2026 (migration
 // `cumul_et_dispense_du_medecin`, `CASES_DU_MEDECIN_PREVUES` levé) : l'un et l'autre viennent des paramètres de l'exercice,
 // que la carte des paramètres offre (`CasesDeLaRetraite`). L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE
-// (RET2-Q2) suit les deux cases : tenue quand sa migration est en base (`EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE`, baissé
-// jusqu'à son application), lue de l'exercice, passée au module pour un médecin seulement. Baissé — l'état d'avant, que les tests jouent encore —, l'écran
+// (RET2-Q2) suit les deux cases : tenue quand sa migration est en base (`EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE`, levé
+// le 17/11/2026), lue de l'exercice, passée au module pour un médecin seulement. Baissé — l'état d'avant, que les tests jouent encore —, l'écran
 // demande le cumul par un choix LOCAL, non enregistré, SANS valeur par défaut, et la dispense n'est pas tenue (le
 // complémentaire compté dû, et dit). « Non
 // renseigné » est un état à part, jamais « non » : tant qu'un médecin ne l'a pas dit, le module refuse et dit pourquoi, et

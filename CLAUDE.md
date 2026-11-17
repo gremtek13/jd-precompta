@@ -493,12 +493,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   des achats et des notes de frais : B8-Q1, B4RS-Q2, B4R-Q1 → « B4R-Q1, B4RS-Q2 ET B8-Q1 ».
 - **En production le 16/11/2026 (229)** : `reglements_de_la_piece_citee` (A8Q5Q3Q2-Q2), par l'outil, `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS`
   levé → « A8Q5Q3Q2-Q2 EN PRODUCTION, ET QUINZE RÉPONSES DU CABINET ».
-- **Préparées le 15/11/2026, par l'outil, derrière leurs drapeaux baissés** (la première appliquée le 16/11) : la garde de ce que reçoit la pièce citée
+- **Préparées le 15/11/2026, par l'outil, derrière leurs drapeaux baissés** (la première appliquée le 16/11, la deuxième le 17/11) : la garde de ce que reçoit la pièce citée
   d'une facture reprise, différée à la fin de la transaction sur les trois sources du reçu, qui refuse ce que la citation
   refuserait, aussi quand une ligne qui défaisait ce reçu (un rejet, une part négative) cesse de le défaire — corrigée par
   la relecture adverse du jour → « LA RELECTURE ADVERSE DE CINQ MIGRATIONS PRÉPARÉES » (`reglements_de_la_piece_citee`, A8Q5Q3Q2-Q2, `REGLEMENTS_DE_LA_PIECE_CITEE_PREVUS`) ; l'exonération de
   retraite 2025 d'un médecin en cumul en zone d'intervention prioritaire, une case de 2025 seulement, avec le cumul
-  (`exoneration_en_zone_prioritaire`, RET2-Q2, `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` ; RET2Q2-Q1 ouverte) ; la
+  (`exoneration_en_zone_prioritaire`, RET2-Q2, en production depuis le 17/11/2026 (236), `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE`
+  levé ; RET2Q2-Q1 ouverte) ; la
   prévision de trésorerie publiée au client « Banque » (`previsions_publiees`, C8-Q2, `PREVISIONS_PUBLIEES_PREVUES` ;
   C8Q2-Q1 à Q4) ; le 512 propre refusé depuis une année validée, en base (`compte_propre_hors_des_exercices_valides`,
   MCB6Q2-Q1) ; INV3Q2-Q1 (A) dans INV2, INV3 et INV4 ; le retour d'INAL1 récrit (INAL1R-Q1). Toute préparée qui remplace
@@ -526,8 +527,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   entiers ; des mots neutres, jamais un conseil ; muette sur une lecture partielle, un mois absent du relevé, un crédit à
   traiter ; aucune branche client ; la carte des seuils (Informations), un avis de la Vue d'ensemble hors des anomalies et
   de la validation, une ligne du tableau de bord (au plus dix dossiers calculés) ; CA3-Q1 (A), rien ne change ; CA2-Q1 (B), l'auteur
-  et la date de chaque seuil, préparée par l'outil (`auteur_de_chaque_seuil`, `AUTEUR_DE_CHAQUE_SEUIL_PREVU` baissé) → « CA2-Q1 :
-  L'AUTEUR DE CHAQUE SEUIL », « L'ALERTE
+  et la date de chaque seuil, en production depuis le 17/11/2026 (235, `auteur_de_chaque_seuil`, `AUTEUR_DE_CHAQUE_SEUIL_PREVU`
+  levé), et l'auteur d'une marque « vue avec le client » par la même règle (CA2Q1-Q1 (A)) → « CA2-Q1 :
+  L'AUTEUR DE CHAQUE SEUIL », « CA2-Q1 ET RET2-Q2 EN PRODUCTION », « L'ALERTE
   DE HAUSSE DU CHIFFRE D'AFFAIRES (MVP) », « L'ALERTE DU CHIFFRE D'AFFAIRES REPRISE », « L'ALERTE DU CHIFFRE D'AFFAIRES EN
   PRODUCTION ».
 - **La déclaration principale n° 2035-SD** (17/11/2026, cerfa 11176*28 ; `2035-sd-2026.pdf` n'est que la liasse des annexes) :

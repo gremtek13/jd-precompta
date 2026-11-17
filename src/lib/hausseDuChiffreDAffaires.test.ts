@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   aUnSeuil, alerteAVoir, atteintLeSeuil, atteintLeSeuilDeBaisse, BORNES_DES_SEUILS, bornesDesDouzeMois, bornesDuTrimestre, ceQueDitLaVue,
   chiffreDAffairesDesSources, confirmationDeLaMarque, deDevant, dernierTrimestreClos, franchissement, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE,
-  jugerLaHausse, libelleDuTrimestre, marquesDansLOrdre, moisDeLaPeriode, moisEnMots, phraseDeLaMarque, phraseDesSeuils,
+  auteursDesMarques, jugerLaHausse, libelleDuTrimestre, marquesDansLOrdre, moisDeLaPeriode, moisEnMots, phraseDeLaMarque, phraseDesSeuils,
   phraseDesSeuilsDuDossier, phraseDuReglage, phraseDuTableauDeBord, pourcentDesDixiemes, REFUS_DE_LA_BASE, refusDuSeuil,
   seuilDeLaSaisie, seuilsDeLaLigne, SEUILS_HORS_BORNES, SEUILS_VIDES, TITRE_DE_L_ALERTE, TITRE_DE_L_ALERTE_DANS_LES_DEUX_SENS,
   TITRE_DE_L_ALERTE_DE_BAISSE, type EntreesDeLaHausse, type HausseDuChiffreDAffaires, type HausseVue, type MouvementDuReleve,
@@ -451,8 +451,15 @@ describe('les mots, neutres : le constat, les chiffres comparés, les seuils', (
     expect(confirmationDeLaMarque({ annee: 2026, trimestre: 3 })).toContain('l’alerte du 3e trimestre 2026 (juillet à septembre)')
     expect(confirmationDeLaMarque({ annee: 2026, trimestre: 3 })).toContain('ne se retire pas')
     const v: HausseVue = { dossier_id: 'd1', annee: 2026, trimestre: 3, vue_par: 'abcdef12-0000-4000-8000-000000000001', vue_le: '2026-11-16T09:00:00Z' }
-    expect(phraseDeLaMarque(v, 'abcdef12-0000-4000-8000-000000000001')).toBe('3e trimestre 2026 (juillet à septembre) : vue avec le client le 16/11/2026, par toi.')
-    expect(phraseDeLaMarque(v, null)).toContain('par un autre compte du cabinet (abcdef12)')
+    expect(phraseDeLaMarque(v, 'abcdef12-0000-4000-8000-000000000001', new Map())).toBe('3e trimestre 2026 (juillet à septembre) : vue avec le client le 16/11/2026, par toi.')
+    // CA2Q1-Q1 (A) : la règle des seuils — l'adresse que la session lit dans l'équipe, sinon « le cabinet », jamais un identifiant.
+    expect(phraseDeLaMarque(v, null, new Map([[v.vue_par, 'membre@cabinet.example']])))
+      .toBe('3e trimestre 2026 (juillet à septembre) : vue avec le client le 16/11/2026, par membre@cabinet.example.')
+    expect(phraseDeLaMarque(v, 'u-autre', new Map())).toBe('3e trimestre 2026 (juillet à septembre) : vue avec le client le 16/11/2026, par le cabinet.')
+    expect(phraseDeLaMarque(v, null, new Map())).not.toContain('abcdef12')
+    expect(auteursDesMarques([v, { ...v, trimestre: 2 }, { ...v, vue_par: '0000aaaa-0000-4000-8000-000000000002' }]))
+      .toEqual(['0000aaaa-0000-4000-8000-000000000002', 'abcdef12-0000-4000-8000-000000000001'])
+    expect(auteursDesMarques([])).toEqual([])
     expect(phraseDuTableauDeBord(hausse)).toBe(`3e trimestre 2026 (juillet à septembre) : trimestre +25,0${NB}%, cumul +8,3${NB}% (seuil de hausse 20${NB}%).`)
     const douze = jugee(jugerLaHausse(entrees({
       seuils: { hausse: 20, baisse: 10 }, releve: releveDe('2024-10', '2026-10'),

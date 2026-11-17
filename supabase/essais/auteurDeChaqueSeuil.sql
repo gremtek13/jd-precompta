@@ -1,6 +1,6 @@
 -- L'AUTEUR ET L'INSTANT DE CHAQUE SEUIL DE L'ALERTE DU CHIFFRE D'AFFAIRES (CA2-Q1 ; la migration `auteur_de_chaque_seuil`,
--- PRÉPARÉE le 16/11/2026, supabase/preparees/20261116190000_auteur_de_chaque_seuil.sql). Le récit : HISTORIQUE.md,
--- « 16/11/2026 — CA2-Q1 : L'AUTEUR DE CHAQUE SEUIL ». À rejouer par `execute_sql` après toute migration qui touche
+-- en production depuis le 17/11/2026, supabase/schema/20261117133253_auteur_de_chaque_seuil.sql). Le récit : HISTORIQUE.md,
+-- « 16/11/2026 — CA2-Q1 : L'AUTEUR DE CHAQUE SEUIL », « 17/11/2026 — CA2-Q1 ET RET2-Q2 EN PRODUCTION ». À rejouer par `execute_sql` après toute migration qui touche
 -- `seuils_du_chiffre_d_affaires`, sa garde, `regler_seuil_du_chiffre_d_affaires` ou `is_super_admin`. Les droits du client, d'un
 -- compte qu'aucun accès ne nomme et de l'anonyme ne changent pas : hausseDuChiffreDAffaires.sql les éprouve.
 --

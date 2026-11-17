@@ -5,7 +5,9 @@ import type { LectureDesParametres } from '../../lib/parametresDesCotisations'
 
 // LES DEUX CASES D'UN MÉDECIN DANS LA CARTE DES PARAMÈTRES (RET-Q2), `CASES_DU_MEDECIN_PREVUES` levé par l'accesseur : offertes
 // à un médecin, enregistrées sous la forme à cinq clés — les valeurs lues et les saisies de même forme, que la fonction
-// exige —, nommées dans la confirmation ; baissé (l'état servi), ParametresDesCotisationsCard.test.tsx joue la carte d'hier.
+// exige —, nommées dans la confirmation ; baissé (l'état d'avant), la carte d'hier. La forme à cinq clés se joue ici sous
+// `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` baissé (RET2-Q2, levé le 17/11/2026 : son état d'avant) ; la sixième clé, l'état
+// servi, ParametresDesCotisationsCard.exoneration.test.tsx la joue.
 const faux = vi.hoisted(() => ({ appels: [] as { nom: string; parametres: unknown }[], cases: true }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -20,6 +22,7 @@ vi.mock('../../lib/parametresDesCotisations', async (original) => ({
   ...(await original<typeof import('../../lib/parametresDesCotisations')>()),
   PARAMETRES_DES_COTISATIONS_EXPORTES: true,
   get CASES_DU_MEDECIN_PREVUES() { return faux.cases },
+  EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE: false,
 }))
 
 const lus = (cases: { cumulEmploiRetraite: boolean | null; dispenseComplementaire: boolean | null }): LectureDesParametres =>

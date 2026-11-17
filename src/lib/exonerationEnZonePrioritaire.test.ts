@@ -36,7 +36,7 @@ vi.mock('./supabase', () => {
 })
 
 // RET2-Q2 : L'EXONÉRATION DES COTISATIONS DE RETRAITE 2025 D'UN MÉDECIN EN CUMUL EXERÇANT EN ZONE D'INTERVENTION PRIORITAIRE.
-// Le module redit la migration préparée `exoneration_en_zone_prioritaire` : la forme à six clés, les deux contraintes, les
+// Le module redit la migration `exoneration_en_zone_prioritaire` (en production depuis le 17/11/2026, 236) : la forme à six clés, les deux contraintes, les
 // deux refus neufs à leurs mots et à leur rang ; ses empreintes et celles de son retour se tiennent ; la lecture, les valeurs
 // et la saisie sous les deux états du drapeau ; l'essai attend les mots du module. Données FICTIVES.
 
@@ -51,7 +51,9 @@ function leFichier(motif: RegExp, dossiers: readonly string[]): string {
   return readFileSync(trouves[0], 'utf8')
 }
 
-const MIGRATION = leFichier(/^\d{14}_exoneration_en_zone_prioritaire\.sql$/, ['../../supabase/preparees/', '../../supabase/schema/'])
+const MIGRATION = leFichier(/^\d{14}_exoneration_en_zone_prioritaire\.sql$/, ['../../supabase/schema/'])
+// Le corps d'avant la migration (en production depuis le 17/11/2026, 236) : le dernier de l'export, elle exceptée.
+const avantElle = (f: { chemin: string }) => !/\d{14}_exoneration_en_zone_prioritaire\.sql$/.test(f.chemin)
 const RETOUR = leFichier(/^\d{14}_retour_exoneration_en_zone_prioritaire\.sql$/, ['../../supabase/preparees/retour/'])
 const ESSAI = readFileSync(new URL('../../supabase/essais/parametresDesCotisations.sql', import.meta.url), 'utf8')
 const EXPORTEE = fichiersDuSchema().some((f) => /\d{14}_exoneration_en_zone_prioritaire\.sql$/.test(f.chemin))
@@ -70,7 +72,8 @@ const bloc = (texte: string, etiquette: string) => {
 
 describe('RET2-Q2 — la migration, son retour et le module', () => {
   it('la fonction : les refus d’hier, et les deux neufs à leur rang (l’exercice avant le verrou, le cumul après la lecture)', () => {
-    const hier = derniereDefinitionSql(FONCTION)
+    const hier = derniereDefinitionSql(FONCTION, avantElle)
+    expect(derniereDefinitionSql(FONCTION)).toBe(fonction(MIGRATION, 'migration'))
     const neuve = fonction(MIGRATION, 'migration')
     const avant = messagesSql(hier)
     const apres = messagesSql(neuve)
@@ -103,7 +106,7 @@ describe('RET2-Q2 — la migration, son retour et le module', () => {
     expect(Object.keys(saisies).sort()).toEqual(six)
     expect(memesValeurs(saisies, lues)).toBe(true)
     expect(memesValeurs({ ...saisies, exoneration_zone_prioritaire: false }, lues)).toBe(false)
-    // Le drapeau baissé (l'état servi) : les cinq clés de RET-Q2.
+    // Le drapeau baissé (l'état d'avant, gardé tant que son code existe) : les cinq clés de RET-Q2.
     expect(Object.keys(valeursLues(lecture, 2025, true, false)).sort()).toEqual(cles('v_cles_du_medecin'))
     expect(Object.keys(valeursSaisies(saisieDe(lues), true, false).valeurs!).sort()).toEqual(cles('v_cles_du_medecin'))
   })
@@ -117,7 +120,7 @@ describe('RET2-Q2 — la migration, son retour et le module', () => {
   })
 
   it('la garde de tête lit le corps de la production, la garde de fin celui qu’elle pose ; le retour rend celui de la production', () => {
-    const production = md5(corps(derniereDefinitionSql(FONCTION)))
+    const production = md5(corps(derniereDefinitionSql(FONCTION, avantElle)))
     const neuve = md5(corps(fonction(MIGRATION, 'migration')))
     expect(bloc(MIGRATION, 'garde')).toContain(`<> '${production}'`)
     expect(bloc(MIGRATION, 'fin')).toContain(`<> '${neuve}'`)
@@ -132,8 +135,8 @@ describe('RET2-Q2 — la migration, son retour et le module', () => {
     ])
   })
 
-  it('le drapeau suit l’export : baissé tant que la migration n’y est pas', () => {
-    expect(EXPORTEE).toBe(false)
+  it('le drapeau suit l’export : levé, la migration y est (236, 17/11/2026)', () => {
+    expect(EXPORTEE).toBe(true)
     expect(EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE).toBe(EXPORTEE)
   })
 

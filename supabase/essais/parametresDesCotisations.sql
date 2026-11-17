@@ -20,7 +20,8 @@
 --     relues sous la forme à cinq clés, comparées aux valeurs lues, refusées en texte ou sous deux formes mêlées, laissées
 --     telles quelles par la forme à trois clés d'hier, gelées avec 2025, fermées au client (étapes 8a à 8h ; sans elle, une
 --     ligne dit qu'elles attendent) ;
---   - la migration préparée `exoneration_en_zone_prioritaire` (RET2-Q2) en base, l'exonération de 2025 d'un médecin en cumul
+--   - la migration `exoneration_en_zone_prioritaire` (RET2-Q2, en production depuis le 17/11/2026,
+--     supabase/schema/20261117133435_exoneration_en_zone_prioritaire.sql) en base, l'exonération de 2025 d'un médecin en cumul
 --     exerçant en zone d'intervention prioritaire, dans un second dossier jetable : écrite et relue sous la forme à six
 --     clés avec le cumul, comparée aux valeurs lues, refusée en texte ou sous deux formes mêlées, laissée telle quelle par la
 --     forme à cinq clés, refusée pour un autre exercice que 2025 et sans le cumul — par la fonction, à ses mots, et en direct,
@@ -43,7 +44,7 @@ declare
   -- Les deux cases d'un médecin (RET-Q2, migration `cumul_et_dispense_du_medecin`, en production depuis le 15/11/2026) : les étapes 8a à 8h.
   cases_en_base constant boolean := exists (select 1 from pg_attribute a where a.attrelid = to_regclass('public.parametres_des_cotisations')
     and a.attname = 'cumul_emploi_retraite' and not a.attisdropped);
-  -- L'exonération de 2025 en zone d'intervention prioritaire (RET2-Q2, migration préparée `exoneration_en_zone_prioritaire`) :
+  -- L'exonération de 2025 en zone d'intervention prioritaire (RET2-Q2, migration `exoneration_en_zone_prioritaire`, 236) :
   -- les étapes 9a à 9p.
   exoneration_en_base constant boolean := exists (select 1 from pg_attribute a where a.attrelid = to_regclass('public.parametres_des_cotisations')
     and a.attname = 'exoneration_zone_prioritaire' and not a.attisdropped);
@@ -189,7 +190,7 @@ begin
   '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null}', '{"debut_activite": "2025-06-15", "acre": true, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null}')$q$, '23514', ''),
       (45, 'client', '8h. le client d''essai n''écrit pas les cases (42501)', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000001', 2026,
   '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null, "cumul_emploi_retraite": false, "dispense_complementaire": true}', '{"debut_activite": "2025-06-15", "acre": false, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": true}')$q$, '42501', ''),
-      -- L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE (RET2-Q2, migration préparée `exoneration_en_zone_prioritaire`),
+      -- L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE (RET2-Q2, migration `exoneration_en_zone_prioritaire`, 236),
       -- dans le second dossier jetable : sans elle, une ligne dit qu'elle attend.
       (46, 'chef', '9a. sous la forme à six clés, le cumul et l''exonération de 2025 s''écrivent d''un même geste', $q$select enregistrer_parametres_des_cotisations('c0715000-0000-4000-8107-000000000002', 2025,
   '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": null, "dispense_complementaire": null, "exoneration_zone_prioritaire": null}', '{"debut_activite": null, "acre": null, "taux_dentiste": null, "cumul_emploi_retraite": true, "dispense_complementaire": null, "exoneration_zone_prioritaire": true}')$q$,
