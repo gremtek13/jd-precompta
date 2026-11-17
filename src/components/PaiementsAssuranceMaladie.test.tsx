@@ -83,25 +83,37 @@ function regler() {
 describe('les paiements de l’assurance maladie, à l’écran', () => {
   it('drapeau baissé : rien n’est monté, rien n’est lu', () => {
     faux.drapeau = false
-    const { container } = render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" />)
+    const { container } = render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf="86.90D" />)
     expect(container.innerHTML).toBe('')
     expect(faux.lectures).toBe(0)
   })
 
+  it('hors d’un code NAF de santé, absent, illisible ou pas lu (NOE4-Q1 (C)) : rien n’est monté, rien n’est lu, dans les deux espaces', () => {
+    faux.lecture = lus([], true)
+    for (const espace of ['client', 'cabinet'] as const) {
+      for (const codeNaf of ['69.20Z', '87.10A', null, undefined, 'Infirmier']) {
+        const { container, unmount } = render(<PaiementsAssuranceMaladie espace={espace} dossierId="d1" codeNaf={codeNaf} />)
+        expect(container.innerHTML, `${espace} ${String(codeNaf)}`).toBe('')
+        unmount()
+      }
+    }
+    expect(faux.lectures).toBe(0)
+  })
+
   it('rien avant le retour ; une lecture partielle n’offre aucun geste', async () => {
-    const premier = render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" />)
+    const premier = render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf="86.90D" />)
     expect(screen.getByText('Chargement…')).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
     premier.unmount()
     faux.lecture = lus([], false)
-    render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" />)
+    render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf="86.90D" />)
     expect(await screen.findByText(/Tes paiements importés/)).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('le fichier ne montre que ses en-têtes et leurs genres ; rien n’est choisi d’avance ; l’aperçu n’a que des agrégats', async () => {
     faux.lecture = lus()
-    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" />)
+    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="86.90D" />)
     await ouvrirEtDeposer()
     const colonnes = within(fenetre()).getByRole('table', { name: 'Colonnes du fichier' })
     const ligneDuNom = within(colonnes).getByText('Nom du patient').closest('tr') as HTMLElement
@@ -122,14 +134,14 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
       montant_centimes: montant, regularisations_centimes: 0, nombre_de_factures: 2,
     })
     faux.lecture = lus([enBase(9999)])
-    const premier = render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" />)
+    const premier = render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf="86.90D" />)
     await ouvrirEtDeposer()
     regler()
     expect(within(fenetre()).getByText(refusDuConflit('2026-11-02'))).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Importer' }) as HTMLButtonElement).disabled).toBe(true)
     premier.unmount()
     faux.lecture = lus([enBase(4550)])
-    render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" />)
+    render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf="86.90D" />)
     await ouvrirEtDeposer()
     regler()
     expect(within(fenetre()).getByText(REFUS_DE_LA_FONCTION.rienDeNeuf)).toBeTruthy()
@@ -138,7 +150,7 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
 
   it('la confirmation nomme ce qui part ; un envoi pour deux clics, tel qu’il part ; puis la phrase de NOE3-Q1 et la relecture', async () => {
     faux.lecture = lus()
-    render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" />)
+    render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf="86.90D" />)
     await ouvrirEtDeposer()
     regler()
     fireEvent.click(screen.getByRole('button', { name: 'Importer 1 paiement' }))
@@ -177,26 +189,26 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
   it('un import associé : « Retirer » n’est pas offert, et la raison se dit avant le clic, dans les deux espaces', async () => {
     for (const espace of ['cabinet', 'client'] as const) {
       faux.lecture = avecAssociations([ASSOCIEE])
-      const vue = render(<PaiementsAssuranceMaladie espace={espace} dossierId="d1" />)
+      const vue = render(<PaiementsAssuranceMaladie espace={espace} dossierId="d1" codeNaf="86.90D" />)
       expect(await screen.findByText(refusDuRetraitDImportDit(espace))).toBeTruthy()
       expect(screen.queryByRole('button', { name: 'Retirer' })).toBeNull()
       vue.unmount()
     }
     faux.lecture = avecAssociations([])
-    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" />)
+    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="86.90D" />)
     expect(await screen.findByRole('button', { name: 'Retirer' })).toBeTruthy()
   })
 
   it('des associations lues en partie : le bandeau, et aucun geste', async () => {
     faux.lecture = avecAssociations([ASSOCIEE], false)
-    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" />)
+    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="86.90D" />)
     expect(await screen.findByText(/Les associations des paiements au relevé n.ont pas pu être/)).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('une lecture partagée : la section ne lit pas elle-même, et montre ce qu’on lui confie sous ses imports', async () => {
     const lecture = { lu: avecAssociations([]), relire: () => Promise.resolve() }
-    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" partagee={lecture}><p>le rapprochement</p></PaiementsAssuranceMaladie>)
+    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="86.90D" partagee={lecture}><p>le rapprochement</p></PaiementsAssuranceMaladie>)
     expect(screen.getByText('le rapprochement')).toBeTruthy()
     expect(faux.lectures).toBe(0)
   })

@@ -597,7 +597,7 @@ function rendre(modele: ModeleComptable = TRESORERIE, assujettiTva = false, vali
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={valides}>
-        <BanqueTab dossierId="dossier-de-test" modele={modele} assujettiTva={assujettiTva} ventesParLesFactures={false} statutTva="redevable" />
+        <BanqueTab dossierId="dossier-de-test" modele={modele} assujettiTva={assujettiTva} ventesParLesFactures={false} statutTva="redevable" codeNaf="86.90D" />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,

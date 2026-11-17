@@ -27,6 +27,8 @@ import { useDepartDuDossier } from '../../lib/departDuClientLecture'
 import { DEPART_DU_CLIENT_PREVU, ceQueLaSuppressionPerd, exercicesSansPaquet, refusDeLaSuppressionAuDepart } from '../../lib/departDuClient'
 import { aujourdHuiAParis } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
+import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from '../../lib/paiementsAssuranceMaladie'
+import { phraseDeLaSectionAuCabinet, sectionAssuranceMaladie } from '../../lib/sectionAssuranceMaladie'
 import ModeleDuCabinetDossierCarte from './ModeleDuCabinetDossierCarte'
 import { ouvrirApercu } from '../../lib/apercu'
 import { chargerInformationsDossier, enregistrerInformationsDossier } from '../../lib/informationsDossier'
@@ -70,6 +72,9 @@ interface Props {
   dossierRcsVille: string | null | undefined
   dossierFormeJuridique: string | null | undefined
   dossierCapital: number | null | undefined
+  // Le code NAF, tel que `DossierDetail` l'a lu (`undefined` : pas lu) : la phrase de la section des paiements de l'assurance
+  // maladie, offerte sur un code de santé seulement (NOE4-Q1 (C)).
+  dossierCodeNaf: string | null | undefined
   // Le modèle comptable du dossier : le forfait kilométrique s'écrit face au compte du dirigeant qu'il désigne
   // (voir VehiculesCard).
   modele: ModeleComptable
@@ -85,7 +90,7 @@ interface Props {
 
 export default function InformationsTab({
   dossierId, dossierNom, dossierSiret, dossierAdresse, dossierCabinetId, dossierDenomination, dossierRcsVille, dossierFormeJuridique, dossierCapital,
-  modele, onIdentiteUpdated, onReglageUpdated, onPlanRelu,
+  dossierCodeNaf, modele, onIdentiteUpdated, onReglageUpdated, onPlanRelu,
 }: Props) {
   const { estChef, isSuperAdmin } = useAuth()
   const navigate = useNavigate()
@@ -469,6 +474,16 @@ export default function InformationsTab({
     {/* Les comptes bancaires du dossier (ligne 26.6, MCB6), derrière `COMPTES_BANCAIRES_PREVUS` : baissé, la carte ne rend rien.
         Elle lit et écrit seule (ComptesBancairesCard.tsx). */}
     <ComptesBancairesCard dossierId={dossierId} plan={modele.plan} />
+
+    {/* Les paiements de l'assurance maladie (NOE4-Q1 (C)) : la section de l'onglet Banque ne s'offre que sur un code NAF de
+        santé (86…) ; ici, au cabinet seul, la phrase qui dit pourquoi elle s'offre ou non — jamais le silence. Sous le drapeau
+        de la section : baissé, elle n'existe nulle part, et rien ne se dit. */}
+    {PAIEMENTS_ASSURANCE_MALADIE_PREVUS && (
+      <div className="card" style={{ maxWidth: 640, marginBottom: 20 }}>
+        <h3 style={{ marginTop: 0 }}>Paiements de l’assurance maladie</h3>
+        <p className="muted" style={{ marginBottom: 0 }}>{phraseDeLaSectionAuCabinet(sectionAssuranceMaladie(dossierCodeNaf))}</p>
+      </div>
+    )}
 
     {/* Le dossier du cabinet (ligne 47, LM2) : le chef désigne le dossier où le cabinet facture ses propres honoraires. */}
     <DossierDuCabinetCard

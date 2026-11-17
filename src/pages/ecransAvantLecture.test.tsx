@@ -416,9 +416,9 @@ const ECRANS: Ecran[] = [
     inventaireGarde.leve = true
     return <Dossier1><InventaireTab dossierId="d1" dossierNom="Dossier fictif" modele={{ mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }} assujettiTva /></Dossier1>
   } },
-  { nom: 'BanqueTab', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} statutTva="redevable" /></Dossier1> },
+  { nom: 'BanqueTab', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} statutTva="redevable" codeNaf="86.90D" /></Dossier1> },
   // Basculé (ligne 28.65, étape VF5a1) : l'onglet lit aussi les ventes facturées, et ne dit ni n'offre rien avant elles.
-  { nom: 'BanqueTab (basculé)', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures statutTva="redevable" /></Dossier1> },
+  { nom: 'BanqueTab (basculé)', fichier: 'pages/dossier/BanqueTab.tsx', rendre: () => <Dossier1><BanqueTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures statutTva="redevable" codeNaf="86.90D" /></Dossier1> },
   { nom: 'BilanTab (trésorerie)', fichier: 'pages/dossier/BilanTab.tsx', rendre: () => (
     <Dossier1><BilanTab dossierId="d1" modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
@@ -567,7 +567,7 @@ const ECRANS: Ecran[] = [
   { nom: 'FinancementTab (basculé)', fichier: 'pages/dossier/FinancementTab.tsx', rendre: () => <Dossier1><FinancementTab plan={PLAN_PAR_DEFAUT} ventesParLesFactures={true} dossierId="d1" assujettiTva={false} modeComptable="tresorerie" /></Dossier1> },
   { nom: 'ImmobilisationsTab', fichier: 'pages/dossier/ImmobilisationsTab.tsx', rendre: () => <Dossier1><ImmobilisationsTab dossierId="d1" assujettiTva={false} plan={PLAN_PAR_DEFAUT} /></Dossier1> },
   { nom: 'InformationsTab', fichier: 'pages/dossier/InformationsTab.tsx', rendre: () => (
-    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierCabinetId={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} modele={TRESORERIE} onIdentiteUpdated={rien} onReglageUpdated={rien} onPlanRelu={rien} /></Dossier1>
+    <Dossier1><InformationsTab dossierId="d1" dossierNom="Dossier fictif" dossierSiret={null} dossierAdresse={null} dossierCabinetId={null} dossierDenomination={null} dossierRcsVille={null} dossierFormeJuridique={null} dossierCapital={null} dossierCodeNaf={null} modele={TRESORERIE} onIdentiteUpdated={rien} onReglageUpdated={rien} onPlanRelu={rien} /></Dossier1>
   ) },
   { nom: 'PacksTab', fichier: 'pages/dossier/PacksTab.tsx', rendre: () => <Dossier1><PacksTab dossierId="d1" dossierNom="Dossier fictif" /></Dossier1> },
   { nom: 'PiecesTab', fichier: 'pages/dossier/PiecesTab.tsx', rendre: () => <Dossier1><PiecesTab dossierId="d1" ventesParLesFactures={false} /></Dossier1> },

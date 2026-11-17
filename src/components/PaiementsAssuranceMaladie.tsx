@@ -21,6 +21,7 @@ import {
 import type { PaiementsLus } from '../lib/paiementsAssuranceMaladieLecture'
 import { useLesPaiementsAssuranceMaladie } from '../lib/lecturePaiementsAssuranceMaladie'
 import { importsAssocies, refusDuRetraitDImportDit } from '../lib/associationsAssuranceMaladieVue'
+import { sectionAssuranceMaladie } from '../lib/sectionAssuranceMaladie'
 import BandeauLecturePartielle from './BandeauLecturePartielle'
 import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/types'
 
@@ -39,21 +40,28 @@ import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/ty
 // aussi) et la passe ici, avec, en `children`, l'association des paiements au relevé ; « Ma banque » ne passe rien, et la
 // section lit elle-même. Sous `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` levé, les associations se lisent avec les paiements :
 // lues en partie, aucun geste ; un import dont un paiement est associé n'offre pas « Retirer », et dit pourquoi.
+//
+// SUR UN CODE NAF DE SANTÉ SEULEMENT (NOE4-Q1 (C), lib/sectionAssuranceMaladie.ts) : `codeNaf`, la colonne du dossier telle
+// que l'écran qui monte la section l'a lue, est obligatoire ; hors de la division 86, absent, illisible ou pas encore lu, la
+// section ne se monte pas — ni ses imports, ni l'association qu'elle porte. L'onglet Informations du cabinet dit pourquoi.
 
 export interface LecturePartagee {
   lu: PaiementsLus | null
   relire: () => Promise<void>
 }
 
-export default function PaiementsAssuranceMaladie({ espace, dossierId, partagee, children }: {
+export default function PaiementsAssuranceMaladie({ espace, dossierId, codeNaf, partagee, children }: {
   espace: EspaceVentes
   dossierId: string
+  /** `dossiers.code_naf` tel que l'écran l'a lu : `undefined` tant qu'il ne l'est pas, `null` quand le dossier n'en a pas. */
+  codeNaf: string | null | undefined
   /** La lecture que l'écran qui monte la section tient déjà ; absente, la section lit elle-même. */
   partagee?: LecturePartagee
   /** Ce qui se montre sous les imports, sur des lectures entières (l'association, côté cabinet). */
   children?: ReactNode
 }) {
   if (!PAIEMENTS_ASSURANCE_MALADIE_PREVUS) return null
+  if (!sectionAssuranceMaladie(codeNaf).offerte) return null
   if (partagee) return <Section key={dossierId} espace={espace} dossierId={dossierId} lecture={partagee}>{children}</Section>
   return <SectionAutonome key={dossierId} espace={espace} dossierId={dossierId} />
 }

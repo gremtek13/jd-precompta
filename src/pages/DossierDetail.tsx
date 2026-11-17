@@ -456,6 +456,7 @@ export default function DossierDetail() {
                 dossierId={id} modele={modele} assujettiTva={dossier?.assujetti_tva ?? false}
                 ventesParLesFactures={dossier?.ventes_par_les_factures === true}
                 statutTva={dossier?.statut_tva ?? null}
+                codeNaf={dossier ? dossier.code_naf : undefined}
               />
             )}
             {/* L'onglet Caisse (ligne 26.6, étape C4) n'est routable que la caisse en base : `tab` ne vaut jamais 'caisse' avant. */}
@@ -570,6 +571,7 @@ export default function DossierDetail() {
                 dossierRcsVille={dossier?.rcs_ville}
                 dossierFormeJuridique={dossier?.forme_juridique}
                 dossierCapital={dossier?.capital}
+                dossierCodeNaf={dossier ? dossier.code_naf : undefined}
                 modele={modele}
                 // Les valeurs que la base a RENDUES après l'écriture : le dossier lu les prend telles quelles.
                 onIdentiteUpdated={(identite) => modifierDossier(id, identite)}

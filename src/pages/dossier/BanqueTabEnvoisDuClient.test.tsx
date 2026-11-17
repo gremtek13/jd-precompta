@@ -197,7 +197,7 @@ function rendre(valides: readonly number[] = []) {
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={valides}>
-        <BanqueTab dossierId="dossier-de-test" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} statutTva="redevable" />
+        <BanqueTab dossierId="dossier-de-test" modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={false} statutTva="redevable" codeNaf="86.90D" />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,

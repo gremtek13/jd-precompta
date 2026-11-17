@@ -193,7 +193,7 @@ function rendre(ventesParLesFactures = true) {
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={[]}>
-        <BanqueTab dossierId={D} modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={ventesParLesFactures} statutTva="redevable" />
+        <BanqueTab dossierId={D} modele={TRESORERIE} assujettiTva={false} ventesParLesFactures={ventesParLesFactures} statutTva="redevable" codeNaf="86.90D" />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,
