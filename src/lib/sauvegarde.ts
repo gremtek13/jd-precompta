@@ -247,7 +247,7 @@ export function auPlanDeLaHausseDuChiffreDAffaires(table: string, prevue: boolea
 }
 
 // LES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, NOE3 ; migration `paiements_assurance_maladie`, PRÉPARÉE le
-// 16/11/2026, supabase/preparees/20261116190000_paiements_assurance_maladie.sql) : les imports d'un dossier et les paiements
+// 16/11/2026, supabase/preparees/20261116191000_paiements_assurance_maladie.sql) : les imports d'un dossier et les paiements
 // agrégés qu'ils ont apportés, sans aucune donnée de patient. Sous le drapeau de la migration
 // (`PAIEMENTS_ASSURANCE_MALADIE_PREVUS`, src/lib/paiementsAssuranceMaladie.ts), baissé : la production n'a pas les tables, et
 // les lire ferait échouer toute sauvegarde. Leurs relations (au dossier, en cascade ; le paiement à son import, en cascade,

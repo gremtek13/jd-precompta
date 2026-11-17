@@ -1,7 +1,7 @@
 import { parseDateBancaire, parseMontantBancaire } from './csv'
 
 // LES PAIEMENTS DE L'ASSURANCE MALADIE, LUS DANS LE NAVIGATEUR (conception 53, lots NOE1 et NOE2 ; docs/conceptions/
-// 53-import-noemie-et-remboursements.md ; la base : supabase/preparees/20261116190000_paiements_assurance_maladie.sql, NOE3).
+// 53-import-noemie-et-remboursements.md ; la base : supabase/preparees/20261116191000_paiements_assurance_maladie.sql, NOE3).
 // La décision du cabinet du 16/11/2026 : « on récupère que les chiffres et on stocke pas de données patients » (pas
 // d'hébergeur de données de santé, RGPD.md §8.7).
 //

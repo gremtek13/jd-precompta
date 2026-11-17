@@ -3,7 +3,7 @@
 -- données patients ») — PRÉPARÉE le 16/11/2026, PAS APPLIQUÉE. Le récit : HISTORIQUE.md, « 16/11/2026 — NOE1 ET NOE3 : LA
 -- LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE (PRÉPARÉE, PAS APPLIQUÉE) » ; la conception :
 -- docs/conceptions/53-import-noemie-et-remboursements.md ; l'essai : supabase/essais/paiementsAssuranceMaladie.sql ; le
--- retour : supabase/preparees/retour/20261116190100_retour_paiements_assurance_maladie.sql ; le module qui redit ses refus
+-- retour : supabase/preparees/retour/20261116191100_retour_paiements_assurance_maladie.sql ; le module qui redit ses refus
 -- avant le clic : src/lib/paiementsAssuranceMaladie.ts. Le patron : la prévision publiée (C8-Q2,
 -- supabase/preparees/20261115100000_previsions_publiees.sql).
 --
