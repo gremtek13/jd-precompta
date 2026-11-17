@@ -552,6 +552,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   NOE3-Q1) ; l'association au relevé remise à NOE5 → « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
   DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE »,
   « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE ».
+- **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
+  à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ».
 - **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
   une OD source du brouillon ; en trésorerie, chaque ligne de résultat sous un poste de la 2035 ou « hors de la 2035 » ; EL-Q1 à
   Q12 tranchées le 17/11/2026 — tout compte du cabinet qui suit le dossier l'écrit (EL-Q1, `admin_du_dossier`, l'auteur posé par
