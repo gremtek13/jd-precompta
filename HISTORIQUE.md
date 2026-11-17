@@ -53449,3 +53449,13 @@ le paiement dans le dossier de son import (une clé étrangère sur deux colonne
 refuse, écartée) ; l'association au relevé remise à NOE5. Preuves : l'essai 53/53, 18 mutations sur 18, la suppression
 directe refusée et la cascade du dossier, `rls.sql` 263/0 et 152 sur 152 (260/0, 150 sur 150 sans elle), le retour rend la signature d'avant ; 200 imports
 fictifs jugés par la base, rejugés à l'identique par le module (`paiementsAssuranceMaladie.releve.json`).
+### 17/11/2026 — LA PAGE 2 DE LA 2035 PORTE LE NOM ET LE SIRET DU DÉCLARANT
+
+(Agent dev ; signalé par le cabinet.) La 2035-B-SD (page 2) sortait sans dénomination ni SIRET. Deux causes dans
+`lib/gabarit2035.ts` : la boucle des en-têtes s'arrêtait (`break`) à la première page qui imprime le libellé ; et la grille du
+SIRET de la page 2 est tracée de travers par le formulaire (quatorze cases de 8,2 à 42,5 points, relues par pdf.js et vues à
+l'image), qu'aucune suite régulière de `grilleDeSaisie` n'atteignait. Seconde lecture, après la régulière : une ligne qui, à
+droite du libellé, ne porte que la grille — exactement quinze filets, aucun texte entre eux, chaque cellule de 6 points au
+moins et de trois médianes au plus ; sinon rien. Le nom va passé le filet qui ferme la cellule de son libellé (x ≈ 236 en
+page 2), la page 1 identique au point près (pdftotext -bbox). La 2035-E portait déjà les deux. Le second signalement (lignes 34
+à 47 absentes de la page 2) ne s'est pas reproduit : CA, CE, CH, CN et CP s'impriment sur la chaîne entière ; tests ajoutés.

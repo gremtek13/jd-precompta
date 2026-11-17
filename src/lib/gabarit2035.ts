@@ -176,8 +176,44 @@ export function grilleDeSaisie(
     if (suite.length > grille.length) grille = suite
   }
 
-  if (grille.length !== nbCellules + 1) return null
-  return grille.slice(0, -1).map((x, i) => (x + grille[i + 1]) / 2)
+  if (grille.length === nbCellules + 1) return centresDesCellules(grille)
+
+  // SECONDE LECTURE : LA GRILLE IRRÉGULIÈRE (17/11/2026). Sur la page 2 du millésime 2026 (2035-B-SD), la grille du SIRET
+  // a bien ses quatorze cases, mais tracées de travers : des cellules de 18 à 26 points, une de 42,5, une de 8,2. Aucune
+  // suite régulière n'y atteint quinze filets, et le SIRET manquait sur la page. Elle se reconnaît autrement : sa ligne,
+  // à droite du libellé, ne porte QUE la grille — exactement un filet de plus qu'il n'y a de cases, aucun texte entre le
+  // premier et le dernier, et chaque cellule reçoit un caractère sans être une zone (`celluleDUnCaractere`). Un filet de
+  // plus ou de moins, un mot imprimé dans la ligne, une cellule trop étroite : rien ne s'écrit, comme avant.
+  if (filets.length === nbCellules + 1 && ligneSansTexte(page, centre, filets[0], filets[nbCellules])
+    && celluleDUnCaractere(filets)) {
+    return centresDesCellules(filets)
+  }
+  return null
+}
+
+function centresDesCellules(filets: number[]): number[] {
+  return filets.slice(0, -1).map((x, i) => (x + filets[i + 1]) / 2)
+}
+
+// Un chiffre à la taille de l'en-tête (9 points, Helvetica) est large de 5 points : une cellule plus étroite que 6 ne le
+// reçoit pas sans toucher un filet. Et une cellule plus de trois fois plus large que la médiane n'est plus une case d'un
+// caractère, mais une autre zone de la ligne.
+const LARGEUR_MINIMALE_D_UNE_CELLULE = 6
+const LARGEUR_MAXIMALE_RELATIVE = 3
+
+function celluleDUnCaractere(filets: number[]): boolean {
+  const largeurs = filets.slice(0, -1).map((x, i) => filets[i + 1] - x)
+  const triees = [...largeurs].sort((a, b) => a - b)
+  const mediane = triees[Math.floor(triees.length / 2)]
+  return largeurs.every((l) => l >= LARGEUR_MINIMALE_D_UNE_CELLULE && l <= mediane * LARGEUR_MAXIMALE_RELATIVE)
+}
+
+function ligneSansTexte(page: PageFormulaire, centre: number, debut: number, fin: number): boolean {
+  return !page.fragments.some((f) => {
+    if (f.texte.trim() === '') return false
+    const milieu = f.x + f.largeur / 2
+    return f.y < centre && f.y + f.hauteur > centre && milieu > debut && milieu < fin
+  })
 }
 
 export interface Inscription {
@@ -203,10 +239,30 @@ export const TAILLE_ENTETE = 9
 
 // Libellés d'en-tête à renseigner, repérés par le texte imprimé qui les précède. La valeur va juste
 // à droite de ce libellé — ces zones-là sont larges et libres, contrairement aux cases chiffrées.
-const CHAMPS_ENTETE: { cle: keyof EnteteDeclaration; libelle: string }[] = [
-  { cle: 'nom', libelle: 'NOM ET PRENOMS OU DÉNOMINATION' },
-  { cle: 'activite', libelle: "Nature de l'activité (1)" },
+//
+// Sur CHAQUE page qui porte le libellé (17/11/2026) : la 2035-B le répète en tête, et le nom ne s'écrivait que sur la
+// 2035-A. `apresSaCellule` : le libellé est imprimé dans une cellule à lui, et la valeur va dans la zone qui suit — sur
+// la 2035-B, cette cellule se ferme 47 points après le libellé (x ≈ 236), et le nom, écrit à 8 points du libellé,
+// chevauchait le filet. La « Nature de l'activité » partage au contraire sa cellule avec sa valeur (2035-A seule).
+const CHAMPS_ENTETE: { cle: keyof EnteteDeclaration; libelle: string; apresSaCellule: boolean }[] = [
+  { cle: 'nom', libelle: 'NOM ET PRENOMS OU DÉNOMINATION', apresSaCellule: true },
+  { cle: 'activite', libelle: "Nature de l'activité (1)", apresSaCellule: false },
 ]
+
+// Retraits d'une valeur d'en-tête : 8 points après son libellé, et jamais à moins de 6 points du filet qui ferme la
+// cellule du libellé. Sur la 2035-A le filet suit le libellé de près (1,8 point) : la valeur reste où elle était.
+const RETRAIT_APRES_LIBELLE = 8
+const RETRAIT_APRES_FILET = 6
+
+function debutDeLaValeur(page: PageFormulaire, libelle: FragmentTexte, apresSaCellule: boolean): number {
+  const fin = libelle.x + libelle.largeur
+  if (!apresSaCellule) return fin + RETRAIT_APRES_LIBELLE
+  const centre = libelle.y + libelle.hauteur / 2
+  const fermeture = page.filets
+    .filter((f) => f.x > fin && f.y0 < centre && f.y1 > centre)
+    .reduce<number | null>((min, f) => (min === null || f.x < min ? f.x : min), null)
+  return Math.max(fin + RETRAIT_APRES_LIBELLE, fermeture === null ? -Infinity : fermeture + RETRAIT_APRES_FILET)
+}
 
 // Le SIRET compte exactement quatorze chiffres. Les espaces de présentation sont retirés ; tout
 // autre caractère fait renoncer, parce qu'une grille de quatorze cases ne pardonne pas un décalage.
@@ -282,12 +338,11 @@ export function planDeRemplissage(
       inscriptions.push({
         page: index + 1,
         texte: valeur,
-        x: fragment.x + fragment.largeur + 8,
+        x: debutDeLaValeur(page, fragment, champ.apresSaCellule),
         y: fragment.y,
         alignement: 'gauche',
         taille: TAILLE_ENTETE,
       })
-      break
     }
   }
 
