@@ -559,6 +559,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   module (`lib/ecritureLibre.ts`) ; EL2 préparée, à coller (`ecritures_libres`, `ECRITURES_LIBRES_PREVUES` baissé ; les quatre
   sources neuves sœurs la tolèrent, `stocks.test.ts`) ; le plan de sauvegarde et `rls.sql` à EL8 → « L'ÉCRITURE LIBRE DE
   L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION ».
+- **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
+  (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
+  les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».
 - **Le cabinet facture ses honoraires** (ligne 47, MVP depuis LM-Q9) : en production depuis le 12/11/2026, leurs drapeaux
   levés — LM1, le dossier du cabinet (`dossier_du_cabinet`, `DOSSIER_DU_CABINET_PREVU`) ; LM4, les lettres de mission et
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la
