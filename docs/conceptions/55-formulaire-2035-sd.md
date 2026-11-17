@@ -35,7 +35,7 @@ Règle du dépôt : rien n'est rempli à la place du cabinet ; une valeur que l'
 | N° SIRET | oui | `dossiers.siret`, quatorze chiffres, en clair dans sa case |
 | Nature de l'activité | oui | `dossiers.libelle_naf`, comme la 2035-A |
 | Adresse mail, téléphone, seconde adresse, cabinets secondaires, domicile, modifications | vide | l'application ne les a pas, ou pas sûrement |
-| Date de début de l'exercice de la profession | vide | 2035SD-Q1 : `parametres_des_cotisations` a un début d'activité, que l'on ne confond pas sans l'accord du cabinet |
+| Date de début de l'exercice de la profession | oui, quand il est saisi | 2035SD-Q1 (A), 17/11/2026 : le début d'activité de l'onglet Cotisations (`debuts_d_activite`), lu au clic ; vide s'il est postérieur à l'exercice ou illisible (dit) |
 | Membre d'une société / d'une SCM | vide | non modélisé |
 | Période (activité commencée ou cessée en cours d'année) | vide | non modélisé |
 | **1 — Résultat fiscal** : Bénéfice / Déficit | **oui** | les cases CP / CR de la 2035-B telles que leur PDF les imprime (`arrondirPourFormulaire`, ou l'instantané validé) |
@@ -61,7 +61,7 @@ Règle du dépôt : rien n'est rempli à la place du cabinet ; une valeur que l'
 | Services assurés, personnel salarié (A) | vide | la DSN n'est pas dans l'application ; BB (salaires nets) n'est pas le brut demandé |
 | **I — Immobilisations et amortissements (B)** | **oui** | le registre `immobilisations`, par `lib/amortissements.ts` (§ 2) |
 | Fraction SCM | vide | non modélisée |
-| (B) Véhicules sous le barème | « à saisir » quand un véhicule du registre (compte 2182) est amorti l'année d'un barème (`amortissementsSousLeBareme`), sinon vide | `lib/forfaitKilometrique.ts` : l'application le signale, le cabinet sait lequel |
+| (B) Véhicules sous le barème | le total B du cadre 7 (CADRE7-Q2 (A), 17/11/2026) : la somme des amortissements à réintégrer que la carte Véhicules dit ; « à saisir » tant qu'un véhicule inscrit n'a pas son montant, ou qu'aucun n'est dit inscrit alors qu'un bien 2182 est amorti l'année du barème | `lib/cadre7.ts` ; la dotation nette est A − B, et son écart avec CH (qui compte toute la dotation du registre) se dit |
 
 ### Page 4
 
@@ -106,10 +106,12 @@ Règle du dépôt : rien n'est rempli à la place du cabinet ; une valeur que l'
 ## 4. Questions
 
 - **2035SD-Q1** (cabinet) — la date de début de l'exercice de la profession : la tirer du début d'activité de l'onglet
-  Cotisations ? Recommandation : oui, quand il est saisi.
+  Cotisations ? Recommandation : oui, quand il est saisi. **Tranchée le 17/11/2026 : (A), faite.**
 - **2035SD-Q2** (cabinet) — l'adresse du déclarant : l'adresse professionnelle du dossier ? Recommandation : oui.
+  **Tranchée le 17/11/2026 : (A), c'était déjà le cas.**
 - **2035SD-Q3** (cabinet) — « comptabilité informatisée » et le cadre du professionnel de l'expertise comptable : à remplir
-  depuis le cabinet ? Recommandation : non pour l'instant ; une saisie par exercice, avec la 2035S3.
+  depuis le cabinet ? Recommandation : non pour l'instant ; une saisie par exercice, avec la 2035S3. **Tranchée le
+  17/11/2026 : (A), laissées vides, le cabinet complète.**
 - **2035SD-E1** (expert-comptable) — l'arrondi de la colonne 7 par le plus fort reste, pour qu'elle redise CH.
 - **2035SD-E2** (expert-comptable) — un bien cédé ou sorti : l'application ne connaît pas les cessions ; tant qu'elles ne sont
   pas modélisées, le tableau I liste tout le registre et le tableau II reste vide.
