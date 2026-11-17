@@ -14,8 +14,8 @@ import type { ProfessionLiberale } from '../../lib/types'
 // l'estimation des cotisations réclame quand ils lui manquent. La lecture d'abord (lue en entier, ou rien n'est offert),
 // le formulaire ensuite, l'écriture par `enregistrer_parametres_des_cotisations` seule, contre les valeurs lues, sous un
 // verrou relâché après la relecture ; la confirmation nomme ce qui change ; ses refus redits avant le clic.
-// L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE (RET2-Q2), sous `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` (baissé
-// jusqu'à sa migration) : offerte pour l'exercice 2025 d'un médecin dont le cumul est dit « oui » (ou dès qu'elle est dite),
+// L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE (RET2-Q2), sous `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` (levé
+// le 17/11/2026, sa migration en base) : offerte pour l'exercice 2025 d'un médecin dont le cumul est dit « oui » (ou dès qu'elle est dite),
 // remise à « non dit » dans la même écriture quand le cumul cesse d'être « oui » — elle devient sans objet.
 
 const ACRE = { oui: 'oui', non: 'non', '': 'non dite' } as const

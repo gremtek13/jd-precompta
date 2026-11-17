@@ -45,11 +45,11 @@ export const HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE = true
 
 /**
  * La migration `auteur_de_chaque_seuil` (CA2-Q1, décision du cabinet du 16/11/2026 : « garder l'auteur et la date de chaque
- * seuil » ; supabase/preparees/20261116190000_auteur_de_chaque_seuil.sql) est-elle en base ? Baissé : ses quatre colonnes ne se
- * lisent pas, et la carte dit le dernier réglage de la LIGNE, comme hier. Levé le jour où la migration entre dans l'export ;
- * baissé AVANT tout retour. Un objet, que les tests basculent pour jouer ses deux états.
+ * seuil » ; supabase/schema/20261117133253_auteur_de_chaque_seuil.sql) est-elle en base ? En production depuis le 17/11/2026
+ * (235) : levé. Baissé, ses quatre colonnes ne se liraient pas, et la carte dirait le dernier réglage de la LIGNE, comme
+ * avant ; à baisser AVANT tout retour. Un objet, que les tests basculent pour jouer ses deux états.
  */
-export const DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL = { AUTEUR_DE_CHAQUE_SEUIL_PREVU: false as boolean }
+export const DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL = { AUTEUR_DE_CHAQUE_SEUIL_PREVU: true as boolean }
 
 export function auteurDeChaqueSeuilPrevu(): boolean {
   return DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU
@@ -82,8 +82,9 @@ export interface SeuilDuDossier {
   seuil_de_baisse: number | null
   regle_par: string
   regle_le: string
-  /** Le compte et l'instant du dernier réglage de chaque seuil — posé, changé ou retiré —, posés par la base (CA2-Q1) ; lus sous
-   *  `AUTEUR_DE_CHAQUE_SEUIL_PREVU` seulement. Nuls : aucun réglage connu de ce seuil. */
+  /** Le compte et l'instant du dernier réglage de chaque seuil — posé, changé ou retiré —, posés par la base (CA2-Q1, en
+   *  production depuis le 17/11/2026) ; dits sous `AUTEUR_DE_CHAQUE_SEUIL_PREVU` seulement, facultatifs tant que l'état d'avant
+   *  existe. Nuls : aucun réglage connu de ce seuil. */
   seuil_de_hausse_regle_par?: string | null
   seuil_de_hausse_regle_le?: string | null
   seuil_de_baisse_regle_par?: string | null
@@ -586,10 +587,19 @@ export function confirmationDeLaMarque(t: Trimestre): string {
     + 'd’aujourd’hui ; elle ne se retire pas. L’alerte de ce trimestre ne se dira plus.'
 }
 
-/** « Vue avec le client le 16/11/2026, par toi » : une marque, pour la carte. */
-export function phraseDeLaMarque(v: HausseVue, utilisateur: string | null): string {
+/**
+ * « Vue avec le client le 16/11/2026, par toi » : une marque, pour la carte. Qui l'a posée se dit comme qui a réglé un seuil
+ * (CA2Q1-Q1 (A), 17/11/2026) : « toi », l'adresse que la session lit dans l'équipe, sinon « le cabinet » — jamais le début d'un
+ * identifiant. La base garde déjà l'auteur (`vue_par`) : aucune migration, aucun drapeau.
+ */
+export function phraseDeLaMarque(v: HausseVue, utilisateur: string | null, equipe: ReadonlyMap<string, string>): string {
   const t: Trimestre = { annee: v.annee, trimestre: v.trimestre as NumeroDeTrimestre }
-  return `${libelleDuTrimestre(t)} : vue avec le client le ${formatDate(v.vue_le)}, ${parQui(v.vue_par, utilisateur)}.`
+  return `${libelleDuTrimestre(t)} : vue avec le client le ${formatDate(v.vue_le)}, par ${quiARegle(v.vue_par, utilisateur, equipe)}.`
+}
+
+/** Les comptes qui ont posé une marque, sans doublon, triés : ceux dont l'équipe se lit, avec les auteurs des seuils. */
+export function auteursDesMarques(vues: readonly HausseVue[]): string[] {
+  return [...new Set(vues.map((v) => v.vue_par).filter((c) => c !== ''))].sort()
 }
 
 /** Les marques d'un dossier, les plus récentes d'abord (le trimestre, puis l'instant). */

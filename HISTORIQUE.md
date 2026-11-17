@@ -53503,3 +53503,19 @@ cinquante questions (hors du dépôt, sans nom). Réponses du cabinet du 16/11 a
 conversation : le garde-fou de MVP-D9 se branche plus tard (reposé le 19/11) ; le formulaire principal 2035-SD ouvert
 tout de suite ; l'écriture libre réservée à l'expert-comptable (conception 54). Demandes de fusion 376 et 377 fusionnées ;
 `create-client-access` v21 déployée sur le commit `20b8fb98…` de `main` (l'ouverture d'un accès attestée).
+### 17/11/2026 — CA2-Q1 ET RET2-Q2 EN PRODUCTION
+
+(Agent dev ; les migrations appliquées par la session principale, par l'outil.) Deux migrations collées le 17/11/2026, 235 et
+236 : `auteur_de_chaque_seuil` (CA2-Q1, `20261117133253`) et `exoneration_en_zone_prioritaire` (RET2-Q2, `20261117133435`),
+leurs empreintes d'historique égales aux fichiers de l'export (`27e0ae124d819de74fe1c63e9bd9ba55`, `21e99041a44a1abc7926e29b31310e16`) ;
+les trois contrôles de l'export : dérive 236 `2484cc8da62a9fbfe117e941e0bb0b7c`, socle 83 `d02e468d124c948803d3e9b831092ca3`,
+inventaire 3 220 `7a017ebfac385da8298948fc1105fd45`. Répétées avant sur une copie de la réplique à 234 : `auteurDeChaqueSeuil`
+26/26, `hausseDuChiffreDAffaires` 52/52, `parametresDesCotisations` 62/62. `AUTEUR_DE_CHAQUE_SEUIL_PREVU` et
+`EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` levés, leur état d'avant joué par les tests (l'objet basculé, les accesseurs, les
+paramètres explicites) ; les gardes des deux migrations lisent le corps d'avant comme le dernier de l'export SANS elles, et
+l'export porte celui qu'elles posent. `auteurDeChaqueSeuil` quitte la famille « apres » du banc du leurre (trente cas). CA2Q1-Q1
+tranchée (A) : une marque « vue avec le client » dit qui l'a posée par la règle des seuils — « toi », l'adresse que la session
+lit dans `cabinet_admins`, sinon « le cabinet », jamais le début d'un identifiant —, sans drapeau (la base gardait déjà
+`vue_par`) ; la lecture du réglage demande l'équipe une fois pour les auteurs des seuils et des marques. Les retours restent
+dans `supabase/preparees/retour/`. Reste : `hausseDuChiffreDAffaires` encore dans la famille « apres », sa migration en
+production depuis le 16/11/2026.

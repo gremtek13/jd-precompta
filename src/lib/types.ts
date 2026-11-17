@@ -780,7 +780,8 @@ export interface ParametresDesCotisations {
   cumul_emploi_retraite: boolean | null
   dispense_complementaire: boolean | null
   // L'exonération des cotisations de retraite 2025 d'un médecin en cumul exerçant en zone d'intervention prioritaire (RET2-Q2,
-  // migration PRÉPARÉE `exoneration_en_zone_prioritaire`) : facultative tant qu'elle n'est pas en base ; nulle tant que le
+  // migration `exoneration_en_zone_prioritaire`, en production depuis le 17/11/2026) : en base, mais facultative ici tant que la
+  // lecture d'avant (`EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` baissé) existe — elle ne la nomme pas ; nulle tant que le
   // cabinet ne l'a pas dite, nulle hors de 2025 (`parametres_des_cotisations_exoneration_de_2025`), « oui » avec le cumul
   // seulement (`parametres_des_cotisations_exoneration_en_cumul`).
   exoneration_zone_prioritaire?: boolean | null

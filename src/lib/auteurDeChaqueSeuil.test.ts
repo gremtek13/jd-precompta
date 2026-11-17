@@ -7,9 +7,10 @@ import {
   phrasesDesSeuilsEtDeLeurReglage, phraseDuSeuilEtDeSonReglage, quiARegle, REFUS_DE_LA_BASE, SEUILS_VIDES, type SeuilDuDossier,
 } from './hausseDuChiffreDAffaires'
 
-// CA2-Q1 : L'AUTEUR ET L'INSTANT DE CHAQUE SEUIL. La migration préparée `auteur_de_chaque_seuil` : ses gardes nomment les corps
-// de production qu'elle remplace et ceux qu'elle pose, son retour rend les premiers au caractère près, elle passe par l'outil ;
-// l'essai l'attend ; le drapeau suit l'export ; les mots de la carte, dans ses deux états. Données FICTIVES.
+// CA2-Q1 : L'AUTEUR ET L'INSTANT DE CHAQUE SEUIL. La migration `auteur_de_chaque_seuil`, en production depuis le 17/11/2026
+// (235, dans l'export) : ses gardes nomment les corps qu'elle a remplacés (les derniers de l'export AVANT elle) et ceux qu'elle
+// pose, son retour rend les premiers au caractère près, elle passe par l'outil ; l'essai l'attend ; le drapeau suit l'export,
+// levé ; les mots de la carte, dans ses deux états. Données FICTIVES.
 
 function leFichier(motif: RegExp, dossiers: readonly string[]): string {
   const trouves: string[] = []
@@ -22,7 +23,7 @@ function leFichier(motif: RegExp, dossiers: readonly string[]): string {
   return readFileSync(trouves[0], 'utf8')
 }
 
-const MIGRATION = leFichier(/^\d{14}_auteur_de_chaque_seuil\.sql$/, ['../../supabase/preparees/', '../../supabase/schema/'])
+const MIGRATION = leFichier(/^\d{14}_auteur_de_chaque_seuil\.sql$/, ['../../supabase/schema/'])
 const RETOUR = leFichier(/^\d{14}_retour_auteur_de_chaque_seuil\.sql$/, ['../../supabase/preparees/retour/'])
 const ESSAI = readFileSync(new URL('../../supabase/essais/auteurDeChaqueSeuil.sql', import.meta.url), 'utf8')
 const ESSAI_D_HIER = readFileSync(new URL('../../supabase/essais/hausseDuChiffreDAffaires.sql', import.meta.url), 'utf8')
@@ -41,13 +42,17 @@ const bloc = (texte: string, etiquette: string) => {
 const FONCTIONS = ['garder_seuil_du_chiffre_d_affaires', 'regler_seuil_du_chiffre_d_affaires'] as const
 
 afterEach(() => {
-  DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = false
+  DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = true
 })
+// Les corps d'avant la migration : les derniers de l'export, elle exceptée.
+const avantElle = (f: { chemin: string }) => !/\d{14}_auteur_de_chaque_seuil\.sql$/.test(f.chemin)
 
 describe('CA2-Q1 — la migration, son retour et son essai', () => {
   it('la garde de tête nomme les deux corps de production qu’elle remplace ; la garde de fin et le retour, ceux qu’elle pose', () => {
     for (const nom of FONCTIONS) {
-      const production = md5(corps(derniereDefinitionSql(nom)))
+      const production = md5(corps(derniereDefinitionSql(nom, avantElle)))
+      // Et l'export, après elle, porte le corps qu'elle pose.
+      expect(md5(corps(derniereDefinitionSql(nom))), nom).toBe(md5(corps(definition(MIGRATION, nom))))
       const posee = md5(corps(definition(MIGRATION, nom)))
       expect(bloc(MIGRATION, 'garde'), nom).toContain(`${nom}=${production}`)
       expect(bloc(MIGRATION, 'fin'), nom).toContain(`${nom}=${posee}`)
@@ -61,7 +66,7 @@ describe('CA2-Q1 — la migration, son retour et son essai', () => {
 
   it('la fonction redit les refus d’hier, aux mêmes mots, dans le même ordre ; un réglage inchangé n’écrit rien', () => {
     const neuve = corps(definition(MIGRATION, 'regler_seuil_du_chiffre_d_affaires'))
-    const hier = corps(derniereDefinitionSql('regler_seuil_du_chiffre_d_affaires'))
+    const hier = corps(derniereDefinitionSql('regler_seuil_du_chiffre_d_affaires', avantElle))
     const refus = (sql: string) => [...sql.matchAll(/raise exception '((?:[^']|'')*)'/g)].map((m) => m[1].replace(/''/g, "'"))
     expect(refus(neuve)).toEqual(refus(hier))
     expect(refus(neuve)).toEqual([REFUS_DE_LA_BASE.seuilParLeCabinet, REFUS_DE_LA_BASE.sensInconnu, REFUS_DE_LA_BASE.seuilDeHausseHorsBornes,
@@ -101,8 +106,8 @@ describe('CA2-Q1 — la migration, son retour et son essai', () => {
     expect(ESSAI_D_HIER).toContain("and a.attname not in ('seuil_de_hausse_regle_par', 'seuil_de_hausse_regle_le', 'seuil_de_baisse_regle_par', 'seuil_de_baisse_regle_le')")
   })
 
-  it('le drapeau suit l’export : baissé tant que la migration n’y est pas', () => {
-    expect(EXPORTEE).toBe(false)
+  it('le drapeau suit l’export : levé, la migration y est (235, 17/11/2026)', () => {
+    expect(EXPORTEE).toBe(true)
     expect(auteurDeChaqueSeuilPrevu()).toBe(EXPORTEE)
   })
 })
@@ -119,9 +124,9 @@ const NB = String.fromCharCode(160)
 
 describe('CA2-Q1 — la carte dit l’auteur de chaque seuil', () => {
   it('le drapeau se bascule et se remet : les tests jouent ses deux états', () => {
-    expect(auteurDeChaqueSeuilPrevu()).toBe(false)
-    DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = true
     expect(auteurDeChaqueSeuilPrevu()).toBe(true)
+    DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = false
+    expect(auteurDeChaqueSeuilPrevu()).toBe(false)
   })
 
   it('qui a réglé : « toi », l’adresse que la session lit dans l’équipe, sinon « le cabinet » — jamais un identifiant', () => {

@@ -61,7 +61,8 @@ function formulaire(sens: SensDuSeuil) {
 }
 
 beforeEach(() => {
-  DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = false
+  // Levé le 17/11/2026 (235) : l'état servi ; « drapeau baissé » joue l'état d'avant, tant que son code existe.
+  DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = true
   faux.prevue = true
   faux.lectures = {}
   faux.lues = []
@@ -157,6 +158,7 @@ describe('l’auteur de chaque seuil (CA2-Q1)', () => {
   }
 
   it('drapeau baissé : le dernier réglage de la ligne, comme hier', async () => {
+    DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = false
     faux.lectures.d1 = lecture
     const { container } = render(<HausseDuChiffreDAffairesCard dossierId="d1" />)
     await screen.findByText(/Dernier réglage/)
@@ -174,4 +176,26 @@ describe('l’auteur de chaque seuil (CA2-Q1)', () => {
     expect(screen.queryByText(/Dernier réglage/)).toBeNull()
     expect(container.textContent).not.toMatch(/u-parti|u-membre/)
   })
+
+  // CA2Q1-Q1 (A) : une marque « vue avec le client » dit qui l'a posée par la règle des seuils, sous les deux états du drapeau
+  // (la base garde déjà son auteur) — jamais le début d'un identifiant.
+  for (const leve of [true, false]) {
+    it(`les marques « vue avec le client » : toi, l’adresse lue, sinon « le cabinet » (drapeau ${leve ? 'levé' : 'baissé'})`, async () => {
+      DRAPEAU_DE_L_AUTEUR_DE_CHAQUE_SEUIL.AUTEUR_DE_CHAQUE_SEUIL_PREVU = leve
+      faux.lectures.d1 = {
+        ...lecture,
+        vues: [
+          { dossier_id: 'd1', annee: 2026, trimestre: 3, vue_par: 'u-membre', vue_le: '2026-11-16T09:00:00Z' },
+          { dossier_id: 'd1', annee: 2026, trimestre: 2, vue_par: 'u-parti', vue_le: '2026-08-10T09:00:00Z' },
+          { dossier_id: 'd1', annee: 2026, trimestre: 1, vue_par: 'u-chef', vue_le: '2026-05-04T09:00:00Z' },
+        ],
+      }
+      const { container } = render(<HausseDuChiffreDAffairesCard dossierId="d1" />)
+      await screen.findByText(/Trimestres vus avec le client/)
+      expect(container.textContent).toContain('3e trimestre 2026 (juillet à septembre) : vue avec le client le 16/11/2026, par membre@cabinet.example.')
+      expect(container.textContent).toContain('2e trimestre 2026 (avril à juin) : vue avec le client le 10/08/2026, par le cabinet.')
+      expect(container.textContent).toContain('1er trimestre 2026 (janvier à mars) : vue avec le client le 04/05/2026, par toi.')
+      expect(container.textContent).not.toMatch(/u-parti|u-membre|autre compte/)
+    })
+  }
 })

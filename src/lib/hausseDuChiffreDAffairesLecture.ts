@@ -5,7 +5,7 @@ import { lireLaCaisse } from './caisseLecture'
 import { lireLesVentesFacturees } from './ventesFactureesLecture'
 import { equipeNommable, type MembreLu } from './ouverturesAttestees'
 import {
-  auteursDesSeuils, COLONNES_DES_VUES, MARQUE_NON_ENREGISTREE, SEUIL_NON_ENREGISTRE, aUnSeuil, chiffreDAffairesDesSources,
+  auteursDesMarques, auteursDesSeuils, COLONNES_DES_VUES, MARQUE_NON_ENREGISTREE, SEUIL_NON_ENREGISTRE, aUnSeuil, chiffreDAffairesDesSources,
   jugerLaHausse, seuilsDeLaLigne, type HausseVue, type LectureDeLaHausse, type SensDuSeuil, type SeuilDuDossier,
   type SeuilsDeLAlerte, type SourcesDuChiffreDAffaires, type Trimestre,
 } from './hausseDuChiffreDAffaires'
@@ -27,8 +27,8 @@ import type { Categorie, Dossier, LigneBancaire, Piece, ReglementGroupe, Ventila
 export type LectureDuReglage =
   | {
     dossierId: string; etat: 'lu'; seuil: SeuilDuDossier | null; vues: HausseVue[]
-    /** Les adresses des comptes qui ont réglé un seuil, telles que la session les lit dans l'équipe (CA2-Q1, sous
-     *  `AUTEUR_DE_CHAQUE_SEUIL_PREVU`) ; absente ou vide : aucune adresse, la carte dit « le cabinet ». */
+    /** Les adresses des comptes qui ont réglé un seuil (CA2-Q1) ou posé une marque (CA2Q1-Q1), telles que la session les lit
+     *  dans l'équipe ; absente ou vide : aucune adresse, la carte dit « le cabinet ». */
     equipe?: ReadonlyMap<string, string>
   }
   | { dossierId: string; etat: 'illisible'; motif: string }
@@ -54,14 +54,15 @@ export async function lireLeReglageDeLaHausse(dossierId: string): Promise<Lectur
       return { dossierId, etat: 'illisible', motif: 'une ligne rendue n’est pas celle de ce dossier' }
     }
     const seuil = seuils.lignes[0] ?? null
-    return { dossierId, etat: 'lu', seuil, vues: vues.lignes, equipe: await lireLesAuteursNommables(auteursDesSeuils(seuil)) }
+    const auteurs = [...new Set([...auteursDesSeuils(seuil), ...auteursDesMarques(vues.lignes)])].sort()
+    return { dossierId, etat: 'lu', seuil, vues: vues.lignes, equipe: await lireLesAuteursNommables(auteurs) }
   } catch (erreur) {
     return { dossierId, etat: 'illisible', motif: messageErreur(erreur, 'la lecture du seuil a échoué') }
   }
 }
 
 /**
- * Les adresses des comptes qui ont réglé un seuil (CA2-Q1), lues dans l'équipe SOUS LA SESSION de qui regarde : la policy de
+ * Les adresses des comptes qui ont réglé un seuil (CA2-Q1) ou posé une marque (CA2Q1-Q1), lues dans l'équipe SOUS LA SESSION de qui regarde : la policy de
  * `cabinet_admins` ne rend l'adresse qu'au chef du cabinet, au super-administrateur et au membre lui-même (la règle de l'onglet
  * Accès, lib/traceDesDroitsLecture.ts). Ce qui ne revient pas — une ligne que la policy ne rend pas, un membre parti, une
  * lecture partielle ou en échec — se dit « le cabinet », ce qui reste vrai : rien ne se devine, rien ne se signale de plus.

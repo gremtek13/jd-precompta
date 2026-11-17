@@ -36,14 +36,14 @@ export const CASES_DU_MEDECIN_PREVUES: boolean = true
 // L'EXONÉRATION DES COTISATIONS DE RETRAITE 2025 D'UN MÉDECIN EN CUMUL EXERÇANT EN ZONE D'INTERVENTION PRIORITAIRE (ligne
 // 27.1, RET2-Q2, tranchée par le cabinet le 15/11/2026 : « (B) Une case de plus », contre la recommandation de le dire
 // seulement ; loi n° 2025-199, art. 6, décret n° 2025-810, et le guide du cumul de la CARMF, juin 2026). La migration
-// PRÉPARÉE `exoneration_en_zone_prioritaire` (supabase/preparees/20261115131000_exoneration_en_zone_prioritaire.sql) pose
-// la troisième case d'un exercice, pour 2025 seulement et avec le cumul, et fait accepter à
-// `enregistrer_parametres_des_cotisations` six clés en plus des formes d'hier. BAISSÉ jusqu'à son application : la lecture,
-// l'écriture, la carte et l'estimation d'hier. Levé, la lecture la nomme, l'écriture part sous six clés, la carte l'offre
-// pour un médecin en cumul en 2025, et l'estimation de la retraite la reçoit (lib/retraiteDesLiberaux.ts,
-// `ExonerationEnZonePrioritaire`) ; il se baisse AVANT tout retour de la migration (l'écran levé enverrait six clés, que la
-// fonction d'hier refuse).
-export const EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE: boolean = false
+// `exoneration_en_zone_prioritaire` (en production depuis le 17/11/2026, 236, par l'outil ;
+// supabase/schema/20261117133435_exoneration_en_zone_prioritaire.sql) pose la troisième case d'un exercice, pour 2025
+// seulement et avec le cumul, et fait accepter à `enregistrer_parametres_des_cotisations` six clés en plus des formes d'hier.
+// LEVÉ le 17/11/2026 : la lecture la nomme, l'écriture part sous six clés, la carte l'offre pour un médecin en cumul en 2025,
+// et l'estimation de la retraite la reçoit (lib/retraiteDesLiberaux.ts, `ExonerationEnZonePrioritaire`). Baissé — l'état
+// d'avant, que les tests jouent encore —, la lecture, l'écriture, la carte et l'estimation d'hier ; il se baisse AVANT tout
+// retour de la migration (l'écran levé enverrait six clés, que la fonction d'hier refuse).
+export const EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE: boolean = true
 
 /** Le seul exercice où l'exonération se dit : les revenus de 2025 (la contrainte `parametres_des_cotisations_exoneration_de_2025`). */
 export const EXERCICE_DE_L_EXONERATION = 2025

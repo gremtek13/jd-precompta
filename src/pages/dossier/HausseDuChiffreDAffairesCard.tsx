@@ -16,8 +16,9 @@ import { lireLeReglageDeLaHausse, reglerLeSeuil, type LectureDuReglage } from '.
 // (lib/hausseDuChiffreDAffairesLecture.ts), qui ne rejette jamais. Rien ne s'offre avant le retour de la lecture, ni sur une
 // lecture ratée ; le refus d'une saisie se dit avant le clic ; l'écriture passe la fonction de la base seule, contre la valeur
 // LUE qu'elle remplace, sous un verrou relâché après la relecture — un seul réglage à la fois pour la carte. Le drapeau
-// `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` baissé, la carte ne rend rien et ne lit rien. Sous `AUTEUR_DE_CHAQUE_SEUIL_PREVU` (CA2-Q1),
-// chaque seuil dit qui l'a réglé et quand — « toi », l'adresse que la session lit dans l'équipe, sinon « le cabinet ».
+// `HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE` baissé, la carte ne rend rien et ne lit rien. Sous `AUTEUR_DE_CHAQUE_SEUIL_PREVU` (CA2-Q1,
+// levé le 17/11/2026), chaque seuil dit qui l'a réglé et quand — « toi », l'adresse que la session lit dans l'équipe, sinon « le
+// cabinet » ; une marque « vue avec le client » dit qui l'a posée par la même règle (CA2Q1-Q1), sans drapeau.
 
 /** Ce que le cabinet tape, seuil par seuil ; un seuil absent repart de la valeur lue. */
 type Saisies = Partial<Record<SensDuSeuil, string>>
@@ -144,7 +145,7 @@ export default function HausseDuChiffreDAffairesCard({ dossierId }: { dossierId:
             <>
               <p className="muted" style={{ marginBottom: 4 }}>Trimestres vus avec le client :</p>
               <ul className="muted" style={{ marginTop: 0, paddingLeft: 20 }}>
-                {marquesDansLOrdre(lecture.vues).map((v) => <li key={`${v.annee}-${v.trimestre}`}>{phraseDeLaMarque(v, moi)}</li>)}
+                {marquesDansLOrdre(lecture.vues).map((v) => <li key={`${v.annee}-${v.trimestre}`}>{phraseDeLaMarque(v, moi, lecture.equipe ?? new Map())}</li>)}
               </ul>
             </>
           )}

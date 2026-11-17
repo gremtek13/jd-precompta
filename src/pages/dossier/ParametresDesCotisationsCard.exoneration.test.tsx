@@ -4,9 +4,10 @@ import ParametresDesCotisationsCard from './ParametresDesCotisationsCard'
 import type { CasesDuMedecin, LectureDesParametres } from '../../lib/parametresDesCotisations'
 
 // L'EXONÉRATION DE 2025 EN ZONE D'INTERVENTION PRIORITAIRE DANS LA CARTE DES PARAMÈTRES (RET2-Q2),
-// `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` levé par l'accesseur — l'état d'après sa migration préparée : offerte pour l'exercice
-// 2025 d'un médecin dont le cumul est dit « oui », enregistrée sous la forme à six clés, nommée dans la confirmation, remise
-// à « non dite » quand le cumul cesse d'être « oui » ; baissé (l'état servi), la carte d'hier, cinq clés.
+// `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE` levé par l'accesseur — l'état servi depuis le 17/11/2026 (236) : offerte pour
+// l'exercice 2025 d'un médecin dont le cumul est dit « oui », enregistrée sous la forme à six clés, nommée dans la
+// confirmation, remise à « non dite » quand le cumul cesse d'être « oui » ; baissé (l'état d'avant, gardé tant que son code
+// existe), la carte d'hier, cinq clés.
 const faux = vi.hoisted(() => ({ appels: [] as { nom: string; parametres: unknown }[], exoneration: true }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -87,7 +88,7 @@ describe('l’exonération de 2025 en zone d’intervention prioritaire dans la 
     expect(question).toMatch(/Exonération de la retraite 2025 \(zone d’intervention prioritaire\) : oui → non dit/)
   })
 
-  it('drapeau baissé (l’état servi) : ni la case, ni la sixième clé', async () => {
+  it('drapeau baissé (l’état d’avant) : ni la case, ni la sixième clé', async () => {
     faux.exoneration = false
     afficher(2025)
     fireEvent.change(screen.getByLabelText('Cumul emploi-retraite en 2025'), { target: { value: 'oui' } })
