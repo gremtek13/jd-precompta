@@ -320,6 +320,8 @@ describe('le rangement des contrôles existants', () => {
       'doublons-probables',
       // INAL12-Q2 (11/11/2026) : la pièce validée sans empreinte de fichier.
       'pieces-sans-empreinte',
+      // Conception 58, § 1.3 (17/11/2026) : un compte de charge ou de produit sur plusieurs lignes de la 2035.
+      'comptes-sur-plusieurs-postes',
     ],
     immobilisations: [
       'immos-sans-justificatif', 'dotations-a-ecrire', 'vehicule-amorti-sous-bareme', 'amortissements-repris-en-ecart',

@@ -1155,3 +1155,41 @@ describe('les trois points de l’inventaire (INV6)', () => {
     }
   })
 })
+
+// UN COMPTE, UN SEUL POSTE DE LA 2035 (conception 58, § 1.3 ; lib/unCompteUnPoste.ts). Données FICTIVES.
+describe('pointsDeLaChecklist : un compte de charge sur plusieurs lignes de la 2035', () => {
+  const ACHATS: Categorie = { id: 'c-achats', dossier_id: 'd1', code: 'achats', libelle: 'Achats', ordre: 1, compte_comptable: '606400', poste_2035: 'Achats' }
+  const BUREAU: Categorie = { ...ACHATS, id: 'c-bureau', code: 'bureau', libelle: 'Bureau', poste_2035: 'Fournitures de bureau' }
+  const piece = (id: string, categorie_id: string): Piece => ({
+    id, dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: `d1/${id}.pdf`, nom_fichier: `${id}.pdf`, storage_hash: null,
+    date_piece: '2026-03-10', tiers: 'Fournisseur fictif', montant_ht: null, montant_tva: null, montant_ttc: 50, devise: 'EUR', montant_devise: null,
+    taux_change: null, conversion_source: null, categorie_id, sous_dossier_id: null, type_piece: 'achat', statut: 'validee',
+    confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null, identite_numero: null,
+    identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
+    created_at: '2026-03-10T09:00:00Z', updated_at: '2026-03-10T09:00:00Z',
+  })
+  const ecriture = (id: string, piece_id: string): EcritureBrouillon => ({
+    id, dossier_id: 'd1', piece_id, ligne_bancaire_id: null, date: '2026-03-12', compte: '606400', libelle: 'Achat fictif',
+    montant: 50, sens: 'debit', statut: 'proposee', created_at: '2026-03-12T10:00:00Z', immobilisation_id: null, vehicule_id: null,
+    declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null, operation_caisse_id: null, ...NON_VALIDEE,
+  })
+  const d = donnees({
+    categories: [ACHATS, BUREAU], piecesValidees: [piece('p1', ACHATS.id), piece('p2', BUREAU.id)],
+    ecritures: [ecriture('e1', 'p1'), ecriture('e2', 'p2')],
+  })
+  const point = (c: ContexteDeLaChecklist = CONTEXTE) =>
+    pointsDeLaChecklist(d, c).tousLesPointsATraiter.find((p) => p.id === 'comptes-sur-plusieurs-postes')
+
+  it('se dit en attention, au paramétrage, et nomme le compte, l’exercice et ses lignes', () => {
+    const p = point()
+    expect(p).toMatchObject({ nb: 1, severite: 'attention', cible: 'cloture' })
+    expect(p?.detail).toContain('606400 (2026) : Achats / Fournitures de bureau')
+    expect(pointsDeLaChecklist(d, CONTEXTE).pointsParametrage.map((x) => x.id)).toContain('comptes-sur-plusieurs-postes')
+  })
+
+  it('se tait sur un exercice validé, et quand les deux catégories disent le même poste', () => {
+    expect(point({ ...CONTEXTE, anneesValidees: [2026], frontiere: '2026-12-31' })?.nb).toBe(0)
+    const memePoste = donnees({ ...d, categories: [ACHATS, { ...BUREAU, poste_2035: 'Achats' }] })
+    expect(pointsDeLaChecklist(memePoste, CONTEXTE).tousLesPointsATraiter.find((p) => p.id === 'comptes-sur-plusieurs-postes')?.nb).toBe(0)
+  })
+})
