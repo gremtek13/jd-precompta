@@ -40,13 +40,13 @@ describe('les refus de enregistrer_ecriture_libre sont ceux du module', () => {
     const mots = Object.entries(MOTS_DES_REFUS)
     const positions = mots.map(([, m]) => ENREGISTRER.indexOf(m))
     positions.forEach((p, i) => expect(p, mots[i][0]).toBeGreaterThan(-1))
-    // `contreLaRegleExigee` et `contreLaRegleSansObjet` suivent la désignation illisible : l'ordre du module.
+    // La règle de la trésorerie (`rattacheeComptee`) vient la dernière, après l'équilibre : l'ordre du module.
     for (let i = 1; i < positions.length; i++) expect(positions[i], mots[i][0]).toBeGreaterThan(positions[i - 1])
     for (const [cle, m] of mots) expect(codeApres(ENREGISTRER, m), cle).toBe(cle === 'dateFigee' ? '23514' : '22023')
   })
 
   it('ceux que la base dit seule, après ceux du module ; ceux de ses gardes et du retrait', () => {
-    const dernier = ENREGISTRER.indexOf(MOTS_DES_REFUS.contreLaRegleSansObjet)
+    const dernier = ENREGISTRER.indexOf(MOTS_DES_REFUS.rattacheeComptee)
     for (const m of [MOTS_DE_LA_BASE.piece, MOTS_DE_LA_BASE.version, MOTS_DE_LA_BASE.nouvelle, MOTS_DE_LA_BASE.ecritures]) {
       expect(ENREGISTRER.indexOf(m), m).toBeGreaterThan(dernier)
     }
@@ -64,6 +64,19 @@ describe('les refus de enregistrer_ecriture_libre sont ceux du module', () => {
     expect(acces).toBeLessThan(ENREGISTRER.indexOf('pg_advisory_xact_lock_shared'))
     expect(acces).toBeLessThan(ENREGISTRER.indexOf('from public.dossiers'))
     expect(MIGRATION).not.toMatch(/est_chef_du_cabinet/)
+  })
+})
+
+describe('la désignation « contre la règle de la trésorerie » retirée (EXP58-Q3 (A))', () => {
+  it('la fonction ne la lit plus, ni le module ; l’essai ne l’envoie plus que pour montrer qu’elle n’ouvre rien (EL-B25)', () => {
+    expect(MIGRATION).not.toMatch(/contre_la_regle|v_contre/)
+    for (const texte of [MIGRATION, ESSAI]) {
+      for (const ancien of ['demande la désignation explicite', 'se donne ou ne se donne pas', 'ne vaut que pour une charge']) {
+        expect(texte).not.toContain(ancien)
+      }
+    }
+    expect(ESSAI.match(/contre_la_regle/g)).toHaveLength(1)
+    expect(MOTS_DES_REFUS).not.toHaveProperty('contreLaRegleExigee')
   })
 })
 

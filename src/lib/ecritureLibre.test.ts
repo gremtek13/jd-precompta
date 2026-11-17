@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   avertissementsDeLEcritureLibre, composerEcrituresLibres, ecartDeclare, ECRITURES_LIBRES_PREVUES, ecritureLibrePourLaBase,
-  estCompteeContreLaRegle, estRattachee, MOTS_DES_REFUS, posteDeLaClasse, posteProposeDuCompte, propositionDeLaRegle,
+  estRattachee, estRattacheeComptee, MOTS_DES_REFUS, posteDeLaClasse, posteProposeDuCompte, propositionDeLaRegle,
   refusDeLEcritureLibre, TABLES_DES_ECRITURES_LIBRES,
   type ContexteDEcritureLibre, type LigneDEcritureLibre, type SaisieDEcritureLibre,
 } from './ecritureLibre'
 
 // EL1 : LE JUGEMENT D'UNE ÉCRITURE LIBRE AVANT LE CLIC (conception 54, § 3). Les refus, leur ordre et leurs codes ; les
-// avertissements, qui ne refusent rien ; la règle de la trésorerie devant une charge rattachée (EL-Q3 (A)) ; la composition que
+// avertissements, qui ne refusent rien ; la règle de la trésorerie devant une charge rattachée (EL-Q3 (A), sans la désignation
+// « contre la règle » que retire EXP58-Q3 (A)) ; la composition que
 // la base recompose. La confrontation au texte de la migration : ecritureLibreEnBase.test.ts.
 
 const ligne = (compte: string, sens: 'debit' | 'credit', centimes: number, poste2035: string | null = null,
@@ -16,7 +17,7 @@ const ligne = (compte: string, sens: 'debit' | 'credit', centimes: number, poste
 const saisie = (s: Partial<SaisieDEcritureLibre> = {}): SaisieDEcritureLibre => ({
   date: '2025-06-30', libelle: 'Reclassement des fournitures', motif: 'Une facture de fournitures rangée en petit outillage.',
   lignes: [ligne('606400', 'debit', 12000, 'Fournitures de bureau'), ligne('606300', 'credit', 12000, 'Petit outillage')],
-  avecExtourne: false, contreLaRegle: false, ...s,
+  avecExtourne: false, ...s,
 })
 
 const tresorerie: ContexteDEcritureLibre = { mode: 'tresorerie', frontiere: '2024-12-31', ouverture: '2024-01-01', aujourdhui: '2025-11-17' }
@@ -122,47 +123,59 @@ describe('les refus', () => {
 
   it('l’ordre : celui des contrôles de la base, le premier est celui qu’elle dirait', () => {
     const tout = saisie({ date: '2026-01-01', avecExtourne: true, libelle: '', motif: '',
-      lignes: [ligne('512000', 'debit', 0, 'Achats')], contreLaRegle: true })
+      lignes: [ligne('512000', 'debit', 0, 'Achats')] })
     expect(cles(tout)).toEqual(['dateAVenir', 'extourneHorsDuTrenteEtUn', 'libelle', 'motif', 'nombreDeLignes', 'banque', 'montant',
-      'posteHorsDuResultat', 'contreLaRegleSansObjet'])
-    expect(Object.keys(MOTS_DES_REFUS)).toHaveLength(24)
+      'posteHorsDuResultat'])
+    // La règle de la trésorerie vient en dernier, après l'équilibre.
+    const rattacheeDesequilibree = saisie({ date: '2025-12-31', lignes: [ligne('622600', 'debit', 100, 'Achats'), ligne('408100', 'credit', 99)] })
+    expect(cles(rattacheeDesequilibree)).toEqual(['desequilibre', 'rattacheeComptee'])
+    expect(Object.keys(MOTS_DES_REFUS)).toHaveLength(22)
   })
 })
 
-describe('la règle de la trésorerie devant une charge rattachée (EL-Q3 (A))', () => {
+describe('la règle de la trésorerie devant une charge rattachée (EL-Q3 (A), EXP58-Q3 (A))', () => {
   // L'exemple du cabinet : une dépense payée en janvier 2026, rattachée à 2025 par une charge à payer.
   const rattachee = (poste: string | null) => saisie({
     date: '2025-12-31', libelle: 'Charge à payer — honoraires de décembre', avecExtourne: true,
     lignes: [ligne('622600', 'debit', 50000, poste), ligne('408100', 'credit', 50000)],
   })
 
-  it('hors de la 2035, permise, l’extourne proposée ; comptée, elle exige la désignation explicite ET l’extourne', () => {
+  it('hors de la 2035, permise, l’extourne proposée sans être exigée ; comptée, refusée, extourne ou non (EXP58-Q3 (A))', () => {
     expect(estRattachee(rattachee(null).lignes, 'tresorerie')).toBe(true)
-    expect(estCompteeContreLaRegle(rattachee(null).lignes, 'tresorerie')).toBe(false)
+    expect(estRattacheeComptee(rattachee(null).lignes, 'tresorerie')).toBe(false)
     expect(cles(rattachee(null))).toEqual([])
     expect(cles({ ...rattachee(null), avecExtourne: false })).toEqual([])
     const comptee = rattachee('Honoraires ne constituant pas des rétrocessions')
-    expect(cles(comptee)).toEqual(['contreLaRegleExigee'])
-    expect(cles({ ...comptee, contreLaRegle: true })).toEqual([])
-    expect(cles({ ...comptee, contreLaRegle: true, avecExtourne: false })).toEqual(['contreLaRegleExigee'])
-    // Sans objet, la désignation se refuse : un reclassement, ou la même écriture en engagement.
-    expect(cles(saisie({ contreLaRegle: true }))).toEqual(['contreLaRegleSansObjet'])
-    expect(cles({ ...rattachee(null), contreLaRegle: true }, engagement)).toEqual(['contreLaRegleSansObjet'])
+    expect(estRattacheeComptee(comptee.lignes, 'tresorerie')).toBe(true)
+    expect(cles(comptee)).toEqual(['rattacheeComptee'])
+    expect(cles({ ...comptee, avecExtourne: false })).toEqual(['rattacheeComptee'])
+    // Un produit rattaché compté (un produit à recevoir, 418) : refusé de même.
+    expect(cles(saisie({ date: '2025-12-31', lignes: [ligne('706000', 'credit', 30000, 'Recettes'), ligne('418000', 'debit', 30000)] })))
+      .toEqual(['rattacheeComptee'])
+    // Une ancienne saisie qui porterait encore la désignation n'y gagne rien : la clé n'est plus lue.
+    const ancienne = { ...comptee, contreLaRegle: true }
+    expect(cles(ancienne)).toEqual(['rattacheeComptee'])
+    // Un reclassement compté n'est pas rattaché ; en engagement, aucun poste ne se porte (le refus est celui du poste).
+    expect(cles(saisie())).toEqual([])
+    expect(estRattacheeComptee(comptee.lignes, 'engagement')).toBe(false)
+    expect(cles(comptee, engagement)).toEqual(['posteEnEngagement'])
   })
 
   it('la proposition : les lignes de résultat hors de la 2035, l’extourne d’une écriture du 31 décembre ; rien sinon', () => {
-    const proposee = propositionDeLaRegle({ ...rattachee('Achats'), avecExtourne: false, contreLaRegle: true }, 'tresorerie')
+    const proposee = propositionDeLaRegle({ ...rattachee('Achats'), avecExtourne: false }, 'tresorerie')
     expect(proposee.lignes.map((l) => l.poste2035)).toEqual([null, null])
-    expect([proposee.avecExtourne, proposee.contreLaRegle]).toEqual([true, false])
+    expect(proposee.avecExtourne).toBe(true)
+    expect(cles(proposee)).toEqual([])
+    expect(Object.keys(proposee).sort()).toEqual(['avecExtourne', 'date', 'libelle', 'lignes', 'motif'])
     expect(propositionDeLaRegle(saisie(), 'tresorerie')).toEqual(saisie())
     expect(propositionDeLaRegle(rattachee('Achats'), 'engagement')).toEqual(rattachee('Achats'))
   })
 
-  it('les avertissements : la règle dite, ou « contre la règle » quand la ligne compte', () => {
+  it('les avertissements : la règle dite, que la ligne compte ou non ; aucun avertissement « contre la règle »', () => {
     expect(avertissementsDeLEcritureLibre(rattachee(null), 'tresorerie').map((a) => a.cle))
       .toEqual(['horsDeLa2035', 'tiers', 'chargeRattachee'])
-    expect(avertissementsDeLEcritureLibre({ ...rattachee('Achats'), contreLaRegle: true }, 'tresorerie').map((a) => a.cle))
-      .toEqual(['tiers', 'contreLaRegle'])
+    expect(avertissementsDeLEcritureLibre(rattachee('Achats'), 'tresorerie').map((a) => a.cle))
+      .toEqual(['tiers', 'chargeRattachee'])
     expect(avertissementsDeLEcritureLibre(rattachee(null), 'engagement').map((a) => a.cle)).toEqual(['tiers', 'inventaire'])
   })
 })
@@ -208,7 +221,7 @@ describe('la composition que la base recompose', () => {
     expect(ecritureLibrePourLaBase(saisie({ motif: ' Motif ', lignes: [ligne('606400', 'debit', 1, 'Achats', ' Lib '),
       ligne('606300', 'credit', 1)] }), null, null)).toEqual({
       id: null, date: '2025-06-30', libelle: 'Reclassement des fournitures', motif: 'Motif', piece_citee_id: null,
-      avec_extourne: false, contre_la_regle: false,
+      avec_extourne: false,
       lignes: [{ compte: '606400', sens: 'debit', centimes: 1, poste_2035: 'Achats', compte_lib: 'Lib' },
         { compte: '606300', sens: 'credit', centimes: 1, poste_2035: null, compte_lib: null }],
     })

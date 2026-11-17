@@ -14,6 +14,13 @@ ses choix ouverts posés en EL10-Q1 à Q7. Les dix autres suivent la recommandat
 préparée) sont faits le même jour (§ 7.1) ; ce qui, plus bas, disait « le chef seul » pour ÉCRIRE se lit « le cabinet du
 dossier » (`admin_du_dossier`), le texte d'origine barré là où il fixait le droit.
 
+**17/11/2026, au soir — EXP58-Q3 (A)** : la désignation « contre la règle de la trésorerie » est RETIRÉE (conception 58,
+§ 5 : l'expert-comptable ne passe pas une dépense de janvier dans la 2035 de l'année d'avant ; BOI-BNC-BASE-40-10 § 260).
+Une charge ou un produit rattaché reste permis HORS de la 2035, l'extourne proposée, jamais exigée ; compté, il se refuse
+(`rattacheeComptee`, le même mot dans le module et la migration préparée, récrite avant tout collage). Ce qui, plus bas, dit
+« comptée contre la règle », « désignation explicite » ou `contre_la_regle` (§ 5.1 points 4 et 5, § 6, § 7.1, § 8, § 10) se
+lit sous cette réponse.
+
 Ce qui se lit avant : HISTORIQUE.md → « L'OPÉRATION DÉCOUVERTE APRÈS COUP », « UN EXERCICE VALIDÉ SE FIGE EN BASE », « LA
 2035 SE COMPARE AUX ÉCRITURES », « LE FEC SUIT L'ARTICLE A47 A-1 », « Une piste d'audit se PRODUIT » ; et
 docs/conceptions/35-inventaire.md, dont cette conception reprend le patron (une table source, une colonne du brouillon,
@@ -367,7 +374,8 @@ pas déductible en N : elle l'est en N+1, l'année de son paiement. Recommandé 
 3. elle se propose AVEC son extourne au 1er janvier N+1 (une seconde écriture libre, liée, qui naît, change et se retire
    avec elle, comme INV-Q1 (A)) : sans extourne, le paiement de janvier, écrit par sa pièce, compterait la charge une
    seconde fois dans les comptes de N+1 ;
-4. si l'expert veut pourtant la compter dans la 2035 de N, il choisit le poste ; la confirmation le dit en toutes lettres
+4. ~~si l'expert veut pourtant la compter dans la 2035 de N, il choisit le poste~~ (retiré le 17/11/2026, EXP58-Q3 (A) : la
+   ligne comptée se refuse) ; la confirmation le dit en toutes lettres
    (« Contraire à la règle de la trésorerie, sauf option pour les créances-dettes (CGI, art. 93 A), que ce dossier n'a
    pas ») et l'extourne devient OBLIGATOIRE et comptée de même en N+1 : la 2035 de N+1 compte le paiement de janvier ET
    l'extourne, et ne déduit donc la dépense qu'une fois sur les deux années ;
