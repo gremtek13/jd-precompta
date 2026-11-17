@@ -35,6 +35,7 @@ import {
 } from '../lib/analyseDeMaBanque'
 import BarreRecherche from '../components/BarreRecherche'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
+import PaiementsAssuranceMaladie from '../components/PaiementsAssuranceMaladie'
 
 // « MA BANQUE » (espace client, étape P9 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU
 // CLIENT : LA CONCEPTION », §2.5 et §6). L'écran du client qui porte la case « Banque » sur la société AFFICHÉE : les
@@ -385,6 +386,9 @@ export default function ClientBanque() {
           onPreciser={preciser}
         />
       )}
+      {/* Les paiements de l'assurance maladie (NOE4), sous « Banque » : la section ne se monte que sous son drapeau, et relit
+          la case à la base avec ses tables. */}
+      {lecture.etat === 'lu' && <PaiementsAssuranceMaladie espace="client" dossierId={dossierId} />}
     </>
   )
 }

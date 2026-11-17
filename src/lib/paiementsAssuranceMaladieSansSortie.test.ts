@@ -63,6 +63,10 @@ const LECTEURS_PERMIS: Readonly<Record<string, string>> = {
   'src/lib/sauvegardePaiementsAssuranceMaladie.test.ts': 'les essais du plan de sauvegarde',
   'src/lib/restaurationEssai.test.ts': 'la garde de l’essai de restauration',
   'src/lib/types.ts': 'le type des deux tables',
+  'src/lib/paiementsAssuranceMaladieLecture.ts': 'la lecture de l’écran d’import (NOE4), qui montre et ne calcule rien',
+  'src/lib/paiementsAssuranceMaladieLecture.test.ts': 'les essais de cette lecture',
+  'src/components/PaiementsAssuranceMaladie.tsx': 'l’écran d’import (NOE4), qui appelle la fonction d’import et celle du retrait',
+  'src/components/PaiementsAssuranceMaladie.test.tsx': 'les essais de l’écran d’import',
 }
 
 function fichiers(dossier: string): string[] {

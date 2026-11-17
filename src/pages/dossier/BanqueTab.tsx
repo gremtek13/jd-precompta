@@ -78,6 +78,7 @@ import {
 import { autreSensReconnu, ignoresParLaRegle, phraseDesIgnores, regleOperante, statutPourMouvement } from '../../lib/reglesIgnorees'
 import { motsDuSens, refusDeLaRegleNeuveSelon, SENS_DES_REGLES_IGNOREES_EXPORTE, sensDeLaRegleSelon } from '../../lib/sensDesReglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import PaiementsAssuranceMaladie from '../../components/PaiementsAssuranceMaladie'
 import PanneauDroit from '../../components/PanneauDroit'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
 import { usePanneauDroit } from '../../lib/panneauDroit'
@@ -2701,6 +2702,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         />,
         document.body,
       )}
+
+      {/* Les paiements de l'assurance maladie (NOE4) : une section à part, sous son drapeau ; elle ne touche ni au relevé ni
+          au rapprochement (l'association viendra avec NOE5). */}
+      <PaiementsAssuranceMaladie espace="cabinet" dossierId={dossierId} />
     </>
   )
 }
