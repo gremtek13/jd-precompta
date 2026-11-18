@@ -1,5 +1,5 @@
 -- LE MODE DE RÈGLEMENT DES MOUVEMENTS DU RELEVÉ (EXP58-Q1 ; la migration préparée `mode_de_reglement_des_mouvements`,
--- supabase/preparees/20261117193000_mode_de_reglement_des_mouvements.sql). Le récit : HISTORIQUE.md, « 17/11/2026 — EXP58-Q1 :
+-- supabase/schema/20261118135946_mode_de_reglement_des_mouvements.sql). Le récit : HISTORIQUE.md, « 17/11/2026 — EXP58-Q1 :
 -- LE MODE DE RÈGLEMENT D'UN MOUVEMENT, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer après toute migration qui touche
 -- `poser_modes_de_reglement`, `garder_mode_de_reglement`, `garder_mouvement_valide`, `admin_du_dossier`, les déclencheurs de
 -- `lignes_bancaires` ou ses contraintes. SANS LA MIGRATION (la colonne absente du catalogue), il se dit EN ATTENTE.
