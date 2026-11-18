@@ -6,9 +6,11 @@ import {
   acquisitionsDesBiens, 
   type AcquisitionDuBien,
 } from './amortissements'
+import { CUMUL_REPRIS_PREVU } from './cumulRepris'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
 import { NON_VALIDEE } from '../test/ecritures'
 import { PLANS_DES_GARDES, avecLePlan, entreesSous } from '../test/copieAuPlan'
+import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 import type { PlanComptable } from './planComptable'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES DOTATIONS AUX AMORTISSEMENTS (01/10/2026, ligne 26.6, étape b).
@@ -29,9 +31,10 @@ function sourceDeployee(): string {
   return readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
 }
 
-type Bien = Pick<Immobilisation, 'valeur' | 'duree_annees' | 'date_acquisition' | 'date_mise_en_service'>
+type Bien = Pick<Immobilisation, 'valeur' | 'duree_annees' | 'date_acquisition' | 'date_mise_en_service' | 'cumul_repris' | 'cumul_repris_au'>
 type Dotation = { immobilisation: { id: string }; annee: number; montant: number; etat: string; figee: boolean }
 interface Copie {
+  CUMUL_REPRIS_PREVU: boolean
   rang360: (date: string) => number
   dotationDeLExercice: (bien: Bien, annee: number) => number
   compteAmortissement: (compte: string) => string
@@ -58,8 +61,39 @@ function extraire(source: string, plan: PlanComptable): Copie {
   expect(finValidation).toBeGreaterThan(debutValidation)
   const bloc = `${source.slice(debutValidation, finValidation)}\n${source.slice(debut, fin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return avecLePlan(new Function(`${js}\nreturn { rang360, dotationDeLExercice, compteAmortissement, dotationAEcrire, dotationsDuRegistre, dotationsEnDefaut, bienRepris, acquisitionsDesBiens }`)(), plan) as Copie
+  return avecLePlan(new Function(`${js}\nreturn { CUMUL_REPRIS_PREVU, rang360, dotationDeLExercice, compteAmortissement, dotationAEcrire, dotationsDuRegistre, dotationsEnDefaut, bienRepris, acquisitionsDesBiens }`)(), plan) as Copie
 }
+
+// LA LECTURE DU REGISTRE, telle que `points_a_traiter` l'écrit, exécutée devant un faux client qui note la table, les
+// colonnes, les options et les filtres demandés — sous l'état du drapeau qu'on lui donne. Un relevé du texte ne dirait pas
+// quelle branche part ; l'expression elle-même, si.
+interface LectureNotee { table: string | null; colonnes: string | null; options: unknown; filtres: string[] }
+function lectureDuRegistre(source: string): (prevu: boolean) => LectureNotee {
+  const corps = source.slice(source.indexOf('if (nom === "points_a_traiter")'), source.indexOf('return { erreur: `Outil inconnu'))
+  const tete = 'lireTout<ImmobilisationRow & { piece_id: string | null }>((d, f) =>'
+  const debut = corps.indexOf(tete)
+  expect(debut, 'la lecture du registre introuvable — garde-fou à remettre à jour').toBeGreaterThan(-1)
+  expect(corps.indexOf('from("immobilisations")', corps.indexOf('.range(d, f)),', debut)), 'une seconde lecture du registre').toBe(-1)
+  const fin = corps.indexOf('.range(d, f)),', debut) + '.range(d, f)'.length
+  const expression = corps.slice(debut + 'lireTout<ImmobilisationRow & { piece_id: string | null }>('.length, fin)
+  const js = ts.transpileModule(`const lecture = ${expression}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  const fabrique = new Function('CUMUL_REPRIS_PREVU', 'admin', 'dossierId', `${js}\nreturn lecture`)
+  return (prevu) => {
+    const note: LectureNotee = { table: null, colonnes: null, options: null, filtres: [] }
+    const requete = {
+      select: (colonnes: string, options: unknown) => { note.colonnes = colonnes; note.options = options; return requete },
+      eq: (cle: string, valeur: string) => { note.filtres.push(`eq ${cle} ${valeur}`); return requete },
+      order: (cle: string) => { note.filtres.push(`order ${cle}`); return requete },
+      range: (de: number, a: number) => { note.filtres.push(`range ${de} ${a}`); return requete },
+    }
+    const admin = { from: (table: string) => { note.table = table; return requete } }
+    fabrique(prevu, admin, 'dossier-1')(0, 999)
+    return note
+  }
+}
+
+// Les colonnes d'hier, à l'octet près : celles que l'assistant déployé avant la migration lit.
+const COLONNES_D_HIER = 'id, piece_id, nature_id, libelle, valeur, date_acquisition, date_mise_en_service, duree_annees'
 
 
 const bien = (o: Partial<Immobilisation> = {}): Immobilisation => ({
@@ -80,6 +114,40 @@ const BIENS: Immobilisation[] = [
   bien({ id: 'b8', valeur: 3333.33, date_acquisition: '2025-03-10', date_mise_en_service: '2025-10-15', duree_annees: 10 }),
   bien({ id: 'b9', valeur: 2500, date_acquisition: '2025-08-31', date_mise_en_service: '2025-08-31', duree_annees: 4 }),
 ]
+
+// LE PLAN CONTINUÉ DEPUIS UN CUMUL REPRIS (EXP58-Q5) : les quatorze biens de la table de parité relevée en base
+// (amortissements.test.ts, `TABLE_CONTINUEE` : un cumul en retard sur le registre, en avance, nul avant ou après la mise en
+// service, égal à la valeur — au plan fini à la reprise compris —, de quelques centimes, d'un jour de service, à 999 999,99 €,
+// un 29 février, une reprise datée d'une autre année, un plan qui finit au premier trimestre), et deux de plus, un cumul plus
+// petit que la valeur d'un plan fini avant sa date (O) ou le jour même (P, zéro jour restant, porté au minimum d'un) : la base
+// les refuse (`immobilisations_cumul_repris_plan`), le calcul les solde le lendemain.
+const BIENS_REPRIS: Immobilisation[] = ([
+  ['A', 4800, 5, '2022-03-15', 2000, '2024-12-31'],
+  ['B', 1233, 3, '2023-11-30', 500, '2024-12-31'],
+  ['C', 1000, 4, '2024-02-29', 0, '2024-12-31'],
+  ['D', 12000, 5, '2025-07-01', 0, '2024-12-31'],
+  ['E', 999999.99, 10, '2020-05-17', 432109.87, '2024-12-31'],
+  ['F', 750, 2, '2023-12-31', 750, '2024-12-31'],
+  ['G', 600, 1, '2023-01-01', 600, '2024-12-31'],
+  ['H', 1.01, 3, '2024-07-01', 0.17, '2024-12-31'],
+  ['I', 2500, 3, '2022-08-31', 2400, '2024-12-31'],
+  ['J', 3333.33, 7, '2019-10-15', 1234.56, '2024-12-31'],
+  ['K', 1000, 3, '2024-12-31', 0.28, '2024-12-31'],
+  ['L', 5000, 5, '2021-01-01', 3900, '2024-12-31'],
+  ['M', 12000, 5, '2023-07-01', 3000, '2023-12-31'],
+  ['N', 1234.56, 7, '2018-03-15', 1100, '2024-12-31'],
+  ['O', 1000, 1, '2023-01-01', 900, '2024-12-31'],
+  ['P', 1000, 2, '2023-01-01', 999.99, '2024-12-31'],
+] as const).map(([id, valeur, duree, mise, cumul, au]) =>
+  bien({ id: `repris-${id}`, valeur, duree_annees: duree, date_acquisition: mise, cumul_repris: cumul, cumul_repris_au: au }))
+
+// Les années que la comparaison balaie pour un bien : de l'année d'avant sa mise en service à deux ans après la fin du plan.
+const anneesDuBien = (b: Bien) => {
+  const premiere = Number(b.date_acquisition.slice(0, 4))
+  const annees: number[] = []
+  for (let annee = premiere - 1; annee <= premiere + b.duree_annees + 2; annee++) annees.push(annee)
+  return annees
+}
 
 const NATURES: NatureImmobilisation[] = [
   { id: 'n-info', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300' },
@@ -117,6 +185,22 @@ const ECRITURES: EcritureBrouillon[] = [
   ...ecrite('r-ancien', 2023, 300),
 ]
 
+// UN REGISTRE REPRIS (EXP58-Q5), le dossier ouvert au 1er janvier 2025 : le cas A de la table porté par trois biens — sa
+// dotation 2025 du plan continué écrite (conforme), celle du recalcul d'hier écrite (à réécrire), son cumul daté d'un autre jour
+// que le 31 décembre 2024 (sans écriture) — et un bien amorti à la reprise (F) dont la dotation 2025 d'hier est restée.
+const CAS_A = { valeur: 4800, duree_annees: 5, date_acquisition: '2022-03-15', cumul_repris: 2000, cumul_repris_au: '2024-12-31' }
+const REGISTRE_REPRIS: Immobilisation[] = [
+  bien({ id: 'q-continue', ...CAS_A }),
+  bien({ id: 'q-hier', ...CAS_A }),
+  bien({ id: 'q-solde', valeur: 750, duree_annees: 2, date_acquisition: '2023-12-31', cumul_repris: 750, cumul_repris_au: '2024-12-31' }),
+  bien({ id: 'q-autre-jour', ...CAS_A, cumul_repris_au: '2023-12-31' }),
+]
+const ECRITURES_REPRISES: EcritureBrouillon[] = [
+  ...ecrite('q-continue', 2025, 1269.52),
+  ...ecrite('q-hier', 2025, 960),
+  ...ecrite('q-solde', 2025, 373.96),
+]
+
 const etats = (d: Dotation[]) => d.map((x) => [x.immobilisation.id, x.annee, x.montant, x.etat, x.figee])
 // Les frontières de validation sous lesquelles les deux copies sont comparées : aucune, puis 2024 et 2025 validés.
 const FRONTIERES = [null, '2024-12-31', '2025-12-31'] as const
@@ -140,6 +224,49 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / bloc AMORTISSEMENT (copie dé
         expect(deployee.dotationDeLExercice(b, annee), `${b.id} ${annee}`).toBe(dotationDeLExercice(b, annee))
       }
     }
+  })
+
+  // LE PLAN CONTINUÉ : le calcul lit le cumul de tout bien qui en porte un, sans drapeau, comme src/lib — les années d'avant
+  // le cumul comprises (le cumul réparti sur les jours en service), et celles d'après la fin du plan.
+  it('rend la même dotation d’un bien qui porte un cumul repris, de chaque exercice, au centime', () => {
+    for (const b of BIENS_REPRIS) {
+      for (const annee of anneesDuBien(b)) {
+        expect(deployee.dotationDeLExercice(b, annee), `${b.id} ${annee}`).toBe(dotationDeLExercice(b, annee))
+      }
+      for (const ouverture of [null, '2025-01-01', '2024-01-01']) {
+        for (const annee of [2023, 2024, 2025, 2026]) {
+          expect(deployee.dotationAEcrire(b, annee, ouverture), `${b.id} ${annee} / ${ouverture}`).toBe(dotationAEcrire(b, annee, ouverture))
+        }
+      }
+    }
+    // Et la batterie exerce bien le plan continué : sans quoi l'égalité ne prouverait rien de lui. Le cas A de la table :
+    // 1 269,52 € en 2025, au lieu des 960 € du recalcul depuis la mise en service ; un cumul nul d'un bien mis en service
+    // après lui (D) rend le calcul d'hier.
+    const a = BIENS_REPRIS.find((b) => b.id === 'repris-A')!
+    expect(deployee.dotationDeLExercice(a, 2025)).toBe(1269.52)
+    expect(deployee.dotationDeLExercice({ ...a, cumul_repris: null, cumul_repris_au: null }, 2025)).toBe(960)
+    const d = BIENS_REPRIS.find((b) => b.id === 'repris-D')!
+    expect(deployee.dotationDeLExercice(d, 2026)).toBe(deployee.dotationDeLExercice({ ...d, cumul_repris: null, cumul_repris_au: null }, 2026))
+  })
+
+  it('rend les mêmes dotations d’un registre repris, dans le même état, et réclame les mêmes', () => {
+    for (const anneeCourante of [2025, 2026, 2027]) {
+      for (const f of [null, '2025-12-31'] as const) {
+        const attendu = dotationsDuRegistre(REGISTRE_REPRIS, NATURES, ECRITURES_REPRISES, '2025-01-01', anneeCourante, f, plan)
+        const copie = deployee.dotationsDuRegistre(REGISTRE_REPRIS, NATURES, ECRITURES_REPRISES, '2025-01-01', anneeCourante, f)
+        expect(etats(copie), `${anneeCourante} / ${f}`).toEqual(etats(attendu))
+        expect(etats(deployee.dotationsEnDefaut(copie, anneeCourante)), `${anneeCourante} / ${f}`)
+          .toEqual(etats(dotationsEnDefaut(attendu, anneeCourante)))
+      }
+    }
+    // Et le registre exerce le plan continué : la dotation du plan continué écrite est conforme, celle du recalcul d'hier
+    // est à réécrire, celle d'un bien amorti à la reprise est à retirer, et un cumul daté d'un autre jour se calcule encore.
+    const en2025 = new Map(dotationsDuRegistre(REGISTRE_REPRIS, NATURES, ECRITURES_REPRISES, '2025-01-01', 2026, null, plan)
+      .filter((x) => x.annee === 2025).map((x) => [x.immobilisation.id, [x.montant, x.etat]]))
+    expect(Object.fromEntries(en2025)).toEqual({
+      'q-continue': [1269.52, 'ecrite'], 'q-hier': [1269.52, 'a_reecrire'], 'q-solde': [0, 'a_retirer'],
+      'q-autre-jour': [dotationDeLExercice(REGISTRE_REPRIS[3], 2025), 'a_ecrire'],
+    })
   })
 
   it('tire le même compte d’amortissement du compte d’immobilisation', () => {
@@ -218,6 +345,34 @@ describe('agent-comptable / points_a_traiter lit le registre et ses dotations', 
     expect(corps).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id[,"]/)
     expect(corps).toMatch(/from\("a_nouveaux"\)\.select\("id, date"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("date"\)\.order\("id"\)/)
     expect(corps).toMatch(/rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
+  })
+
+  // LE DRAPEAU DU CUMUL REPRIS (EXP58-Q5) : la constante de la copie redit celle de src/lib/cumulRepris.ts, et la lecture du
+  // registre se joue sous SES DEUX ÉTATS. Baissé, les colonnes d'hier à l'octet près — l'assistant se déploie avant la
+  // migration sans qu'une colonne absente fasse refuser la lecture (et taire la Checklist) ; levé, les deux colonnes neuves,
+  // sous les noms que la migration leur donne.
+  it('lit le cumul repris sous le drapeau de src/lib, et sous lui seul', () => {
+    expect([...source.matchAll(/^const CUMUL_REPRIS_PREVU = (true|false)$/gm)].length, 'la constante du cumul repris de l’assistant').toBe(1)
+    expect(extraire(source, PLANS_DES_GARDES[0][1]).CUMUL_REPRIS_PREVU).toBe(CUMUL_REPRIS_PREVU)
+    const lire = lectureDuRegistre(source)
+    const filtres = ['eq dossier_id dossier-1', 'order id', 'range 0 999']
+    expect(lire(false)).toEqual({ table: 'immobilisations', colonnes: COLONNES_D_HIER, options: { count: 'exact' }, filtres })
+    expect(lire(true)).toEqual({
+      table: 'immobilisations', colonnes: `${COLONNES_D_HIER}, cumul_repris, cumul_repris_au`, options: { count: 'exact' }, filtres,
+    })
+    // Les deux colonnes sont celles que la migration ajoute — préparée, ou dans l'export une fois collée.
+    const migration = fichiersPrepares().find((f) => /_cumul_repris_des_biens\.sql$/.test(f.chemin))?.texte
+      ?? fichiersDuSchema().find((f) => /_cumul_repris_des_biens\.sql$/.test(f.chemin))!.texte
+    expect(migration).toContain('alter table public.immobilisations add column cumul_repris numeric;')
+    expect(migration).toContain('alter table public.immobilisations add column cumul_repris_au date;')
+  })
+
+  // LA CONSIGNE : levé, le modèle apprend qu'une dotation d'un bien repris continue depuis le cumul de l'ancien tableau — sans
+  // quoi il prendrait pour une anomalie une dotation qui ne vaut pas le prorata depuis la mise en service. Baissé, la phrase
+  // d'hier, à l'octet près.
+  it('dit au modèle, sous le même drapeau, que la dotation d’un bien repris continue depuis son cumul', () => {
+    expect(source).toMatch(/en case CH de la 2035\.\$\{CUMUL_REPRIS_PREVU \? " Celle d'un bien repris qui porte le cumul de son ancien tableau d'amortissement continue depuis lui : la valeur nette restante répartie sur la durée qui reste du plan\." : ""\} Ce n'est pas une anomalie\./)
+    expect(source.split('Celle d\'un bien repris qui porte le cumul').length - 1).toBe(1)
   })
 
   it('rend le point de la Checklist, l’exercice en cours lu dans le fuseau du cabinet', () => {
@@ -359,6 +514,80 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du bloc AMORTISSEMENT sait encore 
   it('attrape une dotation jamais figée', () => {
     const derivee = planter(['figee: estFigee(dateDeLaDotation(annee), frontiere) })', 'figee: false })'])
     echoue(() => memeRegistre(derivee, 2026, null, '2025-12-31'))
+  })
+
+  // LE PLAN CONTINUÉ (EXP58-Q5) : chaque dérive se juge sur la batterie des biens repris et sur le registre repris.
+  const memesDotationsReprises = (copie: Copie) => {
+    for (const b of BIENS_REPRIS) {
+      for (const annee of anneesDuBien(b)) expect(copie.dotationDeLExercice(b, annee), `${b.id} ${annee}`).toBe(dotationDeLExercice(b, annee))
+    }
+  }
+  const memeRegistreRepris = (copie: Copie) => {
+    const attendu = dotationsDuRegistre(REGISTRE_REPRIS, NATURES, ECRITURES_REPRISES, '2025-01-01', 2026, null, plan)
+    expect(etats(copie.dotationsDuRegistre(REGISTRE_REPRIS, NATURES, ECRITURES_REPRISES, '2025-01-01', 2026, null))).toEqual(etats(attendu))
+  }
+
+  it('attrape un cumul repris ignoré, le plan recalculé depuis la mise en service', () => {
+    const derivee = planter(['  if (bien.cumul_repris == null || bien.cumul_repris_au == null) return null\n', '  return null\n'])
+    echoue(() => memesDotationsReprises(derivee))
+    echoue(() => memeRegistreRepris(derivee))
+    // Le calcul d'hier, lui, ne bouge pas : la dérive ne se voit que sur un bien qui porte un cumul.
+    memesDotations(derivee)
+  })
+
+  it('attrape un plan continué qui repartirait du jour même du cumul', () => {
+    const derivee = planter(['  const debut = Math.max(rangDuCumul + 1, service)', '  const debut = Math.max(rangDuCumul, service)'])
+    echoue(() => memesDotationsReprises(derivee))
+  })
+
+  it('attrape une valeur nette restante répartie sur toute la durée, et non sur ce qui en reste', () => {
+    const derivee = planter(['  const restants = Math.max(service + 360 * bien.duree_annees - debut, 1)', '  const restants = Math.max(360 * bien.duree_annees, 1)'])
+    echoue(() => memesDotationsReprises(derivee))
+  })
+
+  it('attrape un cumul continué arrondi vers le bas au lieu du demi-centime vers le haut', () => {
+    const derivee = planter(['* joursApres + BigInt(restants)) / (2n * BigInt(restants))', '* joursApres) / (2n * BigInt(restants))'])
+    echoue(() => memesDotationsReprises(derivee))
+  })
+
+  it('attrape les années d’avant le cumul qu’on ne répartirait plus', () => {
+    const derivee = planter(['    return (2n * repris.centimes * joursAvant + BigInt(enService)) / (2n * BigInt(enService))', '    return 0n'])
+    echoue(() => memesDotationsReprises(derivee))
+  })
+
+  // LE DRAPEAU ET LA LECTURE : sous chacun de ses deux états, la branche qui part.
+  const sourcePlantee = (...remplacements: [string, string][]) => {
+    let source = sourceDeployee()
+    for (const [avant, apres] of remplacements) {
+      expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
+      source = source.replace(avant, apres)
+    }
+    return source
+  }
+  const lectureAttendue = (lire: (prevu: boolean) => LectureNotee) => {
+    expect(lire(false).colonnes).toBe(COLONNES_D_HIER)
+    expect(lire(true).colonnes).toBe(`${COLONNES_D_HIER}, cumul_repris, cumul_repris_au`)
+  }
+
+  it('attrape la constante de la copie qui ne suit plus celle de src/lib', () => {
+    const actuelle = /^const CUMUL_REPRIS_PREVU = (true|false)$/m.exec(sourceDeployee())![0]
+    const inverse = actuelle.endsWith('true') ? 'const CUMUL_REPRIS_PREVU = false' : 'const CUMUL_REPRIS_PREVU = true'
+    echoue(() => expect(extraire(sourcePlantee([actuelle, inverse]), plan).CUMUL_REPRIS_PREVU).toBe(CUMUL_REPRIS_PREVU))
+  })
+
+  it('attrape la lecture levée qui ne demanderait pas le cumul repris', () => {
+    const source = sourcePlantee([`select("${COLONNES_D_HIER}, cumul_repris, cumul_repris_au", `, `select("${COLONNES_D_HIER}", `])
+    echoue(() => lectureAttendue(lectureDuRegistre(source)))
+  })
+
+  it('attrape la lecture baissée qui demanderait déjà les colonnes neuves', () => {
+    const source = sourcePlantee([`: admin.from("immobilisations").select("${COLONNES_D_HIER}", `, `: admin.from("immobilisations").select("${COLONNES_D_HIER}, cumul_repris", `])
+    echoue(() => lectureAttendue(lectureDuRegistre(source)))
+  })
+
+  it('attrape la lecture aux branches inversées', () => {
+    const source = sourcePlantee(['        CUMUL_REPRIS_PREVU\n          ? admin.from("immobilisations")', '        !CUMUL_REPRIS_PREVU\n          ? admin.from("immobilisations")'])
+    echoue(() => lectureAttendue(lectureDuRegistre(source)))
   })
 
   it('attrape une dotation écrite hors des exercices du calcul, qu’on ne verrait plus', () => {
