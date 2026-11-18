@@ -1,4 +1,4 @@
--- RETOUR DE `mode_de_reglement_des_mouvements` (EXP58-Q1, supabase/preparees/20261117190000_mode_de_reglement_des_mouvements.sql) —
+-- RETOUR DE `mode_de_reglement_des_mouvements` (EXP58-Q1, supabase/preparees/20261117193000_mode_de_reglement_des_mouvements.sql) —
 -- À COLLER par le cabinet dans l'éditeur SQL de Supabase, dans une transaction : il retire deux déclencheurs, deux fonctions,
 -- une contrainte et une colonne, ce que l'outil d'application retient. CE QU'IL DÉTRUIT : la colonne
 -- `lignes_bancaires.mode_reglement`, et avec elle chaque mode que le cabinet a posé, mouvement par mouvement, depuis

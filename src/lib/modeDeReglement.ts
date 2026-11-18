@@ -9,7 +9,7 @@ import type { LigneBancaire, ModeComptable } from './types'
 //
 // CE MODULE TIENT trois choses, sans base ni horloge :
 //   1. LA LISTE FERMÉE des modes d'un mouvement, celle de la contrainte `lignes_bancaires_mode_reglement_liste` et de
-//      `poser_modes_de_reglement` (supabase/preparees/20261117190000_mode_de_reglement_des_mouvements.sql), que
+//      `poser_modes_de_reglement` (supabase/preparees/20261117193000_mode_de_reglement_des_mouvements.sql), que
 //      modeDeReglement.test.ts confronte au texte de la migration. Chaque mode est un ModeRglt du FEC (`MODES_REGLEMENT`,
 //      lib/champsBncDuFec.ts), écrit TEL QUE le fichier l'imprime : aucune table de codes, aucune lettre d'un logiciel. Les
 //      sources : Code monétaire et financier, art. L. 314-1, II — 1° et 2° le versement et le retrait d'espèces, 3° a) les

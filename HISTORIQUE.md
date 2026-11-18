@@ -53820,7 +53820,7 @@ de la Révision la lisent ; l'écran derrière `CUMUL_REPRIS_PREVU`. Reste : la 
 reprendre et redéployer avec la levée.
 ### 17/11/2026 — EXP58-Q1 : LE MODE DE RÈGLEMENT D'UN MOUVEMENT, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
 
-(Agent architecte ; rien en production.) Le cabinet a dit (B). `20261117190000_mode_de_reglement_des_mouvements` (par l'outil) :
+(Agent architecte ; rien en production.) Le cabinet a dit (B). `20261117193000_mode_de_reglement_des_mouvements` (par l'outil) :
 `lignes_bancaires.mode_reglement`, `text` nullable, sept ModeRglt du FEC tels quels (`lignes_bancaires_mode_reglement_liste` :
 Virement, Prélèvement, Carte bancaire — CMF L. 314-1, II, 3° ; Chèque — L. 131-1 s. ; Espèces, versement ou retrait selon le signe
 — L. 314-1, II, 1° et 2° ; Effet — C. com. L. 511-1 s. ; Autre), nul pour « Banque » ; `poser_modes_de_reglement`, aux droits du
