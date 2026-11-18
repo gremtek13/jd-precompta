@@ -1040,6 +1040,8 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         'doublons-probables',
         // Un avertissement d'INAL12-Q2 : la pièce validée sans empreinte de fichier. Son cas est plus bas.
         'pieces-sans-empreinte',
+        // Un avertissement de L1-Q1 (A) : un compte sur plusieurs lignes de la 2035. Son cas est plus bas.
+        'comptes-sur-plusieurs-postes',
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
@@ -2666,5 +2668,38 @@ describe('prealablesDeValidation — l’inventaire (INV3)', () => {
       bloquant: true, cible: 'inventaire',
       message: "L'inventaire de l'exercice 2025 n'est pas déclaré : le déclarer fait, même sans régularisation, avant la validation.",
     })
+  })
+})
+
+// UN COMPTE, UN SEUL POSTE DE LA 2035, AVANT LA VALIDATION (L1-Q1 (A), réponse du cabinet du 18/11/2026 ;
+// lib/unCompteUnPoste.ts) : deux catégories de deux postes au même compte avertissent sans retenir la validation, par le même
+// module que la Vue d'ensemble. Muet sur une lecture partielle, sur un autre exercice et quand les postes disent la même ligne.
+// Données FICTIVES.
+describe('prealablesDeValidation — un compte sur plusieurs lignes de la 2035 (L1-Q1)', () => {
+  const BUREAU: Categorie = { ...ACHATS, id: 'c-bureau', code: 'bureau', libelle: 'Bureau', poste_2035: 'Fournitures de bureau' }
+  const p2 = piece('p2', { categorie_id: BUREAU.id, tiers: 'Papeterie fictive', montant_ttc: 30, date_piece: '2025-05-10' })
+  const l2 = ligne('l2', { piece_id: 'p2', date: '2025-05-12', montant: -30, libelle: 'PRLV PAPETERIE' })
+  const e3 = ecriture('e3', { piece_id: 'p2', date: '2025-05-12', compte: E1.compte, montant: 30, libelle: 'Papeterie fictive' })
+  const e4 = ecriture('e4', { piece_id: 'p2', ligne_bancaire_id: 'l2', date: '2025-05-12', compte: COMPTE_BANQUE, montant: 30, sens: 'credit', libelle: 'Papeterie fictive' })
+  const deuxPostes = (o: Surcharges = {}) => donnees({
+    categories: [ACHATS, BUREAU], piecesValidees: [P1, p2], lignes: [L1, l2], ecritures: [E1, E2, e3, e4], ...o,
+  })
+
+  it('avertit avant le clic, nomme le compte et ses lignes, et ne retient pas la validation', () => {
+    const etat = prealablesDeValidation(deuxPostes())
+    const p = etat.prealables.find((x) => x.id === 'comptes-sur-plusieurs-postes')
+    expect(p).toMatchObject({ nb: 1, bloquant: false, cible: 'cloture' })
+    expect(p?.message).toMatch(/^compte\(s\) de charge ou de produit qui alimente\(nt\) plusieurs lignes de la 2035/)
+    expect(p?.detail).toContain(`${E1.compte} (2025) :`)
+    expect(etat.prealables.filter((x) => x.bloquant).map((x) => x.id)).not.toContain('comptes-sur-plusieurs-postes')
+  })
+
+  it('se tait quand les deux catégories disent la même ligne, et sur une lecture partielle', () => {
+    expect(ids(deuxPostes({ categories: [ACHATS, { ...BUREAU, poste_2035: ACHATS.poste_2035 }] }))).not.toContain('comptes-sur-plusieurs-postes')
+    expect(ids(deuxPostes({ lectureIncomplete: 'le relevé est lu en partie' }))).toEqual(['lecture-partielle'])
+  })
+
+  it('ne regarde que l’exercice qui se valide', () => {
+    expect(ids(deuxPostes({ annee: 2024, anneeCourante: 2026 }))).not.toContain('comptes-sur-plusieurs-postes')
   })
 })

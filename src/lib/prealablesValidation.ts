@@ -51,6 +51,9 @@ import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { anneeDe, formatDate, formatMoney } from './format'
 import { detailDesDoublonsProbables, doublonsProbables, piecesRegleesPourLesDoublons } from './doublonsProbables'
 import { MESSAGE_PIECES_SANS_EMPREINTE, sansEmpreinteDeDepot } from './empreinteDeDepot'
+import {
+  AVERTISSEMENT_COMPTES_SUR_PLUSIEURS_POSTES, comptesSurPlusieursPostesDeLExercice, detailDesComptesSurPlusieursPostes,
+} from './unCompteUnPoste'
 import type { RelevesAuTrenteEtUn, SoldeDuReleve } from './releveAuTrenteEtUn'
 import type { LectureDesComptes } from './importParCompte'
 import { banquesAuTrenteEtUn, duCompte, premiersRelevesParCompte, releveParCompte, type BanqueDUnCompteDuPlan, type PartDuReleve } from './releveParCompte'
@@ -1027,6 +1030,22 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   if (sansEmpreinte.length > 0) {
     prealables.push({
       id: 'pieces-sans-empreinte', nb: sansEmpreinte.length, cible: 'pieces', bloquant: false, message: MESSAGE_PIECES_SANS_EMPREINTE,
+    })
+  }
+  // UN COMPTE, UN SEUL POSTE DE LA 2035 (L1-Q1 (A), réponse du cabinet du 18/11/2026 ; lib/unCompteUnPoste.ts) : le point
+  // `comptes-sur-plusieurs-postes` de la Vue d'ensemble, ramené à l'exercice par le même module. Un AVERTISSEMENT, jamais un
+  // refus : le cabinet sait seul si deux postes sur un compte sont voulus ; mais le FEC part avec la validation, et le logiciel
+  // de l'expert-comptable range chaque compte sur une seule ligne. Les pièces des deux piles (une pièce à valider retient déjà
+  // la validation, ses écritures peuvent exister) ; la caisse lue en entier seulement — absente, aucune opération. Une lecture
+  // partielle a suspendu la validation plus haut : l'avertissement ne se dit que sur tout le dossier.
+  const comptesMultiPostes = comptesSurPlusieursPostesDeLExercice({
+    ecritures: d.ecritures, categories: d.categories, pieces: [...d.piecesValidees, ...d.piecesAValider], mouvements: d.lignes,
+    ventilations: d.ventilations, operationsDeCaisse: operationsDe(d.operationsDeCaisse), plan: d.modele.plan,
+  }, d.annee)
+  if (comptesMultiPostes.length > 0) {
+    prealables.push({
+      id: 'comptes-sur-plusieurs-postes', nb: comptesMultiPostes.length, cible: 'cloture', bloquant: false,
+      message: AVERTISSEMENT_COMPTES_SUR_PLUSIEURS_POSTES, detail: detailDesComptesSurPlusieursPostes(comptesMultiPostes),
     })
   }
   if (d.doublonsTexte === null) {

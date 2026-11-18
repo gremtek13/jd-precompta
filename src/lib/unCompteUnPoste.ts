@@ -7,7 +7,9 @@
 // d'un rôle que le moteur range ailleurs), la 2035 qu'il recalculera depuis notre FEC ne sera pas la nôtre.
 //
 // Ce module le DIT, sans rien corriger : une attention dans la Vue d'ensemble (`comptes-sur-plusieurs-postes`,
-// lib/pointsDeLaChecklist.ts), jamais bloquante. Il ne juge que ce qu'il sait : une ligne dont la source n'est pas lue, dont
+// lib/pointsDeLaChecklist.ts), jamais bloquante, et le même avertissement parmi les préalables de la validation de l'exercice
+// (L1-Q1 (A), réponse du cabinet du 18/11/2026 ; lib/prealablesValidation.ts), dit avant le clic : c'est à la validation que le
+// FEC part chez l'expert-comptable. Il ne juge que ce qu'il sait : une ligne dont la source n'est pas lue, dont
 // la catégorie n'a pas de poste, ou dont le poste n'est d'aucune ligne du formulaire pour sa nature, n'apporte aucun poste —
 // elle ne fait taire rien, elle ne crée aucun conflit. Deux postes comptent pour un s'ils disent la même LIGNE du formulaire
 // (`posteDuFormulaire`, lib/cases2035.ts : « Recettes » et le poste des ventes facturées sont la ligne 1).
@@ -123,6 +125,18 @@ export function comptesSurPlusieursPostes(s: SourcesDesPostes): CompteSurPlusieu
 
 export const LIBELLE_COMPTES_SUR_PLUSIEURS_POSTES = 'compte(s) de charge ou de produit qui alimente(nt) plusieurs lignes de la 2035 '
   + 'dans un même exercice — un logiciel qui range chaque compte sur une seule ligne ne retrouverait pas cette 2035'
+
+/**
+ * Les comptes d'UN exercice qui alimentent plusieurs lignes de la 2035 : ce que la validation de cet exercice dit avant le clic
+ * (L1-Q1 (A)). La même règle que la Vue d'ensemble, ramenée à l'année.
+ */
+export function comptesSurPlusieursPostesDeLExercice(s: SourcesDesPostes, annee: number): CompteSurPlusieursPostes[] {
+  return comptesSurPlusieursPostes(s).filter((c) => c.annee === annee)
+}
+
+/** Le message de l'avertissement de la validation : le libellé du point, et pourquoi le regarder avant le clic. */
+export const AVERTISSEMENT_COMPTES_SUR_PLUSIEURS_POSTES = `${LIBELLE_COMPTES_SUR_PLUSIEURS_POSTES}. Le FEC part avec l'exercice `
+  + 'validé : revoir le poste de ces catégories avant de valider, leurs écritures ne se corrigeront plus ensuite.'
 
 /** Le détail du point : chaque compte, son exercice et ses lignes du formulaire, cinq au plus, puis ce qu'on peut y faire. */
 export function detailDesComptesSurPlusieursPostes(comptes: readonly CompteSurPlusieursPostes[]): string | undefined {
