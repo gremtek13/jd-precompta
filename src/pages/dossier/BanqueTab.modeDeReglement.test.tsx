@@ -103,7 +103,7 @@ function rendre(o: { valides?: number[]; mode?: 'tresorerie' | 'engagement' } = 
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee="toutes" valides={o.valides ?? []}>
-        <BanqueTab dossierId={D} modele={modele(o.mode ?? 'tresorerie')} assujettiTva={false} ventesParLesFactures={false} statutTva="exonere" />
+        <BanqueTab dossierId={D} modele={modele(o.mode ?? 'tresorerie')} assujettiTva={false} ventesParLesFactures={false} statutTva="exonere" codeNaf={null} />
       </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,
