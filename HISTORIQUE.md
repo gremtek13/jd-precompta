@@ -53928,3 +53928,20 @@ le grain de BOR-Q4 (A) gardé, le numéro dans un registre de lots à part, sans
 rien (quelques milliers de numéros), une HMAC sous une clé du dossier tenue par la base suffit au doublon : posée (BOR1Q1-Q1). BOR-Q5 (B)
 contre ce que le bordereau imprime (la mutuelle sans organisme) : NOE3 à amender avant collage, BORQ5-Q1 ; BOR-Q8 (A) contre RGPD.md
 § 8.7 : BORQ8-Q1 ; BOR-Q9 à la réception : `receive-email` ne lit pas de PDF, à mesurer en BOR6. Plan BOR2 à BOR7 remis à jour (§ 13.5).
+### 18/11/2026 — C8Q2-Q3 : LE MOIS DE RACCORD AU PRORATA, LA PRÉVISION PUBLIÉE PRÊTE
+
+(Agent architecte ; rien en production.) Sur C8Q2-Q3 (B) et C8Q2-migration (A). **La règle** : du lendemain de la dernière écriture
+de banque à la fin du mois en cours, le rythme moyen au prorata des jours de CHAQUE mois touché (jours couverts ÷ jours du mois),
+arrondi au centime, le demi-centime vers le haut, puis la somme ; un mois entier compte le rythme exact. Aucun texte ne régit un plan
+de trésorerie : c'est le choix du cabinet, sur les jours réels. Écarté : diviser tous les jours par ceux du mois en cours (deux mois
+entiers ne feraient plus deux rythmes), un seul arrondi sur la somme (des fractions de dénominateur 377 580, au-delà de 2⁵³).
+`lib/planTresorerie.ts` (`periodeDuRaccord`, `partDuRythme` en BigInt, `dateDuDepart` venu de la prévision) ; le plan porte
+`raccord`, `departAu` sans défaut (nul : les ratios, le plan d'hier). L'écran du cabinet montre la ligne de raccord, et ses échéances
+partent d'elle ; la prévision porte une septième clé `raccord` (version 1 gardée : rien n'a été publié), relue et nommée (« Le
+raccord, du … au … »), comptée dans le mois le plus bas et parmi les mois passés ; « n'y est pas compté » disparaît. La base refait le
+prorata en entiers (`refus_de_la_prevision` `7f891e25…`, le retour suit). **Preuves** : copie de `replique_227` portée à 239, l'essai
+66/66 (18 étapes de plus, dont 14 à jour fixe que `previsionsPubliees.test.ts` relit au caractère près), EN ATTENTE sans ; 8 mutations
+SQL sur 8 ; `rls.sql` 269 lignes à 0 en faute, 157 mutations sur 157 ; le retour rend la signature de 239, se refuse sur une ligne ; la
+seconde application se refuse ; banc du leurre SÛR ; 11 mutations TypeScript sur 11 ; le plan d'hier, recopié en oracle, égal sans
+raccord sur 800 tirages. Question : C8Q2Q3-Q1 (un raccord de plus d'un mois, quand la banque n'est pas à jour).
+

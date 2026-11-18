@@ -921,8 +921,9 @@ export const TABLES_LUES_AVEC_COMPTES = ['situations_publiees'] as const
 // de sa migration (`PREVISIONS_PUBLIEES_PREVUES`, lib/previsionsPubliees.ts) ; droitsAcces.test.ts confronte ces termes à
 // la migration.
 export const CE_QUE_LA_BANQUE_OUVRE_DE_LA_PREVISION = 'il y lit la prévision de trésorerie que tu lui publies, la dernière '
-  + 'seulement — figée au jour de sa publication : le solde de départ et sa date, le rythme moyen des mois observés, chaque '
-  + 'mois projeté, et si ses recettes en espèces y entrent —, jamais une prévision retirée ni celle qu’une autre a remplacée.'
+  + 'seulement — figée au jour de sa publication : le solde de départ et sa date, le rythme moyen des mois observés, le '
+  + 'raccord jusqu’à la fin du mois de la publication, chaque mois projeté, et si ses recettes en espèces y entrent —, jamais '
+  + 'une prévision retirée ni celle qu’une autre a remplacée.'
 
 /** Ce que l'espace du client en montre (« Ma trésorerie »), et d'où le cabinet publie. */
 export const CE_QUE_MONTRE_MA_TRESORERIE_DE_LA_PREVISION = 'Son espace la lui montre dans « Ma trésorerie », sous le mot '

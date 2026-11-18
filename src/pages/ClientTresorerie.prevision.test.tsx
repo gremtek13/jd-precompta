@@ -128,9 +128,16 @@ describe('« Ma trésorerie » et la prévision de ton cabinet', () => {
     expect(texte).toContain('Publiée par ton cabinet le 10 novembre 2026.')
     expect(texte).toContain('au 20 octobre 2026, date de sa dernière écriture de banque')
     expect(texte).toContain('Tes recettes en espèces entrent dans ce rythme.')
-    expect(texte).toContain('du 21 octobre 2026 au 30 novembre 2026 n’y est pas compté')
+    // Le raccord (C8Q2-Q3) : du lendemain de la dernière écriture à la fin du mois, au prorata des jours — plus rien
+    // n'est « pas compté » dans la prévision.
+    expect(texte).toContain('Du 21 octobre 2026 au 30 novembre 2026, après cette dernière écriture, elle compte ce rythme au prorata des jours')
+    expect(texte).not.toContain('pas compté')
     const lignes = within(carte()).getAllByRole('row').slice(1).map((r) => r.querySelector('td')?.textContent)
-    expect(lignes).toEqual(['décembre 2026', 'janvier 2027', 'février 2027'])
+    expect(lignes).toEqual(['Du 21 octobre 2026 au 30 novembre 2026', 'décembre 2026', 'janvier 2027', 'février 2027'])
+    const raccord = within(carte()).getAllByRole('row')[1]
+    const c = contenu()
+    expect(raccord.querySelectorAll('td')[4].textContent).toBe(formatMoney((c.raccord?.solde_fin ?? Number.NaN) / 100))
+    expect(within(carte()).getAllByRole('row')[2].querySelectorAll('td')[1].textContent).toBe(formatMoney((c.raccord?.solde_fin ?? Number.NaN) / 100))
     // Le calcul des montants connus : la cotisation du 5 décembre seule, comme sans prévision.
     expect(synthese()).toContain(`Point le plus bas : ${formatMoney(-500)}, le 5 décembre 2026`)
     expect(synthese()).toContain(`Ce qui devrait sortir : ${formatMoney(1500)}`)

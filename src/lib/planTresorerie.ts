@@ -1,11 +1,21 @@
 import { empruntActif, genererEcheancier, type Emprunt } from './emprunts'
-import { ajouterMois, formatDate, premierJourDuMoisCourant } from './format'
+import { ajouterJours, ajouterMois, dernierJourDuMois, formatDate, premierJourDuMoisCourant } from './format'
 import type { CotisationDeclaree } from './types'
 
 export interface LigneBanquePourPlan { date: string; sens: 'debit' | 'credit'; montant: number }
 
 export interface MoisTresorerie {
   mois: string // 'YYYY-MM'
+  soldeDebut: number
+  encaissements: number
+  decaissements: number
+  soldeFin: number
+}
+
+/** Le mois de raccord (C8Q2-Q3) : du lendemain de la dernière écriture de banque à la fin du mois en cours (AAAA-MM-JJ). */
+export interface RaccordTresorerie {
+  du: string
+  au: string
   soldeDebut: number
   encaissements: number
   decaissements: number
@@ -26,7 +36,71 @@ export interface PlanTresorerie {
   // gonflerait la moyenne d'un cabinet en congés. On le DIT au lieu de le corriger — le code ne peut
   // pas distinguer « rien lu » de « rien encaissé », l'écran, lui, peut poser la question.
   nbMoisAvecDonnees: number
+  /**
+   * Le mois de raccord (C8Q2-Q3) : les jours qui séparent la dernière écriture de banque de la fin du mois en cours, au
+   * rythme moyen compté au prorata des jours ; nul quand ces jours n'existent pas, ou que l'appelant ne connaît pas la date
+   * de cette écriture (`departAu` nul) — le plan est alors celui d'hier, au centime.
+   */
+  raccord: RaccordTresorerie | null
+  /** Les mois complets, du mois qui suit le mois en cours ; le premier part de la fin du raccord, sinon du solde du jour. */
   lignes: MoisTresorerie[]
+}
+
+// ── Le mois de raccord (C8Q2-Q3, la réponse (B) du cabinet du 18/11/2026 : « corriger avant le collage, par un mois de
+// raccord au prorata des jours ») ─────────────────────────────────────────────────────────────────────────────────────
+// Le plan part du solde des écritures de banque au jour de leur dernière écriture, et projette des mois complets à partir
+// du mois qui suit le mois en cours : les jours entre cette écriture et la fin du mois en cours n'étaient comptés nulle
+// part (le 15 novembre, une dernière écriture du 31 octobre laissait tout novembre de côté, et « décembre » partait du
+// solde du 31 octobre). LE RACCORD LES COMPTE : du lendemain de la dernière écriture à la fin du mois en cours, le rythme
+// moyen AU PRORATA DES JOURS de chaque mois qu'il touche — pour un mois, ses jours couverts sur ses jours, la part arrondie
+// au centime, le demi-centime vers le haut —, puis la somme des parts ; un mois couvert en entier compte le rythme exact.
+// Aucun texte ne régit un plan de trésorerie : la règle est celle du cabinet, sur les jours réels du calendrier civil, les
+// mois mêmes du plan. La base la refait en entiers sur la prévision publiée (`refus_de_la_prevision`,
+// supabase/preparees/20261115100000_previsions_publiees.sql) ; l'écran du cabinet et la prévision la tirent d'ici.
+
+/**
+ * La date du solde de départ : la dernière écriture de banque comptée au jour donné (celles d'avant l'ouverture ne comptent
+ * plus : le solde repris les porte), ou l'ouverture elle-même ; nulle quand rien n'est comptabilisé.
+ */
+export function dateDuDepart(lignesBanque: readonly LigneBanquePourPlan[], ouverture: OuvertureBanque | null, jour: string): string | null {
+  const depart = ouverture && ouverture.date <= jour ? ouverture.date : null
+  let au: string | null = depart
+  for (const l of lignesBanque) {
+    if (l.date > jour || (depart !== null && l.date < depart)) continue
+    if (au === null || l.date > au) au = l.date
+  }
+  return au
+}
+
+/** Les jours du raccord : du lendemain de `departAu` au dernier jour du mois de `premierJourMoisCourant` ; nuls s'il n'en reste aucun. */
+export function periodeDuRaccord(departAu: string, premierJourMoisCourant: string): { du: string; au: string } | null {
+  const du = ajouterJours(departAu, 1)
+  const au = dernierJourDuMois(premierJourMoisCourant)
+  return du <= au ? { du, au } : null
+}
+
+const JOUR_MS = 86_400_000
+const instantDuJour = (date: string) => Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)))
+
+/**
+ * La part d'un rythme mensuel (des centimes ENTIERS) sur les jours `du` à `au`, bornes comprises : pour chaque mois touché,
+ * le rythme × ses jours couverts ÷ ses jours, arrondi au centime (le demi-centime s'éloigne de zéro), puis la somme. En
+ * entiers exacts (BigInt) : la base fait la même division entière, `div(2 × rythme × jours + longueur, 2 × longueur)`.
+ * NaN pour un rythme qui n'est pas un entier sûr ; 0 pour une période vide.
+ */
+export function partDuRythme(centimesParMois: number, du: string, au: string): number {
+  if (!Number.isSafeInteger(centimesParMois)) return Number.NaN
+  const rythme = BigInt(Math.abs(centimesParMois))
+  let total = 0n
+  for (let debut = `${du.slice(0, 7)}-01`; debut <= au; debut = ajouterMois(debut, 1)) {
+    const fin = dernierJourDuMois(debut)
+    const premier = du > debut ? du : debut
+    const dernier = au < fin ? au : fin
+    const jours = BigInt((instantDuJour(dernier) - instantDuJour(premier)) / JOUR_MS + 1)
+    const longueur = BigInt(Number(fin.slice(8, 10)))
+    if (jours > 0n) total += (2n * rythme * jours + longueur) / (2n * longueur)
+  }
+  return Number(centimesParMois < 0 ? -total : total)
 }
 
 // Deuxième brique du "dossier bancaire automatisé" (voir CLAUDE.md) — projection linéaire à partir
@@ -37,10 +111,15 @@ export interface PlanTresorerie {
 // ce même compte banque, donc sont déjà comprises dans cette moyenne — les rajouter séparément
 // doublerait leur effet. Voir echeancesEmprunts/echeancesCotisations ci-dessous pour une liste
 // indicative des échéances connues, à part, plutôt que fusionnée dans le calcul.
+//
+// `departAu` : la date du solde de départ (`dateDuDepart`), d'où part le raccord ; nulle, aucun raccord — le plan d'hier,
+// pour qui ne lit que la moyenne (les ratios) ou ne connaît pas cette date. Un paramètre sans défaut : chaque appelant dit
+// s'il veut le raccord.
 export function calculerPlanTresorerie(
   lignesBanque: LigneBanquePourPlan[], soldeActuel: number, nbMoisHistorique: number, nbMoisProjection: number,
+  departAu: string | null,
 ): PlanTresorerie {
-  return calculerPlanTresorerieAu(lignesBanque, soldeActuel, nbMoisHistorique, nbMoisProjection, premierJourDuMoisCourant())
+  return calculerPlanTresorerieAu(lignesBanque, soldeActuel, nbMoisHistorique, nbMoisProjection, premierJourDuMoisCourant(), departAu)
 }
 
 // LE MÊME PLAN, AU MOIS QU'ON LUI DONNE (C8-Q2) : `premierJourMoisCourant` (AAAA-MM-01) remplace le mois du jour lu sur
@@ -48,7 +127,7 @@ export function calculerPlanTresorerie(
 // (lib/previsionsPubliees.ts) ; l'écran du cabinet garde `calculerPlanTresorerie`, au jour local, comme hier.
 export function calculerPlanTresorerieAu(
   lignesBanque: readonly LigneBanquePourPlan[], soldeActuel: number, nbMoisHistorique: number, nbMoisProjection: number,
-  premierJourMoisCourant: string,
+  premierJourMoisCourant: string, departAu: string | null,
 ): PlanTresorerie {
   // Bornes comparées en chaînes AAAA-MM-JJ plutôt qu'en objets Date : `l.date` est une date SQL nue,
   // et la convertir en Date la place à minuit UTC, décalée par rapport à un minuit local — de quoi
@@ -64,8 +143,18 @@ export function calculerPlanTresorerieAu(
   const moyenneDecaissements = Math.round((totalDecaissements / nbMoisHistorique) * 100) / 100
   const nbMoisAvecDonnees = new Set(dansHistorique.map((l) => l.date.slice(0, 7))).size
 
+  // Le raccord, en centimes comme la prévision publiée : les moyennes sont déjà au centime.
+  const periode = departAu === null ? null : periodeDuRaccord(departAu, premierJourMoisCourant)
+  let raccord: RaccordTresorerie | null = null
+  if (periode !== null) {
+    const encaissements = partDuRythme(Math.round(moyenneEncaissements * 100), periode.du, periode.au) / 100
+    const decaissements = partDuRythme(Math.round(moyenneDecaissements * 100), periode.du, periode.au) / 100
+    const soldeFin = Math.round((soldeActuel + encaissements - decaissements) * 100) / 100
+    raccord = { du: periode.du, au: periode.au, soldeDebut: soldeActuel, encaissements, decaissements, soldeFin }
+  }
+
   const lignes: MoisTresorerie[] = []
-  let soldeCourant = soldeActuel
+  let soldeCourant = raccord ? raccord.soldeFin : soldeActuel
   for (let i = 1; i <= nbMoisProjection; i++) {
     const soldeDebut = soldeCourant
     const soldeFin = Math.round((soldeDebut + moyenneEncaissements - moyenneDecaissements) * 100) / 100
@@ -76,7 +165,7 @@ export function calculerPlanTresorerieAu(
 
   return {
     moyenneEncaissements, moyenneDecaissements, nbMoisHistorique,
-    nbLignesObservees: dansHistorique.length, nbMoisAvecDonnees, lignes,
+    nbLignesObservees: dansHistorique.length, nbMoisAvecDonnees, raccord, lignes,
   }
 }
 

@@ -6,7 +6,8 @@
 -- L'ORDRE : D'ABORD l'application, son drapeau baissé (`PREVISIONS_PUBLIEES_PREVUES`, le fichier de la migration sorti de
 -- l'export) et remise en ligne — levé, une sauvegarde lirait la table, et l'onglet Financement publierait —, PUIS ce texte.
 --
--- CE QU'IL REND : la base d'avant la migration ; aucune fonction d'hier n'a été remplacée.
+-- CE QU'IL REND : la base d'avant la migration ; aucune fonction d'hier n'a été remplacée. Sa garde exige les corps de la
+-- migration telle que corrigée le 18/11/2026 (le raccord, C8Q2-Q3 : `refus_de_la_prevision` en `7f891e25…`).
 --
 -- CE QU'IL RETIRE — ce qu'il DÉTRUIRAIT : la table `previsions_publiees` et ce qu'elle porte (chaque prévision publiée au
 -- client « Banque », ses remplacements et ses retraits), ses policies (la restrictive `deux_facteurs` comprise, si la double
@@ -35,7 +36,7 @@ begin
      or (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.prevision_publiee_en_cours(uuid)'))
        is distinct from '04498c75008f1446d4ffb92eb064c646'
      or (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.refus_de_la_prevision(jsonb,date)'))
-       is distinct from '7784b0056c89b984602f3a47cce5aad0'
+       is distinct from '7f891e256e383cd36297ae2177e8cb92'
      or (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.garder_prevision_publiee()'))
        is distinct from '470150e2aa56475f16bd4c7fede22a41' then
     raise exception 'Les fonctions de la prévision publiée ne sont plus celles que la migration a posées : relire la base avant ce retour.';
