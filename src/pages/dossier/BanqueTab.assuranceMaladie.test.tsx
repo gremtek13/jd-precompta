@@ -270,4 +270,37 @@ describe('l’association des paiements de l’assurance maladie, dans l’ongle
       nom: 'defaire_association_assurance_maladie', args: { p_dossier_id: D, p_ligne_bancaire_id: 'm1' },
     }])
   })
+
+  it('NOE5B-Q1 (B) : un crédit associé propose la catégorie habituelle des autres ; la choisir n’écrit rien, « Affecter » écrit', async () => {
+    const classe = (id: string, date: string) => mouvement({
+      id, date, libelle: `VIR CPAM 00123456782602${id.slice(-1)}0`, statut: 'rapprochee', categorie_id: 'c-hon',
+    })
+    poser({
+      releve: [CREDIT, classe('m2', '2026-02-05'), classe('m3', '2026-02-12')],
+      paiements: [paiement({ id: 'p1' }), paiement({ id: 'p2', date_journee_comptable: '2026-02-03' }), paiement({ id: 'p3', date_journee_comptable: '2026-02-10' })],
+      associations: [
+        association({ id: 'a1', paiement_id: 'p1', ligne_bancaire_id: 'm1' }), association({ id: 'a2', paiement_id: 'p2', ligne_bancaire_id: 'm2' }),
+        association({ id: 'a3', paiement_id: 'p3', ligne_bancaire_id: 'm3' }),
+      ],
+    })
+    rendre()
+    await ouvrir('VIR CPAM 0012345678260303')
+    await waitFor(() => expect(sans(volet().textContent)).toContain('le plus souvent classés « Honoraires » (2 sur 2 classés)'))
+    const choix = within(volet()).getByLabelText('Catégorie') as HTMLSelectElement
+    expect(choix.value).toBe('')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Choisir cette catégorie' }).click() })
+    expect(choix.value).toBe('c-hon')
+    expect(appels('affecter_mouvement_bancaire')).toEqual([])
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    await waitFor(() => expect(appels('affecter_mouvement_bancaire')).toHaveLength(1))
+    expect(appels('affecter_mouvement_bancaire')[0].args).toMatchObject({ p_ligne_bancaire_id: 'm1', p_categorie_id: 'c-hon' })
+  })
+
+  it('NOE5B-Q1 : rien de proposé sans autre crédit associé classé', async () => {
+    poser({ associations: [association({ id: 'a1', paiement_id: 'p1', ligne_bancaire_id: 'm1' })] })
+    rendre()
+    await ouvrir('VIR CPAM 0012345678260303')
+    await waitFor(() => expect(sans(volet().textContent)).toContain('Associé au paiement de l’assurance maladie'))
+    expect(within(volet()).queryByRole('button', { name: 'Choisir cette catégorie' })).toBeNull()
+  })
 })
