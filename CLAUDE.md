@@ -562,7 +562,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   le code (NOE4Q1-Q2 (A) ; une lecture partielle sans ligne ne prouve rien), l'onglet Informations disant pourquoi au cabinet,
   `lib/sectionAssuranceMaladie.ts`, NOE4-Q1 (C)) ; l'association au relevé, NOE5 (module et migration préparée) puis NOE5b, l'écran (17/11/2026, derrière
   `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` : la fiche d'un crédit, la section NOEMIE et son lot, un crédit associé hors des
-  candidats d'une vente, `lib/associationsAssuranceMaladieVue.ts`) → « NOE5 : L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ », « NOE5B : L'ÉCRAN DE L'ASSOCIATION », « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
+  candidats d'une vente, `lib/associationsAssuranceMaladieVue.ts` ; la fiche d'un crédit associé propose la catégorie la plus fréquente des autres crédits associés, choisie au clic, écrite par « Affecter » seul, `lib/categorieHabituelleAssuranceMaladie.ts`, NOE5B-Q1 (B)) → « NOE5 : L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ », « NOE5B : L'ÉCRAN DE L'ASSOCIATION », « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
   DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE »,
   « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE ». Le facturé (BOR, 17/11/2026), recherché, rien d'écrit
   (`docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md`) : Télévitale ne documente que des PDF et nomme « bordereau » deux

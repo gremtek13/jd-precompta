@@ -87,8 +87,11 @@ import PaiementsAssuranceMaladie from '../../components/PaiementsAssuranceMaladi
 import { AssociationDansLaSection } from '../../components/AssociationsAssuranceMaladie'
 import { useLesPaiementsAssuranceMaladie } from '../../lib/lecturePaiementsAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, type GroupeAAssocier } from '../../lib/rapprochementAssuranceMaladie'
-import { assuranceMaladieDeLaFiche, associesPourLesVentes, rapprochementDeLOnglet } from '../../lib/associationsAssuranceMaladieVue'
+import {
+  assuranceMaladieDeLaFiche, associesPourLesVentes, rapprochementDeLOnglet, type AssuranceMaladieDeLaFiche,
+} from '../../lib/associationsAssuranceMaladieVue'
 import { importsDeLaLecture, sectionAssuranceMaladie } from '../../lib/sectionAssuranceMaladie'
+import { categorieHabituelleDuCredit } from '../../lib/categorieHabituelleAssuranceMaladie'
 import PanneauDroit from '../../components/PanneauDroit'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
 import { usePanneauDroit } from '../../lib/panneauDroit'
@@ -1899,6 +1902,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // Le mouvement ouvert, relu dans `lignes` à chaque rendu — voir `mouvementOuvert`.
   const ligneOuverte = mouvementOuvert ? lignes.find((l) => l.id === mouvementOuvert.id) ?? null : null
   const mouvementVisible = ligneOuverte !== null && panneauMouvement.ouvert
+  // Ce que le mouvement ouvert est pour l'assurance maladie (NOE5b), hors d'un code qui n'offre pas l'association.
+  const ficheAssuranceMaladie: AssuranceMaladieDeLaFiche = ligneOuverte && associationOfferte
+    ? assuranceMaladieDeLaFiche(rapprochementAssuranceMaladie, ligneOuverte) : { genre: 'rien' }
 
   function ouvrirMouvement(ligne: LigneBancaire, rang: number) {
     if (!panneauMouvement.ouvrir()) return
@@ -2775,7 +2781,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             onEcarterProposition={(propositionId) => { void ecarterLaProposition(propositionId) }}
             onSupprimerMessage={(messageId) => { void supprimerLeMessage(messageId) }}
             assuranceMaladie={{
-              fiche: associationOfferte ? assuranceMaladieDeLaFiche(rapprochementAssuranceMaladie, ligneOuverte) : { genre: 'rien' },
+              fiche: ficheAssuranceMaladie,
+              // NOE5B-Q1 (B) : la catégorie la plus fréquente des autres crédits associés, PROPOSÉE ; la choisir remplit la liste
+              // de la fiche, et seul « Affecter » écrit. Sur les catégories lues en entier seulement.
+              categorieHabituelle: categorieHabituelleDuCredit(ficheAssuranceMaladie, ligneOuverte, lignes,
+                loading || categoriesIncompletes !== null ? null : { lignes: categories, complete: true }),
               occupe: associationAssuranceMaladieOccupee,
               erreur: erreurAssuranceMaladie,
               onAssocier: (groupe) => associerAssuranceMaladie([groupe]),

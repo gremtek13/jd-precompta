@@ -1,6 +1,9 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import { EntetePanneau } from '../../components/PanneauDroit'
 import { AssociationDansLaFiche } from '../../components/AssociationsAssuranceMaladie'
+import {
+  BOUTON_CATEGORIE_HABITUELLE, categorieHabituelleDite, type CategorieHabituelle,
+} from '../../lib/categorieHabituelleAssuranceMaladie'
 import type { AssuranceMaladieDeLaFiche } from '../../lib/associationsAssuranceMaladieVue'
 import type { GroupeAAssocier } from '../../lib/rapprochementAssuranceMaladie'
 import { IconAttention, IconChevron, IconCoche, IconPrecedent } from '../../components/icons'
@@ -322,6 +325,9 @@ interface FicheMouvementProps {
   // suivent restent offertes à un crédit associé.
   assuranceMaladie: {
     fiche: AssuranceMaladieDeLaFiche
+    // NOE5B-Q1 (B) : la catégorie la plus fréquente des autres crédits associés (lib/categorieHabituelleAssuranceMaladie.ts),
+    // ou rien. La choisir remplit la liste des catégories ; seul « Affecter » écrit.
+    categorieHabituelle: CategorieHabituelle | null
     occupe: boolean
     erreur: string | null
     onAssocier: (groupe: GroupeAAssocier) => void
@@ -1986,6 +1992,20 @@ export default function FicheMouvement({
                   ? 'Cet encaissement ressemble au remboursement d’un crédit de TVA (ci-dessus) : affecté à une catégorie, il compterait en recette.'
                   : 'Ce paiement ressemble au paiement d’une déclaration de TVA (ci-dessus) : affecté à une catégorie, la TVA compterait en charge.'}
               </p>
+            )}
+            {assuranceMaladie.categorieHabituelle && (
+              <div className="carte-rapprochement">
+                <p style={{ margin: 0 }}>{categorieHabituelleDite(assuranceMaladie.categorieHabituelle)}</p>
+                <div className="fiche-mouvement-boutons">
+                  <button
+                    type="button" className="btn btn-outline btn-sm"
+                    disabled={occupe || categorieChoisie === assuranceMaladie.categorieHabituelle.categorieId}
+                    onClick={() => { if (assuranceMaladie.categorieHabituelle) setCategorieChoisie(assuranceMaladie.categorieHabituelle.categorieId) }}
+                  >
+                    {BOUTON_CATEGORIE_HABITUELLE}
+                  </button>
+                </div>
+              </div>
             )}
             {choixDeCategorie('Affecter')}
             <div className="fiche-mouvement-boutons">
