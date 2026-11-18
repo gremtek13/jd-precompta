@@ -1,5 +1,5 @@
 -- LA PRÉVISION DE TRÉSORERIE PUBLIÉE (espace client, C8-Q2 ; la migration `previsions_publiees`, PRÉPARÉE le 15/11/2026,
--- supabase/preparees/20261115100000_previsions_publiees.sql). Le récit : HISTORIQUE.md, « 15/11/2026 — C8-Q2 : LA PRÉVISION
+-- supabase/schema/20261118154124_previsions_publiees.sql). Le récit : HISTORIQUE.md, « 15/11/2026 — C8-Q2 : LA PRÉVISION
 -- DE TRÉSORERIE PUBLIÉE AU CLIENT ». À rejouer par `execute_sql` après toute migration qui touche `memberships`,
 -- `client_du_dossier`, `admin_du_dossier`, `previsions_publiees` ou ses fonctions. Le retrait d'une ligne hors de la
 -- suppression de son dossier ne se joue pas ici (l'outil d'exécution de la production retient une suppression) : la garde

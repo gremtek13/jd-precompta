@@ -217,7 +217,7 @@ export function auPlanDesSituationsPubliees(table: string, exportees: boolean): 
 }
 
 // LA PRÉVISION DE TRÉSORERIE PUBLIÉE (espace client, C8-Q2 ; migration `previsions_publiees`, PRÉPARÉE le 15/11/2026,
-// supabase/preparees/20261115100000_previsions_publiees.sql) : ce que le cabinet a publié de son plan de trésorerie au
+// supabase/schema/20261118154124_previsions_publiees.sql) : ce que le cabinet a publié de son plan de trésorerie au
 // client « Banque », publications et retraits. Sous le drapeau de la migration (`PREVISIONS_PUBLIEES_PREVUES`,
 // src/lib/previsionsPubliees.ts), baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde. Sa
 // relation au dossier (cascade) et à elle-même (`remplace_id`, une chaîne : par vagues), son rang (après le prévisionnel

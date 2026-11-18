@@ -23,9 +23,9 @@ import {
 } from './sauvegarde'
 
 // LA PRÉVISION DE TRÉSORERIE PUBLIÉE AU PLAN DE SAUVEGARDE (espace client, C8-Q2). Sa migration, `previsions_publiees`, est
-// préparée (supabase/preparees/20261115100000_previsions_publiees.sql) et le drapeau baissé : le plan effectif ne dit RIEN
-// de la table — une sauvegarde lirait une table absente et échouerait ; le plan PRÉVU la porte, et les deux états du drapeau
-// se jouent (`vi.doMock`, plus bas).
+// en production depuis le 18/11/2026 (supabase/schema/20261118154124_previsions_publiees.sql) et le drapeau levé : le plan
+// effectif porte la table ; drapeau baissé, il n'en disait RIEN — une sauvegarde aurait lu une table absente —, et les deux
+// états du drapeau se jouent (`vi.doMock`, plus bas).
 
 const TABLE = 'previsions_publiees'
 
