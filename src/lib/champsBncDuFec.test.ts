@@ -392,6 +392,7 @@ describe('le mode de règlement d’un mouvement, posé par le cabinet (EXP58-Q1
   })
 
   it('le drapeau baissé : « Banque » partout, quoi que le mouvement porte — le fichier d’hier', () => {
+    drapeauDuMode.leve = false // levé en production depuis le 18/11/2026 : l'état d'avant se force ici
     expect(modeRgltDuReleve(['Carte bancaire'])).toBe('Banque')
     expect(affecte('Chèque')?.modeRglt).toBe('Banque')
     expect(pieceReglee({ par: 'releve', date: '2026-03-20' }, ['Prélèvement']).modeRglt).toBe('Banque')

@@ -53872,3 +53872,15 @@ EXP1-Q1 (A) ; EXP58Q4-Q1 (A) ; L1-Q1 (A).
 C8Q2-migration (A, l'appliquer sous « Banque »), C8Q2-Q1 (A), Q2 (A), Q3 (B : corriger AVANT le collage, par un mois de raccord au prorata des jours), Q4 (A) ; C8Q1-Q1 (A).
 RET2Q2-Q1 (A) ; INV6-Q1, INV7-Q1 ; P1TQ2-Q2 (A) ; B4RS1-Q4 (A) ; AFF-Q1, Q2, Q4 à Q8, Q10 à Q13, AFF1-Q1 à Q3, AFF2-Q1, Q2 (toutes à la recommandation).
 
+
+### 18/11/2026 — EXP58-Q1 EN PRODUCTION : LE MODE DE RÈGLEMENT D'UN MOUVEMENT (240)
+
+Sur l'accord du cabinet (fiche EXP58Q1-migration, « oui, par l'outil »). **Avant** : une copie de la réplique 227 portée à 239
+par l'export, la préparée appliquée (rc 0), `modeDeReglementDesMouvements.sql` 28 sur 28 en une transaction. **En production**,
+par `apply_migration`, le texte du fichier : 20261118135946, l'empreinte de l'historique `de41d714…` égale au fichier. Les trois
+contrôles, égaux des deux côtés : dérive 240 `20d1c70fc86cfb73c773e08ad63f759a` ; socle 83 `7939ff1c6aeee783289b6e2a60afefab`
+(la colonne et sa liste ajoutées à `lignes_bancaires`) ; inventaire 3 233 `26e62839babc66eaf11676f03b74cb21`.
+`MODE_DE_REGLEMENT_PREVU` levé : la fiche d'un mouvement, en trésorerie, dit le mode, le propose d'après le début du libellé et
+l'écrit au clic ; le FEC le porte à la place de « Banque ». Les deux cas « drapeau baissé » des tests du FEC forcent désormais
+cet état. **Pas rejoué en production** : l'essai (il crée et retire des dossiers jetables : sur une réplique seulement). L'agent
+qui a préparé ce lot annonçait EXP58Q1-Q1 à Q3 ; interrompu par un redémarrage, il ne les a pas rendues : à reconstituer.

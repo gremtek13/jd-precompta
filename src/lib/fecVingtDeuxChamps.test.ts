@@ -755,6 +755,7 @@ describe('le mode de règlement posé sur les mouvements du relevé (EXP58-Q1)',
   const avecModes = (j: Jeu): Jeu => ({ ...j, mouvements: j.mouvements.map((m) => ({ ...m, mode_reglement: MODES_POSES[m.id] ?? null })) })
 
   it('le drapeau baissé : le fichier d’aujourd’hui, à l’octet, à dix-huit comme à vingt-deux colonnes, et en engagement', () => {
+    drapeauDuMode.leve = false // levé en production depuis le 18/11/2026 : l'état d'avant se force ici
     const j = dossierComplet(VIDES)
     const poses = avecModes(j)
     expect(fec(poses, 'tresorerie', exportes(poses.entrees))).toBe(fec(j, 'tresorerie', exportes(j.entrees)))
