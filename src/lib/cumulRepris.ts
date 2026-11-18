@@ -13,8 +13,9 @@ import { exerciceQuiFige } from './validationExercice'
 /** Le drapeau de la migration `cumul_repris_des_biens` (supabase/preparees/20261117190000_cumul_repris_des_biens.sql), baissé
  *  jusqu'à son application : l'onglet Immobilisations ne montre ni n'écrit le cumul repris — les colonnes n'existent pas
  *  encore, et une écriture qui les nommerait serait refusée en entier. Le moteur, lui, lit le cumul de tout bien qui en porte
- *  un, sans drapeau : sans la migration, aucun n'en porte. Il se lève le jour de l'application, avec la copie de l'assistant
- *  (`agent-comptable`, bloc AMORTISSEMENT) reprise et redéployée. */
+ *  un, sans drapeau : sans la migration, aucun n'en porte. Il se lève le jour de l'application, dans le même commit que la
+ *  constante de la copie de l'assistant (`agent-comptable`, bloc AMORTISSEMENT : la lecture du registre et la consigne), que
+ *  src/lib/agentComptableAmortissement.test.ts veut dans le même état ; puis l'assistant se redéploie (EXP58Q5-Q3). */
 export const CUMUL_REPRIS_PREVU = false
 
 /** Le cumul tel que le champ le donne : vide, aucun cumul repris (le plan part de la mise en service) ; sinon le nombre lu,

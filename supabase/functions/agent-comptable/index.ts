@@ -2672,9 +2672,25 @@ function rapprochementsCotisationRefuses(
 // (`amortissement_cumule_centimes`) : linéaire, prorata temporis depuis la mise en service, en mois de trente
 // jours, le CUMUL arrondi au centime et non l'annuité, en entiers. Copié de src/lib/amortissements.ts et gardé
 // par src/lib/agentComptableAmortissement.test.ts, qui extrait ce bloc et le compare à src/lib.
+//
+// LE PLAN CONTINUÉ DEPUIS UN CUMUL REPRIS (EXP58-Q5, la migration `cumul_repris_des_biens` ; `amortissement_cumule_continue_centimes`
+// en base). Un bien d'avant la reprise du dossier peut porter le cumul de son ancien tableau d'amortissement au 31 décembre qui
+// précède l'année de l'ouverture (`cumul_repris`, `cumul_repris_au`) : ses dotations suivantes partent de la valeur nette
+// restante, répartie sur les jours qui restent du plan — le cumul arrondi, la dernière annuité soldant. Le calcul lit le cumul
+// de tout bien qui en porte un, sans drapeau, comme src/lib : sans la migration, aucun n'en porte.
+//
+// LE DRAPEAU. L'assistant n'importe rien de src/lib : `CUMUL_REPRIS_PREVU` redit ici celui de src/lib/cumulRepris.ts (le
+// garde rougit s'ils divergent), et se lève avec lui, dans le même commit, la migration en production — puis l'assistant se
+// redéploie (EXP58Q5-Q3). Baissé, `points_a_traiter` lit le registre par la liste de colonnes d'hier, à l'octet près : les deux
+// colonnes n'existent pas avant la migration, et une lecture qui les nommerait serait refusée en entier (le refus de lecture
+// partielle tairait alors toute la Checklist). Levé, il les lit, et une dotation du plan continué se juge comme la base l'écrit.
+const CUMUL_REPRIS_PREVU = false
+
 interface ImmobilisationRow {
   id: string; nature_id: string | null; libelle: string; valeur: number
   date_acquisition: string; date_mise_en_service: string | null; duree_annees: number
+  // Absents de la ligne tant que `CUMUL_REPRIS_PREVU` est baissé ; nuls sur un bien sans cumul repris.
+  cumul_repris?: number | null; cumul_repris_au?: string | null
 }
 interface NatureRow { id: string; compte_immobilisation: string }
 interface EcritureDotationRow {
@@ -2691,12 +2707,39 @@ function rang360(date: string): number {
   return Number(date.slice(0, 4)) * 360 + (Number(date.slice(5, 7)) - 1) * 30 + Math.min(Number(date.slice(8, 10)), 30) - 1
 }
 
+// Le cumul repris d'un bien : ses centimes et le 31 décembre auquel il est arrêté — ou rien, et le plan part de la mise en
+// service. Les deux colonnes vont ensemble (contrainte `immobilisations_cumul_repris_date`).
+function cumulReprisDuBien(bien: Pick<ImmobilisationRow, "cumul_repris" | "cumul_repris_au">): { centimes: bigint; au: string } | null {
+  if (bien.cumul_repris == null || bien.cumul_repris_au == null) return null
+  return { centimes: BigInt(Math.round(bien.cumul_repris * 100)), au: bien.cumul_repris_au }
+}
+
 // L'amortissement cumulé au soir du jour de rang `rang`, en centimes : la valeur × les jours en service ÷
 // (360 × la durée), le demi-centime vers le haut, plafonné à la valeur.
+// AVEC UN CUMUL REPRIS : à partir de son jour, le cumul repris plus la valeur nette restante × les jours écoulés depuis le
+// premier jour amorti après lui (le lendemain, ou la mise en service si elle suit) ÷ les jours qui restent du plan — au moins
+// un —, le demi-centime vers le haut ; avant son jour, le cumul repris réparti sur les jours en service jusqu'à lui (aucune
+// écriture ne s'en sert : une dotation d'avant l'ouverture ne s'écrit pas).
 function amortissementCumuleCentimes(bien: Omit<ImmobilisationRow, "id" | "nature_id" | "libelle">, rang: number): bigint {
-  const duree = BigInt(bien.duree_annees)
-  const jours = BigInt(Math.min(Math.max(rang - rang360(miseEnServiceDuBien(bien)) + 1, 0), 360 * bien.duree_annees))
-  return (2n * BigInt(Math.round(bien.valeur * 100)) * jours + 360n * duree) / (720n * duree)
+  const repris = cumulReprisDuBien(bien)
+  if (!repris) {
+    const duree = BigInt(bien.duree_annees)
+    const jours = BigInt(Math.min(Math.max(rang - rang360(miseEnServiceDuBien(bien)) + 1, 0), 360 * bien.duree_annees))
+    return (2n * BigInt(Math.round(bien.valeur * 100)) * jours + 360n * duree) / (720n * duree)
+  }
+  const service = rang360(miseEnServiceDuBien(bien))
+  const rangDuCumul = rang360(repris.au)
+  if (rang < rangDuCumul) {
+    const enService = rangDuCumul - service + 1
+    if (enService <= 0) return 0n
+    const joursAvant = BigInt(Math.min(Math.max(rang - service + 1, 0), enService))
+    return (2n * repris.centimes * joursAvant + BigInt(enService)) / (2n * BigInt(enService))
+  }
+  const debut = Math.max(rangDuCumul + 1, service)
+  const restants = Math.max(service + 360 * bien.duree_annees - debut, 1)
+  const joursApres = BigInt(Math.min(Math.max(rang - debut + 1, 0), restants))
+  return repris.centimes
+    + (2n * (BigInt(Math.round(bien.valeur * 100)) - repris.centimes) * joursApres + BigInt(restants)) / (2n * BigInt(restants))
 }
 
 function dotationDeLExercice(bien: Omit<ImmobilisationRow, "id" | "nature_id" | "libelle">, annee: number): number {
@@ -4905,9 +4948,13 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       lireTout<EcritureRow & EcritureDotationRow & EcritureForfaitRow & EcritureLiquidationRow>((d, f) =>
         admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id, vehicule_id, operation_caisse_id, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Le REGISTRE (bloc AMORTISSEMENT) : chaque bien, de quoi calculer sa dotation de chaque exercice. Et
-      // `piece_id` : la facture d'un bien s'écrit sur le compte de sa nature, pas sur sa catégorie.
+      // `piece_id` : la facture d'un bien s'écrit sur le compte de sa nature, pas sur sa catégorie. Et, `CUMUL_REPRIS_PREVU`
+      // levé (bloc AMORTISSEMENT), le cumul repris d'un bien et son 31 décembre : le plan continue depuis eux ; baissé, les
+      // colonnes d'hier — les deux neuves n'existent pas avant la migration.
       lireTout<ImmobilisationRow & { piece_id: string | null }>((d, f) =>
-        admin.from("immobilisations").select("id, piece_id, nature_id, libelle, valeur, date_acquisition, date_mise_en_service, duree_annees", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+        CUMUL_REPRIS_PREVU
+          ? admin.from("immobilisations").select("id, piece_id, nature_id, libelle, valeur, date_acquisition, date_mise_en_service, duree_annees, cumul_repris, cumul_repris_au", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)
+          : admin.from("immobilisations").select("id, piece_id, nature_id, libelle, valeur, date_acquisition, date_mise_en_service, duree_annees", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les mouvements AFFECTÉS à une catégorie sans justificatif (bloc AFFECTATION) : leurs catégories
       // comptent comme celles des pièces, et leur écriture doit suivre la catégorie.
       lireTout<MouvementAffecteRow>((d, f) =>
@@ -5500,7 +5547,7 @@ Règles impératives :
 - Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au ${plan.banque}, sans pièce, sur trois comptes : le capital remboursé au ${plan.emprunt} (une dette qui diminue — ni charge ni recette), les intérêts au ${plan.interets_emprunt} et l'assurance au ${plan.assurance_emprunt}, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le ${plan.emprunt} face au ${plan.banque} : ce n'est pas une recette. Rien de cela n'est une anomalie.
 - La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au ${plan.tva_immobilisations} : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.
-- Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le ${plan.dotations_amortissements} au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
+- Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le ${plan.dotations_amortissements} au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035.${CUMUL_REPRIS_PREVU ? " Celle d'un bien repris qui porte le cumul de son ancien tableau d'amortissement continue depuis lui : la valeur nette restante répartie sur la durée qui reste du plan." : ""} Ce n'est pas une anomalie.
 - Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du ${plan.indemnites_kilometriques}, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : `${plan.exploitant} Compte de l'exploitant`} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
 - Une DÉCLARATION DE TVA enregistrée s'écrit au dernier jour de sa période, sans pièce ni mouvement, au journal des opérations diverses : sa LIQUIDATION retire la TVA collectée (${plan.tva_collectee}) et déductible (${plan.tva_deductible}, ${plan.tva_immobilisations}) de la période, porte la TVA à payer au ${plan.tva_a_decaisser} TVA à décaisser — un crédit reporté au ${plan.credit_tva_a_reporter}, un remboursement demandé au ${plan.remboursement_tva_demande} — et l'arrondi à l'euro de la CA3 au ${plan.arrondi_charge} ou au ${plan.arrondi_produit}. Son PRÉLÈVEMENT, rapproché de la déclaration, débite le ${plan.tva_a_decaisser} face au ${plan.banque} ; le REMBOURSEMENT d'un crédit par le Trésor crédite le ${plan.remboursement_tva_demande} : ni charge ni recette, et rien de cela n'est une anomalie. Une période terminée dont la déclaration n'est pas enregistrée garde sa TVA aux comptes 4457 et 4456 : c'est un point à traiter.
 - Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au ${plan.banque}, sans pièce : la cotisation au ${plan.cotisations_exploitant} (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : ` et sa CSG-CRDS, quand elle est saisie, au ${plan.exploitant} Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance`}. Ce n'est pas une anomalie.
