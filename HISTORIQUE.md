@@ -53774,3 +53774,18 @@ LIA1-Q1, LIA2-Q2, Q3, LIA3-Q1, Q2, LIA6-Q1, Q2, LIA8-Q1. **Ce que cela ouvre** :
 d'EXP58-Q1, Q2 et Q5 ; l'application par l'outil de `chemin_dans_son_dossier` (CFCS-Q1) et de RATT-Q1 au prochain jour
 d'application ; les réglages d'export gardés par dossier (EXP-Q4) ; OPT1. Restent ouvertes : L1-Q1, NOE5-Q1 à Q4, EXP1-Q1 et Q2,
 EXP58Q4-Q1 et Q2, BOR-Q1 à Q9 (pas encore sur la page).
+
+### 18/11/2026 — CFCS-Q1 ET RATT-Q1 EN PRODUCTION (238, 239)
+
+Sur les accords du cabinet du 17/11/2026 au soir (CFCS-Q1 (A) ; RATT-Q1, « oui, par l'outil »). **Avant** : une copie de la
+réplique 227 portée à 237 par l'export, les deux préparées appliquées dans cet ordre (rc 0) ; `cheminsDansLeurDossier.sql` 9 sur
+9 (en une transaction, `psql -1`) ; `rls.sql` entier, 266 invariants, 0 en faute, 155 mutations qui mordent toutes, le bloc RT
+levé. **En production**, par `apply_migration`, le texte des fichiers : `chemin_dans_son_dossier` (20261117224056, empreinte de
+l'historique `81e94510…`, égale au fichier ; sa lecture préalable n'a trouvé aucune ligne fautive) puis
+`cabinet_d_un_dossier_par_le_super_administrateur` (20261118065556, `62299bb4…`, égale). Les trois contrôles, égaux des deux
+côtés : dérive 239 `b93250d1408b13df66915f12171f0d4a` ; socle 83 `97d17b23d4aae305e8d934d10b707d2f` (la contrainte de
+`documents_divers` ajoutée au fichier des tables sans migration) ; inventaire 3 227 `ad22c0b6662e07bf40a5911d56824d6b`. Aucun
+drapeau : l'application ne change jamais le cabinet d'un dossier, et `cheminDuDossier` tenait déjà la règle des chemins. **Pas
+rejoué en production** : `rls.sql` (rejoué sur la réplique seulement) ; l'essai des chemins ne se joue que sur une réplique. Les
+retours restent dans `supabase/preparees/retour/` (à coller). Reste CFCS2-Q1 (A), la seconde migration (la barre oblique inverse
+du dernier segment des originaux repris), à préparer.
