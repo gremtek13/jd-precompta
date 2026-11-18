@@ -489,7 +489,8 @@ describe('les essais de la base, rejoués en production', () => {
     // après sa migration préparée ; joué sur une copie de la réplique à 237 (34 verdicts sur 34), le banc reste à rejouer.
     // Trente-trois : `modeDeReglementDesMouvements` (EXP58-Q1, `mode_de_reglement_des_mouvements`) entré dans la
     // famille « apres », après sa migration préparée ; joué sur une copie de la réplique à 237 (28 verdicts sur 28), SÛR au banc.
-    expect(cas.length).toBe(33)
+    // Trente-deux le 18/11/2026 : `previsionsPubliees` sorti (C8-Q2 en production, 20261118154124).
+    expect(cas.length).toBe(32)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

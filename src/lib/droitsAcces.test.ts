@@ -1978,10 +1978,10 @@ describe('la case « Comptes » (étape C4b), derrière sa migration', () => {
 })
 
 // « BANQUE », AVEC LA PRÉVISION DE TRÉSORERIE PUBLIÉE (C8-Q2) : la phrase de l'onglet Accès dit ce que la migration
-// `previsions_publiees` (préparée) ouvre de plus au client « Banque » — la prévision en cours, aucun geste —, et nomme la page.
+// `previsions_publiees` (en production depuis le 18/11/2026) ouvre de plus au client « Banque » — la prévision en cours, aucun geste —, et nomme la page.
 describe('ce que dit « Banque » de la prévision de trésorerie publiée (C8-Q2)', () => {
-  const preparees = resolve(process.cwd(), 'supabase/preparees')
-  const MIGRATION_PP = readFileSync(resolve(preparees, readdirSync(preparees).find((n) => /^\d{14}_previsions_publiees\.sql$/.test(n))!), 'utf8')
+  const exportDuSchema = resolve(process.cwd(), 'supabase/schema')
+  const MIGRATION_PP = readFileSync(resolve(exportDuSchema, readdirSync(exportDuSchema).find((n) => /^\d{14}_previsions_publiees\.sql$/.test(n))!), 'utf8')
 
   it('la phrase dit la prévision en cours, figée, sans geste, et nomme « Ma trésorerie » ; la policy du client est celle-là', () => {
     const phrase = ceQueDitLaBanqueDeLaPrevision()

@@ -56,7 +56,7 @@ export interface PlanTresorerie {
 // au centime, le demi-centime vers le haut —, puis la somme des parts ; un mois couvert en entier compte le rythme exact.
 // Aucun texte ne régit un plan de trésorerie : la règle est celle du cabinet, sur les jours réels du calendrier civil, les
 // mois mêmes du plan. La base la refait en entiers sur la prévision publiée (`refus_de_la_prevision`,
-// supabase/preparees/20261115100000_previsions_publiees.sql) ; l'écran du cabinet et la prévision la tirent d'ici.
+// supabase/schema/20261118154124_previsions_publiees.sql) ; l'écran du cabinet et la prévision la tirent d'ici.
 
 /**
  * La date du solde de départ : la dernière écriture de banque comptée au jour donné (celles d'avant l'ouverture ne comptent

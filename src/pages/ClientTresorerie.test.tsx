@@ -24,6 +24,13 @@ const faux = vi.hoisted(() => ({
   achatsLeves: false,
 }))
 
+// Le drapeau de C8-Q2 (`PREVISIONS_PUBLIEES_PREVUES`, levé le 18/11/2026) est forcé à son état d'avant : ce fichier
+// garde la page sans la prévision du cabinet ; ses deux états se jouent dans ClientTresorerie.prevision.test.tsx.
+vi.mock('../lib/previsionsPubliees', async (original) => ({
+  ...await original<typeof import('../lib/previsionsPubliees')>(),
+  PREVISIONS_PUBLIEES_PREVUES: false,
+}))
+
 vi.mock('../lib/achatsClient', async (original) => ({
   ...await original<typeof import('../lib/achatsClient')>(),
   get ACHATS_DU_CLIENT_PREVUS() { return faux.achatsLeves },

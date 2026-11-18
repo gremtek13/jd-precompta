@@ -53945,3 +53945,18 @@ SQL sur 8 ; `rls.sql` 269 lignes à 0 en faute, 157 mutations sur 157 ; le retou
 seconde application se refuse ; banc du leurre SÛR ; 11 mutations TypeScript sur 11 ; le plan d'hier, recopié en oracle, égal sans
 raccord sur 800 tirages. Question : C8Q2Q3-Q1 (un raccord de plus d'un mois, quand la banque n'est pas à jour).
 
+
+### 18/11/2026 — C8-Q2 EN PRODUCTION : LA PRÉVISION DE TRÉSORERIE PUBLIÉE (241)
+
+Sur l'accord du cabinet (C8Q2-migration (A), après C8Q2-Q3 (B) corrigée), `previsions_publiees` est appliquée par l'outil
+(version 20261118154124, 241e migration). Avant : répétée sur une copie de la réplique portée à 240, son essai
+`previsionsPubliees.sql` rendant 66 verdicts sur 66. Après : l'empreinte de la ligne d'historique égale au fichier sans sa
+dernière fin de ligne (`513f97ab…`), le corps de `refus_de_la_prevision` à `7f891e25…` ; le fichier passé à l'export, texte
+inchangé ; la dérive (241, `6444c164…`) et l'inventaire (3 259 objets, `c3db9e41…`) égaux des deux côtés ; le socle n'est pas
+touché (83 instructions, `7939ff1c…` côté dépôt, aucune de ses douze tables dans la migration).
+`PREVISIONS_PUBLIEES_PREVUES` est levé dans le même commit : « Publier au client » sous le plan de trésorerie, la prévision
+dans « Ma trésorerie », la phrase de la case « Banque », la table au plan de sauvegarde. `ClientTresorerie.test.tsx` force
+l'état d'avant du drapeau (ses deux états se jouent dans `ClientTresorerie.prevision.test.tsx`) ; l'essai sort de la famille
+« en attente » du banc du leurre (32 essais de production). La suite entière : 23 388 tests verts.
+Non fait : l'essai rejoué en production, `rls.sql` rejoué en production, le banc de captures (la carte de la prévision et
+les libellés du raccord à petite largeur).

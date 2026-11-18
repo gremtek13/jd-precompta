@@ -33,12 +33,12 @@ import {
 
 // ── Le drapeau ────────────────────────────────────────────────────────────────────────────────────────────────────────
 /**
- * LE DRAPEAU DE LA MIGRATION `previsions_publiees` (préparée le 15/11/2026, présentée au cabinet : la fiche
+ * LE DRAPEAU DE LA MIGRATION `previsions_publiees` (préparée le 15/11/2026, en production depuis le 18/11/2026, 241 : la fiche
  * « C8Q2-migration »). BAISSÉ : aucun écran ne change — ni « Publier au client » sous le plan de trésorerie, ni la
  * prévision dans « Ma trésorerie », ni la phrase de la case « Banque » —, et la table n'est pas au plan de sauvegarde (la
  * lire ferait échouer toute sauvegarde). Il se lève avec la migration, dans le même commit que son fichier passé à l'export.
  */
-export const PREVISIONS_PUBLIEES_PREVUES = false
+export const PREVISIONS_PUBLIEES_PREVUES = true
 
 export const VERSION_DE_LA_PREVISION = 1
 /** Les bornes du plan de l'onglet Financement (ses deux champs, de 1 à 24 mois), que la base redit. */
@@ -90,7 +90,7 @@ export interface PrevisionPubliee {
   publiee_le: string
 }
 
-// Les mots de la base (supabase/preparees/20261115100000_previsions_publiees.sql), confrontés au texte par le test.
+// Les mots de la base (supabase/schema/20261118154124_previsions_publiees.sql), confrontés au texte par le test.
 export const REFUS_PREVISION = {
   acces: 'Accès refusé à ce dossier.',
   forme: 'La prévision n\'est pas dans la forme que la base connaît (version 1).',

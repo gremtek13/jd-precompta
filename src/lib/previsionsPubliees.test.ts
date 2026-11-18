@@ -17,7 +17,7 @@ import {
 // Financement ; ses refus, confrontés au texte de la migration préparée ; sa relecture par le client ; ce que les deux écrans
 // en disent. L'essai de la base : supabase/essais/previsionsPubliees.sql, sur une réplique.
 
-const MIGRATION = 'supabase/preparees/20261115100000_previsions_publiees.sql'
+const MIGRATION = 'supabase/schema/20261118154124_previsions_publiees.sql'
 const RETOUR = 'supabase/preparees/retour/20261115100100_retour_previsions_publiees.sql'
 const ESSAI = 'supabase/essais/previsionsPubliees.sql'
 const texte = readFileSync(resolve(process.cwd(), MIGRATION), 'utf8')
@@ -57,11 +57,11 @@ function compose(e: Partial<EntreeDeLaPrevision> = {}): ContenuDeLaPrevision {
 }
 
 describe('le drapeau et les fichiers de la migration', () => {
-  it('baissé, la migration préparée, son retour à côté, hors de l’export', () => {
-    expect(PREVISIONS_PUBLIEES_PREVUES).toBe(false)
+  it('levé (en production depuis le 18/11/2026, 241), la migration dans l’export, son retour gardé, plus rien de préparé', () => {
+    expect(PREVISIONS_PUBLIEES_PREVUES).toBe(true)
     expect(existsSync(resolve(process.cwd(), MIGRATION))).toBe(true)
     expect(existsSync(resolve(process.cwd(), RETOUR))).toBe(true)
-    expect(existsSync(resolve(process.cwd(), 'supabase/schema/20261115100000_previsions_publiees.sql'))).toBe(false)
+    expect(existsSync(resolve(process.cwd(), 'supabase/preparees/20261115100000_previsions_publiees.sql'))).toBe(false)
   })
 
   it('la prévision ne se montre que dans « Ma trésorerie » : levée, la page doit l’être aussi', () => {
