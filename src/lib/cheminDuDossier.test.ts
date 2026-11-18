@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { cheminDuDossier } from './cheminDuDossier'
 
@@ -53,10 +53,8 @@ describe('cheminDuDossier, la règle de la base (CFCS-Q1)', () => {
   })
 
   it('la migration pose les trois contraintes, chacune avec les quatre règles', () => {
-    const nom = '20261112220000_chemin_dans_son_dossier.sql'
-    const prete = new URL(`../../supabase/preparees/${nom}`, import.meta.url)
-    const appliquee = new URL(`../../supabase/schema/${nom}`, import.meta.url)
-    const texte = readFileSync(existsSync(appliquee) ? appliquee : prete, 'utf8')
+    // En production depuis le 17/11/2026 : le fichier vit dans l'export, sous la version de l'historique.
+    const texte = readFileSync(new URL('../../supabase/schema/20261117224056_chemin_dans_son_dossier.sql', import.meta.url), 'utf8')
     for (const [contrainte, colonne] of [
       ['pieces_storage_path_dans_son_dossier', 'storage_path'],
       ['pieces_lisible_path_dans_son_dossier', 'lisible_path'],

@@ -3,7 +3,7 @@
 -- PRÉPARÉE le 17/11/2026, PAS APPLIQUÉE. Le récit : HISTORIQUE.md, « 17/11/2026 — EXP58-Q1 : LE MODE DE RÈGLEMENT D'UN
 -- MOUVEMENT, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) » ; l'analyse : docs/conceptions/58-reponses-de-l-expert-comptable.md, § 1.1 et
 -- 1.2 ; l'essai : supabase/essais/modeDeReglementDesMouvements.sql (EN ATTENTE sans elle) ; le retour :
--- supabase/preparees/retour/20261117190100_retour_mode_de_reglement_des_mouvements.sql ; le module qui redit sa liste et ses
+-- supabase/preparees/retour/20261117193100_retour_mode_de_reglement_des_mouvements.sql ; le module qui redit sa liste et ses
 -- refus, et qui PROPOSE le mode : src/lib/modeDeReglement.ts (`MODE_DE_REGLEMENT_PREVU`, baissé jusqu'à l'application).
 --
 -- LE CAS. Le FEC d'un BNC en trésorerie porte le mode de règlement de chaque écriture (LPF, art. A47 A-1, VIII, 7°,

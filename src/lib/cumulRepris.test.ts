@@ -5,7 +5,7 @@ import {
   CUMUL_REPRIS_PREVU, champsDuCumulRepris, cumulReprisSaisi, phraseDuCumulRepris, refusCumulRepris, refusDuCumulFige,
   type SaisieDuCumulRepris,
 } from './cumulRepris'
-import { derniereDefinitionSql } from '../test/schema'
+import { derniereDefinitionSql, indiceSql } from '../test/schema'
 
 // EXP58-Q5 : LE CUMUL REPRIS D'UN BIEN, À L'ÉCRAN. Ce que l'écran dit avant le clic — les refus des trois contraintes de la
 // migration `cumul_repris_des_biens` et de sa garde —, ce qu'il écrit, et la migration confrontée à son retour, à son essai et à
@@ -31,8 +31,8 @@ const md5 = (texte: string) => createHash('md5').update(texte, 'utf8').digest('h
 /** Le corps d'une fonction tel que la base le garde (`prosrc`) : entre ses deux délimiteurs `$$` — ou jusqu'à la fin, pour
  *  une définition de l'export (`derniereDefinitionSql` en écarte le délimiteur fermant). */
 const corps = (texte: string, signature: string) => {
-  const debut = texte.indexOf(`create or replace function public.${signature}`) >= 0
-    ? texte.indexOf(`create or replace function public.${signature}`) : texte.indexOf(`create function public.${signature}`)
+  const remplacee = indiceSql(texte, `create or replace function public.${signature}`)
+  const debut = remplacee >= 0 ? remplacee : indiceSql(texte, `create function public.${signature}`)
   expect(debut, signature).toBeGreaterThanOrEqual(0)
   const ouverture = texte.indexOf('$$', debut) + 2
   const fermeture = texte.indexOf('$$', ouverture)
