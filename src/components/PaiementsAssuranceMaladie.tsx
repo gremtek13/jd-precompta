@@ -21,7 +21,7 @@ import {
 import type { PaiementsLus } from '../lib/paiementsAssuranceMaladieLecture'
 import { useLesPaiementsAssuranceMaladie } from '../lib/lecturePaiementsAssuranceMaladie'
 import { importsAssocies, refusDuRetraitDImportDit } from '../lib/associationsAssuranceMaladieVue'
-import { sectionAssuranceMaladie } from '../lib/sectionAssuranceMaladie'
+import { importsDeLaLecture, sectionAssuranceMaladie } from '../lib/sectionAssuranceMaladie'
 import BandeauLecturePartielle from './BandeauLecturePartielle'
 import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/types'
 
@@ -42,8 +42,11 @@ import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/ty
 // lues en partie, aucun geste ; un import dont un paiement est associé n'offre pas « Retirer », et dit pourquoi.
 //
 // SUR UN CODE NAF DE SANTÉ SEULEMENT (NOE4-Q1 (C), lib/sectionAssuranceMaladie.ts) : `codeNaf`, la colonne du dossier telle
-// que l'écran qui monte la section l'a lue, est obligatoire ; hors de la division 86, absent, illisible ou pas encore lu, la
-// section ne se monte pas — ni ses imports, ni l'association qu'elle porte. L'onglet Informations du cabinet dit pourquoi.
+// que l'écran qui monte la section l'a lue, est obligatoire ; hors de la division 86 et de la liste fermée (NOE4Q1-Q1 (B)),
+// absent, illisible ou pas encore lu, la section ne se monte pas — ni ses imports, ni l'association qu'elle porte —, SAUF dès
+// qu'un import du dossier est lu (NOE4Q1-Q2 (A)) : la section reste alors offerte, gestes compris. Les imports se lisent donc
+// avant la règle ; une lecture partielle, refusée ou pas revenue ne dit pas qu'il n'y en a pas, et le code décide seul.
+// L'onglet Informations du cabinet dit pourquoi.
 
 export interface LecturePartagee {
   lu: PaiementsLus | null
@@ -61,14 +64,23 @@ export default function PaiementsAssuranceMaladie({ espace, dossierId, codeNaf, 
   children?: ReactNode
 }) {
   if (!PAIEMENTS_ASSURANCE_MALADIE_PREVUS) return null
-  if (!sectionAssuranceMaladie(codeNaf).offerte) return null
-  if (partagee) return <Section key={dossierId} espace={espace} dossierId={dossierId} lecture={partagee}>{children}</Section>
-  return <SectionAutonome key={dossierId} espace={espace} dossierId={dossierId} />
+  if (partagee) {
+    return <SectionSelonLaRegle key={dossierId} espace={espace} dossierId={dossierId} codeNaf={codeNaf} lecture={partagee}>{children}</SectionSelonLaRegle>
+  }
+  return <SectionAutonome key={dossierId} espace={espace} dossierId={dossierId} codeNaf={codeNaf} />
 }
 
-function SectionAutonome({ espace, dossierId }: { espace: EspaceVentes; dossierId: string }) {
+function SectionAutonome({ espace, dossierId, codeNaf }: { espace: EspaceVentes; dossierId: string; codeNaf: string | null | undefined }) {
   const lecture = useLesPaiementsAssuranceMaladie(dossierId, espace)
-  return <Section espace={espace} dossierId={dossierId} lecture={lecture} />
+  return <SectionSelonLaRegle espace={espace} dossierId={dossierId} codeNaf={codeNaf} lecture={lecture} />
+}
+
+/** La règle de lib/sectionAssuranceMaladie.ts, sur le code et sur les imports lus : hors d'elle, rien ne se montre. */
+function SectionSelonLaRegle({ espace, dossierId, codeNaf, lecture, children }: {
+  espace: EspaceVentes; dossierId: string; codeNaf: string | null | undefined; lecture: LecturePartagee; children?: ReactNode
+}) {
+  if (!sectionAssuranceMaladie(codeNaf, importsDeLaLecture(lecture.lu, dossierId)).offerte) return null
+  return <Section espace={espace} dossierId={dossierId} lecture={lecture}>{children}</Section>
 }
 
 function Section({ espace, dossierId, lecture, children }: {

@@ -5,7 +5,7 @@ import { REFUS_DE_LA_FONCTION, refusDuConflit } from '../lib/paiementsAssuranceM
 import { phraseApresLImport } from '../lib/paiementsAssuranceMaladieVue'
 import { refusDuRetraitDImportDit } from '../lib/associationsAssuranceMaladieVue'
 import type { PaiementsLus } from '../lib/paiementsAssuranceMaladieLecture'
-import type { PaiementAssuranceMaladie } from '../lib/types'
+import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/types'
 
 // L'écran des paiements de l'assurance maladie (NOE4) : drapeau baissé, rien n'est monté ni lu ; rien avant le retour ; une
 // lecture partielle n'offre aucun geste ; le fichier — FABRIQUÉ, des noms et des numéros manifestement faux — ne montre que ses
@@ -88,16 +88,37 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
     expect(faux.lectures).toBe(0)
   })
 
-  it('hors d’un code NAF de santé, absent, illisible ou pas lu (NOE4-Q1 (C)) : rien n’est monté, rien n’est lu, dans les deux espaces', () => {
-    faux.lecture = lus([], true)
-    for (const espace of ['client', 'cabinet'] as const) {
-      for (const codeNaf of ['69.20Z', '87.10A', null, undefined, 'Infirmier']) {
-        const { container, unmount } = render(<PaiementsAssuranceMaladie espace={espace} dossierId="d1" codeNaf={codeNaf} />)
-        expect(container.innerHTML, `${espace} ${String(codeNaf)}`).toBe('')
-        unmount()
+  it('hors d’un code NAF de santé, absent, illisible ou pas lu, sans import (NOE4-Q1 (C)) : rien n’est monté, dans les deux espaces', async () => {
+    // Les imports se lisent (NOE4Q1-Q2 (A) : un import l'emporterait) ; aucun, ou pas encore revenus, rien ne se monte.
+    for (const lecture of [lus([], true), null]) {
+      faux.lecture = lecture
+      for (const espace of ['client', 'cabinet'] as const) {
+        for (const codeNaf of ['69.20Z', '87.10A', null, undefined, 'Infirmier']) {
+          const { container, unmount } = render(<PaiementsAssuranceMaladie espace={espace} dossierId="d1" codeNaf={codeNaf} />)
+          await act(async () => {})
+          expect(container.innerHTML, `${espace} ${String(codeNaf)}`).toBe('')
+          unmount()
+        }
       }
     }
-    expect(faux.lectures).toBe(0)
+  })
+
+  it('dès qu’un import est lu (NOE4Q1-Q2 (A)) : la section reste offerte, gestes compris, quel que soit le code NAF', async () => {
+    const IMPORT_LU: ImportAssuranceMaladie = {
+      id: 'i1', dossier_id: 'd1', periode_du: '2026-03-03', periode_au: '2026-03-03', nombre_de_rejets: 0,
+      montant_rejete_centimes: 0, importe_par: 'u', importe_le: '2026-03-06T09:00:00Z',
+    }
+    const avecUnImport: PaiementsLus = { dossierId: 'd1', etat: 'lus', imports: lue([IMPORT_LU]), paiements: lue([]), associations: null }
+    faux.lecture = avecUnImport
+    const vue = render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="69.20Z" />)
+    expect(await screen.findByRole('button', { name: 'Importer un fichier de paiements' })).toBeTruthy()
+    vue.unmount()
+    // Une lecture partielle qui ne rend aucune ligne ne prouve rien : le code décide seul.
+    const enPartie: PaiementsLus = { dossierId: 'd1', etat: 'lus', imports: lue([], false), paiements: lue([]), associations: null }
+    faux.lecture = enPartie
+    const { container } = render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf={null} />)
+    await act(async () => {})
+    expect(container.innerHTML).toBe('')
   })
 
   it('rien avant le retour ; une lecture partielle n’offre aucun geste', async () => {
