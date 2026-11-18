@@ -339,8 +339,8 @@ verse d'elle-même au semestre suivant).
 
 | Lot | Ce qu'il fait | Préalable |
 |---|---|---|
-| BOR0 | Sans code : recevoir du cabinet les pièces du § 9 ; savoir lequel des deux « bordereaux » il a (BOR-Q1) ; essayer « Outils › Requêtes » et les deux statistiques par caisse ; relire sur Légifrance le point de départ des sept jours. **Sert aussi NOE1** : la forme du payé chez Télévitale | — |
-| BOR1 | `lib/pdfText.ts` : les fragments positionnés ; un module pur qui en fait un tableau par ancres (lignes, colonnes par abscisse), testé sans pdf.js ; le garde « des octets, jamais une adresse » | — |
+| BOR0 | **Une page montrée le 18/11/2026, le reste à recevoir (§ 12).** Sans code : recevoir du cabinet les pièces du § 9 ; savoir lequel des deux « bordereaux » il a (BOR-Q1) ; essayer « Outils › Requêtes » et les deux statistiques par caisse ; relire sur Légifrance le point de départ des sept jours. **Sert aussi NOE1** : la forme du payé chez Télévitale | — |
+| BOR1 | **Fait le 18/11/2026 pour le bordereau de télétransmission (§ 12.2)**, dans deux modules à lui plutôt que dans `lib/pdfText.ts`. Le plan d'origine : `lib/pdfText.ts` : les fragments positionnés ; un module pur qui en fait un tableau par ancres (lignes, colonnes par abscisse), testé sans pdf.js ; le garde « des octets, jamais une adresse » | — |
 | BOR2 | `lib/factureAssuranceMaladie.ts`, pur : la liste fermée des gabarits (un par état reçu en BOR0), la liste blanche des genres et leurs bornes, le total confronté, les agrégats, les refus ; des fichiers d'essai **fabriqués** ; le scanner « sans sortie » étendu ; le canari | BOR0, BOR1, BOR-Q2 |
 | BOR3 | La migration préparée, par l'outil, derrière un drapeau baissé : les tables d'agrégats sans texte, l'import tout ou rien et son retrait, la RLS (le cabinet ; le client « Banque » selon BOR-Q8), la restrictive `deux_facteurs` sous condition, l'essai SQL, le plan de sauvegarde derrière le drapeau | BOR-Q4, Q5, Q8 |
 | BOR4 | L'écran d'import, dans la section NOEMIE : le fichier qui ne part nulle part, l'état reconnu ou refusé, les agrégats avant le clic, la confirmation | BOR2, BOR3 |
@@ -490,6 +490,142 @@ organismes et les montants laissés), ou des captures d'écran sur un patient d'
     "option_recommandee": "A",
     "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 7",
     "pose": "2026-11-17"
+  }
+]
+```
+
+## 12. BOR0 : ce que la page réelle a montré (18/11/2026)
+
+Le 18/11/2026, le cabinet a montré **une page réelle** d'un bordereau de Télévitale. Elle est restée hors du dépôt, et rien
+de ce qui suit n'en recopie une valeur : seule sa **forme** est décrite.
+
+### 12.1 La forme
+
+- Le PDF porte une **couche de texte** (le texte s'y sélectionne) : pdf.js le lit, aucun OCR n'est nécessaire (§ 9, point 2).
+- Le titre, centré : « Bordereau de Teletransmission » (sans accents). C'est donc l'état **par lot** du § 1.2 : le **facturé**.
+- L'en-tête, une ligne par champ : l'identité du praticien suivie de son numéro d'assurance maladie (deux chiffres, un chiffre, cinq chiffres, une barre et une clé) ;
+  « Lot : N créé le JJ/MM/AAAA » ; « LOT NON SECURISE » (ou sécurisé) ; « Organisme assurance maladie destinataire : NNN -
+  CPAM - VILLE » (un code de trois chiffres, puis un libellé) ; « Destinataire du réglement : Partenaire de santé » ; puis
+  le nom et l'adresse de la caisse.
+- Un tableau à neuf colonnes : « Facture | Date prescription | Numéro Assuré | Nom Bénéficiaire | Naissance | Total | Caisse |
+  Mutuelle | Assuré », une ligne par facture (un numéro de facture à neuf chiffres, des montants à la française : « 12,34 »,
+  « 1 234,56 »).
+- Une ligne de total : « TOTAL: LOT de N Factures » suivie de quatre montants (total, caisse, mutuelle, assuré).
+- Le pied : la date d'impression, « 1/1 », « Réalisé par Televitale ».
+
+### 12.2 BOR1 : ce qui en est lu
+
+- `lib/bordereauDeTeletransmission.ts`, pur et sans sortie : du texte des pages (des lignes, ou des fragments positionnés
+  regroupés par ordonnée), il rend, **par bordereau**, le numéro du lot, sa date de création, sécurisé ou non, le code et le
+  libellé de l'organisme (borné à des lettres, espaces, tirets, apostrophes et points), le destinataire du règlement (une liste
+  fermée d'une valeur, la seule vue), le nombre de factures annoncé et les quatre totaux en centimes. Chaque ligne de facture
+  est **comptée** et ses quatre montants **additionnés** ; rien d'autre n'en est analysé ni rendu, et une raison de refus ne
+  cite que le rang du bordereau, la page et le rang d'une ligne.
+- Il refuse, tout entier : le titre absent, un en-tête illisible ou absent, l'en-tête des colonnes non reconnu, une ligne du
+  tableau qui n'est ni une facture ni le total ni le pied, le total absent, un compte de lignes différent du nombre annoncé,
+  une colonne dont la somme diffère du total imprimé, un total différent de caisse + mutuelle + assuré (sur la ligne de total
+  **et** sur chaque ligne), le même lot deux fois.
+- **Plusieurs lots dans un fichier** : un bordereau rendu par lot, chacun contrôlé par son propre total, un seul refusé
+  refusant le fichier. Refuser le fichier entier n'ajoutait aucune sûreté (chaque bordereau porte sa preuve) et aurait obligé
+  à imprimer les lots un par un.
+- **Un bordereau sur plusieurs pages** : le total en dernière page ; une page qui suit, avec ou sans le titre et les
+  en-têtes repris, continue le même lot, ses en-têtes confrontés à la première page.
+- `lib/bordereauDeTeletransmissionLecture.ts` ouvre le fichier par pdf.js, sur des octets (jamais une adresse, ni polices,
+  ni tables, ni wasm distants), ne rejette jamais et ne cite jamais le message de pdf.js. Le scanner
+  `bordereauDeTeletransmissionSansSortie.test.ts` garde les deux modules (défauts plantés) ; le canari est dans
+  `bordereauDeTeletransmission.test.ts` et sur un PDF fictif fabriqué par pdf-lib.
+- **Non vérifié** : l'ordre et le découpage réels des fragments que pdf.js rend d'un fichier de Télévitale (un intitulé de
+  colonne sur deux lignes, un nom qui déborde sur la ligne suivante, un pied à une autre ordonnée) — sur la page réelle, la
+  lecture refuserait plutôt que deviner, et la raison dirait la page et le rang de la ligne (BOR1-Q4). Le contrôle « Total =
+  Caisse + Mutuelle + Assuré » **par ligne** est tiré de la forme, pas vérifié sur les chiffres de la page (BOR1-Q3).
+
+### 12.3 Ce que cela change aux lots
+
+- **BOR1 a absorbé le gabarit du bordereau de télétransmission** prévu en BOR2. BOR2 devient : le passage des bordereaux lus
+  aux agrégats du § 4.2 (par organisme, par part, au grain de BOR-Q4), et un gabarit par AUTRE état, quand le cabinet en
+  montrera un (le bordereau des paiements, le suivi tiers payant).
+- **La date du facturé** : le bordereau ne dit pas le jour de télétransmission, mais la **date de création du lot**. Le
+  § 4.2 (« `date_de_teletransmission`, à défaut la date de la facture ») se lit désormais « la date de création du lot »,
+  qui est de l'en-tête, jamais d'une ligne : la date de prescription n'est pas lue.
+- **La part complémentaire n'est connue qu'en un total par lot** : la colonne « Mutuelle » est un montant, aucun organisme
+  complémentaire n'est imprimé. De cet état, seule l'option « en un total » de BOR-Q5 est possible.
+- **Le facturé en tiers payant** est caisse + mutuelle ; la colonne « Assuré » est ce que le patient doit, que l'assurance
+  maladie ne paiera pas : BOR2 la garde à part, ou ne la garde pas.
+- **L'organisme** : un code de caisse de trois chiffres et un libellé ; le régime n'est pas imprimé (BOR1-Q5).
+- **Le numéro du lot** est lu et rendu à l'appelant (pour le montrer avant le clic et refuser un lot deux fois dans un
+  fichier) ; le § 4.3 tient toujours : il n'entre pas en base tant que BOR-Q4 ne dit pas le contraire (BOR1-Q1).
+
+### 12.4 Ce que cela change aux questions
+
+- **BOR-Q1** : la page montrée est le bordereau de télétransmission ; le bordereau des paiements n'a pas été montré, et
+  NOE1 l'attend toujours. La question reste ouverte pour lui.
+- **BOR-Q2** : le bordereau de télétransmission se lit **sans qu'aucune valeur d'une ligne ne sorte** du module : l'option
+  « le bordereau » devient possible sans état nominatif gardé. Le reste dû ne s'y lit pas (BOR-Q6 inchangée).
+- **BOR-Q5** : de cet état, un total seul (§ 12.3).
+- **BOR-Q8** : inchangée — le fichier lu reste nominatif, même si rien de nominatif n'en sort.
+- Cinq questions nouvelles :
+
+```json
+[
+  {
+    "id": "BOR1-Q1",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR1)",
+    "titre": "Le numéro du lot : montré, jamais gardé ?",
+    "question": "Le numéro du lot lu sur le bordereau se montre-t-il à l'écran avant l'import, sans jamais entrer en base ?",
+    "contexte": "BOR1 rend le numéro du lot à l'écran qui l'appelle : il permet au praticien de reconnaître le lot qu'il importe, et de refuser un fichier qui porte deux fois le même lot. Les conceptions 59 (§ 4.3) et 53 (§ 3) n'en gardent aucun en base : dans le logiciel du praticien, un lot désigne un ensemble de factures, donc de patients ; gardé, il serait un pseudonyme. Sans lui, un même bordereau importé deux fois ne se reconnaît qu'à sa date et à ses totaux.",
+    "recommandation": "(A) : montré avant le clic, jamais envoyé en base ; le doublon entre deux imports se juge sur la date de création et les totaux, et se dit en attention.",
+    "options": ["(A) Montré à l'écran, jamais en base", "(B) Ni montré ni rendu : le module le lit pour ses contrôles, puis l'oublie", "(C) Gardé en base pour reconnaître un lot importé deux fois (rouvre BOR-Q4 et la conception 53)"],
+    "option_recommandee": "A",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 4.3 et § 12.3",
+    "pose": "2026-11-18"
+  },
+  {
+    "id": "BOR1-Q2",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR1)",
+    "titre": "Les autres « destinataires du règlement »",
+    "question": "Ton logiciel imprime-t-il parfois autre chose que « Partenaire de santé » après « Destinataire du réglement » ?",
+    "contexte": "Sur la page montrée, le règlement va au « Partenaire de santé » (le praticien, en tiers payant). Une autre valeur — l'assuré, par exemple, quand il est remboursé lui-même — changerait ce que le lot compte comme dû au praticien. BOR1 ne connaît que la valeur vue et refuse toute autre, en le disant.",
+    "recommandation": "(A) : refuser toute autre valeur tant qu'une page ne l'a pas montrée ; une page rendue anonyme d'un tel lot, s'il en existe.",
+    "options": ["(A) Refuser toute autre valeur jusqu'à une page qui la montre", "(B) Accepter tout libellé, sans le rendre, et compter le lot comme s'il était en tiers payant", "(C) Il n'y a jamais d'autre valeur"],
+    "option_recommandee": "A",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 12.2",
+    "pose": "2026-11-18"
+  },
+  {
+    "id": "BOR1-Q3",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR1)",
+    "titre": "Le total de chaque ligne : la somme de ses trois parts ?",
+    "question": "Sur ton bordereau, le « Total » de chaque ligne est-il toujours égal à « Caisse » + « Mutuelle » + « Assuré » ?",
+    "contexte": "BOR1 contrôle cette égalité sur la ligne de total et sur chaque ligne : elle attrape un montant mal découpé (l'espace des milliers). Elle est tirée de la forme de la page, pas vérifiée sur ses chiffres ; si une ligne réelle ne la vérifie pas (une franchise, un dépassement, une participation forfaitaire), chaque bordereau serait refusé. Les contrôles des colonnes contre le total imprimé resteraient.",
+    "recommandation": "(A) : garder le contrôle par ligne si ta page le vérifie (un coup d'œil sur deux ou trois lignes suffit), sinon (B).",
+    "options": ["(A) Oui, toujours : garder le contrôle par ligne", "(B) Pas toujours : ne contrôler que la ligne de total et les colonnes", "(C) Je ne sais pas : garder (A) et retirer le contrôle au premier refus réel"],
+    "option_recommandee": "A",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 12.2",
+    "pose": "2026-11-18"
+  },
+  {
+    "id": "BOR1-Q4",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR1)",
+    "titre": "Le premier essai sur un vrai fichier",
+    "question": "Comment éprouver la lecture sur un vrai bordereau, sans qu'il quitte l'ordinateur où il est ?",
+    "contexte": "BOR1 est éprouvé sur des textes et un PDF fictifs à la forme de la page montrée. L'ordre et le découpage réels des fragments que pdf.js rend d'un fichier de Télévitale ne sont pas vérifiés : un intitulé sur deux lignes ou un nom qui déborde ferait refuser la lecture (jamais deviner). Le refus dit la page et le rang de la ligne, aucune valeur.",
+    "recommandation": "(A) : à l'écran de BOR4, quand il existera, le praticien ou le cabinet importe un vrai bordereau dans son navigateur ; un refus se rapporte par sa seule raison, et le gabarit se corrige sur elle.",
+    "options": ["(A) Au premier import réel, à l'écran de BOR4", "(B) Plus tôt, par un petit outil local que le cabinet lance sur un ordinateur, qui n'affiche que le résultat ou la raison", "(C) Sur une page rendue anonyme, convertie en PDF texte par le cabinet"],
+    "option_recommandee": "A",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 12.2",
+    "pose": "2026-11-18"
+  },
+  {
+    "id": "BOR1-Q5",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR1)",
+    "titre": "Le régime d'une caisse que le bordereau ne dit pas",
+    "question": "Pour rapprocher un lot des paiements NOEMIE (rangés par régime et par caisse), une caisse imprimée « CPAM » est-elle rangée sous le régime général (01) ?",
+    "contexte": "Le bordereau imprime l'organisme sous un code de caisse de trois chiffres et un libellé (« CPAM - … »), sans régime. Les paiements de NOE3 se rangent sous deux entiers, le régime et la caisse. Une caisse primaire d'assurance maladie est un organisme du régime général (code de la sécurité sociale, art. L. 211-1) ; aucun autre libellé (MSA, régimes spéciaux) n'a été vu.",
+    "recommandation": "(A) : le régime 01 pour un libellé qui commence par « CPAM », tout autre libellé refusé au rapprochement tant qu'une page ne l'a pas montré.",
+    "options": ["(A) « CPAM » vaut le régime 01, tout autre libellé attend", "(B) Celui qui importe choisit le régime, dans une liste fermée", "(C) Rapprocher sur le seul code de caisse"],
+    "option_recommandee": "A",
+    "source": "Code de la sécurité sociale, art. L. 211-1 (Légifrance) ; docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 12.3",
+    "pose": "2026-11-18"
   }
 ]
 ```

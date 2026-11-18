@@ -53833,3 +53833,18 @@ Derrière `MODE_DE_REGLEMENT_PREVU` baissé (`lib/modeDeReglement.ts`) : la prop
 fiche d'un mouvement en trésorerie, sous `ecritureEnCours`. Copie de `replique_227` à 237 puis 238 : l'essai 28/28, cinq mutations
 mordent, vingt-huit essais voisins identiques avec et sans elle, le retour rend le socle et l'inventaire de 237 ; simulée : dérive
 238 (`9526ebe9…`), socle 83 (`43b8ad20…`), inventaire 3 228 (`ef15c311…`) ; banc du leurre SÛR. Restent le lot, EXP58Q1-Q1 à Q3.
+### 18/11/2026 — BOR0 ET BOR1 : LE BORDEREAU DE TÉLÉTRANSMISSION LU DANS LE NAVIGATEUR, LES TOTAUX SEULS
+
+(Agent architecte ; ni écran, ni base, ni drapeau.) BOR0 : le cabinet a montré une page réelle d'un bordereau de Télévitale, restée
+hors du dépôt ; sa forme seule est décrite (conception 59, § 12.1) — un PDF à couche de texte, le titre « Bordereau de
+Teletransmission », un en-tête d'une ligne par champ (lot et date de création, sécurisé ou non, organisme « code - libellé »,
+destinataire du règlement), un tableau de neuf colonnes, une ligne « TOTAL: LOT de N Factures » à quatre montants. BOR1 :
+`lib/bordereauDeTeletransmission.ts`, pur et sans import, lit le texte des pages (lignes, ou fragments regroupés par ordonnée) et
+rend par bordereau l'en-tête du lot et ses quatre totaux en centimes ; chaque ligne de facture est comptée et additionnée, jamais
+rendue, et une raison ne cite que bordereau, page et rang. Refus tout entier sur un titre, un en-tête ou un total absent ou illisible,
+une ligne inconnue, un compte ou une somme qui ne tombe pas, un total ≠ caisse + mutuelle + assuré (ligne de total et chaque ligne),
+un lot deux fois ; plusieurs lots : un rendu par bordereau, chacun prouvé par son total ; plusieurs pages : en-têtes confrontés.
+`lib/bordereauDeTeletransmissionLecture.ts` : pdf.js sur des octets, ne rejette jamais, ne cite jamais son message. 37 essais (le
+canari en lignes, en fragments mélangés sur 50 bordereaux tirés d'une graine, et sur un PDF fictif de pdf-lib lu par pdf.js hors
+navigateur) ; scanner sans sortie des deux modules, sept défauts plantés ; 11 mutations mordent sur 12, la douzième équivalente
+(sa ligne retirée). Non vérifié : l'ordre réel des fragments de pdf.js sur un fichier de Télévitale. BOR1-Q1 à Q5 posées (§ 12.4).
