@@ -270,7 +270,8 @@ create table public.documents_divers (
   constraint documents_divers_attached_to_cotisation_id_fkey FOREIGN KEY (attached_to_cotisation_id) REFERENCES cotisations_declarees(id) ON DELETE SET NULL,
   constraint documents_divers_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
   constraint documents_divers_sous_dossier_id_fkey FOREIGN KEY (sous_dossier_id) REFERENCES sous_dossiers(id),
-  constraint documents_divers_categorie_check CHECK ((categorie = ANY (ARRAY['releve_bancaire'::text, 'cotisation'::text, 'attestation'::text, 'autre'::text])))
+  constraint documents_divers_categorie_check CHECK ((categorie = ANY (ARRAY['releve_bancaire'::text, 'cotisation'::text, 'attestation'::text, 'autre'::text]))),
+  constraint documents_divers_storage_path_dans_son_dossier CHECK (((split_part(storage_path, '/'::text, 1) = (dossier_id)::text) AND (storage_path ~ '^[^/]+(/[^/]+)+$'::text) AND (storage_path !~ '(^|/)[.][.]?(/|$)'::text) AND (storage_path !~ '[%?#[:cntrl:]]'::text) AND (strpos(storage_path, chr(92)) = 0)))
 );
 
 -- RÉGÉNÉRÉE LE 01/10/2026 depuis le catalogue, après `dotations_aux_amortissements` (colonne
