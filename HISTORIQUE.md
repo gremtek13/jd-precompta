@@ -53913,3 +53913,18 @@ d'historique à l'empreinte du fichier sans sa dernière fin de ligne (`59098b22
 `cumulReprisDesBiens.sql` 34/34, `dotations.sql` 33/33 identique avec et sans elle ; simulés : dérive 240 `e4dc5c40…`, socle 83
 `f2f2107e…`, inventaire 3 236 `51e43647…` ; le retour rend la signature d'avant. La levée simulée (282 fichiers de tests) : un rouge,
 `cumulRepris.test.ts`, qui prenait pour le corps remplacé la dernière définition de l'export, la sienne une fois collée — corrigé.
+### 18/11/2026 — BOR : LES RÉPONSES DU CABINET, LES RÉGIMES, L'OUTIL LOCAL
+
+Quatorze réponses de l'après-midi (BOR-Q1 à Q9, BOR1-Q1 à Q5) entrées dans BOR1 et dans la conception 59, § 13 ; ni base, ni écran.
+BOR1-Q2 (B) : `destinataireDuReglement` retiré de `BordereauLu` ; la ligne doit être là, son libellé n'est ni analysé, ni comparé, ni
+cité ; le lot compté en tiers payant. BOR1-Q3 (A) : le contrôle par ligne gardé, un cas de plus. BOR1-Q5 (la note « mets-les tous ») :
+`lib/regimesAssuranceMaladie.ts`, les vingt-quatre lignes du jeu JDV_Code_regime de l'ANS (OID 1.2.250.1.213.3.4.134, 22/03/2024),
+chacune sourcée ; le premier segment du libellé à l'identique, sinon « à choisir ». Non sourcé : l'impression par Télévitale d'un autre
+régime que la CPAM, les CGSS, le sens de « CAMAC », la concordance du code de caisse avec NOEMIE, la structure régime-caisse-centre
+(sites secondaires seulement). BOR1-Q4 (B) : `outils/bordereau/lire.mjs` (Vite `runnerImport`, `fileURLToPath` pour Windows), le même
+code de lecture, la console muette (pdf.js y écrit : rouverte, le test vire au rouge, comme le chemin planté dans un refus) ;
+`bordereauOutilLocal.test.ts` le joue dans un processus à part sur un PDF fictif (`src/test/bordereauFictif.ts`, partagé). BOR1-Q1 (C) :
+le grain de BOR-Q4 (A) gardé, le numéro dans un registre de lots à part, sans policy ; une empreinte salée dans le navigateur ne protège
+rien (quelques milliers de numéros), une HMAC sous une clé du dossier tenue par la base suffit au doublon : posée (BOR1Q1-Q1). BOR-Q5 (B)
+contre ce que le bordereau imprime (la mutuelle sans organisme) : NOE3 à amender avant collage, BORQ5-Q1 ; BOR-Q8 (A) contre RGPD.md
+§ 8.7 : BORQ8-Q1 ; BOR-Q9 à la réception : `receive-email` ne lit pas de PDF, à mesurer en BOR6. Plan BOR2 à BOR7 remis à jour (§ 13.5).

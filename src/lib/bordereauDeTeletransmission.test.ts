@@ -92,7 +92,6 @@ const ATTENDU: BordereauLu = {
   creeLe: '2026-11-09',
   securise: false,
   organisme: { code: '999', libelle: 'CPAM - VILLE FICTIVE' },
-  destinataireDuReglement: 'partenaire_de_sante',
   nombreDeFactures: 3,
   totaux: { totalCentimes: 472355, caisseCentimes: 449031, mutuelleCentimes: 22089, assureCentimes: 1235 },
 }
@@ -162,8 +161,19 @@ describe('le refus de ce qui n’est pas sûr', () => {
     expect(refuse({ entete: { securise: null } })).toMatch(/lot sécurisé.*absente/)
   })
 
-  it('un destinataire du règlement inconnu', () => {
-    expect(refuse({ entete: { destinataire: 'Destinataire du réglement : Assuré' } })).toMatch(/seule valeur connue/)
+  it('le destinataire du règlement : tout libellé accepté, jamais rendu ; la ligne absente, un refus (BOR1-Q2 (B))', () => {
+    for (const libelle of ['Assuré', 'MME BENEFICIAIRE QUATRE', 'Partenaire de santé et assuré', '', '12345 ; <script>']) {
+      const r = lireBordereauxDeTeletransmission([page(lignesDuBordereau({ entete: { destinataire: `Destinataire du réglement : ${libelle}` } }))])
+      expect(lus(r)).toEqual([ATTENDU])
+      if (libelle.length >= 3) expect(JSON.stringify(r)).not.toContain(libelle)
+    }
+    expect(refuse({ entete: { destinataire: null } })).toMatch(/destinataire du règlement est absent/)
+  })
+
+  it('le contrôle « total = caisse + mutuelle + assuré » reste sur chaque ligne (BOR1-Q3 (A))', () => {
+    const fausse: FactureFictive = { ...FACTURES[2], montants: [12345, 8641, 2469, 1234] }
+    const lignes = lignesDuBordereau({ factures: [FACTURES[0], fausse], totaux: [65400 + 12345, 45780 + 8641, 19620 + 2469, 1234] })
+    expect(raison(lireBordereauxDeTeletransmission([page(lignes)]))).toMatch(/ligne de facture n° 2, le total n’est pas la somme/)
   })
 
   it('l’en-tête des colonnes non reconnu', () => {
@@ -327,6 +337,6 @@ describe('le canari : aucune chaîne d’une ligne de facture dans le résultat'
     }
     // Les seules clés : celles de l'en-tête et des totaux.
     expect(Object.keys(lus(JSON.parse(resultat) as LectureDuBordereau)[0]).sort())
-      .toEqual(['creeLe', 'destinataireDuReglement', 'lot', 'nombreDeFactures', 'organisme', 'securise', 'totaux'])
+      .toEqual(['creeLe', 'lot', 'nombreDeFactures', 'organisme', 'securise', 'totaux'])
   })
 })
