@@ -12,10 +12,23 @@
 --    depart: {au: la date de la dernière écriture de banque comptée (ou de l'ouverture), solde: en centimes},
 --    rythme: {debut, fin: les mois complets observés (AAAA-MM), mois: leur nombre, mois_observes: ceux qui portent un
 --             mouvement, encaissements, decaissements: les moyennes mensuelles, en centimes},
+--    raccord: {du: le lendemain du départ, au: le dernier jour du mois de la publication (AAAA-MM-JJ), solde_debut: celui
+--             du départ, encaissements, decaissements: le rythme moyen au prorata des jours de chaque mois qu'il touche,
+--             solde_fin}, ou nul quand le départ est au dernier jour de ce mois (aucun jour à compter),
 --    mois: [{mois: AAAA-MM, solde_debut, encaissements, decaissements, solde_fin}, …], du mois qui suit celui de la
---          publication, de 1 à 24, chacun parti du solde du précédent au rythme moyen (la projection linéaire de
---          src/lib/planTresorerie.ts, « si le rythme actuel se maintient »),
+--          publication, de 1 à 24, le premier parti de la fin du raccord (ou du départ, sans raccord), chacun des autres
+--          du solde du précédent, au rythme moyen (la projection linéaire de src/lib/planTresorerie.ts, « si le rythme
+--          actuel se maintient »),
 --    avec_especes: les recettes en espèces de la caisse entrent-elles dans le rythme}.
+-- LE RACCORD (C8Q2-Q3, la réponse (B) du cabinet du 18/11/2026 : « corriger avant le collage, par un mois de raccord au
+-- prorata des jours »). Sans lui, les jours entre la dernière écriture de banque et la fin du mois de la publication
+-- n'étaient comptés nulle part (le 15 novembre, une dernière écriture du 31 octobre laissait tout novembre de côté). Pour
+-- chaque mois qu'il touche, la part est le rythme moyen × ses jours couverts ÷ ses jours, arrondie au centime, le
+-- demi-centime vers le haut — la division entière de 2 × rythme × jours + longueur par 2 × longueur —, puis la somme des
+-- parts : un mois couvert en entier compte le rythme exact. Aucun texte ne régit un plan de trésorerie : la règle est celle
+-- du cabinet, sur les jours réels du calendrier civil ; src/lib/planTresorerie.ts (`partDuRythme`) la compose, la base la
+-- refait en entiers. Corrigée ainsi le 18/11/2026, avant toute application : la forme reste la version 1, aucune prévision
+-- n'ayant été publiée sous l'ancienne.
 -- CE QU'ELLE NE PORTE PAS : aucun libellé d'écriture, aucun nom de tiers, ni d'emprunt (le nom d'un emprunt est un texte
 -- libre du cabinet), aucune échéance ; la composition se fait dans src/lib/previsionsPubliees.ts, et la base VÉRIFIE que ce
 -- qui se fige ne se contredit pas : la forme, le jour, des centimes entiers, des mois qui se suivent et un solde qui
@@ -54,9 +67,9 @@
 --
 -- LES REFUS, DANS L'ORDRE (que src/lib/previsionsPubliees.ts redit avant le clic, sous les mêmes mots) :
 --   - `publier_prevision` : l'appelant qui n'est pas le cabinet du dossier (42501) ; puis, sous le verrou du dossier, le
---     contenu (22023 : sa forme ; le jour ; le départ ; le rythme ; aucun mouvement observé ; les mois) ; la prévision
---     remplacée qui n'est pas celle en cours de ce dossier (22023) ; une prévision en cours, que la nouvelle ne remplace
---     pas (22023) ;
+--     contenu (22023 : sa forme ; le jour ; le départ ; le rythme ; aucun mouvement observé ; le raccord ; les mois) ; la
+--     prévision remplacée qui n'est pas celle en cours de ce dossier (22023) ; une prévision en cours, que la nouvelle ne
+--     remplace pas (22023) ;
 --   - `retirer_prevision` : la prévision inconnue, ou d'un dossier dont l'appelant n'est pas le cabinet (42501, les mêmes
 --     mots : rien n'apprend qu'elle existe) ; une prévision qui n'est plus en cours — remplacée, retirée, ou un retrait
 --     (22023) ;
@@ -147,7 +160,7 @@ create index previsions_publiees_dossier on public.previsions_publiees (dossier_
 comment on table public.previsions_publiees is
   'Les prévisions de trésorerie que le cabinet publie à l''accès « Banque » d''un dossier (espace client, C8-Q2) : une ligne par geste, la publication ou le retrait, FIGÉE — une prévision se remplace (remplace_id) ou se retire par ses fonctions, publier_prevision et retirer_prevision ; la prévision en cours est la publication qu''aucune ligne ne cite. Montants en centimes ; aucun texte libre.';
 comment on column public.previsions_publiees.contenu is
-  'La prévision publiée, version 1 : {version, etablie_le (le jour de Paris de la publication), depart {au, solde}, rythme {debut, fin, mois, mois_observes, encaissements, decaissements}, mois [{mois, solde_debut, encaissements, decaissements, solde_fin}], avec_especes} ; des centimes entiers, des mois qui se suivent depuis celui qui suit la publication, chacun parti du solde du précédent au rythme moyen (src/lib/previsionsPubliees.ts). Nul pour un retrait.';
+  'La prévision publiée, version 1 : {version, etablie_le (le jour de Paris de la publication), depart {au, solde}, rythme {debut, fin, mois, mois_observes, encaissements, decaissements}, raccord {du, au, solde_debut, encaissements, decaissements, solde_fin} ou nul, mois [{mois, solde_debut, encaissements, decaissements, solde_fin}], avec_especes} ; des centimes entiers ; le raccord, du lendemain du départ à la fin du mois de la publication, au rythme moyen compté au prorata des jours de chaque mois ; des mois qui se suivent depuis celui qui suit la publication, le premier parti de la fin du raccord, chacun au rythme moyen (src/lib/previsionsPubliees.ts). Nul pour un retrait.';
 comment on column public.previsions_publiees.remplace_id is
   'La publication en cours que cette ligne remplace (une publication) ou retire (un retrait) : du même dossier ; unique — une chaîne linéaire.';
 comment on column public.previsions_publiees.auteur is
@@ -238,6 +251,7 @@ declare
   c_depart constant text := 'Le départ de la prévision est mal formé : un solde en centimes entiers, à une date qui n''est pas à venir.';
   c_rythme constant text := 'Le rythme de la prévision est mal formé : de 1 à 24 mois complets, jusqu''au mois qui précède celui où elle est établie, et des moyennes en centimes entiers, positives.';
   c_sans_mouvement constant text := 'La prévision ne repose sur aucun mouvement observé : elle ne se publie pas.';
+  c_raccord constant text := 'Le raccord de la prévision est mal formé : du lendemain de son départ à la fin du mois où elle est établie, parti du solde de départ, au rythme moyen compté au prorata des jours de chaque mois.';
   c_mois constant text := 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.';
   c_plafond constant numeric := 100000000000000;
   v_index integer;
@@ -245,6 +259,7 @@ declare
   v_date date;
   v_depart jsonb;
   v_rythme jsonb;
+  v_raccord jsonb;
   v_mois jsonb;
   v_ligne jsonb;
   v_n numeric;
@@ -254,6 +269,15 @@ declare
   v_decaissements numeric;
   v_solde numeric;
   v_valeur numeric;
+  v_du date;
+  v_au date;
+  v_m integer;
+  v_premier date;
+  v_dernier date;
+  v_longueur integer;
+  v_jours integer;
+  v_entrees numeric;
+  v_sorties numeric;
   i integer;
 begin
   if p_jour is null then
@@ -262,12 +286,12 @@ begin
   -- L'index du mois du jour (année × 12 + mois − 1) : le mois décalé de j s'écrit par la division et le reste.
   v_index := extract(year from p_jour)::integer * 12 + extract(month from p_jour)::integer - 1;
 
-  -- 1. La forme : un objet, ses six clés, la version 1, le drapeau des espèces.
+  -- 1. La forme : un objet, ses sept clés, la version 1, le drapeau des espèces.
   if jsonb_typeof(p_contenu) is distinct from 'object' then
     return c_forme;
   end if;
   if (select array_agg(k order by k collate "C") from jsonb_object_keys(p_contenu) k)
-       is distinct from array['avec_especes', 'depart', 'etablie_le', 'mois', 'rythme', 'version'] then
+       is distinct from array['avec_especes', 'depart', 'etablie_le', 'mois', 'raccord', 'rythme', 'version'] then
     return c_forme;
   end if;
   if (p_contenu -> 'version') is distinct from '1'::jsonb
@@ -351,7 +375,63 @@ begin
     return c_sans_mouvement;
   end if;
 
-  -- 5. Les mois : de 1 à 24, du mois qui suit celui de la prévision, chacun parti du solde du précédent, au rythme moyen.
+  -- 4 bis. Le raccord (C8Q2-Q3) : du lendemain du départ (`v_date`, l'étape 3) au dernier jour du mois de la prévision ;
+  -- pour chaque mois touché, le rythme × ses jours couverts ÷ ses jours, arrondi au centime, le demi-centime vers le haut
+  -- (des moyennes positives : la division entière de 2 × rythme × jours + longueur par 2 × longueur), puis la somme ; parti
+  -- du solde de départ. Aucun jour entre les deux (un départ au dernier jour du mois) : nul. Les dates se comparent à leur
+  -- texte AAAA-MM-JJ, recomposé des entiers comme les mois.
+  v_du := v_date + 1;
+  v_au := make_date((v_index + 1) / 12, ((v_index + 1) % 12) + 1, 1) - 1;
+  v_raccord := p_contenu -> 'raccord';
+  if v_du > v_au then
+    if jsonb_typeof(v_raccord) is distinct from 'null' then
+      return c_raccord;
+    end if;
+  else
+    if jsonb_typeof(v_raccord) is distinct from 'object' then
+      return c_raccord;
+    end if;
+    if (select array_agg(k order by k collate "C") from jsonb_object_keys(v_raccord) k)
+         is distinct from array['au', 'decaissements', 'du', 'encaissements', 'solde_debut', 'solde_fin'] then
+      return c_raccord;
+    end if;
+    if jsonb_typeof(v_raccord -> 'du') is distinct from 'string' or jsonb_typeof(v_raccord -> 'au') is distinct from 'string'
+       or jsonb_typeof(v_raccord -> 'solde_debut') is distinct from 'number' or jsonb_typeof(v_raccord -> 'solde_fin') is distinct from 'number'
+       or jsonb_typeof(v_raccord -> 'encaissements') is distinct from 'number'
+       or jsonb_typeof(v_raccord -> 'decaissements') is distinct from 'number' then
+      return c_raccord;
+    end if;
+    if (v_raccord ->> 'du') is distinct from lpad(extract(year from v_du)::integer::text, 4, '0') || '-'
+         || lpad(extract(month from v_du)::integer::text, 2, '0') || '-' || lpad(extract(day from v_du)::integer::text, 2, '0')
+       or (v_raccord ->> 'au') is distinct from lpad(extract(year from v_au)::integer::text, 4, '0') || '-'
+         || lpad(extract(month from v_au)::integer::text, 2, '0') || '-' || lpad(extract(day from v_au)::integer::text, 2, '0') then
+      return c_raccord;
+    end if;
+    v_entrees := 0;
+    v_sorties := 0;
+    v_m := extract(year from v_du)::integer * 12 + extract(month from v_du)::integer - 1;
+    while v_m <= v_index loop
+      v_premier := make_date(v_m / 12, (v_m % 12) + 1, 1);
+      v_dernier := make_date((v_m + 1) / 12, ((v_m + 1) % 12) + 1, 1) - 1;
+      v_longueur := v_dernier - v_premier + 1;
+      v_jours := least(v_dernier, v_au) - greatest(v_premier, v_du) + 1;
+      v_entrees := v_entrees + div(2 * v_encaissements * v_jours + v_longueur, 2 * v_longueur);
+      v_sorties := v_sorties + div(2 * v_decaissements * v_jours + v_longueur, 2 * v_longueur);
+      v_m := v_m + 1;
+    end loop;
+    v_valeur := (v_raccord ->> 'solde_fin')::numeric;
+    if (v_raccord ->> 'solde_debut')::numeric <> v_solde
+       or (v_raccord ->> 'encaissements')::numeric <> v_entrees
+       or (v_raccord ->> 'decaissements')::numeric <> v_sorties
+       or v_entrees >= c_plafond or v_sorties >= c_plafond
+       or v_valeur <> v_solde + v_entrees - v_sorties or abs(v_valeur) >= c_plafond then
+      return c_raccord;
+    end if;
+    v_solde := v_valeur;
+  end if;
+
+  -- 5. Les mois : de 1 à 24, du mois qui suit celui de la prévision, le premier parti de la fin du raccord (ou du départ,
+  -- sans raccord), chacun des autres du solde du précédent, au rythme moyen.
   v_mois := p_contenu -> 'mois';
   if jsonb_typeof(v_mois) is distinct from 'array' then
     return c_mois;
@@ -393,7 +473,7 @@ end
 $$;
 
 comment on function public.refus_de_la_prevision(jsonb, date) is
-  'Le refus, en mots, d''une prévision publiée (C8-Q2) pour le jour donné, ou nul si elle est bien formée : sa forme (version 1), le jour, le départ, le rythme, un mouvement observé au moins, des mois qui se suivent et s''enchaînent. N''écrit rien ; aucun rôle de l''API ne l''exécute.';
+  'Le refus, en mots, d''une prévision publiée (C8-Q2) pour le jour donné, ou nul si elle est bien formée : sa forme (version 1), le jour, le départ, le rythme, un mouvement observé au moins, le raccord (du lendemain du départ à la fin du mois, le rythme moyen au prorata des jours de chaque mois, C8Q2-Q3), des mois qui se suivent et s''enchaînent depuis lui. N''écrit rien ; aucun rôle de l''API ne l''exécute.';
 
 -- ══ 5. Publier une prévision ══════════
 -- D'UN SEUL TENANT, sous un verrou des prévisions du dossier (deux publications ne se croisent pas). Le jour est celui de

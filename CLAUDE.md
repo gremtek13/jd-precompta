@@ -511,7 +511,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`exoneration_en_zone_prioritaire`, RET2-Q2, en production depuis le 17/11/2026 (236), `EXONERATION_EN_ZONE_PRIORITAIRE_PREVUE`
   levé ; RET2Q2-Q1 ouverte) ; la
   prévision de trésorerie publiée au client « Banque » (`previsions_publiees`, C8-Q2, `PREVISIONS_PUBLIEES_PREVUES` ;
-  C8Q2-Q1 à Q4) ; le 512 propre refusé depuis une année validée, en base (`compte_propre_hors_des_exercices_valides`,
+  C8Q2-Q1 à Q4 tranchées, accordée (C8Q2-migration (A)) ; le mois de raccord au prorata des jours, C8Q2-Q3 (B), le 18/11/2026
+  → « C8Q2-Q3 : LE MOIS DE RACCORD AU PRORATA, LA PRÉVISION PUBLIÉE PRÊTE ») ; le 512 propre refusé depuis une année validée, en base (`compte_propre_hors_des_exercices_valides`,
   MCB6Q2-Q1) ; INV3Q2-Q1 (A) dans INV2, INV3 et INV4 ; le retour d'INAL1 récrit (INAL1R-Q1). Toute préparée qui remplace
   une fonction vérifie l'empreinte du corps qu'elle remplace (`remplacementsDesPreparees.test.ts`, REPET-Q2 : la garde
   d'INV3 le faisait déjà) → « A8Q5Q3Q2-Q2 : LA GARDE DES RÈGLEMENTS », « RET2-Q2 : L'EXONÉRATION DE 2025 », chercher

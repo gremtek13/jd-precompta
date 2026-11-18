@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, soldeBanqueADate, type LigneBanquePourPlan } from './planTresorerie'
-import { ajouterMois, premierJourDuMoisCourant } from './format'
+import {
+  calculerPlanTresorerie, calculerPlanTresorerieAu, dateDuDepart, echeancesCotisations, echeancesEmprunts, partDuRythme, periodeDuRaccord,
+  reserveSurMoyenne, reserveSurSolde, soldeBanqueADate, type LigneBanquePourPlan,
+} from './planTresorerie'
+import { ajouterJours, ajouterMois, dernierJourDuMois, premierJourDuMoisCourant } from './format'
+import { entierTire, tirage } from '../test/encaissementsBatterie'
 import type { Emprunt } from './emprunts'
 import type { CotisationDeclaree } from './types'
 import type { PlanTresorerie } from './planTresorerie'
@@ -13,7 +17,7 @@ describe('calculerPlanTresorerie', () => {
     // Le mois en cours est exclu par construction (il n'est pas terminé). L'ancien calcul
     // l'étiquetait pourtant en première ligne : `toISOString()` sur un 1er du mois à minuit
     // heure de Paris rendait le mois précédent.
-    const plan = calculerPlanTresorerie([], 10000, 6, 3)
+    const plan = calculerPlanTresorerie([], 10000, 6, 3, null)
     expect(plan.lignes.map((l) => l.mois)).toEqual([cleMois(1), cleMois(2), cleMois(3)])
   })
 
@@ -23,7 +27,7 @@ describe('calculerPlanTresorerie', () => {
       { date: ajouterMois(moisCourant(), -6), sens: 'debit', montant: 600 }, // borne basse → inclus
       { date: ajouterMois(moisCourant(), -7), sens: 'debit', montant: 777 }, // trop ancien → exclu
     ]
-    expect(calculerPlanTresorerie(lignes, 0, 6, 1).moyenneEncaissements).toBe(100)
+    expect(calculerPlanTresorerie(lignes, 0, 6, 1, null).moyenneEncaissements).toBe(100)
   })
 
   it('enchaîne les soldes d’un mois sur l’autre', () => {
@@ -31,7 +35,7 @@ describe('calculerPlanTresorerie', () => {
       { date: ajouterMois(moisCourant(), -1), sens: 'debit', montant: 1200 },
       { date: ajouterMois(moisCourant(), -1), sens: 'credit', montant: 600 },
     ]
-    const plan = calculerPlanTresorerie(lignes, 5000, 6, 2)
+    const plan = calculerPlanTresorerie(lignes, 5000, 6, 2, null)
     expect(plan.moyenneEncaissements).toBe(200)
     expect(plan.moyenneDecaissements).toBe(100)
     expect(plan.lignes[0]).toMatchObject({ soldeDebut: 5000, soldeFin: 5100 })
@@ -39,7 +43,7 @@ describe('calculerPlanTresorerie', () => {
   })
 
   it('reste à zéro sans historique bancaire', () => {
-    const plan = calculerPlanTresorerie([], 0, 6, 2)
+    const plan = calculerPlanTresorerie([], 0, 6, 2, null)
     expect(plan.moyenneEncaissements).toBe(0)
     expect(plan.lignes.every((l) => l.soldeFin === 0)).toBe(true)
   })
@@ -54,7 +58,7 @@ describe('ce sur quoi la moyenne repose', () => {
     ({ date: `${cleMois(decalage)}-15`, sens: 'debit', montant })
 
   it('compte les lignes et les mois RÉELLEMENT servis, pas ceux demandés', () => {
-    const plan = calculerPlanTresorerie([ligne(-1), ligne(-1, 50), ligne(-3)], 0, 6, 1)
+    const plan = calculerPlanTresorerie([ligne(-1), ligne(-1, 50), ligne(-3)], 0, 6, 1, null)
     expect(plan.nbLignesObservees).toBe(3)
     expect(plan.nbMoisAvecDonnees).toBe(2)
     expect(plan.nbMoisHistorique).toBe(6)
@@ -63,7 +67,7 @@ describe('ce sur quoi la moyenne repose', () => {
   it('ne compte pas ce que la fenêtre écarte', () => {
     // Le mois en cours n'est pas terminé, le -7e est hors fenêtre : ni l'un ni l'autre n'est
     // « observé », sans quoi le compteur promettrait une assiette que la moyenne n'a pas utilisée.
-    const plan = calculerPlanTresorerie([ligne(0), ligne(-7), ligne(-2)], 0, 6, 1)
+    const plan = calculerPlanTresorerie([ligne(0), ligne(-7), ligne(-2)], 0, 6, 1, null)
     expect(plan.nbLignesObservees).toBe(1)
     expect(plan.nbMoisAvecDonnees).toBe(1)
   })
@@ -72,7 +76,7 @@ describe('ce sur quoi la moyenne repose', () => {
     // Garde délibéré, et c'est la moitié du correctif : un mois calme est un VRAI zéro. Diviser par
     // les seuls mois servis ferait d'un cabinet en congés un cabinet deux fois plus actif — on dit
     // l'assiette, on ne la corrige pas.
-    const plan = calculerPlanTresorerie([ligne(-1, 600)], 0, 6, 1)
+    const plan = calculerPlanTresorerie([ligne(-1, 600)], 0, 6, 1, null)
     expect(plan.moyenneEncaissements).toBe(100)
   })
 })
@@ -80,7 +84,7 @@ describe('ce sur quoi la moyenne repose', () => {
 describe('reserveSurMoyenne', () => {
   const plan = (o: Partial<PlanTresorerie>): PlanTresorerie => ({
     moyenneEncaissements: 0, moyenneDecaissements: 0, nbMoisHistorique: 6,
-    nbLignesObservees: 0, nbMoisAvecDonnees: 0, lignes: [], ...o,
+    nbLignesObservees: 0, nbMoisAvecDonnees: 0, raccord: null, lignes: [], ...o,
   })
 
   it('se tait quand tous les mois demandés sont servis', () => {
@@ -133,7 +137,7 @@ describe('reserveSurSolde', () => {
     // réserves ferait taire celle du solde ou crier celle de la moyenne.
     const vieille: LigneBanquePourPlan[] = [{ date: `${cleMois(-24)}-15`, sens: 'debit', montant: 500 }]
     expect(reserveSurSolde(vieille, null, `${cleMois(0)}-01`)).toBeNull()
-    expect(reserveSurMoyenne(calculerPlanTresorerie(vieille, 0, 6, 1))).toContain('ne repose sur rien')
+    expect(reserveSurMoyenne(calculerPlanTresorerie(vieille, 0, 6, 1, null))).toContain('ne repose sur rien')
   })
 
   it('se tait sur un dossier ouvert par des à-nouveaux, même SANS aucune écriture', () => {
@@ -215,5 +219,137 @@ describe('échéances connues', () => {
     const echeances = echeancesCotisations(cotisations, '2026-04-01', '2026-06-30')
     expect(echeances).toHaveLength(1)
     expect(echeances[0]).toMatchObject({ date: '2026-05-05', montant: 300 })
+  })
+})
+
+// LE MOIS DE RACCORD (C8Q2-Q3, la réponse (B) du cabinet du 18/11/2026) : du lendemain de la dernière écriture de banque à
+// la fin du mois en cours, le rythme moyen au prorata des jours de chaque mois. Les montants de ces cas sont ceux des
+// contenus à jour fixe de supabase/essais/previsionsPubliees.sql, que la base a jugés.
+describe('le mois de raccord', () => {
+  // LE PLAN D'HIER, recopié tel qu'il était avant le raccord (git, 18/11/2026) : l'oracle de « rien ne change là où le
+  // raccord ne joue pas ».
+  function planDHier(lignesBanque: readonly LigneBanquePourPlan[], soldeActuel: number, nbH: number, nbP: number, premier: string) {
+    const debutHistorique = ajouterMois(premier, -nbH)
+    const dansHistorique = lignesBanque.filter((l) => l.date >= debutHistorique && l.date < premier)
+    const totalE = dansHistorique.filter((l) => l.sens === 'debit').reduce((s, l) => s + l.montant, 0)
+    const totalD = dansHistorique.filter((l) => l.sens === 'credit').reduce((s, l) => s + l.montant, 0)
+    const moyenneEncaissements = Math.round((totalE / nbH) * 100) / 100
+    const moyenneDecaissements = Math.round((totalD / nbH) * 100) / 100
+    const nbMoisAvecDonnees = new Set(dansHistorique.map((l) => l.date.slice(0, 7))).size
+    const lignes = []
+    let soldeCourant = soldeActuel
+    for (let i = 1; i <= nbP; i++) {
+      const soldeDebut = soldeCourant
+      const soldeFin = Math.round((soldeDebut + moyenneEncaissements - moyenneDecaissements) * 100) / 100
+      lignes.push({ mois: ajouterMois(premier, i).slice(0, 7), soldeDebut, encaissements: moyenneEncaissements, decaissements: moyenneDecaissements, soldeFin })
+      soldeCourant = soldeFin
+    }
+    return { moyenneEncaissements, moyenneDecaissements, nbMoisHistorique: nbH, nbLignesObservees: dansHistorique.length, nbMoisAvecDonnees, lignes }
+  }
+
+  it('ses jours : du lendemain du départ au dernier jour du mois en cours ; aucun, rien', () => {
+    expect(periodeDuRaccord('2026-11-10', '2026-11-01')).toEqual({ du: '2026-11-11', au: '2026-11-30' })
+    // L'exemple de la question : le 15 novembre, une dernière écriture du 31 octobre — tout novembre.
+    expect(periodeDuRaccord('2026-10-31', '2026-11-01')).toEqual({ du: '2026-11-01', au: '2026-11-30' })
+    expect(periodeDuRaccord('2026-09-15', '2026-11-01')).toEqual({ du: '2026-09-16', au: '2026-11-30' })
+    expect(periodeDuRaccord('2028-02-05', '2028-02-01')).toEqual({ du: '2028-02-06', au: '2028-02-29' })
+    expect(periodeDuRaccord('2026-12-31', '2026-12-01')).toBeNull()
+    expect(periodeDuRaccord('2026-11-30', '2026-11-01')).toBeNull()
+  })
+
+  it('sa part : le prorata des jours de chaque mois, arrondi au centime, le demi-centime vers le haut — les cas que la base a jugés', () => {
+    expect(partDuRythme(333_339, '2026-11-11', '2026-11-30')).toBe(222_226)
+    expect(partDuRythme(133_854, '2026-11-11', '2026-11-30')).toBe(89_236)
+    // 15 jours sur 30 de septembre (166 669,5 : 166 670), puis octobre et novembre entiers.
+    expect(partDuRythme(333_339, '2026-09-16', '2026-11-30')).toBe(833_348)
+    expect(partDuRythme(133_854, '2026-09-16', '2026-11-30')).toBe(334_635)
+    // Février 2028 : 24 jours sur 29.
+    expect(partDuRythme(100_000, '2028-02-06', '2028-02-29')).toBe(82_759)
+    expect(partDuRythme(50_000, '2028-02-06', '2028-02-29')).toBe(41_379)
+    expect(partDuRythme(1, '2026-11-01', '2026-11-15')).toBe(1)
+    expect(partDuRythme(1, '2026-12-01', '2026-12-15')).toBe(0)
+    expect(partDuRythme(-1, '2026-11-01', '2026-11-15')).toBe(-1)
+    expect(partDuRythme(333_339, '2026-12-01', '2026-11-30')).toBe(0)
+    expect(partDuRythme(1.5, '2026-11-01', '2026-11-30')).toBeNaN()
+  })
+
+  it('un mois couvert en entier compte le rythme exact, de 2000 à 2100, jusqu’au plafond de la base', () => {
+    const suivant = tirage(181126)
+    for (let n = 0; n < 1200; n++) {
+      const premier = ajouterMois('2000-01-01', entierTire(suivant, 1212))
+      const rythme = n % 3 === 0 ? 99_999_999_999_999 : entierTire(suivant, 1_000_000_000)
+      expect(partDuRythme(rythme, premier, dernierJourDuMois(premier)), premier).toBe(rythme)
+    }
+  })
+
+  it('la même part qu’un calcul jour par jour, sur une batterie tirée d’une graine fixe', () => {
+    const suivant = tirage(4_181_126)
+    for (let n = 0; n < 3000; n++) {
+      const du = ajouterJours('2025-01-01', entierTire(suivant, 900))
+      const au = ajouterJours(du, entierTire(suivant, 120))
+      const rythme = entierTire(suivant, 2_000_000_000)
+      // Un mois à la fois : ses jours comptés un par un, puis l'arrondi de Math.round (le demi vers le haut, exact à ces tailles).
+      let attendu = 0
+      let jour = du
+      while (jour <= au) {
+        const fin = dernierJourDuMois(jour)
+        let jours = 0
+        while (jour <= au && jour <= fin) { jours++; jour = ajouterJours(jour, 1) }
+        attendu += Math.round(rythme * jours / Number(fin.slice(8, 10)))
+      }
+      expect(partDuRythme(rythme, du, au), `${rythme} ${du} ${au}`).toBe(attendu)
+    }
+  })
+
+  it('l’exemple de la question : le 15 novembre, partie du 31 octobre, novembre entier au rythme, et décembre part de sa fin', () => {
+    const lignes = [1, 2, 3, 4, 5, 6].flatMap((d): LigneBanquePourPlan[] => [
+      { date: `${ajouterMois('2026-11-01', -d).slice(0, 7)}-10`, sens: 'debit', montant: 600 },
+      { date: `${ajouterMois('2026-11-01', -d).slice(0, 7)}-20`, sens: 'credit', montant: 200 },
+    ])
+    const plan = calculerPlanTresorerieAu(lignes, 5000, 6, 2, '2026-11-01', '2026-10-31')
+    expect(plan.raccord).toEqual({ du: '2026-11-01', au: '2026-11-30', soldeDebut: 5000, encaissements: 600, decaissements: 200, soldeFin: 5400 })
+    expect(plan.lignes.map((l) => [l.mois, l.soldeDebut, l.soldeFin])).toEqual([['2026-12', 5400, 5800], ['2027-01', 5800, 6200]])
+    // Sans raccord, décembre partait du 31 octobre : le défaut que le cabinet a choisi de corriger (C8Q2-Q3).
+    expect(planDHier(lignes, 5000, 6, 2, '2026-11-01').lignes[0]).toMatchObject({ mois: '2026-12', soldeDebut: 5000 })
+  })
+
+  it('la date du départ : la dernière écriture comptée, l’ouverture faisant foi à sa date', () => {
+    const l = (date: string): LigneBanquePourPlan => ({ date, sens: 'debit', montant: 1 })
+    expect(dateDuDepart([l('2026-10-31'), l('2026-11-10'), l('2026-11-20')], null, '2026-11-15')).toBe('2026-11-10')
+    expect(dateDuDepart([l('2026-10-31')], { date: '2026-11-01', solde: 3 }, '2026-11-15')).toBe('2026-11-01')
+    expect(dateDuDepart([], null, '2026-11-15')).toBeNull()
+  })
+
+  it('LÀ OÙ LE RACCORD NE JOUE PAS, LE PLAN D’HIER AU CENTIME ; ailleurs, les mois d’hier partis de la fin du raccord', () => {
+    const suivant = tirage(18_112_026)
+    let avecRaccord = 0
+    for (let n = 0; n < 800; n++) {
+      const premier = ajouterMois('2026-01-01', entierTire(suivant, 30))
+      const lignes: LigneBanquePourPlan[] = Array.from({ length: entierTire(suivant, 60) }, (): LigneBanquePourPlan => ({
+        date: ajouterJours(ajouterMois(premier, -26), entierTire(suivant, 820)),
+        sens: entierTire(suivant, 2) === 0 ? 'debit' : 'credit',
+        montant: entierTire(suivant, 1_000_000) / 100,
+      }))
+      const solde = (entierTire(suivant, 4_000_000) - 2_000_000) / 100
+      const nbH = 1 + entierTire(suivant, 24)
+      const nbP = 1 + entierTire(suivant, 24)
+      const hier = planDHier(lignes, solde, nbH, nbP, premier)
+      // Le raccord ne joue pas : sans date de départ (les ratios), ou partie du dernier jour du mois en cours.
+      expect(calculerPlanTresorerieAu(lignes, solde, nbH, nbP, premier, null)).toEqual({ ...hier, raccord: null })
+      expect(calculerPlanTresorerieAu(lignes, solde, nbH, nbP, premier, dernierJourDuMois(premier))).toEqual({ ...hier, raccord: null })
+      // Il joue : les moyennes et ce qu'elles observent inchangés ; les mois sont ceux d'hier, partis de la fin du raccord.
+      const departAu = ajouterJours(premier, entierTire(suivant, 120) - 90)
+      const plan = calculerPlanTresorerieAu(lignes, solde, nbH, nbP, premier, departAu)
+      if (departAu >= dernierJourDuMois(premier)) continue
+      avecRaccord++
+      expect(plan.raccord).not.toBeNull()
+      const r = plan.raccord!
+      expect([r.du, r.au, r.soldeDebut]).toEqual([ajouterJours(departAu, 1), dernierJourDuMois(premier), solde])
+      expect(r.encaissements).toBe(partDuRythme(Math.round(hier.moyenneEncaissements * 100), r.du, r.au) / 100)
+      expect(r.soldeFin).toBe(Math.round((solde + r.encaissements - r.decaissements) * 100) / 100)
+      expect({ ...plan, raccord: null }).toEqual({ ...planDHier(lignes, r.soldeFin, nbH, nbP, premier), raccord: null })
+    }
+    // Un plancher : la batterie ne vaut que si le raccord joue sur une bonne part de ses cas.
+    expect(avecRaccord).toBeGreaterThan(500)
   })
 })

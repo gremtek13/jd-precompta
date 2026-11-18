@@ -12,8 +12,8 @@ import {
 import { useTresorerieDuClient, type LectureDeLaTresorerie } from '../lib/tresorerieClientLecture'
 import { moisEnLettres } from '../lib/echeancierClient'
 import {
-  moisLePlusBas, nonComptesSelonLaPrevision, periodeNonComptee, phraseDeLaPublication, phraseDesMoisPasses, phraseDuDepart,
-  phraseDuMoisLePlusBas, phraseDUnePrevisionPassee, phraseDuNonCompte, phraseDuRythme, PREVISION_AUCUNE, PREVISION_CONTENU_ILLISIBLE,
+  moisLePlusBas, nonComptesSelonLaPrevision, periodeDuRaccordEnLettres, phraseDeLaPublication, phraseDesMoisPasses, phraseDuDepart,
+  phraseDuMoisLePlusBas, phraseDUnePrevisionPassee, phraseDuRaccord, phraseDuRythme, PREVISION_AUCUNE, PREVISION_CONTENU_ILLISIBLE,
   PREVISION_ESPECES, PREVISION_ILLISIBLE, PREVISION_MOT, PREVISION_PAS_UN_ENGAGEMENT, PREVISION_SANS_BANQUE, PREVISION_TITRE,
   previsionAMontrer, PREVISIONS_PUBLIEES_PREVUES,
 } from '../lib/previsionsPubliees'
@@ -200,7 +200,7 @@ function PrevisionDuCabinet({ lecture, aujourdHui }: { lecture: LectureDuClient 
     )
   }
   const c = a.contenu
-  const trou = periodeNonComptee(c)
+  const r = c.raccord
   return (
     <section className="card" aria-label={PREVISION_TITRE}>
       {titre}
@@ -209,11 +209,21 @@ function PrevisionDuCabinet({ lecture, aujourdHui }: { lecture: LectureDuClient 
       {a.moisPasses > 0 && <p className="muted" style={{ fontSize: '0.85rem', margin: '0 0 4px' }}>{phraseDesMoisPasses(c.etablie_le)}</p>}
       <p style={{ margin: '0 0 4px' }}>{phraseDuDepart(c.depart)}</p>
       <p style={{ margin: '0 0 4px' }}>{phraseDuRythme(c.rythme)}{c.avec_especes && <> {PREVISION_ESPECES}</>}</p>
-      {trou && <p className="muted" style={{ fontSize: '0.85rem', margin: '0 0 8px' }}>{phraseDuNonCompte(trou)}</p>}
+      {r && <p className="muted" style={{ fontSize: '0.85rem', margin: '0 0 8px' }}>{phraseDuRaccord(r)}</p>}
       <div className="table-scroll tableau-adaptable">
         <table className="table-empilable-etroite" aria-label="La prévision de ton cabinet, mois par mois">
           <thead><tr><th>Mois</th><th>Solde au début</th><th>Entrées</th><th>Sorties</th><th>Solde à la fin</th></tr></thead>
           <tbody>
+            {/* Le raccord (C8Q2-Q3) : de la dernière écriture de banque à la fin du mois de la publication, au prorata des jours. */}
+            {r && (
+              <tr>
+                <td data-libelle="Mois">{periodeDuRaccordEnLettres(r)}</td>
+                <td data-libelle="Solde au début">{euros(r.solde_debut)}</td>
+                <td data-libelle="Entrées">{euros(r.encaissements)}</td>
+                <td data-libelle="Sorties">{euros(r.decaissements)}</td>
+                <td data-libelle="Solde à la fin" className={r.solde_fin < 0 ? 'error-text' : undefined}>{euros(r.solde_fin)}</td>
+              </tr>
+            )}
             {c.mois.map((m) => (
               <tr key={m.mois}>
                 <td data-libelle="Mois">{moisEnLettres(m.mois)}</td>

@@ -3,11 +3,11 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { motsDuCabinet } from './espaceVentes'
 import { TRESORERIE_A_90_JOURS_OFFERTE } from './tresorerieClient'
-import { calculerPlanTresorerieAu, type LigneBanquePourPlan } from './planTresorerie'
+import { calculerPlanTresorerieAu, dateDuDepart, type LigneBanquePourPlan } from './planTresorerie'
 import {
-  CE_QUE_LE_CLIENT_LIT, composerLaPrevision, confirmationDeLaPublication, confirmationDuRetrait, contenuLu, dateDuDepart, memesMois,
-  moisLePlusBas, NON_COMPTE_PREVISION_A_PART, nonComptesSelonLaPrevision, periodeNonComptee, phraseDeLaPublication,
-  phraseDesMoisPasses, phraseDuDepart, phraseDuMoisLePlusBas, phraseDUnePrevisionPassee, phraseDuNonCompte, phraseDuRythme,
+  CE_QUE_LE_CLIENT_LIT, composerLaPrevision, confirmationDeLaPublication, confirmationDuRetrait, contenuLu, memesMois,
+  moisLePlusBas, NON_COMPTE_PREVISION_A_PART, nonComptesSelonLaPrevision, periodeDuRaccordEnLettres, phraseDeLaPublication,
+  phraseDesMoisPasses, phraseDuDepart, phraseDuMoisLePlusBas, phraseDUnePrevisionPassee, phraseDuRaccord, phraseDuRythme,
   PREVISION_AUCUNE, PREVISION_CONTENU_ILLISIBLE, PREVISION_ESPECES, PREVISION_ILLISIBLE, PREVISION_MOT, PREVISION_PAS_UN_ENGAGEMENT,
   PREVISION_SANS_BANQUE, PREVISION_TITRE, previsionAMontrer, previsionEnCours, previsionsEnCours, PREVISIONS_PUBLIEES_PREVUES,
   REFUS_DU_MODULE, REFUS_PREVISION, type ContenuDeLaPrevision, type EntreeDeLaPrevision, type PrevisionPubliee,
@@ -19,7 +19,16 @@ import {
 
 const MIGRATION = 'supabase/preparees/20261115100000_previsions_publiees.sql'
 const RETOUR = 'supabase/preparees/retour/20261115100100_retour_previsions_publiees.sql'
+const ESSAI = 'supabase/essais/previsionsPubliees.sql'
 const texte = readFileSync(resolve(process.cwd(), MIGRATION), 'utf8')
+const texteDeLEssai = readFileSync(resolve(process.cwd(), ESSAI), 'utf8')
+
+/** Un contenu à jour fixe de l'essai de la base (`fixe_<nom> constant jsonb := '…';`), que la base a jugé. */
+function contenuFixe(nom: string): unknown {
+  const m = new RegExp(`fixe_${nom} constant jsonb := '([^']*)';`).exec(texteDeLEssai)
+  if (!m) throw new Error(`fixe_${nom} absent de l'essai`)
+  return JSON.parse(m[1])
+}
 
 const ligne = (date: string, sens: 'debit' | 'credit', montant: number): LigneBanquePourPlan => ({ date, sens, montant })
 
@@ -72,33 +81,51 @@ describe('le drapeau et les fichiers de la migration', () => {
 })
 
 describe('composer la prévision', () => {
-  it('le contenu : le jour, le départ à la dernière écriture comptée, le rythme de six mois complets, six mois enchaînés', () => {
+  it('le contenu : le jour, le départ à la dernière écriture comptée, le rythme de six mois complets, le raccord, six mois enchaînés', () => {
     const c = compose()
     expect(c.version).toBe(1)
     expect(c.etablie_le).toBe('2026-11-15')
     expect(c.depart).toEqual({ au: '2026-11-10', solde: 1_266_910 })
     expect(c.rythme).toEqual({ debut: '2026-05', fin: '2026-10', mois: 6, mois_observes: 5, encaissements: 333_339, decaissements: 133_854 })
+    // Le raccord (C8Q2-Q3) : du 11 au 30 novembre, 20 jours sur 30 du rythme ; décembre part de sa fin.
+    expect(c.raccord).toEqual({ du: '2026-11-11', au: '2026-11-30', solde_debut: 1_266_910, encaissements: 222_226, decaissements: 89_236, solde_fin: 1_399_900 })
     expect(c.mois.map((m) => m.mois)).toEqual(['2026-12', '2027-01', '2027-02', '2027-03', '2027-04', '2027-05'])
-    expect(c.mois[0].solde_debut).toBe(c.depart.solde)
+    expect(c.mois[0].solde_debut).toBe(c.raccord?.solde_fin)
     for (const [i, m] of c.mois.entries()) {
       expect(m.solde_fin).toBe(m.solde_debut + m.encaissements - m.decaissements)
       if (i > 0) expect(m.solde_debut).toBe(c.mois[i - 1].solde_fin)
     }
-    expect(Object.keys(c).sort()).toEqual(['avec_especes', 'depart', 'etablie_le', 'mois', 'rythme', 'version'])
+    expect(Object.keys(c).sort()).toEqual(['avec_especes', 'depart', 'etablie_le', 'mois', 'raccord', 'rythme', 'version'])
     expect(contenuLu(c)).toEqual(c)
   })
 
-  it('le même plan que l’onglet Financement : ses moyennes, ses mois et ses soldes, au centime, sur une batterie', () => {
+  it('LA BASE ET LE MODULE D’ACCORD : le contenu qu’il compose est celui que l’essai de la base a fait juger, au caractère près', () => {
+    expect(compose({ nbMoisProjection: 2 })).toEqual(contenuFixe('novembre'))
+    for (const nom of ['novembre', 'trois_mois', 'sans_raccord', 'bissextile']) {
+      expect(contenuLu(contenuFixe(nom)), nom).toEqual(contenuFixe(nom))
+    }
+    // Le départ au dernier jour du mois : aucun raccord, les mois d'hier.
+    const sans = composerLaPrevision(entree({ aujourdHui: '2026-11-30', lignesBanque: [...RYTHME, ligne('2026-11-30', 'debit', 0)], nbMoisProjection: 1 }))
+    expect(sans.ok && sans.contenu.raccord).toBeNull()
+    expect(sans.ok && sans.contenu.mois[0].solde_debut).toBe(sans.ok && sans.contenu.depart.solde)
+  })
+
+  it('le même plan que l’onglet Financement : ses moyennes, son raccord, ses mois et ses soldes, au centime, sur une batterie', () => {
     for (const nbH of [1, 3, 6, 12, 24]) {
       for (const nbP of [1, 2, 6, 24]) {
         for (const jour of ['2026-11-01', '2026-11-15', '2026-11-30', '2026-12-31', '2027-01-01']) {
           const c = composerLaPrevision(entree({ aujourdHui: jour, nbMoisHistorique: nbH, nbMoisProjection: nbP }))
-          const plan = calculerPlanTresorerieAu(RYTHME, c.ok ? c.contenu.depart.solde / 100 : 0, nbH, nbP, `${jour.slice(0, 7)}-01`)
+          const plan = calculerPlanTresorerieAu(RYTHME, c.ok ? c.contenu.depart.solde / 100 : 0, nbH, nbP, `${jour.slice(0, 7)}-01`,
+            c.ok ? c.contenu.depart.au : null)
           if (!c.ok) {
             expect(plan.nbLignesObservees, `${nbH} ${nbP} ${jour}`).toBe(0)
             expect(c.refus).toBe(REFUS_PREVISION.sansMouvement)
             continue
           }
+          const r = c.contenu.raccord
+          expect(r && [r.du, r.au, r.solde_debut / 100, r.encaissements / 100, r.decaissements / 100, r.solde_fin / 100])
+            .toEqual(plan.raccord && [plan.raccord.du, plan.raccord.au, plan.raccord.soldeDebut, plan.raccord.encaissements,
+              plan.raccord.decaissements, plan.raccord.soldeFin])
           expect(c.contenu.mois.map((m) => m.mois)).toEqual(plan.lignes.map((l) => l.mois))
           expect(c.contenu.mois.map((m) => m.solde_fin / 100)).toEqual(plan.lignes.map((l) => l.soldeFin))
           expect(c.contenu.rythme.encaissements / 100).toBe(plan.moyenneEncaissements)
@@ -174,15 +201,40 @@ describe('relire une prévision : la forme, et une suite qui s’enchaîne', () 
     expect(contenuLu(c)).toEqual(c)
   })
 
-  it('ce qui n’est pas compté : du lendemain du départ à la veille du premier mois ; aucun jour, rien', () => {
-    expect(periodeNonComptee(c)).toEqual({ du: '2026-11-11', au: '2026-11-30' })
-    expect(periodeNonComptee({ depart: { au: '2026-11-30', solde: 0 }, mois: c.mois })).toBeNull()
+  it('le raccord se relit comme la base le juge : ce qu’elle refuse sur ses contenus à jour fixe ne se lit pas', () => {
+    expect(contenuLu(avec(['raccord'], null))).toBeNull()
+    expect(contenuLu(avec(['raccord', 'encaissements'], 222_227))).toBeNull()
+    expect(contenuLu(avec(['raccord', 'au'], '2026-11-29'))).toBeNull()
+    expect(contenuLu(avec(['raccord', 'du'], '2026-11-10'))).toBeNull()
+    expect(contenuLu(avec(['raccord', 'solde_debut'], 1_266_911))).toBeNull()
+    expect(contenuLu(avec(['raccord', 'solde_fin'], 1_399_901))).toBeNull()
+    expect(contenuLu(avec(['mois', 0, 'solde_debut'], c.depart.solde))).toBeNull()
+    const { raccord: _r, ...sansLaCle } = c
+    expect(contenuLu(sansLaCle)).toBeNull()
+    // Les mutations de l'essai (étapes 60, 61, 63 et 65) : le demi-centime vers le bas, le prorata du seul mois du jour, un
+    // raccord là où aucun jour ne reste, un février de 28 jours.
+    const muter = (nom: string, chemins: [string[], unknown][]) => {
+      const copie = contenuFixe(nom) as Record<string, unknown>
+      for (const [chemin, valeur] of chemins) {
+        let o = copie
+        for (const k of chemin.slice(0, -1)) o = o[k] as Record<string, unknown>
+        o[chemin[chemin.length - 1]] = valeur
+      }
+      return copie
+    }
+    expect(contenuLu(muter('trois_mois', [[['raccord', 'encaissements'], 833_347], [['raccord', 'solde_fin'], 1_498_712],
+      [['mois', '0', 'solde_debut'], 1_498_712], [['mois', '0', 'solde_fin'], 1_698_197]]))).toBeNull()
+    expect(contenuLu(muter('trois_mois', [[['raccord', 'encaissements'], 844_459], [['raccord', 'solde_fin'], 1_509_824]]))).toBeNull()
+    expect(contenuLu(muter('sans_raccord', [[['raccord'], { du: '2026-12-01', au: '2026-11-30', solde_debut: 1_266_910, encaissements: 0, decaissements: 0, solde_fin: 1_266_910 }]]))).toBeNull()
+    expect(contenuLu(muter('bissextile', [[['raccord', 'encaissements'], 85_714], [['raccord', 'decaissements'], 42_857],
+      [['raccord', 'solde_fin'], 542_857], [['mois', '0', 'solde_debut'], 542_857]]))).toBeNull()
   })
 
-  it('le mois le plus bas : le premier à égalité', () => {
-    expect(moisLePlusBas(c)).toBe(c.mois[0])
-    const baisse = { mois: [{ ...c.mois[0], solde_fin: 5 }, { ...c.mois[1], solde_fin: -3 }, { ...c.mois[2], solde_fin: -3 }] }
+  it('le mois le plus bas : le raccord compris, sous le mois où il finit ; le premier à égalité', () => {
+    expect(moisLePlusBas(c)).toEqual({ mois: '2026-11', solde_debut: 1_266_910, encaissements: 222_226, decaissements: 89_236, solde_fin: 1_399_900 })
+    const baisse = { raccord: null, mois: [{ ...c.mois[0], solde_fin: 5 }, { ...c.mois[1], solde_fin: -3 }, { ...c.mois[2], solde_fin: -3 }] }
     expect(moisLePlusBas(baisse).mois).toBe(c.mois[1].mois)
+    expect(moisLePlusBas({ ...baisse, raccord: c.raccord }).mois).toBe(c.mois[1].mois)
   })
 })
 
@@ -206,7 +258,9 @@ describe('les prévisions en cours, et ce que le client en voit', () => {
     expect(previsionAMontrer([ligneDe('p1', 'publication', null, '2026-11-15T08:00:00Z', { version: 1 })], '2026-11-20')).toEqual({ etat: 'illisible' })
     const une = [ligneDe('p1', 'publication', null, '2026-11-15T08:00:00Z')]
     expect(previsionAMontrer(une, '2026-11-20')).toEqual({ etat: 'montree', contenu: c, moisPasses: 0 })
-    expect(previsionAMontrer(une, '2027-02-03')).toEqual({ etat: 'montree', contenu: c, moisPasses: 2 })
+    // Le raccord de novembre passé dès décembre, puis décembre et janvier.
+    expect(previsionAMontrer(une, '2026-12-01')).toEqual({ etat: 'montree', contenu: c, moisPasses: 1 })
+    expect(previsionAMontrer(une, '2027-02-03')).toEqual({ etat: 'montree', contenu: c, moisPasses: 3 })
     expect(previsionAMontrer(une, '2027-06-01')).toEqual({ etat: 'passee', etablieLe: '2026-11-15' })
   })
 
@@ -226,10 +280,16 @@ describe('les mots', () => {
     expect(f.titre).toBe('Publier cette prévision au client ?')
     expect(f.bouton).toBe('Publier')
     for (const attendu of ['15/11/2026', '10/11/2026', '12 669,10', 'mai 2026', 'octobre 2026', '6 mois', 'des mouvements sur 5',
-      'décembre 2026', 'mai 2027', 'case « Banque »', 'espèces', 'du 11/11/2026 au 30/11/2026', 'pas un engagement',
-      'jamais ajoutée à son point bas', 'ni le nom d’un emprunt', 'Elle se fige']) {
+      'décembre 2026', 'mai 2027', 'case « Banque »', 'espèces', 'Le raccord, du 11/11/2026 au 30/11/2026', 'au prorata des jours',
+      '2 222,26 € encaissés et 892,36 € payés', 'solde au 30/11/2026, 13 999,00 €', 'décembre 2026 part de ce solde',
+      'pas un engagement', 'jamais ajoutée à son point bas', 'ni le nom d’un emprunt', 'Elle se fige']) {
       expect(tout.replace(/ | /g, ' ')).toContain(attendu)
     }
+    expect(tout).not.toContain('pas compté')
+    // Sans raccord, aucune phrase de raccord.
+    const sans = composerLaPrevision(entree({ aujourdHui: '2026-11-30', lignesBanque: [...RYTHME, ligne('2026-11-30', 'debit', 0)] }))
+    if (!sans.ok) throw new Error(sans.refus)
+    expect(confirmationDeLaPublication(sans.contenu, null).paragraphes.join(' ')).not.toContain('raccord')
     const r = confirmationDeLaPublication(compose(), { publiee_le: '2026-11-02T09:00:00Z' })
     expect(r.titre).toBe('Remplacer la prévision publiée au client ?')
     expect(r.bouton).toBe('Remplacer')
@@ -248,7 +308,7 @@ describe('les mots', () => {
     const phrases = [PREVISION_TITRE, PREVISION_MOT, PREVISION_PAS_UN_ENGAGEMENT, PREVISION_AUCUNE, PREVISION_ILLISIBLE,
       PREVISION_CONTENU_ILLISIBLE, PREVISION_SANS_BANQUE, PREVISION_ESPECES, NON_COMPTE_PREVISION_A_PART,
       phraseDeLaPublication(c.etablie_le), phraseDuDepart(c.depart), phraseDuRythme(c.rythme), phraseDuRythme({ ...c.rythme, mois_observes: 6 }),
-      phraseDuNonCompte({ du: '2026-11-11', au: '2026-11-30' }), phraseDuMoisLePlusBas(c.mois[0]),
+      phraseDuRaccord(c.raccord!), periodeDuRaccordEnLettres(c.raccord!), phraseDuMoisLePlusBas(c.mois[0]),
       phraseDuMoisLePlusBas({ ...c.mois[0], solde_fin: -100 }), phraseDesMoisPasses(c.etablie_le), phraseDUnePrevisionPassee(c.etablie_le)]
     for (const p of phrases) expect(motsDuCabinet(p), p).toEqual([])
     expect(PREVISION_PAS_UN_ENGAGEMENT).toContain('pas un engagement')
@@ -256,5 +316,8 @@ describe('les mots', () => {
     expect(phraseDuRythme(c.rythme)).toContain('sur 5 de ces 6 mois')
     expect(phraseDuRythme({ ...c.rythme, mois_observes: 6 })).not.toContain('de ces')
     expect(phraseDuMoisLePlusBas({ ...c.mois[0], solde_fin: -100 })).toContain('sous zéro')
+    expect(periodeDuRaccordEnLettres(c.raccord!)).toBe('Du 11 novembre 2026 au 30 novembre 2026')
+    expect(phraseDuRaccord(c.raccord!).replace(/ | /g, ' ')).toBe('Du 11 novembre 2026 au 30 novembre 2026, après cette dernière '
+      + 'écriture, elle compte ce rythme au prorata des jours : 2 222,26 € encaissés et 892,36 € payés.')
   })
 })

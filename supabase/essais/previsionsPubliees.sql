@@ -6,7 +6,10 @@
 -- le refuse, ce que la réplique de l'étape a éprouvé.
 --
 -- Ce qui se prouve ici, et ne se relit pas : le cabinet publie, remplace et retire ; chaque refus sous ses mots, dans
--- l'ordre de la migration ; la prévision datée du jour de Paris où la base la reçoit ; le client « Banque » ne lit que la
+-- l'ordre de la migration ; le raccord (C8Q2-Q3) au prorata des jours de chaque mois, l'arrondi du demi-centime vers le
+-- haut, un départ au dernier jour du mois sans raccord, un février bissextile — sur des contenus à JOUR FIXE que
+-- `refus_de_la_prevision` juge pour le jour qu'on lui donne, les mêmes que src/lib/previsionsPubliees.test.ts relit (le
+-- module compose et relit ce que la base accepte) ; la prévision datée du jour de Paris où la base la reçoit ; le client « Banque » ne lit que la
 -- prévision EN COURS de son dossier, le client sans la case rien, ni celui d'un autre dossier, ni un compte sans accès, ni
 -- l'anonyme ; la case décochée, il ne lit plus rien ; `prevision_publiee_en_cours` ne dit une prévision en cours qu'au
 -- cabinet du dossier et à un accès « Banque » de ce dossier ; personne n'écrit ni ne réécrit la table en direct (ni le
@@ -36,10 +39,43 @@ declare
   jour constant date := (now() at time zone 'Europe/Paris')::date;
   k constant integer := extract(year from (now() at time zone 'Europe/Paris')::date)::integer * 12
     + extract(month from (now() at time zone 'Europe/Paris')::date)::integer - 1;
+  -- Le départ : le dernier jour du mois qui précède celui du jour ; le raccord couvre alors le mois du jour entier.
+  depart constant date := (now() at time zone 'Europe/Paris')::date - extract(day from (now() at time zone 'Europe/Paris')::date)::integer;
   contenu text;
   publier constant text := $q$publier_prevision('{DB}', '{C}'::jsonb, null)$q$;
-  e record; v_code text; v_msg text; v_req text; v_pose text; v_obs text;
+  e record; f record; v_code text; v_msg text; v_req text; v_pose text; v_obs text;
   verdicts jsonb := '[]'::jsonb;
+  -- LES CONTENUS À JOUR FIXE (C8Q2-Q3), jugés par `refus_de_la_prevision` au jour de chacun ; src/lib/previsionsPubliees.test.ts
+  -- relit les mêmes (il les cherche par leur nom, `fixe_…`). Le premier est celui que le module compose le 15/11/2026 pour
+  -- le relevé de son test : partie du 10/11/2026, le raccord compte 20 jours sur 30 de novembre.
+  fixe_novembre constant jsonb := '{"version": 1, "etablie_le": "2026-11-15", "avec_especes": false,
+    "depart": {"au": "2026-11-10", "solde": 1266910},
+    "rythme": {"debut": "2026-05", "fin": "2026-10", "mois": 6, "mois_observes": 5, "encaissements": 333339, "decaissements": 133854},
+    "raccord": {"du": "2026-11-11", "au": "2026-11-30", "solde_debut": 1266910, "encaissements": 222226, "decaissements": 89236, "solde_fin": 1399900},
+    "mois": [{"mois": "2026-12", "solde_debut": 1399900, "encaissements": 333339, "decaissements": 133854, "solde_fin": 1599385},
+             {"mois": "2027-01", "solde_debut": 1599385, "encaissements": 333339, "decaissements": 133854, "solde_fin": 1798870}]}';
+  -- Partie du 15/09/2026 : du 16 septembre au 30 novembre, 15 jours sur 30 (333 339 × 15 ÷ 30 = 166 669,5 : 166 670, le
+  -- demi-centime vers le haut), puis octobre et novembre entiers, au rythme exact.
+  fixe_trois_mois constant jsonb := '{"version": 1, "etablie_le": "2026-11-15", "avec_especes": false,
+    "depart": {"au": "2026-09-15", "solde": 1000000},
+    "rythme": {"debut": "2026-05", "fin": "2026-10", "mois": 6, "mois_observes": 5, "encaissements": 333339, "decaissements": 133854},
+    "raccord": {"du": "2026-09-16", "au": "2026-11-30", "solde_debut": 1000000, "encaissements": 833348, "decaissements": 334635, "solde_fin": 1498713},
+    "mois": [{"mois": "2026-12", "solde_debut": 1498713, "encaissements": 333339, "decaissements": 133854, "solde_fin": 1698198}]}';
+  -- Établie et partie le 30/11/2026, dernier jour du mois : aucun jour à compter, pas de raccord.
+  fixe_sans_raccord constant jsonb := '{"version": 1, "etablie_le": "2026-11-30", "avec_especes": false,
+    "depart": {"au": "2026-11-30", "solde": 1266910},
+    "rythme": {"debut": "2026-05", "fin": "2026-10", "mois": 6, "mois_observes": 5, "encaissements": 333339, "decaissements": 133854},
+    "raccord": null,
+    "mois": [{"mois": "2026-12", "solde_debut": 1266910, "encaissements": 333339, "decaissements": 133854, "solde_fin": 1466395}]}';
+  -- Février 2028, bissextile : partie du 05/02/2028, du 6 au 29, 24 jours sur 29 (100 000 × 24 ÷ 29 = 82 758,6 : 82 759 ;
+  -- 50 000 × 24 ÷ 29 = 41 379,3 : 41 379).
+  fixe_bissextile constant jsonb := '{"version": 1, "etablie_le": "2028-02-10", "avec_especes": true,
+    "depart": {"au": "2028-02-05", "solde": 500000},
+    "rythme": {"debut": "2027-08", "fin": "2028-01", "mois": 6, "mois_observes": 6, "encaissements": 100000, "decaissements": 50000},
+    "raccord": {"du": "2028-02-06", "au": "2028-02-29", "solde_debut": 500000, "encaissements": 82759, "decaissements": 41379, "solde_fin": 541380},
+    "mois": [{"mois": "2028-03", "solde_debut": 541380, "encaissements": 100000, "decaissements": 50000, "solde_fin": 591380}]}';
+  refus_raccord constant text := 'Le raccord de la prévision est mal formé : du lendemain de son départ à la fin du mois où elle est établie, parti du solde de départ, au rythme moyen compté au prorata des jours de chaque mois.';
+  refus_mois constant text := 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.';
 begin
   if to_regclass('public.previsions_publiees') is null then
     perform set_config('essai.previsions_publiees', jsonb_build_array(jsonb_build_object('rang', 0,
@@ -47,22 +83,26 @@ begin
       'observe', 'absente : l''essai se joue dès que la migration y est'))::text, true);
     return;
   end if;
-  -- Une prévision bien formée pour ce jour : partie de 12 345,67 € dix jours plus tôt, au rythme de six mois complets
-  -- (cinq observés), sur les trois mois qui suivent celui du jour ; des centimes.
+  -- Une prévision bien formée pour ce jour : partie de 12 345,67 € au dernier jour du mois qui précède, au rythme de six
+  -- mois complets (cinq observés) ; le raccord couvre le mois du jour entier, donc le rythme exact (C8Q2-Q3) ; puis les
+  -- trois mois qui suivent celui du jour ; des centimes.
   contenu := jsonb_build_object(
     'version', 1, 'etablie_le', to_char(jour, 'YYYY-MM-DD'), 'avec_especes', false,
-    'depart', jsonb_build_object('au', to_char(jour - 10, 'YYYY-MM-DD'), 'solde', 1234567),
+    'depart', jsonb_build_object('au', to_char(depart, 'YYYY-MM-DD'), 'solde', 1234567),
     'rythme', jsonb_build_object(
       'debut', lpad(((k - 6) / 12)::text, 4, '0') || '-' || lpad((((k - 6) % 12) + 1)::text, 2, '0'),
       'fin', lpad(((k - 1) / 12)::text, 4, '0') || '-' || lpad((((k - 1) % 12) + 1)::text, 2, '0'),
       'mois', 6, 'mois_observes', 5, 'encaissements', 500000, 'decaissements', 420000),
+    'raccord', jsonb_build_object('du', to_char(depart + 1, 'YYYY-MM-DD'),
+      'au', to_char(make_date((k + 1) / 12, ((k + 1) % 12) + 1, 1) - 1, 'YYYY-MM-DD'),
+      'solde_debut', 1234567, 'encaissements', 500000, 'decaissements', 420000, 'solde_fin', 1314567),
     'mois', jsonb_build_array(
       jsonb_build_object('mois', lpad(((k + 1) / 12)::text, 4, '0') || '-' || lpad((((k + 1) % 12) + 1)::text, 2, '0'),
-        'solde_debut', 1234567, 'encaissements', 500000, 'decaissements', 420000, 'solde_fin', 1314567),
-      jsonb_build_object('mois', lpad(((k + 2) / 12)::text, 4, '0') || '-' || lpad((((k + 2) % 12) + 1)::text, 2, '0'),
         'solde_debut', 1314567, 'encaissements', 500000, 'decaissements', 420000, 'solde_fin', 1394567),
+      jsonb_build_object('mois', lpad(((k + 2) / 12)::text, 4, '0') || '-' || lpad((((k + 2) % 12) + 1)::text, 2, '0'),
+        'solde_debut', 1394567, 'encaissements', 500000, 'decaissements', 420000, 'solde_fin', 1474567),
       jsonb_build_object('mois', lpad(((k + 3) / 12)::text, 4, '0') || '-' || lpad((((k + 3) % 12) + 1)::text, 2, '0'),
-        'solde_debut', 1394567, 'encaissements', 500000, 'decaissements', 420000, 'solde_fin', 1474567)))::text;
+        'solde_debut', 1474567, 'encaissements', 500000, 'decaissements', 420000, 'solde_fin', 1554567)))::text;
   begin
     -- Le jeu : trois dossiers jetables, et un accès du client d'essai à DB (« Banque ») et à DS (sans elle), insérés par le
     -- propriétaire comme `create-client-access` les insère — la case posée à l'insertion (une insertion du cabinet pose les
@@ -84,8 +124,8 @@ begin
         $q$select s.geste || ' ' || (s.auteur::text = '{CHEF}') || ' ' || (s.contenu ->> 'etablie_le' = '{J}') || ' ' || (s.remplace_id is null) from {P} s$q$,
         'OK', 'publication true true true'),
       (2, '2. le client « Banque » lit la prévision en cours de son dossier, telle qu''elle s''est figée', 'select 1 from {P}', 'client',
-        $q$select count(*)::text || ' ' || min(s.contenu #>> '{depart,solde}') || ' ' || min(s.contenu #>> '{mois,2,solde_fin}') from previsions_publiees s where s.dossier_id = '{DB}'$q$,
-        'OK', '1 1234567 1474567'),
+        $q$select count(*)::text || ' ' || min(s.contenu #>> '{depart,solde}') || ' ' || min(s.contenu #>> '{raccord,solde_fin}') || ' ' || min(s.contenu #>> '{mois,2,solde_fin}') from previsions_publiees s where s.dossier_id = '{DB}'$q$,
+        'OK', '1 1234567 1314567 1554567'),
       (3, '3. le client sans la case ne lit rien de la prévision de DS', $q$select 1 from publier_prevision('{DS}', '{C}'::jsonb, null)$q$, 'client',
         $q$select count(*)::text from previsions_publiees s where s.dossier_id = '{DS}'$q$, 'OK', '0'),
       (4, '4. le client ne lit rien d''un dossier où il n''a aucun accès (DX)', $q$select 1 from publier_prevision('{DX}', '{C}'::jsonb, null)$q$, 'client',
@@ -146,11 +186,11 @@ begin
       (29, '29. un premier mois qui est celui du jour (22023)', null, 'chef',
         $q$select 1 from publier_prevision('{DB}', jsonb_set('{C}'::jsonb, '{mois,0,mois}', to_jsonb('{M+0}'::text)), null)$q$, '22023', 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.'),
       (30, '30. un mois qui ne part pas du solde du précédent (22023)', null, 'chef',
-        $q$select 1 from publier_prevision('{DB}', jsonb_set(jsonb_set('{C}'::jsonb, '{mois,1,solde_debut}', '1314568'), '{mois,1,solde_fin}', '1394568'), null)$q$, '22023', 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.'),
+        $q$select 1 from publier_prevision('{DB}', jsonb_set(jsonb_set('{C}'::jsonb, '{mois,1,solde_debut}', '1394568'), '{mois,1,solde_fin}', '1474568'), null)$q$, '22023', 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.'),
       (31, '31. un solde de fin qui n''est pas le départ plus les entrées moins les sorties (22023)', null, 'chef',
-        $q$select 1 from publier_prevision('{DB}', jsonb_set('{C}'::jsonb, '{mois,2,solde_fin}', '1474568'), null)$q$, '22023', 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.'),
+        $q$select 1 from publier_prevision('{DB}', jsonb_set('{C}'::jsonb, '{mois,2,solde_fin}', '1554568'), null)$q$, '22023', 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.'),
       (32, '32. des encaissements d''un mois qui ne sont pas le rythme moyen (22023)', null, 'chef',
-        $q$select 1 from publier_prevision('{DB}', jsonb_set(jsonb_set('{C}'::jsonb, '{mois,0,encaissements}', '500001'), '{mois,0,solde_fin}', '1314568'), null)$q$, '22023', 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.'),
+        $q$select 1 from publier_prevision('{DB}', jsonb_set(jsonb_set('{C}'::jsonb, '{mois,0,encaissements}', '500001'), '{mois,0,solde_fin}', '1394568'), null)$q$, '22023', 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.'),
       (33, '33. aucun mois (22023)', null, 'chef',
         $q$select 1 from publier_prevision('{DB}', jsonb_set('{C}'::jsonb, '{mois}', '[]'), null)$q$, '22023', 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.'),
       (34, '34. une seconde publication, sans remplacer celle en cours (22023)', 'select 1 from {P}', 'chef',
@@ -186,7 +226,17 @@ begin
         $q$select prevision_publiee_en_cours(current_setting('essai.prevision')::uuid)::text$q$, 'OK', 'false'),
       (46, '46. … vraie au cabinet : un chef qui n''est pas super-administrateur, pour la prévision de DS',
         $q$select set_config('essai.prevision', (select s.id::text from publier_prevision('{DS}', '{C}'::jsonb, null) s), true)$q$, 'chef_simple',
-        $q$select prevision_publiee_en_cours(current_setting('essai.prevision')::uuid)::text$q$, 'OK', 'true')
+        $q$select prevision_publiee_en_cours(current_setting('essai.prevision')::uuid)::text$q$, 'OK', 'true'),
+      -- Le raccord (C8Q2-Q3), par la publication du jour : le départ au dernier jour du mois qui précède, il couvre le mois
+      -- du jour entier.
+      (48, '48. un raccord nul alors que des jours séparent le départ de la fin du mois (22023)', null, 'chef',
+        $q$select 1 from publier_prevision('{DB}', jsonb_set('{C}'::jsonb, '{raccord}', 'null'), null)$q$, '22023', 'Le raccord de la prévision est mal formé : du lendemain de son départ à la fin du mois où elle est établie, parti du solde de départ, au rythme moyen compté au prorata des jours de chaque mois.'),
+      (49, '49. un raccord qui part du jour du départ, et non de son lendemain (22023)', null, 'chef',
+        $q$select 1 from publier_prevision('{DB}', jsonb_set('{C}'::jsonb, '{raccord,du}', to_jsonb('{DEPART}'::text)), null)$q$, '22023', 'Le raccord de la prévision est mal formé : du lendemain de son départ à la fin du mois où elle est établie, parti du solde de départ, au rythme moyen compté au prorata des jours de chaque mois.'),
+      (50, '50. un raccord d''un mois entier qui ne compte pas le rythme exact (22023)', null, 'chef',
+        $q$select 1 from publier_prevision('{DB}', jsonb_set(jsonb_set('{C}'::jsonb, '{raccord,encaissements}', '500001'), '{raccord,solde_fin}', '1314568'), null)$q$, '22023', 'Le raccord de la prévision est mal formé : du lendemain de son départ à la fin du mois où elle est établie, parti du solde de départ, au rythme moyen compté au prorata des jours de chaque mois.'),
+      (51, '51. un premier mois parti du solde de départ, par-dessus le raccord (22023)', null, 'chef',
+        $q$select 1 from publier_prevision('{DB}', jsonb_set(jsonb_set('{C}'::jsonb, '{mois,0,solde_debut}', '1234567'), '{mois,0,solde_fin}', '1314567'), null)$q$, '22023', 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du solde du précédent, au rythme moyen.')
     ) as t(rang, etape, pose, profil, requete, code, attendu) loop
       v_code := 'OK'; v_msg := null; v_obs := null;
       begin
@@ -206,6 +256,7 @@ begin
           e.requete, '{P}', publier), '{C}', contenu), '{DB}', db), '{DS}', ds), '{DX}', dx), '{AB}', acces_b), '{AS}', acces_s),
           '{CHEF}', chef), '{CLIENT}', client), '{J}', to_char(jour, 'YYYY-MM-DD')), '{J-1}', to_char(jour - 1, 'YYYY-MM-DD')),
           '{J+1}', to_char(jour + 1, 'YYYY-MM-DD')), '{M+0}', lpad((k / 12)::text, 4, '0') || '-' || lpad(((k % 12) + 1)::text, 2, '0'));
+        v_req := replace(v_req, '{DEPART}', to_char(depart, 'YYYY-MM-DD'));
         begin
           if e.profil = 'anon' then
             execute 'set local role anon';
@@ -264,6 +315,29 @@ begin
         and not has_function_privilege('authenticated', 'public.refus_de_la_prevision(jsonb, date)', 'execute')
         and not has_function_privilege('authenticated', 'public.garder_prevision_publiee()', 'execute'),
       'observe', 'relu au catalogue');
+
+    -- LE RACCORD À JOUR FIXE (C8Q2-Q3) : `refus_de_la_prevision`, que le propriétaire exécute, juge chaque contenu au jour
+    -- qu'on lui donne — nul s'il l'accepte. Rien ne s'écrit.
+    for f in select * from (values
+      (52, '52. 15/11/2026, partie du 10/11/2026 : le raccord compte 20 jours sur 30 de novembre — accepté', fixe_novembre, date '2026-11-15', null::text),
+      (53, '53. … le prorata d''un centime de plus : refusé', jsonb_set(jsonb_set(fixe_novembre, '{raccord,encaissements}', '222227'), '{raccord,solde_fin}', '1399901'), date '2026-11-15', refus_raccord),
+      (54, '54. … un raccord qui finit la veille de la fin du mois : refusé', jsonb_set(fixe_novembre, '{raccord,au}', '"2026-11-29"'), date '2026-11-15', refus_raccord),
+      (55, '55. … un raccord qui ne dit pas le solde de départ, sa fin juste : refusé', jsonb_set(fixe_novembre, '{raccord,solde_debut}', '1266911'), date '2026-11-15', refus_raccord),
+      (56, '56. … un raccord nul : refusé', jsonb_set(fixe_novembre, '{raccord}', 'null'), date '2026-11-15', refus_raccord),
+      (57, '57. … un raccord sans son solde de fin : refusé', fixe_novembre #- '{raccord,solde_fin}', date '2026-11-15', refus_raccord),
+      (58, '58. … le premier mois parti du solde de départ, comme sans raccord : refusé', jsonb_set(jsonb_set(jsonb_set(jsonb_set(fixe_novembre, '{mois,0,solde_debut}', '1266910'), '{mois,0,solde_fin}', '1466395'), '{mois,1,solde_debut}', '1466395'), '{mois,1,solde_fin}', '1665880'), date '2026-11-15', refus_mois),
+      (59, '59. 15/11/2026, partie du 15/09/2026 : 15 jours sur 30, octobre et novembre entiers, le demi-centime vers le haut — accepté', fixe_trois_mois, date '2026-11-15', null::text),
+      (60, '60. … le demi-centime vers le bas : refusé', jsonb_set(jsonb_set(jsonb_set(jsonb_set(fixe_trois_mois, '{raccord,encaissements}', '833347'), '{raccord,solde_fin}', '1498712'), '{mois,0,solde_debut}', '1498712'), '{mois,0,solde_fin}', '1698197'), date '2026-11-15', refus_raccord),
+      (61, '61. … chaque jour au prorata du seul mois du jour (76 jours sur 30) : refusé', jsonb_set(jsonb_set(fixe_trois_mois, '{raccord,encaissements}', '844459'), '{raccord,solde_fin}', '1509824'), date '2026-11-15', refus_raccord),
+      (62, '62. 30/11/2026, partie le même jour, dernier du mois : aucun raccord — accepté', fixe_sans_raccord, date '2026-11-30', null::text),
+      (63, '63. … un raccord présent alors qu''aucun jour ne reste : refusé', jsonb_set(fixe_sans_raccord, '{raccord}', '{"du": "2026-12-01", "au": "2026-11-30", "solde_debut": 1266910, "encaissements": 0, "decaissements": 0, "solde_fin": 1266910}'), date '2026-11-30', refus_raccord),
+      (64, '64. 10/02/2028, partie du 05/02/2028 : 24 jours sur les 29 d''un février bissextile — accepté', fixe_bissextile, date '2028-02-10', null::text),
+      (65, '65. … 24 jours sur 28, comme une année commune : refusé', jsonb_set(jsonb_set(jsonb_set(jsonb_set(fixe_bissextile, '{raccord,encaissements}', '85714'), '{raccord,decaissements}', '42857'), '{raccord,solde_fin}', '542857'), '{mois,0,solde_debut}', '542857'), date '2028-02-10', refus_raccord)
+    ) as t(rang, etape, cas, le_jour, attendu) loop
+      v_obs := public.refus_de_la_prevision(f.cas, f.le_jour);
+      verdicts := verdicts || jsonb_build_object('rang', f.rang, 'etape', f.etape,
+        'ok', v_obs is not distinct from f.attendu, 'observe', coalesce(v_obs, 'acceptée'));
+    end loop;
     raise exception 'ANNULATION_ESSAI_GLOBALE';
   exception when others then
     if sqlerrm <> 'ANNULATION_ESSAI_GLOBALE' then

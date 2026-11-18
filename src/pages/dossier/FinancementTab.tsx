@@ -12,7 +12,7 @@ import SituationsPubliees from './SituationsPubliees'
 import { PREVISIONS_PUBLIEES_PREVUES } from '../../lib/previsionsPubliees'
 import PrevisionsPubliees from './PrevisionsPubliees'
 import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
-import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, soldeBanqueADate, type EcheanceConnue, type OuvertureBanque } from '../../lib/planTresorerie'
+import { calculerPlanTresorerie, dateDuDepart, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, soldeBanqueADate, type EcheanceConnue, type OuvertureBanque } from '../../lib/planTresorerie'
 import { ouvertureBanque } from '../../lib/aNouveaux'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
@@ -671,8 +671,9 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
 
   const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisationsDatees, debutAnnee, aujourdHui, assujettiTva, paiements, modeComptable, partsReleve, ventesFacturees, plan, ecrituresDesVentes, recettesDeCaisse)
   // Moyenne sur 6 mois glissants, juste pour disposer d'un rythme d'encaissements de référence — les
-  // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie.
-  const planTresorerie = calculerPlanTresorerie(lignesDuRythme, 0, 6, 1)
+  // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie. Sans raccord : seule
+  // la moyenne sert ici.
+  const planTresorerie = calculerPlanTresorerie(lignesDuRythme, 0, 6, 1, null)
   const ratios = calculerRatiosBancaires(situationAnnee, moisEcoules, capitalRestantTotal, mensualiteTotale, planTresorerie.moyenneEncaissements)
   // Le « — » du taux d'endettement ne dit pas POURQUOI : sans cette réserve, « pas encore assez
   // d'historique » et « le rythme est à zéro » se lisent pareil, sur un ratio qu'une banque regarde
@@ -770,8 +771,10 @@ function PlanTresorerieModal({ dossierId, lectureDuPlan, lignesBanque, lignesDuR
   const [nbMoisProjection, setNbMoisProjection] = useState(6)
 
   // Le solde de départ compte tout ; la moyenne, le seul rythme d'activité — sans les déblocages d'emprunt, le
-  // paiement des biens immobilisés ni les mouvements écrits sur un compte de bilan.
-  const plan = calculerPlanTresorerie(lignesDuRythme, soldeActuel, nbMoisHistorique, nbMoisProjection)
+  // paiement des biens immobilisés ni les mouvements écrits sur un compte de bilan. LE RACCORD (C8Q2-Q3) part de la date
+  // de ce solde, la dernière écriture de banque comptée : jusqu'à la fin du mois en cours, au prorata des jours.
+  const departAu = dateDuDepart(lignesBanque, ouverture, aujourdHuiSql())
+  const plan = calculerPlanTresorerie(lignesDuRythme, soldeActuel, nbMoisHistorique, nbMoisProjection, departAu)
   // Une projection bâtie sur rien a exactement la même tête qu'une projection bâtie sur six mois.
   const reserve = reserveSurMoyenne(plan)
   // Et le solde de DÉPART vient de la même source, sur une fenêtre plus large : tout l'historique.
@@ -782,7 +785,8 @@ function PlanTresorerieModal({ dossierId, lectureDuPlan, lignesBanque, lignesDuR
   // d'être lue. Celle du solde est la plus complète : elle couvre le solde de départ ET la moyenne.
   // Le cas « fenêtre partielle » n'a, lui, aucun équivalent côté solde, donc il reste dit.
   const reserveAffichee = reserveSolde ?? reserve
-  const debutProjection = plan.lignes[0]?.mois ? `${plan.lignes[0].mois}-01` : aujourdHuiSql()
+  // La période du plan commence au raccord quand il y en a un : ses échéances en sont.
+  const debutProjection = plan.raccord?.du ?? (plan.lignes[0]?.mois ? `${plan.lignes[0].mois}-01` : aujourdHuiSql())
   // "-31" plutôt que le vrai dernier jour du mois : comparaison de chaînes (YYYY-MM-DD), pas de
   // date réelle — sert seulement de borne haute, valide même pour un mois de moins de 31 jours.
   const finProjection = plan.lignes.at(-1)?.mois ? `${plan.lignes.at(-1)!.mois}-31` : debutProjection
@@ -814,6 +818,7 @@ function PlanTresorerieModal({ dossierId, lectureDuPlan, lignesBanque, lignesDuR
           {mouvementsDeBilanEcartes > 0 && ' Ni un mouvement écrit sur un compte de bilan — un virement vers l’épargne ou depuis elle, un dépôt de garantie : il ne dit rien de l’activité, et le solde le compte.'}
           {remboursementsTvaEcartes > 0 && ' Ni le remboursement d’un crédit de TVA : il ne se répète pas, et le solde le compte. Le prélèvement de la TVA, lui, y reste.'}
           {recettesEnEspeces > 0 && ' Les recettes en espèces de la caisse y entrent, à leur date, et leur versement en banque n’y entre pas une seconde fois.'}
+          {plan.raccord && departAu && ` Le solde de départ est celui des écritures de banque au ${formatDate(departAu)} : la première ligne, le raccord, compte ce rythme au prorata des jours jusqu’à la fin du mois, et les mois complets partent de sa fin.`}
         </p>
         {reserveAffichee && (
           <p className="muted" style={{ marginTop: -4, color: 'var(--color-danger, #c0392b)' }}>{reserveAffichee}</p>
@@ -825,6 +830,15 @@ function PlanTresorerieModal({ dossierId, lectureDuPlan, lignesBanque, lignesDuR
           <table className="table-empilable-etroite">
             <thead><tr><th>Mois</th><th>Solde début</th><th>Encaissements</th><th>Décaissements</th><th>Solde fin</th></tr></thead>
             <tbody>
+              {plan.raccord && (
+                <tr>
+                  <td data-libelle="Mois">Du {formatDate(plan.raccord.du)} au {formatDate(plan.raccord.au)}</td>
+                  <td data-libelle="Solde début">{formatMoney(plan.raccord.soldeDebut)}</td>
+                  <td data-libelle="Encaissements">{formatMoney(plan.raccord.encaissements)}</td>
+                  <td data-libelle="Décaissements">{formatMoney(plan.raccord.decaissements)}</td>
+                  <td data-libelle="Solde fin" style={plan.raccord.soldeFin < 0 ? { color: 'var(--color-danger, #c0392b)', fontWeight: 600 } : undefined}>{formatMoney(plan.raccord.soldeFin)}</td>
+                </tr>
+              )}
               {plan.lignes.map((l) => (
                 <tr key={l.mois}>
                   <td data-libelle="Mois">{l.mois}</td>

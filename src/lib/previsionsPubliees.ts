@@ -1,6 +1,9 @@
 import { dateEnLettres, moisEnLettres } from './echeancierClient'
-import { ajouterJours, ajouterMois, formatDate, formatMoney } from './format'
-import { calculerPlanTresorerieAu, reserveSurSolde, soldeBanqueADate, type LigneBanquePourPlan, type OuvertureBanque } from './planTresorerie'
+import { ajouterMois, formatDate, formatMoney } from './format'
+import {
+  calculerPlanTresorerieAu, dateDuDepart, partDuRythme, periodeDuRaccord, reserveSurSolde, soldeBanqueADate, type LigneBanquePourPlan,
+  type OuvertureBanque,
+} from './planTresorerie'
 
 // LA PRÉVISION DE TRÉSORERIE PUBLIÉE AU CLIENT « BANQUE » (espace client, ligne 51.5, partie C, C8-Q2 ; la réponse du cabinet
 // du 15/11/2026, « (C) Maintenant »). Le plan de trésorerie de l'onglet Financement (lib/planTresorerie.ts) se calcule des
@@ -20,6 +23,9 @@ import { calculerPlanTresorerieAu, reserveSurSolde, soldeBanqueADate, type Ligne
 //     et la base refuse un contenu établi un autre jour ;
 //   - le départ est le solde du compte de banque dans les écritures (celui de l'écran), à la date de sa dernière écriture
 //     comptée (ou de l'ouverture) : jamais un solde inconnu (`reserveSurSolde`) ;
+//   - le RACCORD (C8Q2-Q3, la réponse (B) du cabinet du 18/11/2026) : du lendemain du départ à la fin du mois où elle est
+//     établie, le rythme moyen au prorata des jours de chaque mois (lib/planTresorerie.ts, `partDuRythme`) ; le premier
+//     mois projeté part de sa fin ; nul quand le départ est au dernier jour de ce mois — rien n'est plus « non compté » ;
 //   - une prévision qui ne repose sur aucun mouvement observé ne se publie pas.
 //
 // SES MOTS : ceux du cabinet (la confirmation) disent ce qui part, et que c'est une prévision ; ceux du client tutoient et ne
@@ -48,6 +54,16 @@ export interface MoisDeLaPrevision {
   solde_fin: number
 }
 
+/** Le raccord (C8Q2-Q3) : du lendemain du départ (`du`) au dernier jour du mois de la publication (`au`), AAAA-MM-JJ. */
+export interface RaccordDeLaPrevision {
+  du: string
+  au: string
+  solde_debut: number
+  encaissements: number
+  decaissements: number
+  solde_fin: number
+}
+
 /** Le contenu figé par `publier_prevision` (version 1) : ses clés sont celles que la base exige, ni plus ni moins. Centimes. */
 export interface ContenuDeLaPrevision {
   version: typeof VERSION_DE_LA_PREVISION
@@ -57,6 +73,8 @@ export interface ContenuDeLaPrevision {
   depart: { au: string; solde: number }
   /** Les mois complets observés (AAAA-MM), leur nombre, ceux qui portent un mouvement, et les deux moyennes mensuelles. */
   rythme: { debut: string; fin: string; mois: number; mois_observes: number; encaissements: number; decaissements: number }
+  /** Les jours du départ à la fin du mois de la publication, au prorata ; nul quand le départ est au dernier jour du mois. */
+  raccord: RaccordDeLaPrevision | null
   mois: MoisDeLaPrevision[]
   /** Les recettes en espèces de la caisse entrent-elles dans le rythme. */
   avec_especes: boolean
@@ -81,6 +99,8 @@ export const REFUS_PREVISION = {
   rythme: 'Le rythme de la prévision est mal formé : de 1 à 24 mois complets, jusqu\'au mois qui précède celui où elle est '
     + 'établie, et des moyennes en centimes entiers, positives.',
   sansMouvement: 'La prévision ne repose sur aucun mouvement observé : elle ne se publie pas.',
+  raccord: 'Le raccord de la prévision est mal formé : du lendemain de son départ à la fin du mois où elle est établie, parti '
+    + 'du solde de départ, au rythme moyen compté au prorata des jours de chaque mois.',
   mois: 'Les mois de la prévision ne se suivent pas : de 1 à 24, du mois qui suit celui où elle est établie, chacun parti du '
     + 'solde du précédent, au rythme moyen.',
   dejaPubliee: 'Une prévision est déjà publiée pour ce dossier : remplace-la.',
@@ -136,20 +156,6 @@ function premierJourDuMois(date: string): string {
   return `${date.slice(0, 7)}-01`
 }
 
-/**
- * La date du solde de départ : la dernière écriture de banque comptée au jour donné (celles d'avant l'ouverture ne comptent
- * plus : le solde repris les porte), ou l'ouverture elle-même ; nulle quand rien n'est comptabilisé.
- */
-export function dateDuDepart(lignesBanque: readonly LigneBanquePourPlan[], ouverture: OuvertureBanque | null, jour: string): string | null {
-  const depart = ouverture && ouverture.date <= jour ? ouverture.date : null
-  let au: string | null = depart
-  for (const l of lignesBanque) {
-    if (l.date > jour || (depart !== null && l.date < depart)) continue
-    if (au === null || l.date > au) au = l.date
-  }
-  return au
-}
-
 /** Compose le contenu d'une prévision à publier, ou dit pourquoi elle ne se publie pas — avant le clic. */
 export function composerLaPrevision(e: EntreeDeLaPrevision): CompositionDeLaPrevision {
   if (!entierDansLesBornes(e.nbMoisHistorique, 1, MOIS_AU_PLUS)) return { ok: false, refus: REFUS_PREVISION.rythme }
@@ -159,7 +165,8 @@ export function composerLaPrevision(e: EntreeDeLaPrevision): CompositionDeLaPrev
   if (au === null) return { ok: false, refus: REFUS_DU_MODULE.soldeInconnu }
   const solde = centimes(soldeBanqueADate(e.lignesBanque, e.ouverture, e.aujourdHui))
   const premier = premierJourDuMois(e.aujourdHui)
-  const plan = calculerPlanTresorerieAu(e.lignesDuRythme, 0, e.nbMoisHistorique, e.nbMoisProjection, premier)
+  // Le plan ne sert ici qu'à ses moyennes et à ce qu'elles observent : le raccord et les mois se composent en centimes.
+  const plan = calculerPlanTresorerieAu(e.lignesDuRythme, 0, e.nbMoisHistorique, e.nbMoisProjection, premier, null)
   const encaissements = centimes(plan.moyenneEncaissements)
   const decaissements = centimes(plan.moyenneDecaissements)
   if (solde === null || encaissements === null || decaissements === null || encaissements < 0 || decaissements < 0
@@ -167,8 +174,19 @@ export function composerLaPrevision(e: EntreeDeLaPrevision): CompositionDeLaPrev
     return { ok: false, refus: REFUS_DU_MODULE.montantIllisible }
   }
   if (plan.nbLignesObservees === 0 || plan.nbMoisAvecDonnees === 0) return { ok: false, refus: REFUS_PREVISION.sansMouvement }
-  const mois: MoisDeLaPrevision[] = []
+  // Le raccord : du lendemain du départ à la fin du mois, au prorata des jours ; le premier mois part de sa fin.
   let courant = solde
+  let raccord: RaccordDeLaPrevision | null = null
+  const periode = periodeDuRaccord(au, premier)
+  if (periode !== null) {
+    const entrees = partDuRythme(encaissements, periode.du, periode.au)
+    const sorties = partDuRythme(decaissements, periode.du, periode.au)
+    const fin = solde + entrees - sorties
+    if (!(entrees < PLAFOND && sorties < PLAFOND && Math.abs(fin) < PLAFOND)) return { ok: false, refus: REFUS_PREVISION.raccord }
+    raccord = { du: periode.du, au: periode.au, solde_debut: solde, encaissements: entrees, decaissements: sorties, solde_fin: fin }
+    courant = fin
+  }
+  const mois: MoisDeLaPrevision[] = []
   for (let i = 1; i <= e.nbMoisProjection; i++) {
     const fin = courant + encaissements - decaissements
     if (Math.abs(fin) >= PLAFOND) return { ok: false, refus: REFUS_PREVISION.mois }
@@ -189,6 +207,7 @@ export function composerLaPrevision(e: EntreeDeLaPrevision): CompositionDeLaPrev
         encaissements,
         decaissements,
       },
+      raccord,
       mois,
       avec_especes: e.avecEspeces,
     },
@@ -239,9 +258,9 @@ function clesExactes(o: Record<string, unknown>, cles: readonly string[]): boole
 
 const objet = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
 
-/** Le contenu d'une prévision lue, ou null s'il ne se lit pas : sa forme, et une suite qui s'enchaîne. */
+/** Le contenu d'une prévision lue, ou null s'il ne se lit pas : sa forme, et une suite qui s'enchaîne, raccord compris. */
 export function contenuLu(v: unknown): ContenuDeLaPrevision | null {
-  if (!objet(v) || !clesExactes(v, ['version', 'etablie_le', 'depart', 'rythme', 'mois', 'avec_especes'])) return null
+  if (!objet(v) || !clesExactes(v, ['version', 'etablie_le', 'depart', 'rythme', 'raccord', 'mois', 'avec_especes'])) return null
   if (v.version !== VERSION_DE_LA_PREVISION || typeof v.avec_especes !== 'boolean' || !dateValide(v.etablie_le)) return null
   const depart = v.depart
   if (!objet(depart) || !clesExactes(depart, ['au', 'solde']) || !dateValide(depart.au) || !entier(depart.solde)) return null
@@ -254,9 +273,25 @@ export function contenuLu(v: unknown): ContenuDeLaPrevision | null {
       || r.decaissements < 0) return null
   const premier = premierJourDuMois(v.etablie_le)
   if (r.fin !== ajouterMois(premier, -1).slice(0, 7) || r.debut !== ajouterMois(premier, -r.mois).slice(0, 7)) return null
+  // Le raccord : présent si et seulement si des jours séparent le départ de la fin du mois, et chacune de ses valeurs
+  // recalculée comme la base la recalcule.
+  let solde = depart.solde
+  let raccord: RaccordDeLaPrevision | null = null
+  const periode = periodeDuRaccord(depart.au, premier)
+  if (periode === null) {
+    if (v.raccord !== null) return null
+  } else {
+    const rc = v.raccord
+    if (!objet(rc) || !clesExactes(rc, ['du', 'au', 'solde_debut', 'encaissements', 'decaissements', 'solde_fin'])) return null
+    const entrees = partDuRythme(r.encaissements, periode.du, periode.au)
+    const sorties = partDuRythme(r.decaissements, periode.du, periode.au)
+    if (rc.du !== periode.du || rc.au !== periode.au || rc.solde_debut !== solde || rc.encaissements !== entrees
+        || rc.decaissements !== sorties || !entier(rc.solde_fin) || rc.solde_fin !== solde + entrees - sorties) return null
+    raccord = { du: periode.du, au: periode.au, solde_debut: solde, encaissements: entrees, decaissements: sorties, solde_fin: rc.solde_fin }
+    solde = rc.solde_fin
+  }
   if (!Array.isArray(v.mois) || v.mois.length < 1 || v.mois.length > MOIS_AU_PLUS) return null
   const mois: MoisDeLaPrevision[] = []
-  let solde = depart.solde
   for (const [i, m] of (v.mois as unknown[]).entries()) {
     if (!objet(m) || !clesExactes(m, ['mois', 'solde_debut', 'encaissements', 'decaissements', 'solde_fin'])) return null
     if (m.mois !== ajouterMois(premier, i + 1).slice(0, 7) || m.solde_debut !== solde || m.encaissements !== r.encaissements
@@ -269,21 +304,22 @@ export function contenuLu(v: unknown): ContenuDeLaPrevision | null {
     etablie_le: v.etablie_le,
     depart: { au: depart.au, solde: depart.solde },
     rythme: { debut: r.debut, fin: r.fin, mois: r.mois, mois_observes: r.mois_observes, encaissements: r.encaissements, decaissements: r.decaissements },
+    raccord,
     mois,
     avec_especes: v.avec_especes,
   }
 }
 
-/** Ce que la prévision ne compte pas : du lendemain de son départ à la veille de son premier mois, quand ces jours existent. */
-export function periodeNonComptee(contenu: Pick<ContenuDeLaPrevision, 'depart' | 'mois'>): { du: string; au: string } | null {
-  const veille = ajouterJours(`${contenu.mois[0].mois}-01`, -1)
-  const lendemain = ajouterJours(contenu.depart.au, 1)
-  return lendemain <= veille ? { du: lendemain, au: veille } : null
-}
-
-/** Le mois le plus bas de la prévision (le premier à égalité), son solde à la fin. */
-export function moisLePlusBas(contenu: Pick<ContenuDeLaPrevision, 'mois'>): MoisDeLaPrevision {
-  return contenu.mois.reduce((bas, m) => (m.solde_fin < bas.solde_fin ? m : bas), contenu.mois[0])
+/**
+ * Le mois le plus bas de la prévision (le premier à égalité), son solde à la fin — le raccord compris, sous le mois où il
+ * finit : son solde de fin est celui du dernier jour du mois de la publication.
+ */
+export function moisLePlusBas(contenu: Pick<ContenuDeLaPrevision, 'raccord' | 'mois'>): MoisDeLaPrevision {
+  const r = contenu.raccord
+  const candidats: MoisDeLaPrevision[] = r === null ? contenu.mois : [{
+    mois: r.au.slice(0, 7), solde_debut: r.solde_debut, encaissements: r.encaissements, decaissements: r.decaissements, solde_fin: r.solde_fin,
+  }, ...contenu.mois]
+  return candidats.reduce((bas, m) => (m.solde_fin < bas.solde_fin ? m : bas), candidats[0])
 }
 
 // ── Côté cabinet : la confirmation ────────────────────────────────────────────────────────────────────────────────────
@@ -304,7 +340,7 @@ export const CE_QUE_LE_CLIENT_LIT = 'Le client qui porte la case « Banque » li
 export function confirmationDeLaPublication(contenu: ContenuDeLaPrevision, remplacee: Pick<PrevisionPubliee, 'publiee_le'> | null): Confirmation {
   const r = contenu.rythme
   const dernier = contenu.mois[contenu.mois.length - 1]
-  const trou = periodeNonComptee(contenu)
+  const raccord = contenu.raccord
   return {
     titre: remplacee ? 'Remplacer la prévision publiée au client ?' : 'Publier cette prévision au client ?',
     paragraphes: [
@@ -314,9 +350,14 @@ export function confirmationDeLaPublication(contenu: ContenuDeLaPrevision, rempl
         + `${r.mois_observes}) — ${montantDit(r.encaissements)} encaissés et ${montantDit(r.decaissements)} payés par mois —, `
         + `sur ${contenu.mois.length} mois, de ${moisEnLettres(contenu.mois[0].mois)} à ${moisEnLettres(dernier.mois)} : `
         + `solde à la fin, ${montantDit(dernier.solde_fin)}.`,
+      ...(raccord
+        ? [`Le raccord, du ${formatDate(raccord.du)} au ${formatDate(raccord.au)} — de la dernière écriture de banque à la fin du `
+          + `mois —, compte ce rythme au prorata des jours : ${montantDit(raccord.encaissements)} encaissés et `
+          + `${montantDit(raccord.decaissements)} payés, solde au ${formatDate(raccord.au)}, ${montantDit(raccord.solde_fin)} ; `
+          + `${moisEnLettres(contenu.mois[0].mois)} part de ce solde.`]
+        : []),
       ...(contenu.avec_especes
         ? ['Les recettes en espèces de la caisse entrent dans ce rythme : le client les y lit, même sans la case « Caisse ».'] : []),
-      ...(trou ? [`Ce qui entre et sort du ${formatDate(trou.du)} au ${formatDate(trou.au)} n’y est pas compté, et le client le lit.`] : []),
       'C’est une prévision, pas un engagement : il la lit sous ce mot, à part de son solde contrôlé et des montants connus, '
         + 'jamais ajoutée à son point bas. Ni les échéances listées ici, ni le nom d’un emprunt ne partent.',
       remplacee
@@ -347,7 +388,10 @@ export type PrevisionAMontrer =
   | { etat: 'passee'; etablieLe: string }
   | { etat: 'montree'; contenu: ContenuDeLaPrevision; moisPasses: number }
 
-/** La prévision que la page montre : la dernière en cours, relue à sa forme, et ce qui en est déjà passé au jour de Paris. */
+/**
+ * La prévision que la page montre : la dernière en cours, relue à sa forme, et ce qui en est déjà passé au jour de Paris —
+ * le raccord compté parmi les mois passés une fois son mois fini.
+ */
 export function previsionAMontrer(lignes: readonly PrevisionPubliee[], aujourdHui: string): PrevisionAMontrer {
   const enCours = previsionEnCours(lignes)
   if (enCours === null) return { etat: 'aucune' }
@@ -356,7 +400,8 @@ export function previsionAMontrer(lignes: readonly PrevisionPubliee[], aujourdHu
   const moisDuJour = aujourdHui.slice(0, 7)
   const moisPasses = contenu.mois.filter((m) => m.mois < moisDuJour).length
   if (moisPasses === contenu.mois.length) return { etat: 'passee', etablieLe: contenu.etablie_le }
-  return { etat: 'montree', contenu, moisPasses }
+  const raccordPasse = contenu.raccord !== null && contenu.raccord.au.slice(0, 7) < moisDuJour
+  return { etat: 'montree', contenu, moisPasses: moisPasses + (raccordPasse ? 1 : 0) }
 }
 
 // Les mots du client, écrits ici pour que le test les passe tous à `motsDuCabinet`.
@@ -387,9 +432,13 @@ export function phraseDuRythme(r: ContenuDeLaPrevision['rythme']): string {
       ? ` Des mouvements n’ont été vus que sur ${r.mois_observes} de ces ${r.mois} mois : les autres comptent pour zéro dans la moyenne.`
       : '')
 }
-export function phraseDuNonCompte(trou: { du: string; au: string }): string {
-  return `Ce qui entre et sort de ton compte du ${dateEnLettres({ date: trou.du, auMois: false })} au `
-    + `${dateEnLettres({ date: trou.au, auMois: false })} n’y est pas compté.`
+/** La période du raccord, aux mots du client : la première ligne du tableau. */
+export function periodeDuRaccordEnLettres(raccord: Pick<RaccordDeLaPrevision, 'du' | 'au'>): string {
+  return `Du ${dateEnLettres({ date: raccord.du, auMois: false })} au ${dateEnLettres({ date: raccord.au, auMois: false })}`
+}
+export function phraseDuRaccord(raccord: RaccordDeLaPrevision): string {
+  return `${periodeDuRaccordEnLettres(raccord)}, après cette dernière écriture, elle compte ce rythme au prorata des jours : `
+    + `${montantDit(raccord.encaissements)} encaissés et ${montantDit(raccord.decaissements)} payés.`
 }
 export function phraseDuMoisLePlusBas(m: MoisDeLaPrevision): string {
   return m.solde_fin < 0

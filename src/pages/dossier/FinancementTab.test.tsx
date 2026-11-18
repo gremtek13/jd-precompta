@@ -413,8 +413,13 @@ describe('FinancementTab — « Publier au client » sous le plan de trésorerie
     const modale = await ouvrirLePlanDeTresorerie()
     expect(await within(modale).findByRole('heading', { name: 'Publier au client' })).toBeTruthy()
     expect(faux.lues).toContain('previsions_publiees')
-    const premierMois = within(modale).getAllByRole('row')[1].querySelector('td')?.textContent
-    expect(premierMois).toBe('2026-12')
+    // Le raccord (C8Q2-Q3) d'abord : de la dernière écriture de banque, le 15/10/2026, à la fin du mois en cours ; puis le
+    // premier mois complet, parti de sa fin.
+    const lignes = within(modale).getAllByRole('row')
+    expect(lignes[1].querySelector('td')?.textContent).toBe('Du 16/10/2026 au 30/11/2026')
+    expect(lignes[2].querySelector('td')?.textContent).toBe('2026-12')
+    expect(lignes[2].querySelectorAll('td')[1].textContent).toBe(lignes[1].querySelectorAll('td')[4].textContent)
+    expect(modale.textContent).toContain('celui des écritures de banque au 15/10/2026 : la première ligne, le raccord')
     const bouton = await within(modale).findByRole('button', { name: 'Publier cette prévision' }) as HTMLButtonElement
     await waitFor(() => expect(bouton.disabled).toBe(false))
     fireEvent.click(bouton)
