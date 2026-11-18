@@ -566,6 +566,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md`) : Télévitale ne documente que des PDF et nomme « bordereau » deux
   états (le facturé par lot, le payé par journée comptable) ; le reste dû se lit, par organisme et par part, jamais par lot ; BOR0
   (une page rendue anonyme, qui sert aussi NOE1) à BOR7, BOR-Q1 à Q9 → « BOR : CE QUI EST FACTURÉ À L'ASSURANCE MALADIE ».
+  BOR1 (18/11/2026, sur une page réelle montrée, hors du dépôt) : `lib/bordereauDeTeletransmission.ts`, pur, rend l'en-tête du lot et
+  ses quatre totaux, chaque ligne comptée et additionnée, jamais rendue ; tout doute refusé ; BOR1-Q1 à Q5 → « BOR0 ET BOR1 ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ».
 - **Le mode de règlement d'un mouvement** (EXP58-Q1 (B)) : préparé, par l'outil, `MODE_DE_REGLEMENT_PREVU` baissé — `lignes_bancaires.mode_reglement` (sept ModeRglt), posé par `poser_modes_de_reglement`
