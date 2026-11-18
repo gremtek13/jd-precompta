@@ -516,7 +516,9 @@ describe('la phrase des paiements de l’assurance maladie (NOE4-Q1 (C)) : au ca
     try {
       const cas: [string | null | undefined, RegExp][] = [
         ['86.90D', /est offerte : le code NAF du dossier \(86\.90D\)/],
-        ['69.20Z', /n’est pas offerte : le code NAF du dossier \(69\.20Z\) n’est pas celui d’une activité de santé/],
+        ['69.20Z', /n’est pas offerte : le code NAF du dossier \(69\.20Z\) n’est ni celui d’une activité de santé/],
+        // NOE4Q1-Q1 (B) : la liste fermée hors de la division 86.
+        ['47.78A', /est offerte : le code NAF du dossier \(47\.78A\) est de la liste fermée/],
         [null, /n’est pas offerte : le dossier n’a pas de code NAF/],
         ['Infirmier', /n’est pas offerte : le code NAF enregistré n’a pas la forme d’un code NAF/],
         [undefined, /n’est pas offerte : le code NAF du dossier n’a pas été lu/],

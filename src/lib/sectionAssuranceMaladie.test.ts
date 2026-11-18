@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { codeNafLu, phraseDeLaSectionAuCabinet, sectionAssuranceMaladie } from './sectionAssuranceMaladie'
+import { CODES_HORS_DE_LA_DIVISION, codeNafLu, phraseDeLaSectionAuCabinet, sectionAssuranceMaladie } from './sectionAssuranceMaladie'
 
 // NOE4-Q1 (C) : la section des paiements de l'assurance maladie, et l'association de ses paiements au relevé, ne s'offrent que
 // sur un code NAF lu de la division 86 (santé humaine, NAF rév. 2). Un code absent, illisible ou pas encore lu ne les offre
-// pas ; la phrase du cabinet dit toujours pourquoi.
+// pas ; la phrase du cabinet dit toujours pourquoi. NOE4Q1-Q1 (B) : une liste fermée de quatre codes hors de la division 86
+// l'offre aussi (pharmacie, matériel médical, optique, taxi).
 
 describe('le code NAF lu', () => {
   it('la forme de SIRENE, ou la même sans le point ; les bords et la casse de la lettre, rien d’autre', () => {
@@ -24,8 +25,16 @@ describe('la section offerte sur un code NAF de santé (86…), et seulement là
     }
   })
 
-  it('hors de la division 86, pas offerte : le code dit, y compris une division voisine ou un « 86 » ailleurs', () => {
-    for (const code of ['87.10A', '85.59A', '75.00Z', '47.73Z', '69.20Z', '68.86Z']) {
+  it('la liste fermée l’offre aussi, ses quatre codes et eux seuls, avec ou sans le point', () => {
+    expect(CODES_HORS_DE_LA_DIVISION).toEqual(['47.73Z', '47.74Z', '47.78A', '49.32Z'])
+    for (const code of CODES_HORS_DE_LA_DIVISION) {
+      expect(sectionAssuranceMaladie(code), code).toEqual({ offerte: true, raison: 'liste', code })
+    }
+    expect(sectionAssuranceMaladie('4773z')).toEqual({ offerte: true, raison: 'liste', code: '47.73Z' })
+  })
+
+  it('hors de la division 86 et de la liste, pas offerte : le code dit, y compris une sous-classe voisine de la liste', () => {
+    for (const code of ['87.10A', '85.59A', '75.00Z', '47.78B', '47.75Z', '49.31Z', '49.39A', '69.20Z', '68.86Z']) {
       expect(sectionAssuranceMaladie(code), code).toEqual({ offerte: false, raison: 'hors-sante', code })
     }
   })
@@ -41,7 +50,7 @@ describe('la section offerte sur un code NAF de santé (86…), et seulement là
 
 describe('la phrase de l’onglet Informations', () => {
   it('une phrase pour chaque raison, jamais vide ; le code dit quand il est lisible, jamais une valeur illisible', () => {
-    const cas = [undefined, null, 'x86.90D', '86.90D', '69.20Z'] as const
+    const cas = [undefined, null, 'x86.90D', '86.90D', '69.20Z', '49.32Z'] as const
     const phrases = cas.map((c) => phraseDeLaSectionAuCabinet(sectionAssuranceMaladie(c)))
     for (const p of phrases) expect(p.length).toBeGreaterThan(40)
     expect(new Set(phrases).size).toBe(cas.length)
@@ -49,6 +58,9 @@ describe('la phrase de l’onglet Informations', () => {
     expect(phrases[3]).toContain('(86.90D)')
     expect(phrases[4]).toContain('n’est pas offerte')
     expect(phrases[4]).toContain('(69.20Z)')
+    expect(phrases[4]).toContain('ni de la liste fermée')
+    expect(phrases[5]).toContain('est offerte')
+    expect(phrases[5]).toContain('(49.32Z) est de la liste fermée')
     expect(phrases[2]).not.toContain('x86')
     expect(phrases[1]).toContain('pas de code NAF')
     expect(phrases[0]).toContain('n’a pas été lu')
