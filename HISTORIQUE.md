@@ -53901,3 +53901,15 @@ Sans migration, un commit par réponse.
   associés classés (lib/categorieHabituelleAssuranceMaladie.ts) ; « Choisir cette catégorie » remplit la liste, seul
   « Affecter » écrit (le geste d'hier, son verrou). Rien à égalité, sur des catégories lues en partie, ni hors d'une recette.
 - EXP58Q4-Q2 (B) et EXP58Q4-Q1 (A) : rien à coder aujourd'hui ; consignées dans lib/dateDeValeur.ts pour L4.
+### 18/11/2026 — EXP58-Q5 : L'ASSISTANT LIT LE CUMUL REPRIS, LE COLLAGE PRÊT
+
+(Agent architecte, sur EXP58Q5-Q1 à Q3 (A) ; rien en production, rien de déployé.) La copie du bloc AMORTISSEMENT recopie le plan
+continué, lu sans drapeau comme src/lib ; sa constante `CUMUL_REPRIS_PREVU`, baissée, redit celle de `lib/cumulRepris.ts` : baissée,
+`points_a_traiter` lit le registre aux colonnes d'hier, à l'octet près ; levée, aux deux neuves, et la consigne dit qu'une dotation
+d'un bien repris continue depuis son cumul. Le garde exécute la lecture sous les deux états devant un faux client, compare la copie à
+src/lib sur seize biens repris et un registre repris ; neuf dérives plantées mordent. Copie de `replique_227` portée à 239 (dérive
+`b93250d1…`) : le bloc à coller (hors du dépôt, 63 214 octets, version `20261118140254`) joué tel quel sous `proprietaire`, la ligne
+d'historique à l'empreinte du fichier sans sa dernière fin de ligne (`59098b22…`), un second collage refusé, rien de resté ;
+`cumulReprisDesBiens.sql` 34/34, `dotations.sql` 33/33 identique avec et sans elle ; simulés : dérive 240 `e4dc5c40…`, socle 83
+`f2f2107e…`, inventaire 3 236 `51e43647…` ; le retour rend la signature d'avant. La levée simulée (282 fichiers de tests) : un rouge,
+`cumulRepris.test.ts`, qui prenait pour le corps remplacé la dernière définition de l'export, la sienne une fois collée — corrigé.

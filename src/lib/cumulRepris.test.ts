@@ -160,7 +160,10 @@ describe('la migration cumul_repris_des_biens, son retour et son essai', () => {
   })
 
   it('remplace ecrire_dotation_amortissement depuis le corps exporté, et ne change que la dotation attendue', () => {
-    const avant = corps(derniereDefinitionSql('ecrire_dotation_amortissement'), 'ecrire_dotation_amortissement(')
+    // La définition d'AVANT la migration : une fois collée, son fichier entre dans l'export, et la dernière définition serait
+    // la sienne (la levée simulée du 18/11/2026 l'a montré) — il est donc écarté, ce qui ne change rien tant qu'elle est préparée.
+    const avant = corps(derniereDefinitionSql('ecrire_dotation_amortissement', (f) => !/_cumul_repris_des_biens\.sql$/.test(f.chemin)),
+      'ecrire_dotation_amortissement(')
     const apres = corps(MIGRATION, 'ecrire_dotation_amortissement(')
     // La garde de tête nomme le corps exporté ; le retour le rend, et sa garde de fin le vérifie.
     expect(MIGRATION).toContain(`'${md5(avant)}'`)
