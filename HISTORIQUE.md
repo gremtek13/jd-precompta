@@ -53960,3 +53960,13 @@ l'état d'avant du drapeau (ses deux états se jouent dans `ClientTresorerie.pre
 « en attente » du banc du leurre (32 essais de production). La suite entière : 23 388 tests verts.
 Non fait : l'essai rejoué en production, `rls.sql` rejoué en production, le banc de captures (la carte de la prévision et
 les libellés du raccord à petite largeur).
+
+### 18/11/2026 — CE QUE COÛTE UN DOSSIER BNC PAR AN CHEZ UN CABINET : UN REPÈRE, GARDÉ SANS EMPLOI DÉCIDÉ
+
+Rapporté par le cabinet le 18/11/2026, d'après un confrère (son nom n'entre pas au dépôt) : un dossier BNC lui coûte par an
+4 heures de saisie, 4 heures de révision, 3 heures d'allers-retours entre le cabinet et le client, 3 heures perdues, et
+2 heures de l'expert-comptable pour contrôler et valider — 16 heures, dont 14 du collaborateur. Ce que recouvrent les
+3 heures « perdues » n'est pas dit. Décision du cabinet : garder ces chiffres, sans savoir encore ce qu'on en fera. Aucune
+mesure du temps gagné par l'application n'existe (la base ne porte que des données fictives) ; la répétition générale de
+l'année 2025 réelle sera la première occasion de chronométrer les mêmes postes. Un repère pour l'offre du 17/11/2026
+→ « LA PRIORITÉ DU 17/11/2026 ».
