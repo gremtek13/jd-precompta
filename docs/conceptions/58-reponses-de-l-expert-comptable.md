@@ -494,3 +494,66 @@ un BNC en engagement à vingt-deux colonnes, après relecture de l'A47 A-1.
 (§ 8 de la conception de VF5) ; NOE-E2 ; B9 ; EXD-Q4 (pour la part de l'expert-comptable) ; la réserve légale (AFF) ;
 LIA-Q14 ; RET2Q3-Q2 et RET2-Q3-B (la réponse ne tranche pas le prorata de l'estimation : RET2Q3-Q2 reste à sa
 recommandation (A), rien ne change, sans nouvelle question).
+
+## 12. Le lot L2, points 6 et 7 : la CFP, la CURPS et le véhicule au barème ne se font pas sans la base (18/11/2026)
+
+Relu dans le code et l'export du schéma (agent architecte) pour écrire ce que L2 décide sans migration : rien ne tient
+seul.
+
+- **La CFP et la CURPS (§ 4.2).** Aucune colonne ne porte leur part d'une échéance (`cotisations_declarees` ne connaît
+  que `montant_csg_crds`), aucun rôle du plan n'est un compte d'impôts (`ROLES_COMPTABLES`, lib/planComptable.ts), et
+  deux fonctions recomposent au centime l'écriture d'une échéance et refusent toute autre : `rapprocher_cotisation` et
+  `enregistrer_paiement_personnel_cotisation` (`valider_exercice` n'en tient que les listes fermées du FEC, où « Autres
+  impôts » est déjà ; `ecritures_attendues_de_la_periode` écarte les lignes d'une échéance). Une 2035 qui déplacerait
+  seule la part en BS laisserait la charge entière au 646 dans le FEC, que l'expert-comptable importe (il la rangerait
+  en BK), et le 646 nourrirait deux lignes (`comptes-sur-plusieurs-postes`, lib/unCompteUnPoste.ts). Le module, l'écran
+  et la 2035 attendent donc la colonne : leur forme dépend de choix que la migration fera (EXP58-Q6, Q7).
+- **Le véhicule au barème (§ 3.2).** `ecrire_dotation_amortissement` recompose 681100 au débit et le 28 au crédit et
+  refuse toute autre écriture ; la préparée du cumul repris (EXP58-Q5) la remplace déjà, et le changement partira de son
+  corps. La 2035 se tient aux écritures par une concordance au centime qui retient la validation (`concordance`,
+  lib/prealablesValidation.ts) : retirer la dotation de CH sans changer l'écriture ferait de celle-ci un écart, une
+  écriture « que la 2035 ne compte pas » (`non_comptee`, lib/concordance2035.ts), et bloquerait la validation. C'est
+  donc un seul lot : la garde, `ecritureDeLaDotation` et sa copie dans l'assistant (bloc AMORTISSEMENT), la 2035, le
+  tableau de la 2035-SD (dont la ligne (B), EXP58-Q9), l'avertissement `vehicule-amorti-sous-bareme` et la carte de
+  Clôture retirés. Le cas n'est sûr pour le MVP que si la 2035 de 2025 du praticien le montre (VEH-Q2) : EXP58-Q8.
+- **Un module préparé derrière un drapeau baissé, avant la migration, est écarté** : il arrêterait avant la base ce que
+  la base doit trancher (le nom et le sens de la colonne, le compte, le partage entre échéances, la source de (B)), et
+  il se referait. Le module et la migration viendront ensemble, le module d'abord écrit, la fonction SQL le redisant en
+  entiers.
+- **Les chiffres, quand cela viendra.** CFP et CURPS : BK et BT baissent de la part, BS monte d'autant, le résultat ne
+  bouge pas. Véhicule : CH baisse de la dotation de chaque bien de transport l'année du barème, le bénéfice (CP) monte,
+  ou le déficit (CR) baisse, d'autant ; rien pour un dossier sans un tel bien. Aujourd'hui, la 2035-SD dit déjà cet
+  écart (« à corriger avant le dépôt »).
+
+```json
+[
+  {"id": "EXP58-Q6", "chantier": "Cotisations (L2, point 6)", "titre": "La CFP et la CURPS en « autres impôts » : la migration",
+   "question": "Préparer la migration qui garde, sur chaque échéance de cotisation, la part de la contribution à la formation professionnelle et de la CURPS, l'écrit sur un compte d'autres impôts et la compte en BS au lieu de BK ?",
+   "contexte": "L'expert-comptable range la CFP et la CURPS dans un sous-compte des autres impôts (2035E-9) ; l'application les laisse dans l'échéance, au 646 et en BK. Rien ne change sans la base : aucune colonne ne porte cette part (cotisations_declarees ne connaît que la CSG-CRDS), aucun rôle du plan n'est un compte d'impôts, et deux fonctions recomposent l'écriture d'une échéance au centime et refusent toute autre (rapprocher_cotisation, enregistrer_paiement_personnel_cotisation). Déplacer la part dans la seule 2035 laisserait la charge entière au 646 dans le FEC que l'expert-comptable importe, et le 646 sur deux lignes de la 2035. Le résultat ne change pas : BK et BT baissent, BS monte d'autant. Le praticien en paie : l'écart est certain à la comparaison de 2025 ; d'ici là, la répétition note ces montants à part.",
+   "recommandation": "(A), avant la validation de 2025 : une colonne nullable de l'échéance (comme montant_csg_crds), un rôle neuf du plan réglable par dossier, les deux fonctions recomposées sur une ligne de plus, la 2035 en BS, l'onglet Cotisations qui la saisit, la copie de l'assistant ; préparée, répétée sur une réplique, appliquée par l'outil.",
+   "options": ["(A) la préparer maintenant, avant la validation de 2025", "(B) après la répétition : elle note les montants, l'expert-comptable les déplace dans ACD", "(C) ne rien changer : l'expert-comptable reclasse lui-même"],
+   "option_recommandee": "(A) la préparer maintenant, avant la validation de 2025",
+   "source": "docs/conceptions/58-reponses-de-l-expert-comptable.md § 4.2 et § 12", "pose": "2026-11-18"},
+  {"id": "EXP58-Q7", "chantier": "Cotisations (L2, point 6)", "titre": "Le compte et la saisie de la part « autres impôts »",
+   "question": "Quel compte par défaut pour la CFP et la CURPS, et d'où vient la part saisie sur chaque échéance ?",
+   "contexte": "La conception dit « un sous-compte du 635 » et une part « proposée depuis l'estimation quand elle est connue, jamais devinée ». L'estimation (lib/voletSocialPamc.ts) calcule la CURPS et la CFP d'une année, pas leur partage entre les échéances de l'Urssaf : en répartir le total serait une supposition. La liste des comptes du PCG range les autres impôts au 635 (administration des impôts) et au 637 (autres organismes, dont relève l'Urssaf qui les recouvre), à relire dans la numérotation de 2026 ; le numéro de l'expert-comptable n'est écrit nulle part, un FEC d'ACD d'un BNC qui en paie le montrerait. Seulement si EXP58-Q6 (A).",
+   "recommandation": "(A) : la part saisie échéance par échéance depuis l'échéancier ou l'avis de l'Urssaf, l'estimation ne montrant à côté que son total de l'année, jamais réparti ; le compte par défaut lu dans un FEC d'ACD que le cabinet fournirait hors du dépôt, sinon choisi par le cabinet dans la numérotation de 2026, réglable au plan du dossier.",
+   "options": ["(A) saisie par échéance depuis l'échéancier de l'Urssaf, l'estimation en rappel annuel ; le compte lu dans un FEC d'ACD, sinon choisi par le cabinet", "(B) le total annuel de l'estimation réparti entre les échéances de l'année, corrigé à la main", "(C) une seule saisie par année, sur l'échéance qui régularise"],
+   "option_recommandee": "(A) saisie par échéance depuis l'échéancier de l'Urssaf, l'estimation en rappel annuel ; le compte lu dans un FEC d'ACD, sinon choisi par le cabinet",
+   "source": "docs/conceptions/58-reponses-de-l-expert-comptable.md § 4.2 et § 12", "pose": "2026-11-18"},
+  {"id": "EXP58-Q8", "chantier": "Immobilisations (L2, point 7)", "titre": "La dotation du véhicule au barème au compte de l'exploitant : maintenant ou après la répétition",
+   "question": "Préparer maintenant la migration qui écrit au compte de l'exploitant / 28, et retire de CH, la dotation d'un bien de matériel de transport l'année où le barème kilométrique est retenu, ou attendre que la 2035 de 2025 du praticien montre le cas ?",
+   "contexte": "L'expert-comptable passe cette dotation du compte de l'exploitant (débit) au 28 (crédit), hors du résultat (2035E-12) ; l'application l'écrit 681100 / 28, la compte en CH, et le dit (l'avertissement de la validation, la ligne (B) et la dotation nette de la 2035-SD, « à corriger avant le dépôt »). Rien ne change sans la base : ecrire_dotation_amortissement recompose 681100 / 28 et refuse toute autre écriture (la préparée du cumul repris la remplace déjà), et la concordance de la 2035 avec les écritures, qui retient la validation, dirait en écart une dotation écrite que la 2035 ne compterait plus. C'est un seul lot : la garde, la composition, la 2035, la 2035-SD, l'avertissement retiré, la copie de l'assistant. VEH-Q2 : le cas du praticien se lira sur sa 2035 de 2025 ; sans véhicule au registre sous le barème, rien de cela ne sert au MVP. Effet : CH baisse de la dotation, le résultat monte d'autant.",
+   "recommandation": "(B) : lire la 2035 de 2025 d'abord ; si le cas y est, (A) aussitôt, après le collage du cumul repris (la même fonction) et avant la validation de 2025 ; sinon après le MVP. D'ici là, l'avertissement et la ligne (B) disent l'écart, et l'expert-comptable reclasse dans ACD.",
+   "options": ["(A) la préparer maintenant, après le cumul repris, avant la validation de 2025", "(B) attendre la 2035 de 2025 : (A) si le cas y est, sinon après le MVP", "(C) garder l'écriture d'aujourd'hui : la 2035-SD dit l'écart, le cabinet corrige CH à la main"],
+   "option_recommandee": "(B) attendre la 2035 de 2025 : (A) si le cas y est, sinon après le MVP",
+   "source": "docs/conceptions/58-reponses-de-l-expert-comptable.md § 3.2 et § 12", "pose": "2026-11-18"},
+  {"id": "EXP58-Q9", "chantier": "Immobilisations (L2, point 7)", "titre": "La ligne (B) de la 2035-SD quand CH ne comptera plus le véhicule",
+   "question": "Une fois la dotation du véhicule hors de CH, la ligne (B) du tableau des immobilisations reste-t-elle la saisie de la carte Véhicules, ou se tire-t-elle du registre ?",
+   "contexte": "Aujourd'hui (B) est le total B du cadre 7, saisi véhicule par véhicule (« Amort. à réintégrer », CADRE7-Q2 (A)), et la dotation nette (A − B) se confronte à CH. Après le changement, CH sera la somme des autres dotations : (A − B) ne la redira que si B vaut la dotation du registre des biens de transport sous le barème, arrondie comme la colonne 7 (un euro d'arrondi peut les séparer). Le registre et les véhicules ne se citent pas : avec plusieurs biens ou plusieurs véhicules, rien ne prouve lequel va avec lequel. Seulement si EXP58-Q8 mène à la migration.",
+   "recommandation": "(A) : la saisie de la carte reste la source du cadre 7 et de (B) ; la carte propose, au clic, la dotation du registre quand un seul bien de transport et un seul véhicule sont en jeu ; la colonne 7 répartit ses euros pour que les autres biens fassent CH, et un écart restant se dit.",
+   "options": ["(A) la saisie de la carte, proposée depuis le registre quand un seul bien et un seul véhicule sont en jeu", "(B) tirée du registre, la saisie de la carte devenant un contrôle", "(C) la saisie seule, sans proposition"],
+   "option_recommandee": "(A) la saisie de la carte, proposée depuis le registre quand un seul bien et un seul véhicule sont en jeu",
+   "source": "docs/conceptions/58-reponses-de-l-expert-comptable.md § 3.2 et § 12", "pose": "2026-11-18"}
+]
+```
