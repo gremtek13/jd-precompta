@@ -1,8 +1,8 @@
 // LES GRANDS RÉGIMES DE L'ASSURANCE MALADIE OBLIGATOIRE, ET LE RÉGIME D'UN ORGANISME IMPRIMÉ SUR UN BORDEREAU (conception 59,
 // BOR1-Q5 ; la note du cabinet du 18/11/2026 : « tu peux pas voir les autres régimes ? et les mettre tous ? »).
 //
-// POURQUOI : les paiements de NOE3 se rangent sous deux entiers, le régime et la caisse
-// (supabase/preparees/20261116191000_paiements_assurance_maladie.sql, `regime` de 0 à 99, `caisse` de 0 à 999). Le bordereau
+// POURQUOI : les paiements de NOE3 se rangent sous deux entiers, le régime et la caisse (la migration préparée de NOE3,
+// `regime` de 0 à 99, `caisse` de 0 à 999 ; ce module ne nomme pas sa table, qu'il ne lit pas). Le bordereau
 // de télétransmission de Télévitale imprime l'organisme sous un code de caisse de trois chiffres et un libellé
 // (« NNN - CPAM - VILLE »), SANS le régime (conception 59, § 12.1). Le rapprochement du facturé et du payé (BOR5) a besoin du
 // régime : ce module le tire du libellé imprimé quand une source publique le permet, et sinon il le laisse « à choisir par
