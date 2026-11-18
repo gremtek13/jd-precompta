@@ -53884,3 +53884,20 @@ contrôles, égaux des deux côtés : dérive 240 `20d1c70fc86cfb73c773e08ad63f7
 l'écrit au clic ; le FEC le porte à la place de « Banque ». Les deux cas « drapeau baissé » des tests du FEC forcent désormais
 cet état. **Pas rejoué en production** : l'essai (il crée et retire des dossiers jetables : sur une réplique seulement). L'agent
 qui a préparé ce lot annonçait EXP58Q1-Q1 à Q3 ; interrompu par un redémarrage, il ne les a pas rendues : à reconstituer.
+### 18/11/2026 — L1-Q1, NOE4Q1-Q1 ET Q2, NOE5B-Q1 : QUATRE RÉPONSES À L'ÉCRAN
+
+Sans migration, un commit par réponse.
+- L1-Q1 (A) : le point `comptes-sur-plusieurs-postes` de la Vue d'ensemble paraît aussi parmi les préalables de la validation,
+  en avertissement non bloquant, par le même module (`comptesSurPlusieursPostesDeLExercice`, lib/unCompteUnPoste.ts) ; il ne
+  se calcule qu'après le contrôle de lecture partielle, qui suspend la validation et rend avant lui.
+- NOE4Q1-Q1 (B) : la section des paiements de l'assurance maladie s'offre aussi sur 47.73Z, 47.74Z, 47.78A et 49.32Z
+  (`CODES_HORS_DE_LA_DIVISION`, raison « liste ») ; une sous-classe voisine (47.78B, 49.31Z) n'y entre pas.
+- NOE4Q1-Q2 (A) : dès qu'un import est LU, la section reste offerte, gestes compris, quel que soit le code (raison
+  « imports », `importsDeLaLecture`, second paramètre obligatoire de `sectionAssuranceMaladie`). Une ligne lue, même d'une
+  lecture partielle, prouve un import ; une liste vide ne dit « aucun » que lue en entier ; sinon le code décide seul. La
+  section lit donc ses imports avant la règle (avant : rien n'était lu hors d'un code de santé) ; l'onglet Informations lit
+  la même lecture que Banque et dit « reste offerte », avec ce que le code seul dirait.
+- NOE5B-Q1 (B) : la fiche d'un crédit associé encore à traiter propose la catégorie la plus fréquente des AUTRES crédits
+  associés classés (lib/categorieHabituelleAssuranceMaladie.ts) ; « Choisir cette catégorie » remplit la liste, seul
+  « Affecter » écrit (le geste d'hier, son verrou). Rien à égalité, sur des catégories lues en partie, ni hors d'une recette.
+- EXP58Q4-Q2 (B) et EXP58Q4-Q1 (A) : rien à coder aujourd'hui ; consignées dans lib/dateDeValeur.ts pour L4.
