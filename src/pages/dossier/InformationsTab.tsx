@@ -28,7 +28,8 @@ import { DEPART_DU_CLIENT_PREVU, ceQueLaSuppressionPerd, exercicesSansPaquet, re
 import { aujourdHuiAParis } from '../../lib/format'
 import { messageErreur } from '../../lib/messageErreur'
 import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from '../../lib/paiementsAssuranceMaladie'
-import { phraseDeLaSectionAuCabinet, sectionAssuranceMaladie } from '../../lib/sectionAssuranceMaladie'
+import { importsDeLaLecture, phraseDeLaSectionAuCabinet, sectionAssuranceMaladie } from '../../lib/sectionAssuranceMaladie'
+import { useLesPaiementsAssuranceMaladie } from '../../lib/lecturePaiementsAssuranceMaladie'
 import ModeleDuCabinetDossierCarte from './ModeleDuCabinetDossierCarte'
 import { ouvrirApercu } from '../../lib/apercu'
 import { chargerInformationsDossier, enregistrerInformationsDossier } from '../../lib/informationsDossier'
@@ -105,6 +106,10 @@ export default function InformationsTab({
   // suppression les relit elle-même avant de vider le stockage.
   const [relectureDepart, setRelectureDepart] = useState(0)
   const depart = useDepartDuDossier(dossierId, relectureDepart)
+  // LES IMPORTS DES PAIEMENTS DE L'ASSURANCE MALADIE (NOE4Q1-Q2 (A)) : la section reste offerte dès qu'un import existe, quel
+  // que soit le code NAF, et la carte de la section le dit. La lecture de l'onglet Banque, la même ; rien sous le drapeau
+  // baissé. Pas revenue, refusée ou partielle sans ligne : la phrase dit ce que le code seul décide.
+  const paiementsAssuranceMaladie = useLesPaiementsAssuranceMaladie(dossierId, 'cabinet')
   const departLu = depart?.etat === 'lue' && depart.dossierId === dossierId ? depart : null
   // LM1-Q1 (B) : le chef du cabinet supprime aussi le dossier du cabinet, ses factures avec lui ; la confirmation NOMME ces
   // factures (leur nombre et leurs numéros), lues en entier — sinon la suppression ne s'offre pas. Avant que la désignation
@@ -481,7 +486,9 @@ export default function InformationsTab({
     {PAIEMENTS_ASSURANCE_MALADIE_PREVUS && (
       <div className="card" style={{ maxWidth: 640, marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Paiements de l’assurance maladie</h3>
-        <p className="muted" style={{ marginBottom: 0 }}>{phraseDeLaSectionAuCabinet(sectionAssuranceMaladie(dossierCodeNaf))}</p>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          {phraseDeLaSectionAuCabinet(sectionAssuranceMaladie(dossierCodeNaf, importsDeLaLecture(paiementsAssuranceMaladie.lu, dossierId)))}
+        </p>
       </div>
     )}
 

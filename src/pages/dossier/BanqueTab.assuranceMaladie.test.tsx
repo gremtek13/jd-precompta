@@ -115,7 +115,9 @@ const CREDIT = mouvement({ id: 'm1' })
 const association = (o: Record<string, unknown>) =>
   ({ dossier_id: D, associe_par: 'u', associe_le: '2026-03-06T09:00:00Z', ...o })
 
-function poser(o: { releve?: LigneBancaire[]; paiements?: Record<string, unknown>[]; associations?: Record<string, unknown>[] } = {}) {
+function poser(o: {
+  releve?: LigneBancaire[]; imports?: Record<string, unknown>[]; paiements?: Record<string, unknown>[]; associations?: Record<string, unknown>[]
+} = {}) {
   faux.muet = {}
   faux.tables = []
   faux.rpcs = []
@@ -123,7 +125,7 @@ function poser(o: { releve?: LigneBancaire[]; paiements?: Record<string, unknown
     lignes_bancaires: (o.releve ?? [CREDIT]) as unknown as Record<string, unknown>[],
     pieces: [],
     categories: [{ id: 'c-hon', dossier_id: D, code: 'honoraires', libelle: 'Honoraires', ordre: 1, compte_comptable: '706000', poste_2035: 'Recettes' }],
-    imports_assurance_maladie: [IMPORT],
+    imports_assurance_maladie: o.imports ?? [IMPORT],
     paiements_assurance_maladie: o.paiements ?? [paiement({ id: 'p1' })],
     paiements_assurance_maladie_mouvements: o.associations ?? [],
   }
@@ -167,7 +169,8 @@ describe('l’association des paiements de l’assurance maladie, dans l’ongle
     expect(screen.queryByRole('heading', { name: 'Le rapprochement avec le relevé' })).toBeNull()
   })
 
-  it('hors d’un code NAF de santé (NOE4-Q1 (C)) : ni la section ni la fiche n’offrent rien ; la lecture continue', async () => {
+  it('hors d’un code NAF de santé et sans import (NOE4-Q1 (C)) : ni la section ni la fiche n’offrent rien ; la lecture continue', async () => {
+    poser({ imports: [] })
     for (const codeNaf of ['69.20Z', null, undefined, 'santé']) {
       const vue = rendre({ lu: codeNaf })
       await ouvrir('VIR CPAM 0012345678260303')
@@ -177,6 +180,16 @@ describe('l’association des paiements de l’assurance maladie, dans l’ongle
       expect(screen.queryByRole('heading', { name: 'Le rapprochement avec le relevé' })).toBeNull()
       expect(within(volet()).queryByRole('button', { name: /^Associer/ })).toBeNull()
       expect(sans(volet().textContent)).not.toContain('assurance maladie')
+      vue.unmount()
+      poser({ imports: [] })
+    }
+  })
+
+  it('dès qu’un import existe (NOE4Q1-Q2 (A)) : la section et la fiche restent offertes, quel que soit le code NAF', async () => {
+    for (const codeNaf of ['69.20Z', null, 'santé']) {
+      const vue = rendre({ lu: codeNaf })
+      await ouvrir('VIR CPAM 0012345678260303')
+      expect(await within(volet()).findByRole('button', { name: 'Associer' }), String(codeNaf)).toBeTruthy()
       vue.unmount()
       poser()
     }

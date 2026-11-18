@@ -25,6 +25,8 @@ import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 const faux = vi.hoisted(() => ({
   // Le drapeau de la section des paiements de l'assurance maladie (NOE3/NOE4), joué dans ses deux états.
   paiementsAssuranceMaladie: false,
+  // Ce que la lecture des imports rend (NOE4Q1-Q2 (A)) : `null`, pas revenue.
+  paiementsLus: null as unknown,
   bilan: { demandes: 0, retires: 0, echecs: [] as unknown[], inventaireIncomplet: false },
   message: '',
   navigations: [] as string[],
@@ -85,6 +87,9 @@ vi.mock('../../lib/dossierDuCabinetLecture', async (original) => {
 vi.mock('../../lib/paiementsAssuranceMaladie', async (original) => ({
   ...await original<typeof import('../../lib/paiementsAssuranceMaladie')>(),
   get PAIEMENTS_ASSURANCE_MALADIE_PREVUS() { return faux.paiementsAssuranceMaladie },
+}))
+vi.mock('../../lib/lecturePaiementsAssuranceMaladie', () => ({
+  useLesPaiementsAssuranceMaladie: () => ({ lu: faux.paiementsLus, relire: async () => {} }),
 }))
 vi.mock('../../lib/informationsDossier', () => ({
   chargerInformationsDossier: () => Promise.resolve(faux.lecture),
@@ -531,6 +536,22 @@ describe('la phrase des paiements de l’assurance maladie (NOE4-Q1 (C)) : au ca
       }
     } finally {
       faux.paiementsAssuranceMaladie = false
+    }
+  })
+
+  it('dès qu’un import est lu (NOE4Q1-Q2 (A)) : la section reste offerte, et la phrase dit pourquoi', async () => {
+    faux.paiementsAssuranceMaladie = true
+    faux.paiementsLus = {
+      dossierId: 'd1', etat: 'lus', paiements: { lignes: [], complete: true, motif: null }, associations: null,
+      imports: { lignes: [{ id: 'i1', dossier_id: 'd1' }], complete: true, motif: null },
+    }
+    try {
+      monter(undefined, { dossierCodeNaf: '69.20Z' })
+      const carte = (await screen.findByRole('heading', { name: 'Paiements de l’assurance maladie' })).closest('.card') as HTMLElement
+      expect(within(carte).getByText(/reste offerte : des paiements ont déjà été importés pour ce dossier, alors que le code NAF du dossier \(69\.20Z\)/)).toBeTruthy()
+    } finally {
+      faux.paiementsAssuranceMaladie = false
+      faux.paiementsLus = null
     }
   })
 })

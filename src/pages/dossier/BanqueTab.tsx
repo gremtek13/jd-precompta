@@ -88,7 +88,7 @@ import { AssociationDansLaSection } from '../../components/AssociationsAssurance
 import { useLesPaiementsAssuranceMaladie } from '../../lib/lecturePaiementsAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, type GroupeAAssocier } from '../../lib/rapprochementAssuranceMaladie'
 import { assuranceMaladieDeLaFiche, associesPourLesVentes, rapprochementDeLOnglet } from '../../lib/associationsAssuranceMaladieVue'
-import { sectionAssuranceMaladie } from '../../lib/sectionAssuranceMaladie'
+import { importsDeLaLecture, sectionAssuranceMaladie } from '../../lib/sectionAssuranceMaladie'
 import PanneauDroit from '../../components/PanneauDroit'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
 import { usePanneauDroit } from '../../lib/panneauDroit'
@@ -553,9 +553,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // crédit associé n'est candidat d'aucune vente (NOE5-Q4 (A)) ; des associations illisibles, et aucun crédit ne se propose
   // à une vente. Le relevé ne se dit lu en entier qu'hors d'une lecture en vol : avant, tout paiement paraîtrait sans crédit.
   const paiementsAssuranceMaladie = useLesPaiementsAssuranceMaladie(dossierId, 'cabinet')
-  // Sur un code NAF de santé seulement (NOE4-Q1 (C)) : hors de lui, ni la section ni la fiche d'un crédit n'OFFRENT
-  // l'association ; la lecture, elle, continue — un crédit déjà associé reste hors des candidats d'une vente.
-  const associationOfferte = sectionAssuranceMaladie(codeNaf).offerte
+  // Sur un code NAF de santé ou de la liste fermée (NOE4-Q1 (C), NOE4Q1-Q1 (B)), ou dès qu'un import est lu (NOE4Q1-Q2 (A)) :
+  // hors de là, ni la section ni la fiche d'un crédit n'OFFRENT l'association ; la lecture, elle, continue — un crédit déjà
+  // associé reste hors des candidats d'une vente.
+  const associationOfferte = sectionAssuranceMaladie(codeNaf, importsDeLaLecture(paiementsAssuranceMaladie.lu, dossierId)).offerte
   const associesAssuranceMaladie = useMemo(
     () => associesPourLesVentes(ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, paiementsAssuranceMaladie.lu),
     [paiementsAssuranceMaladie.lu],

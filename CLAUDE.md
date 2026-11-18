@@ -558,7 +558,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   NOE-migration, à appliquer avec l'écran) ; NOE4, l'écran, derrière le même drapeau (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
   section de l'onglet Banque et de « Ma banque » : en-têtes et genres seuls, réglage vide, agrégats avant le clic, la phrase de
   NOE3-Q1 ; offerte, avec l'association de NOE5b, sur un code NAF de la division 86 ou de la liste fermée
-  (47.73Z, 47.74Z, 47.78A, 49.32Z ; NOE4Q1-Q1 (B)), l'onglet Informations disant pourquoi au cabinet,
+  (47.73Z, 47.74Z, 47.78A, 49.32Z ; NOE4Q1-Q1 (B)), et, gestes compris, dès qu'un import du dossier est lu, quel que soit
+  le code (NOE4Q1-Q2 (A) ; une lecture partielle sans ligne ne prouve rien), l'onglet Informations disant pourquoi au cabinet,
   `lib/sectionAssuranceMaladie.ts`, NOE4-Q1 (C)) ; l'association au relevé, NOE5 (module et migration préparée) puis NOE5b, l'écran (17/11/2026, derrière
   `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` : la fiche d'un crédit, la section NOEMIE et son lot, un crédit associé hors des
   candidats d'une vente, `lib/associationsAssuranceMaladieVue.ts`) → « NOE5 : L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ », « NOE5B : L'ÉCRAN DE L'ASSOCIATION », « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS

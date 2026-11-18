@@ -8,6 +8,12 @@
 // encore lu ne l'offre pas. Côté cabinet, l'onglet Informations dit pourquoi en une phrase (jamais le silence) ; côté
 // client, rien ne se dit : la section n'existe pas pour lui.
 //
+// DÈS QU'UN IMPORT EXISTE (NOE4Q1-Q2 (A), réponse du cabinet du 18/11/2026) : la section reste offerte, gestes compris, quel
+// que soit le code NAF — une règle d'affichage ne cache jamais des données déjà en base (un code changé, effacé ou devenu
+// illisible après des imports). « Un import existe » ne se conclut que d'une ligne LUE : une lecture des imports partielle,
+// refusée ou pas revenue ne dit pas qu'il n'y en a pas, et la règle du code NAF décide seule (le côté fermé). Une lecture
+// partielle qui rend une ligne prouve qu'il en existe une.
+//
 // Ce que la règle ne fait PAS : elle ne touche à aucune donnée. Les paiements et les associations déjà en base continuent de
 // se lire là où un calcul en dépend (un crédit associé n'est candidat d'aucune vente, NOE5-Q4 (A)) ; seuls les écrans qui les
 // OFFRENT se taisent.
@@ -22,14 +28,24 @@
 // d'articles médicaux et orthopédiques en magasin spécialisé), 47.78A (commerces de détail d'optique), 49.32Z (transports de
 // voyageurs par taxis) — des activités que l'assurance maladie paie en tiers payant ; une sous-classe voisine n'y entre pas.
 
-/** Pourquoi la section s'offre ou non : `sante` (la division 86) et `liste` (la liste fermée), les seules qui l'offrent ; `non-lu`, le dossier (ou sa colonne) pas encore lu ;
+/** Pourquoi le CODE offre la section ou non : `sante` (la division 86) et `liste` (la liste fermée), les seules qui l'offrent ; `non-lu`, le dossier (ou sa colonne) pas encore lu ;
  *  `absent`, aucun code au dossier ; `illisible`, un code qui n'a pas la forme d'un code NAF ; `hors-sante`, un code NAF
  *  lisible hors de la division 86 et de la liste fermée. */
-export type RaisonDeLaSection = 'sante' | 'liste' | 'non-lu' | 'absent' | 'illisible' | 'hors-sante'
+export type RaisonDuCode = 'sante' | 'liste' | 'non-lu' | 'absent' | 'illisible' | 'hors-sante'
+
+/** Pourquoi la section s'offre ou non : la raison du code, ou `imports` — offerte par des imports déjà en base alors que le
+ *  code ne l'offrirait pas (NOE4Q1-Q2 (A)). */
+export type RaisonDeLaSection = RaisonDuCode | 'imports'
+
+/** Ce que l'écran sait des imports du dossier : `au-moins-un`, une ligne lue ; `aucun`, la liste lue EN ENTIER et vide ;
+ *  `inconnu`, rien de sûr (pas revenue, refusée, partielle sans ligne, drapeau baissé). Seul `au-moins-un` change la règle. */
+export type ImportsDeLaSection = 'au-moins-un' | 'aucun' | 'inconnu'
 
 export interface SectionAssuranceMaladie {
   readonly offerte: boolean
   readonly raison: RaisonDeLaSection
+  /** Ce que le code seul décide, que les imports l'emportent ou non : la phrase du cabinet le dit avec eux. */
+  readonly raisonDuCode: RaisonDuCode
   /** Le code lu, sous la forme « 86.90D », quand il a la forme d'un code NAF ; nul sinon. */
   readonly code: string | null
 }
@@ -49,16 +65,36 @@ export function codeNafLu(code: string): string | null {
   return m ? `${m[1]}.${m[2]}${m[3]}` : null
 }
 
-/** La règle de NOE4-Q1 (C) et de NOE4Q1-Q1 (B). `codeNaf` : la colonne `dossiers.code_naf` telle que l'écran l'a lue — `undefined` tant que le
- *  dossier (ou cette colonne) n'est pas lu, `null` quand il n'en a pas. */
-export function sectionAssuranceMaladie(codeNaf: string | null | undefined): SectionAssuranceMaladie {
-  if (codeNaf === undefined) return { offerte: false, raison: 'non-lu', code: null }
-  if (codeNaf === null || codeNaf.trim() === '') return { offerte: false, raison: 'absent', code: null }
+/** Ce que le code NAF seul décide (NOE4-Q1 (C), NOE4Q1-Q1 (B)), et le code lu. */
+function regleDuCode(codeNaf: string | null | undefined): { raison: RaisonDuCode; code: string | null } {
+  if (codeNaf === undefined) return { raison: 'non-lu', code: null }
+  if (codeNaf === null || codeNaf.trim() === '') return { raison: 'absent', code: null }
   const code = codeNafLu(codeNaf)
-  if (code === null) return { offerte: false, raison: 'illisible', code: null }
-  if (code.startsWith(`${DIVISION_DE_LA_SANTE}.`)) return { offerte: true, raison: 'sante', code }
-  if (CODES_HORS_DE_LA_DIVISION.includes(code)) return { offerte: true, raison: 'liste', code }
-  return { offerte: false, raison: 'hors-sante', code }
+  if (code === null) return { raison: 'illisible', code: null }
+  if (code.startsWith(`${DIVISION_DE_LA_SANTE}.`)) return { raison: 'sante', code }
+  if (CODES_HORS_DE_LA_DIVISION.includes(code)) return { raison: 'liste', code }
+  return { raison: 'hors-sante', code }
+}
+
+/** La règle de NOE4-Q1 (C), de NOE4Q1-Q1 (B) et de NOE4Q1-Q2 (A). `codeNaf` : la colonne `dossiers.code_naf` telle que
+ *  l'écran l'a lue — `undefined` tant que le dossier (ou cette colonne) n'est pas lu, `null` quand il n'en a pas. `imports` :
+ *  ce que l'écran sait des imports du dossier (`importsDeLaLecture`), sans valeur par défaut. */
+export function sectionAssuranceMaladie(codeNaf: string | null | undefined, imports: ImportsDeLaSection): SectionAssuranceMaladie {
+  const { raison, code } = regleDuCode(codeNaf)
+  if (raison === 'sante' || raison === 'liste') return { offerte: true, raison, raisonDuCode: raison, code }
+  if (imports === 'au-moins-un') return { offerte: true, raison: 'imports', raisonDuCode: raison, code }
+  return { offerte: false, raison, raisonDuCode: raison, code }
+}
+
+/** Ce qu'une lecture des imports dit de leur existence, pour le dossier demandé seulement : une ligne lue (même d'une lecture
+ *  partielle) en prouve une ; une liste vide ne dit « aucun » que lue en entier ; tout le reste est `inconnu`. */
+export function importsDeLaLecture(
+  lu: { dossierId: string; etat: string; imports?: { lignes: readonly unknown[]; complete: boolean } } | null,
+  dossierId: string,
+): ImportsDeLaSection {
+  if (lu === null || lu.dossierId !== dossierId || lu.etat !== 'lus' || !lu.imports) return 'inconnu'
+  if (lu.imports.lignes.length > 0) return 'au-moins-un'
+  return lu.imports.complete ? 'aucun' : 'inconnu'
 }
 
 const NOM_DE_LA_SECTION = 'La section « Paiements de l’assurance maladie » de l’onglet Banque'
@@ -67,6 +103,10 @@ const LISTE_DITE = `de la liste fermée des activités que l’assurance maladie
 /** La phrase de l'onglet Informations du cabinet, dans tous les cas : ce que la règle a décidé, et sur quoi. Neutre : elle
  *  ne conseille rien. Jamais montrée au client. */
 export function phraseDeLaSectionAuCabinet(section: SectionAssuranceMaladie): string {
+  if (section.raison === 'imports') {
+    return `${NOM_DE_LA_SECTION} reste offerte : des paiements ont déjà été importés pour ce dossier, alors que `
+      + `${sansLesImports(section)}. Elle ne cache pas des données déjà en base.`
+  }
   switch (section.raison) {
     case 'sante':
       return `${NOM_DE_LA_SECTION} est offerte : le code NAF du dossier (${section.code}) est celui d’une activité de santé `
@@ -84,5 +124,23 @@ export function phraseDeLaSectionAuCabinet(section: SectionAssuranceMaladie): st
         + '« 86.90D »).'
     case 'non-lu':
       return `${NOM_DE_LA_SECTION} n’est pas offerte : le code NAF du dossier n’a pas été lu.`
+  }
+}
+
+/** Ce que le code seul dirait, quand des imports l'emportent : la fin de la phrase du cabinet. */
+function sansLesImports(section: SectionAssuranceMaladie): string {
+  switch (section.raisonDuCode) {
+    case 'hors-sante':
+      return `le code NAF du dossier (${section.code}) n’est ni celui d’une activité de santé humaine (division 86) ni `
+        + LISTE_DITE
+    case 'absent':
+      return 'le dossier n’a pas de code NAF'
+    case 'illisible':
+      return 'le code NAF enregistré n’a pas la forme d’un code NAF'
+    case 'non-lu':
+      return 'le code NAF du dossier n’a pas été lu'
+    case 'sante':
+    case 'liste':
+      return `le code NAF du dossier (${section.code}) l’offre aussi`
   }
 }
