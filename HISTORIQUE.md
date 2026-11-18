@@ -53848,3 +53848,27 @@ un lot deux fois ; plusieurs lots : un rendu par bordereau, chacun prouvé par s
 canari en lignes, en fragments mélangés sur 50 bordereaux tirés d'une graine, et sur un PDF fictif de pdf-lib lu par pdf.js hors
 navigateur) ; scanner sans sortie des deux modules, sept défauts plantés ; 11 mutations mordent sur 12, la douzième équivalente
 (sa ligne retirée). Non vérifié : l'ordre réel des fragments de pdf.js sur un fichier de Télévitale. BOR1-Q1 à Q5 posées (§ 12.4).
+
+### 18/11/2026 — SOIXANTE-SEPT RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 18/11/2026)
+
+La page publiée deux fois dans la journée (894 puis 899 fiches : vingt-sept, puis les cinq de BOR1) ; la collection `reponses` relue.
+Contre la recommandation ou en note :
+BOR1-Q1 (C) : le numéro du lot GARDÉ en base, pour reconnaître un lot importé deux fois (rouvre BOR-Q4 et la conception 53).
+BOR1-Q2 (B) : accepter tout libellé de destinataire du règlement, sans le rendre, et compter le lot comme en tiers payant.
+BOR1-Q4 (B) : un petit outil local que le cabinet lance sur un ordinateur, qui n'affiche que le résultat ou la raison.
+BOR1-Q5, note : « tu peux pas voir les autres régimes ? et les mettre tous ? »
+BOR-Q3 (B) : non, on s'en tient aux états que le logiciel a déjà. BOR-Q5 (B) : par organisme complémentaire, sous son numéro, pour le facturé comme pour le payé. BOR-Q7 (B) : au MVP, en entier. BOR-Q8 (A) : le praticien et le cabinet, comme NOEMIE.
+NOE4Q1-Q1 (B) : la division 86 et une liste fermée de codes (47.73Z, 47.74Z, 47.78A, 49.32Z).
+NOE5B-Q1 (B) : proposer la catégorie la plus fréquente des crédits associés du dossier, au clic.
+EXP1-Q2, note : « calque-toi à l'application ACD ou un autre ».
+EXP58Q4-Q2 (B) : PDF accepté tel quel, sans date de valeur.
+MEG2-Q10 : la mission, puis la durée de conservation des dossiers ; note « 10 ans après la fin de la mission ».
+A4B3-Q6 : « je ne l'ai pas encore ». G-categorie : fait. G-superpdp : fait. G-plafondCopie : « j'utilise Chrome ou Edge ». G-chiffresReferences, G-dscs, G-fecExpert : pas encore.
+À la recommandation :
+EXP58Q1-migration : oui, par l'outil. EXP58Q5-Q1 (A), Q2 (A), Q3 (A, au prochain jour d'application, avec l'assistant).
+NOE3-quand (A) : attendre les PDF anonymisés, puis coller NOE3 et NOE5 ensemble. NOE5-Q1 à Q4 (A). NOE5B-Q2 (A). NOE4Q1-Q2 (A).
+BOR-Q1 (C), Q2 (D), Q4 (A), Q6 (A), Q9 (A) ; BOR1-Q3 (A).
+EXP1-Q1 (A) ; EXP58Q4-Q1 (A) ; L1-Q1 (A).
+C8Q2-migration (A, l'appliquer sous « Banque »), C8Q2-Q1 (A), Q2 (A), Q3 (B : corriger AVANT le collage, par un mois de raccord au prorata des jours), Q4 (A) ; C8Q1-Q1 (A).
+RET2Q2-Q1 (A) ; INV6-Q1, INV7-Q1 ; P1TQ2-Q2 (A) ; B4RS1-Q4 (A) ; AFF-Q1, Q2, Q4 à Q8, Q10 à Q13, AFF1-Q1 à Q3, AFF2-Q1, Q2 (toutes à la recommandation).
+
