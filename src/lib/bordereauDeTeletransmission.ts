@@ -9,15 +9,24 @@
 // l'une des deux formes : des lignes déjà recomposées, ou des fragments positionnés qu'il regroupe par ordonnée.
 //
 // CE QUI SORT D'ICI, ET RIEN D'AUTRE, PAR BORDEREAU : le numéro du lot et sa date de création, sécurisé ou non, le code et le
-// libellé de l'organisme destinataire (l'en-tête, jamais une ligne), le destinataire du règlement (une liste fermée), le
-// nombre de factures annoncé, les quatre totaux en centimes entiers. Le type `BordereauLu` n'a aucun champ de texte venu
-// d'une ligne de facture : le libellé de l'organisme est la seule chaîne, lue dans l'en-tête et bornée à sa forme.
+// libellé de l'organisme destinataire (l'en-tête, jamais une ligne), le nombre de factures annoncé, les quatre totaux en
+// centimes entiers. Le type `BordereauLu` n'a aucun champ de texte venu d'une ligne de facture : le libellé de l'organisme est
+// la seule chaîne, lue dans l'en-tête et bornée à sa forme.
+//
+// LE DESTINATAIRE DU RÈGLEMENT (BOR1-Q2 (B), réponse du cabinet du 18/11/2026) : la ligne « Destinataire du réglement : … »
+// doit être là (elle est de la forme de l'en-tête), mais son libellé, quel qu'il soit, est ACCEPTÉ et JAMAIS RENDU, ni même
+// analysé : il n'entre ni dans le résultat, ni dans une raison de refus, ni dans une comparaison entre pages. Un libellé autre
+// que « Partenaire de santé » (l'assuré remboursé lui-même, par exemple) pourrait porter un nom de personne : c'est la raison
+// de ne rien en garder. Le lot se compte toujours comme en tiers payant : ce qui est dû au praticien par l'assurance maladie
+// est la caisse plus la mutuelle (conception 59, § 12.3), quel que soit ce libellé.
 //
 // CE QUI EST LU ET JAMAIS RENDU : chaque ligne de facture est COMPTÉE (contre le nombre annoncé) et ses quatre montants
 // ADDITIONNÉS (contre les totaux, au centime). Rien d'autre d'une ligne n'est analysé : ni le numéro de facture, ni la date
 // de prescription, ni le numéro d'assuré, ni le nom du bénéficiaire, ni sa date de naissance — et rien d'une ligne, pas même
 // un montant, n'entre dans une raison de refus, qui ne dit que le bordereau, la page et le rang de la ligne. L'identité et le
 // numéro d'assurance maladie du praticien, le nom et l'adresse de la caisse sont lus comme des lignes d'en-tête, et ignorés.
+//
+// LE CONTRÔLE « TOTAL = CAISSE + MUTUELLE + ASSURÉ » SUR CHAQUE LIGNE RESTE (BOR1-Q3 (A), réponse du cabinet du 18/11/2026).
 //
 // CE QUI N'EST PAS SÛR SE REFUSE, TOUT ENTIER, AVEC SA RAISON : titre absent, en-tête de lot ou d'organisme illisible, en-tête
 // des colonnes non reconnu, ligne du tableau non reconnue, total absent, nombre de lignes différent du nombre annoncé, sommes
@@ -49,9 +58,6 @@ export interface FragmentDeTexte {
 /** Une page : ses lignes déjà recomposées, ou ses fragments positionnés. */
 export type PageDeTexte = { lignes: readonly string[] } | { fragments: readonly FragmentDeTexte[] }
 
-/** Le destinataire du règlement : la liste fermée des valeurs vues sur une page réelle (BOR0). */
-export type DestinataireDuReglement = 'partenaire_de_sante'
-
 export interface TotauxDuBordereau {
   totalCentimes: number
   caisseCentimes: number
@@ -71,7 +77,6 @@ export interface BordereauLu {
     /** Le libellé imprimé après le code (« CPAM - VILLE ») : lettres, espaces, tirets, apostrophes et points seuls. */
     libelle: string
   }
-  destinataireDuReglement: DestinataireDuReglement
   nombreDeFactures: number
   totaux: TotauxDuBordereau
 }
@@ -185,13 +190,14 @@ interface EnteteDuLot {
   creeLe?: string
   securise?: boolean
   organisme?: { code: string; libelle: string }
-  destinataire?: DestinataireDuReglement
+  /** La ligne « Destinataire du réglement » a été vue ; son libellé, jamais gardé. */
+  destinataireVu?: true
 }
 
 type ChampDEntete = { champ: 'lot'; lot: number; creeLe: string }
   | { champ: 'securise'; securise: boolean }
   | { champ: 'organisme'; code: string; libelle: string }
-  | { champ: 'destinataire'; destinataire: DestinataireDuReglement }
+  | { champ: 'destinataire' }
   | { champ: 'illisible'; raison: string }
 
 /** Une ligne d'en-tête reconnue, illisible (son intitulé est là, sa valeur ne se lit pas), ou nulle (une autre ligne). */
@@ -212,12 +218,8 @@ function champDEntete(originale: string, normalisee: string): ChampDEntete | nul
     }
     return { champ: 'organisme', code: m[1], libelle }
   }
-  if (/^destinataire du reglement\s*:/.test(normalisee)) {
-    if (normalisee.replace(/^destinataire du reglement\s*:\s*/, '') === 'partenaire de sante') {
-      return { champ: 'destinataire', destinataire: 'partenaire_de_sante' }
-    }
-    return { champ: 'illisible', raison: 'le destinataire du règlement n’est pas « Partenaire de santé », la seule valeur connue' }
-  }
+  // Le libellé qui suit les deux-points n'est ni lu ni gardé (BOR1-Q2 (B)) : seul l'intitulé compte.
+  if (/^destinataire du reglement\s*:/.test(normalisee)) return { champ: 'destinataire' }
   return null
 }
 
@@ -248,7 +250,7 @@ function poserChamp(entete: EnteteDuLot, champ: Exclude<ChampDEntete, { champ: '
       entete.organisme = { code: champ.code, libelle: champ.libelle }
       return null
     case 'destinataire':
-      entete.destinataire = champ.destinataire
+      entete.destinataireVu = true
       return null
   }
 }
@@ -384,7 +386,7 @@ export function lireBordereauxDeTeletransmission(pages: readonly PageDeTexte[]):
     if (e.lot === undefined || e.creeLe === undefined) return refus(`${ici} : ${NOMS_DES_CHAMPS.lot} sont absents`)
     if (e.securise === undefined) return refus(`${ici} : ${NOMS_DES_CHAMPS.securise} est absente`)
     if (e.organisme === undefined) return refus(`${ici} : ${NOMS_DES_CHAMPS.organisme} est absent`)
-    if (e.destinataire === undefined) return refus(`${ici} : ${NOMS_DES_CHAMPS.destinataire} est absent`)
+    if (e.destinataireVu === undefined) return refus(`${ici} : ${NOMS_DES_CHAMPS.destinataire} est absent`)
     if (b.total === null) return refus(`${ici} : la ligne de total est absente`)
     if (b.lignesDeFacture === 0) return refus(`${ici} : aucune ligne de facture`)
     if (b.lignesDeFacture !== b.total.nombre) {
@@ -402,7 +404,6 @@ export function lireBordereauxDeTeletransmission(pages: readonly PageDeTexte[]):
       creeLe: e.creeLe,
       securise: e.securise,
       organisme: { code: e.organisme.code, libelle: e.organisme.libelle },
-      destinataireDuReglement: e.destinataire,
       nombreDeFactures: b.total.nombre,
       totaux: { totalCentimes: total, caisseCentimes: caisse, mutuelleCentimes: mutuelle, assureCentimes: assure },
     })

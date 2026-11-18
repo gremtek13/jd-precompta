@@ -348,6 +348,9 @@ verse d'elle-même au semestre suivant).
 | BOR6 | Les points d'attention (avec NOE6) ; le refus d'un bordereau au dépôt et à la réception par e-mail (avec NOE7) | BOR5, BOR-Q9 |
 | BOR7 | La mise en production : la migration, le drapeau levé, les essais, les trois contrôles de l'export | tout |
 
+**Ce tableau est celui d'origine ; le plan remis à jour sur les réponses du cabinet du 18/11/2026 est au § 13.5** (et le § 4.3,
+pour le numéro du lot, se lit avec le § 13.3).
+
 Si BOR-Q1 répond « le bordereau des paiements » : ce PDF est du **payé**, et il nourrit NOE (un gabarit PDF dans
 `lib/paiementsAssuranceMaladie.ts`, qui ne lit aujourd'hui qu'un CSV) avant de nourrir BOR. BOR1 sert aux deux.
 
@@ -625,6 +628,208 @@ de ce qui suit n'en recopie une valeur : seule sa **forme** est décrite.
     "options": ["(A) « CPAM » vaut le régime 01, tout autre libellé attend", "(B) Celui qui importe choisit le régime, dans une liste fermée", "(C) Rapprocher sur le seul code de caisse"],
     "option_recommandee": "A",
     "source": "Code de la sécurité sociale, art. L. 211-1 (Légifrance) ; docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 12.3",
+    "pose": "2026-11-18"
+  }
+]
+```
+
+## 13. Les réponses du cabinet du 18/11/2026
+
+Quatorze réponses (page des arbitrages, relue le 18/11/2026 à 14 h UTC) : BOR-Q1 à Q9 et BOR1-Q1 à Q5. Sept ne suivent pas la
+recommandation (BOR1-Q1, BOR1-Q2, BOR1-Q4, BOR-Q3, BOR-Q5, BOR-Q7, BOR-Q8 — et BOR1-Q5 par sa note). Ce qui suit dit ce que
+chacune change ; rien n'est appliqué en base.
+
+### 13.1 Ce que le code a changé le 18/11/2026 (sans base, sans écran)
+
+- **BOR1-Q2 (B)** — tout libellé du destinataire du règlement est accepté et **jamais rendu** : le champ
+  `destinataireDuReglement` et son type sont retirés de `BordereauLu` ; la ligne « Destinataire du réglement : … » doit être
+  là (elle est de la forme de l'en-tête, son absence se refuse), mais ce qui suit les deux-points n'est ni analysé, ni comparé
+  d'une page à l'autre, ni cité dans un refus — un libellé autre que « Partenaire de santé » peut nommer une personne. Le lot se
+  compte toujours **comme en tiers payant** : le dû par l'assurance maladie est la caisse plus la mutuelle (§ 12.3). Le risque
+  accepté : un lot dont l'assuré est le destinataire (s'il en existe) serait compté comme dû au praticien ; rien ne le
+  signalera, puisque le libellé n'est pas lu.
+- **BOR1-Q3 (A)** — le contrôle « Total = Caisse + Mutuelle + Assuré » **par ligne** reste tel quel : rien n'a changé dans le
+  module, un cas de plus le garde (`bordereauDeTeletransmission.test.ts`).
+- **BOR1-Q4 (B)** — l'outil local `outils/bordereau/lire.mjs` : Node, sans réseau ni dépendance nouvelle, par le MÊME code
+  que l'application (`lib/bordereauDeTeletransmissionLecture.ts`, pdf.js hors navigateur comme dans les tests). Il n'affiche
+  que l'en-tête de chaque lot, le régime tiré du libellé (§ 13.2), les quatre totaux et le dû (caisse + mutuelle), ou la raison
+  du refus ; ni une ligne de facture, ni le libellé du destinataire, ni le chemin du fichier ; la console est rendue muette
+  pendant la lecture (pdf.js y écrit : une mutation qui la rouvre fait virer le test au rouge). Son mode d'emploi, en trois
+  lignes, est en tête du fichier. `src/lib/bordereauOutilLocal.test.ts` le joue dans un processus à part sur un PDF fictif
+  (`src/test/bordereauFictif.ts`, désormais partagé avec le test de la lecture). Un refus se rapporte par sa SEULE raison :
+  elle dit le bordereau, la page et le rang de la ligne, jamais une valeur, et le gabarit se corrige sur elle.
+- **BOR1-Q5, la note « tu peux pas voir les autres régimes ? et les mettre tous ? »** — `lib/regimesAssuranceMaladie.ts`
+  (§ 13.2), qui n'est encore branché que dans l'outil local ; BOR2 l'appellera.
+
+### 13.2 Les grands régimes (BOR1-Q5)
+
+**La liste**, fermée, est celle du jeu de valeurs **JDV_Code_regime** de l'Agence du numérique en santé (Terminologies de
+santé, OID 1.2.250.1.213.3.4.134, version du 22/03/2024, codes du système 1.2.250.1.213.3.3.104), recopiée ligne à ligne,
+chaque ligne portant sa source dans le code : 1 CPAM, 2 MSA, 3 RSI, 4 SNCF, 5 RATP, 6 ENIM, 7 MINES, 8 CNMSS, 9 CPM Banque de
+France, 10 CRPCEN, 12 RSAM CCIP, 14 Assemblée nationale, 15 SENAT, 16 PORT AUTONOME DE BORDEAUX, 17 Français à l'étranger,
+80 MINISTERE DES ANCIENS COMBATTANTS, 90 CAMAC, 91 MGEN, 92 MG, 93 MGP, 94 MFP, 95 MNH, 96 MNAM, 99 SLM — vingt-quatre lignes,
+toutes dans le champ `regime` de NOE3 (0 à 99). La ligne 1 cite aussi le code de la sécurité sociale (art. L. 211-1 : les
+caisses primaires sont des organismes du régime général) ; la ligne 3 cite la loi n° 2017-1836 du 30 décembre 2017 (art. 15,
+la suppression du régime social des indépendants : un libellé « RSI » ne peut venir que d'un ancien lot).
+
+**La règle de rattachement**, la seule : le premier segment du libellé imprimé, avant le premier « - » (« CPAM » dans « CPAM -
+VILLE »), comparé sans accents, casse ni espaces doubles à l'intitulé d'une ligne, **à l'identique** ; jamais une sous-chaîne,
+jamais la ville, jamais le code de caisse (le même code existe sous plusieurs régimes). Sinon : **« à choisir par celui qui
+importe »**, dans la même liste fermée (`regimeChoisi`), jamais deviné.
+
+**Ce que les sources consultées ne disent pas** :
+
+- comment Télévitale **imprime** l'organisme d'un autre régime que le régime général : seule une page « CPAM » a été vue.
+  Qu'un lot de la MSA s'imprime « MSA - … » est vraisemblable, pas vérifié ; un autre libellé tombe à « à choisir », jamais
+  sous un régime faux. Le seul faux positif possible serait un libellé dont le premier segment est l'intitulé d'un AUTRE
+  régime que le sien, ce qu'aucune source n'annonce ;
+- les caisses générales de sécurité sociale d'outre-mer (« CGSS »), les caisses communes, la CAMIEG, le régime local
+  d'Alsace-Moselle : aucune ligne du jeu ne porte leur sigle — « à choisir » ;
+- le sens de l'intitulé « CAMAC » (code 90) : recopié tel quel ;
+- que le **code de caisse à trois chiffres** du bordereau soit celui que porte le paiement NOEMIE de la même caisse (le champ
+  `caisse` de NOE3) : la forme du payé chez Télévitale n'est pas connue (NOE1 attend la page du bordereau des paiements) ;
+- la structure régime (deux chiffres), caisse (trois), centre (quatre) du code d'un organisme n'est attestée que par des
+  sites secondaires (comparateurs d'assurance), pas par une page d'ameli.fr ni du GIE SESAM-Vitale qui ait pu être lue : le
+  module ne s'en sert pas.
+
+### 13.3 Le numéro du lot gardé en base (BOR1-Q1 (C), contre la recommandation)
+
+**Ce que la décision rouvre.** La conception 53 (§ 3) écarte, pour le payé, le numéro d'une facture et celui d'un lot, et
+jusqu'à leur empreinte : dans le logiciel du praticien, un lot désigne un ensemble de factures, donc de patients ; gardé ici,
+il serait un **pseudonyme** (RGPD, art. 4, 5°, et considérant 26). La présente conception reprenait la règle (§ 4.3). La
+décision du cabinet ne porte que sur le **facturé** : NOE3 et le payé restent sans numéro de lot (BOR-Q4 (A), ci-dessous, n'a
+pas pris l'option « des deux côtés »), et la conception 53 reste vraie pour eux.
+
+**La contradiction avec « aucune donnée de patient »** (la décision du 16/11/2026). Un numéro de lot n'est pas une donnée de
+patient en lui-même ; il le devient par le logiciel du praticien, qui le relie à des factures, donc à des personnes et à des
+soins. Gardé avec sa date, sa caisse et ses montants, il fait de chaque lot du facturé une donnée **pseudonymisée**, qui reste
+une donnée personnelle — et, parce qu'elle porte sur des soins, une donnée concernant la santé de ces personnes. C'était déjà
+vrai d'un agrégat d'un jour où une seule facture est partie (§ 4.3, « ce que la base apprendrait de plus ») ; le numéro rend le
+lien **certain** au lieu de probable. RGPD.md (§ 8.7, la condition de l'absence d'hébergeur de données de santé) se relit à
+BOR3 : il faudra y écrire ce qui est gardé et pourquoi, et le cabinet l'approuver.
+
+**Ce que cela change à la base (BOR3)** — sans en changer le grain :
+
+- **Le grain du facturé reste celui de BOR-Q4 (A)** : par jour (la date de création du lot, § 12.3), organisme et part. Le
+  numéro ne devient pas une colonne des montants : il entre dans un **registre des lots importés**, à part, qui ne sert qu'à
+  refuser un lot déjà importé — ce qui concilie les deux réponses.
+- **Le registre** : `lots_teletransmission_importes` (le dossier, l'import qui l'a apporté, l'identification du lot, sa date de
+  création, l'auteur et l'instant posés par la base), sous une contrainte **totale** `unique (dossier_id, identification du
+  lot, date de création)` — la date entre dans la clé parce que rien n'établit qu'un numéro de lot de Télévitale ne recommence
+  jamais (une réinstallation, un changement de poste) ; un même lot réimprimé garde sa date de création.
+- **Les montants** se rangent sous l'import (`unique (dossier_id, import_id, date, régime, caisse, part)`) et se somment à la
+  lecture : ce n'est plus la clé naturelle seule qui empêche le double compte (comme dans NOE3), c'est le registre. Un import
+  peut alors porter un lot seul, sans les « journées entières » qu'exigeait le § 7 ; retirer un import retire ses montants et
+  ses lots d'un même geste.
+- **Ce que le client « Banque » en lit** (BOR-Q8 (A) : il importe, comme le cabinet) : les agrégats, comme dans NOE3, et un refus
+  « ce lot a déjà été importé le … », rendu par la fonction d'import. **Aucune policy de lecture sur le registre**, pour
+  personne : il se lit par la fonction seule (une table sans policy, comme `connexions_plateformes`), qui ne rend jamais
+  l'identification d'un lot.
+- **Le plan de sauvegarde** : le registre y entre (sinon une restauration rouvrirait les doublons), derrière le drapeau de BOR3.
+
+**Le garde-fou recommandé : une empreinte à clé secrète, plutôt que le numéro.** Une empreinte salée calculée dans le
+navigateur ne protège rien : le sel serait lisible par qui importe, et un numéro de lot n'a que quelques milliers de valeurs —
+il se retrouve en une fraction de seconde. L'empreinte utile est un **HMAC-SHA-256 sous une clé propre au dossier, tirée et
+gardée par la base** (une table sans policy, que seule la fonction d'import lit) : le navigateur envoie le numéro et la date à
+la fonction, qui calcule l'empreinte, la compare au registre, la garde et oublie le numéro. Elle suffit à reconnaître le doublon
+(c'est le seul usage que le cabinet a nommé) ; elle ne rend pas la donnée anonyme (la base, qui a la clé, peut toujours
+recalculer l'empreinte d'un numéro donné), mais aucune lecture, aucun export, aucun journal ne porte plus un numéro du logiciel
+du praticien. Le prix : l'écran ne pourra jamais dire « le lot n° N » d'un import passé, seulement sa date et ses totaux ; et la
+sauvegarde doit porter la clé du dossier avec le registre (ou la restauration perd la reconnaissance des doublons). Parce que ce
+garde-fou change ce que le cabinet a décidé (« le numéro gardé »), il lui est posé : **BOR1Q1-Q1**.
+
+### 13.4 Les autres réponses
+
+- **BOR-Q1 (C), les deux bordereaux** : celui de télétransmission a été montré (§ 12) ; celui des paiements (« Paiement Noemie
+  par journée comptable ») reste attendu — il nourrit NOE1, pas BOR.
+- **BOR-Q2 (D)** : un état sans patient pour le facturé dès qu'un tel état suffit, le suivi tiers payant pour le reste dû. Aucun
+  état sans patient n'a été montré ; avec BOR-Q3 (B), il ne reste que les statistiques « Chiffre d'affaires par caisse » et
+  « … par organisme complémentaire » et le journal des lots (§ 1.3). Tant qu'aucun n'est montré, le bordereau de
+  télétransmission, lu sans qu'une valeur d'une ligne sorte (BOR1), est la source du facturé — l'option D le prévoyait « si rien
+  d'autre ne se lit ».
+- **BOR-Q3 (B), contre la recommandation** : aucune requête demandée à l'éditeur ; la voie d'un fichier sans patient à la source
+  est fermée, le PDF nominatif lu dans le navigateur devient la voie ordinaire.
+- **BOR-Q4 (A)** : le jour, l'organisme et la part, sans numéro de lot dans le grain — tenu avec BOR1-Q1 (C) par le registre à
+  part (§ 13.3).
+- **BOR-Q5 (B), contre la recommandation** : par organisme complémentaire, sous son numéro, pour le facturé comme pour le payé.
+  **L'écart** : le bordereau de télétransmission n'imprime la part complémentaire qu'en un montant par ligne et un total par lot,
+  sans organisme (§ 12.3) ; de lui, seul un total « organisme complémentaire non dit » se lit. Il faudrait lire, en plus : la
+  statistique « Chiffre d'affaires par organisme complémentaire » (le facturé, par mutuelle), ou le suivi tiers payant (s'il
+  porte l'organisme de chaque facture), et, pour le payé, les retours NOEMIE des complémentaires (chacune envoie le sien, sous
+  son numéro). **Ce que cela change à NOE3 (préparée, pas appliquée)** : le payé range la part complémentaire sous `regime` et
+  `caisse`, deux petits entiers faits pour une caisse ; le numéro d'un organisme complémentaire n'y tient pas (sa forme
+  publique n'est pas établie ici : ni sa longueur, ni sa structure). NOE3 doit recevoir, avant d'être collée, une colonne de
+  plus — un entier, jamais un texte, nul pour la part obligatoire — et sa clé d'unicité s'étendre à elle. En attendant, le
+  total du bordereau se range sous un organisme complémentaire non dit (**BORQ5-Q1**).
+- **BOR-Q6 (A)** : le reste dû lu quand l'état existe, estimé sinon et dit « estimé ». Aucun suivi tiers payant n'a été montré :
+  BOR5 commence par le niveau 1 seul (§ 6.2).
+- **BOR-Q7 (B), contre la recommandation** : au MVP, en entier. Le facturé rejoint NOEMIE (NOE-Q5) dans le MVP ; la 2035 de
+  2026 n'en dépend toujours pas (les recettes sont les crédits du relevé). Le calendrier : BOR3 se colle avec NOE3 et NOE5
+  (NOE3-quand (A) : après les PDF rendus anonymes).
+- **BOR-Q8 (A), contre la recommandation** : le praticien et le cabinet lisent un bordereau, comme NOEMIE. **Le risque** : le
+  § 8.7 de RGPD.md fonde l'absence d'hébergeur de données de santé sur la consigne « le praticien ne transmet pas ses
+  bordereaux à son cabinet ». Que le cabinet lise un bordereau dans son navigateur ne range rien de nominatif ; mais le fichier
+  doit lui parvenir, hors de l'application — et l'adresse de collecte l'écartera (BOR-Q9). La façon dont il lui parvient se pose
+  au cabinet : **BORQ8-Q1**.
+- **BOR-Q9 (A)** : refusé au dépôt dans le navigateur, écarté à la réception par e-mail, comme un retour NOEMIE (NOE-Q6). La
+  forme est connue (le titre « Bordereau de Teletransmission » en tête de la première page) : au dépôt, la lecture du titre par
+  pdf.js dans le navigateur suffit. **À la réception, ce n'est pas établi** : `receive-email` ne lit pas le texte d'un PDF
+  aujourd'hui ; l'écarter sans l'envoyer d'abord au stockage et à Textract demande d'y lire la couche de texte de la première
+  page, dans l'Edge Function — la faisabilité (pdf.js sous Deno, son poids, le mur de 150 s) est à mesurer en BOR6.
+
+### 13.5 Le plan des lots, remis à jour
+
+| Lot | Ce qu'il fait | Taille | Préalable |
+|---|---|---|---|
+| BOR0 | Sans code. Restent : la page rendue anonyme du bordereau des paiements (NOE1), une page des statistiques « par caisse » et « par organisme complémentaire » (BOR-Q2, BOR-Q5), une page du suivi tiers payant (BOR-Q6) ; **le premier passage de l'outil local** sur un vrai bordereau, dont la sortie (ou la raison) se rapporte telle quelle | — | le cabinet |
+| BOR1 | **Fait** (§ 12.2), et le 18/11/2026 après-midi : BOR1-Q2 (B), le contrôle par ligne gardé (BOR1-Q3), la liste des régimes (§ 13.2), l'outil local (§ 13.1) | fait | — |
+| BOR2 | `lib/factureAssuranceMaladie.ts`, pur et sans sortie : des bordereaux lus aux agrégats (la date de création du lot ; le régime reconnu ou choisi, la caisse au code imprimé ; la part obligatoire = « Caisse », la part complémentaire = « Mutuelle » sous un organisme non dit ; « Assuré » non gardé) ; l'identification des lots pour le registre ; le scanner « sans sortie » étendu, le canari | moyen (un module, ses tests) | BOR1Q1-Q1, BORQ5-Q1 |
+| BOR3 | La migration préparée, par l'outil, drapeau baissé : l'import, le facturé sous son import, le registre des lots (et la clé du dossier si BOR1Q1-Q1 (A)), la fonction d'import tout ou rien, la RLS (le cabinet et le client « Banque »), la restrictive `deux_facteurs` sous condition, la porte devant les gardes, l'essai SQL, le plan de sauvegarde derrière le drapeau ; **et NOE3 amendée avant son collage** (l'organisme complémentaire, BOR-Q5 (B)) ; RGPD.md relu | grand (la base : toute la rigueur) | BOR2, BOR1Q1-Q1, BORQ5-Q1 |
+| BOR4 | L'écran, dans la section NOEMIE de l'onglet Banque et de « Ma banque » : le fichier lu dans le navigateur, le régime « à choisir » quand le libellé ne le dit pas, les agrégats avant le clic, « lot déjà importé le … » | moyen | BOR3, BORQ8-Q1 |
+| BOR5 | `lib/duContrePaye.ts` et la section « Facturé à l'assurance maladie » : le niveau 1 (estimé) seul tant qu'aucun suivi tiers payant n'est lu, par organisme et par part (par mutuelle quand elle est connue) | moyen | BOR3, NOE3 |
+| BOR6 | Les points d'attention (avec NOE6) ; le refus au dépôt (le titre, dans le navigateur) ; l'écart à la réception par e-mail, après la mesure de sa faisabilité dans `receive-email` | moyen à grand (une Edge Function) | BOR5, BOR-Q9 |
+| BOR7 | La mise en production, avec NOE3 et NOE5 : les migrations, les drapeaux, les essais, les trois contrôles de l'export | petit | tout, et les PDF rendus anonymes (NOE3-quand) |
+
+Ordre : BOR0 (le cabinet) en parallèle de BOR2, puis BOR3 → BOR4 → BOR5 → BOR6 → BOR7. Au MVP (BOR-Q7 (B)).
+
+### 13.6 Les questions nouvelles
+
+```json
+[
+  {
+    "id": "BOR1Q1-Q1",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR3)",
+    "titre": "Le numéro du lot en base : en clair, ou une empreinte à clé secrète ?",
+    "question": "Pour reconnaître un lot importé deux fois, la base garde-t-elle le numéro du lot en clair, ou seulement une empreinte calculée par la base sous une clé secrète propre au dossier ?",
+    "contexte": "Tu as décidé (BOR1-Q1 (C)) de garder le numéro du lot pour refuser un lot importé deux fois. Dans le logiciel du praticien, un numéro de lot désigne un ensemble de factures, donc de patients : gardé, il est un pseudonyme, et une donnée concernant la santé (RGPD, art. 4, 5°). Une empreinte salée dans le navigateur ne protégerait rien (quelques milliers de numéros possibles). Une empreinte HMAC calculée par la base, sous une clé du dossier qu'aucune lecture ne rend, suffit à refuser le doublon ; aucune lecture, aucun export, aucun journal ne porte plus le numéro. Le prix : l'écran ne dira jamais « le lot n° N » d'un import passé, seulement sa date et ses totaux.",
+    "recommandation": "(A) : l'empreinte à clé secrète — elle fait ce que tu as demandé (reconnaître le doublon) sans garder le numéro du logiciel du praticien.",
+    "options": ["(A) Une empreinte calculée par la base, sous une clé secrète du dossier", "(B) Le numéro en clair, lisible par le cabinet et le praticien", "(C) Revenir à BOR1-Q1 (A) : le numéro montré, jamais gardé ; le doublon jugé sur la date et les totaux"],
+    "option_recommandee": "(A) Une empreinte calculée par la base, sous une clé secrète du dossier",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 13.3 ; conception 53 § 3",
+    "pose": "2026-11-18"
+  },
+  {
+    "id": "BORQ5-Q1",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR2 et BOR3)",
+    "titre": "La mutuelle d'un bordereau, qui ne la nomme pas",
+    "question": "Tant qu'aucun état ne nomme l'organisme complémentaire, le total « Mutuelle » d'un bordereau se garde-t-il sous un organisme complémentaire « non dit » ?",
+    "contexte": "Tu as choisi de suivre les complémentaires une par une, sous leur numéro (BOR-Q5 (B)). Le bordereau de télétransmission n'imprime la part mutuelle qu'en montants, sans organisme. Pour la détailler, il faudrait lire en plus la statistique « Chiffre d'affaires par organisme complémentaire » de Télévitale ou le suivi tiers payant, et, pour le payé, les retours NOEMIE des complémentaires. La table des paiements (NOE3, pas encore appliquée) recevra pour cela une colonne de plus avant d'être collée.",
+    "recommandation": "(A) : oui — le total se garde sous « non dit », et se détaille quand un état qui nomme la mutuelle sera montré (une page rendue anonyme de la statistique par organisme complémentaire).",
+    "options": ["(A) Oui : sous « non dit », détaillé plus tard", "(B) Ne pas garder la part mutuelle tant qu'elle n'est pas détaillée", "(C) Revenir à BOR-Q5 (A) : un seul total pour toutes les complémentaires"],
+    "option_recommandee": "(A) Oui : sous « non dit », détaillé plus tard",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 12.3 et § 13.4",
+    "pose": "2026-11-18"
+  },
+  {
+    "id": "BORQ8-Q1",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR4)",
+    "titre": "Comment le bordereau parvient au cabinet",
+    "question": "Quand c'est le cabinet qui importe un bordereau (BOR-Q8 (A)), comment le fichier lui parvient-il ?",
+    "contexte": "Le registre (RGPD.md § 8.7) fonde l'absence d'hébergeur de données de santé sur la consigne « le praticien ne transmet pas ses bordereaux à son cabinet ». L'application ne gardera rien du bordereau, mais le fichier, qui porte les noms des patients, doit arriver sur l'ordinateur du cabinet : par e-mail il passerait par une messagerie, et l'adresse de collecte du dossier l'écartera (BOR-Q9 (A)).",
+    "recommandation": "(A) : le praticien importe lui-même depuis « Ma banque » ; le cabinet n'importe que sur l'ordinateur du praticien, ou d'un fichier remis de la main à la main, jamais par e-mail — et RGPD.md § 8.7 le dit.",
+    "options": ["(A) Le praticien importe ; le cabinet seulement sur place ou de la main à la main, jamais par e-mail", "(B) Le praticien envoie le fichier au cabinet par e-mail (hors de l'adresse de collecte)", "(C) Revenir à BOR-Q8 (B) : un état nominatif ne se lit que dans l'espace du praticien"],
+    "option_recommandee": "(A) Le praticien importe ; le cabinet seulement sur place ou de la main à la main, jamais par e-mail",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 13.4 ; RGPD.md § 8.7",
     "pose": "2026-11-18"
   }
 ]

@@ -570,6 +570,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (une page rendue anonyme, qui sert aussi NOE1) à BOR7, BOR-Q1 à Q9 → « BOR : CE QUI EST FACTURÉ À L'ASSURANCE MALADIE ».
   BOR1 (18/11/2026, sur une page réelle montrée, hors du dépôt) : `lib/bordereauDeTeletransmission.ts`, pur, rend l'en-tête du lot et
   ses quatre totaux, chaque ligne comptée et additionnée, jamais rendue ; tout doute refusé ; BOR1-Q1 à Q5 → « BOR0 ET BOR1 ».
+  Le 18/11/2026 (conception 59, § 13) : le destinataire du règlement accepté, jamais rendu ; les régimes de l'ANS (`lib/regimesAssuranceMaladie.ts`,
+  sinon « à choisir ») ; l'outil local `outils/bordereau/lire.mjs` ; le numéro du lot dans un registre à part, BOR1Q1-Q1, BORQ5-Q1, BORQ8-Q1
+  → « BOR : LES RÉPONSES DU CABINET, LES RÉGIMES, L'OUTIL LOCAL ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ».
 - **Le mode de règlement d'un mouvement** (EXP58-Q1 (B)) : en production depuis le 18/11/2026 (240, par l'outil), `MODE_DE_REGLEMENT_PREVU` levé — `lignes_bancaires.mode_reglement` (sept ModeRglt), posé par `poser_modes_de_reglement`
