@@ -12,6 +12,12 @@ import { parseDateBancaire } from './csv'
 // ou que le cabinet choisit, et de l'élément DTAVAIL d'une opération OFX (`releveOfxQif.ts`) ; le QIF n'en porte pas, un PDF
 // non plus (sa seconde date peut être une date d'achat rappelée). Jamais devinée : une cellule vide n'en donne pas, une date
 // qui ne se lit pas, ou trop loin de la date d'opération, s'écarte et se COMPTE — le mouvement s'importe sans elle.
+//
+// DEUX RÉPONSES DU CABINET DU 18/11/2026, sans code aujourd'hui. EXP58Q4-Q2 (B) : les relevés du praticien s'acceptent en PDF
+// tels quels, sans date de valeur — rien ne change à l'import, et ses mouvements de 2025 et 2026 entrent sans elle. EXP58Q4-Q1
+// (A), POUR L4 (l'emploi, après le MVP) : le rattachement par la date de valeur ne vaut que vers un exercice NON VALIDÉ ; un
+// mouvement de janvier dont la date de valeur tombe en décembre d'un exercice validé reste à l'année de sa date d'opération,
+// et l'écran le dit.
 
 /** Le drapeau de la migration `date_de_valeur_des_mouvements` (EXP58-Q4, en production depuis le 17/11/2026, 237) : baissé,
  *  l'import lit, montre et écrit ce qu'il lisait hier, à l'octet, et la fiche d'un mouvement ne dit rien de plus — la colonne
