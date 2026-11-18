@@ -53970,3 +53970,19 @@ Rapporté par le cabinet le 18/11/2026, d'après un confrère (son nom n'entre p
 mesure du temps gagné par l'application n'existe (la base ne porte que des données fictives) ; la répétition générale de
 l'année 2025 réelle sera la première occasion de chronométrer les mêmes postes. Un repère pour l'offre du 17/11/2026
 → « LA PRIORITÉ DU 17/11/2026 ».
+
+### 18/11/2026 — LE LOT L2, POINTS 6 ET 7 : LA CFP, LA CURPS ET LE VÉHICULE AU BARÈME NE SE FONT PAS SANS LA BASE
+
+(Agent architecte, conception 58 § 4.2, § 3.2 et § 12 ; ni code, ni base.) Chargé d'écrire sans migration ce que L2
+décide pour la CFP et la CURPS (en BS, non en BK) et la dotation du véhicule au barème (compte de l'exploitant / 28,
+hors de CH), l'agent n'a rien trouvé qui tienne seul. La CFP et la CURPS : aucune colonne ne porte leur part d'une
+échéance, aucun rôle du plan n'est un compte d'impôts, et deux fonctions recomposent au centime l'écriture d'une
+échéance (`rapprocher_cotisation`, `enregistrer_paiement_personnel_cotisation` ; « Autres impôts » est déjà dans les
+listes du FEC de `valider_exercice`) ; une 2035 qui déplacerait seule la part laisserait la charge entière au 646 dans
+le FEC importé chez l'expert-comptable, et le 646 sur deux lignes. Le véhicule : `ecrire_dotation_amortissement`
+recompose 681100 / 28 et refuse toute autre écriture (la préparée du cumul repris la remplace déjà), et la concordance,
+qui retient la validation, ferait un écart (`non_comptee`) d'une dotation écrite que la 2035 ne compterait plus. Un
+module préparé derrière un drapeau baissé, avant la migration, est écarté : il arrêterait des choix que la base doit
+faire (la colonne, le compte, le partage entre échéances, la source de la ligne (B) de la 2035-SD). Quatre questions,
+EXP58-Q6 à Q9. Les chiffres, quand cela viendra : BK et BT baissent de la part, BS monte d'autant, le résultat ne bouge
+pas ; CH baisse de la dotation de chaque bien de transport l'année du barème, le résultat monte d'autant.
