@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import DossierParcours from './DossierParcours'
-import { GROUPES_PARCOURS } from '../lib/ongletsDossier'
+import { GROUPES_PARCOURS, groupesDuParcours } from '../lib/ongletsDossier'
+import { ModulesFournis } from '../context/ModulesOuverts'
+import { CAISSE_EXPORTEE } from '../lib/caisse'
+import { INVENTAIRE_EXPORTE } from '../lib/inventaire'
+import { MODULES_OPTIONNELS, TOUS_LES_MODULES, type ModuleOptionnel } from '../lib/modulesDuCabinet'
 
 // LA BARRE D'ONGLETS DU DOSSIER — la navigation du bas sur téléphone, et celle du haut quand la barre latérale est
 // réduite — déroule un groupe au clic et habille chaque écran de son icône (`ICONES_PARCOURS`). Le Bilan, ajouté à la
@@ -46,5 +50,41 @@ describe('DossierParcours — chaque groupe se déroule, chaque écran porte son
     render(<DossierParcours tab="bilan" onChange={() => {}} />)
     expect(screen.getByRole('button', { name: /^Comptabilité/ }).className).toContain('active')
     expect(screen.getByRole('button', { name: /^Vue d'ensemble/ }).className).not.toContain('active')
+  })
+})
+
+// LES MODULES DU CABINET (conception 56, OPT3) : la barre ne montre que les écrans des modules ouverts — tous ouverts, ceux
+// d'hier ; au socle seul, ni la tenue ni la facturation ; chaque module seul, ses écrans en plus. Chaque groupe montré se
+// déroule sur exactement les écrans que `groupesDuParcours` lui laisse.
+describe('DossierParcours — sous les modules du cabinet', () => {
+  const scenarios: [string, readonly ModuleOptionnel[]][] = [
+    ['tous ouverts', TOUS_LES_MODULES],
+    ['socle seul', []],
+    ...MODULES_OPTIONNELS.map((m): [string, readonly ModuleOptionnel[]] => [`${m} seul`, [m]]),
+  ]
+  for (const [nom, ouverts] of scenarios) {
+    it(`${nom} : les groupes et les écrans de ses modules, rien d’autre`, () => {
+      const attendus = groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, ouverts)
+      const { container } = render(
+        <ModulesFournis etat={{ etat: 'lus', ouverts }}><DossierParcours tab="checklist" onChange={() => {}} /></ModulesFournis>,
+      )
+      const boutons = [...container.querySelectorAll('.nav-groupe-bouton .nav-label-full')].map((b) => b.textContent)
+      expect(boutons).toEqual(attendus.map((g) => g.label))
+      for (const groupe of attendus.filter((g) => g.enfants)) {
+        const bouton = [...container.querySelectorAll('.nav-groupe-bouton')].find((b) => b.querySelector('.nav-label-full')?.textContent === groupe.label)!
+        fireEvent.click(bouton)
+        const menu = container.querySelector('.nav-menu') as HTMLElement
+        expect([...menu.querySelectorAll('button')].map((b) => b.textContent)).toEqual(groupe.enfants!.map((e) => e.label))
+        fireEvent.click(bouton)
+      }
+      if (ouverts.length === 0) {
+        const tous = attendus.flatMap((g) => [g.label, ...(g.enfants ?? []).map((e) => e.label)])
+        for (const ferme of ['Clôture', 'Bilan', 'Révision', 'Factures émises', 'Estimation']) expect(tous).not.toContain(ferme)
+      }
+    })
+  }
+
+  it('tous ouverts : la barre d’hier, au groupe et à l’écran près', () => {
+    expect(groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, TOUS_LES_MODULES)).toEqual(GROUPES_PARCOURS)
   })
 })
