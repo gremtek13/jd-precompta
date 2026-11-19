@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { OPTIONS_DES_CABINETS_PREVUES, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
+import { OPTIONS_DES_CABINETS_EN_BASE, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
 import {
   auPlanAujourdHui,
   auPlanDesOptionsDesCabinets,
@@ -18,7 +18,7 @@ import {
 // LES OPTIONS DES CABINETS AU PLAN DE SAUVEGARDE (conception 56, OPT1). Leur migration, `options_des_cabinets`, est
 // préparée, pas appliquée : tant que l'export ne la porte pas, le plan effectif ne doit RIEN dire de la table — une
 // sauvegarde lirait une table absente —, et le plan PRÉVU doit déjà être juste, pour que lever
-// `OPTIONS_DES_CABINETS_PREVUES` suffise le jour venu. Une table de niveau cabinet : hors de l'export d'un dossier
+// `OPTIONS_DES_CABINETS_EN_BASE` suffise le jour venu. Une table de niveau cabinet : hors de l'export d'un dossier
 // (restaurer un dossier dans un autre cabinet ne lui donne pas les options de l'ancien, conception 56, § 7).
 
 const TABLE = 'options_des_cabinets'
@@ -33,7 +33,7 @@ describe('le filtre du plan, côté options des cabinets', () => {
     for (const table of ['cabinets', 'cabinet_admins', 'copies_des_fichiers', 'dossiers']) {
       expect(auPlanDesOptionsDesCabinets(table, false), table).toBe(true)
     }
-    expect(auPlanAujourdHui(TABLE)).toBe(OPTIONS_DES_CABINETS_PREVUES)
+    expect(auPlanAujourdHui(TABLE)).toBe(OPTIONS_DES_CABINETS_EN_BASE)
   })
 
   it('drapeau baissé, le plan effectif ne nomme pas la table — drapeau levé, partout', () => {
@@ -41,7 +41,7 @@ describe('le filtre du plan, côté options des cabinets', () => {
       ...RELATIONS.flatMap((r) => [r.enfant, r.parent]), ...ORDRE_RESTAURATION, ...Object.keys(CHEMINS_DOSSIER),
       ...Object.keys(CLES_PRIMAIRES),
     ])
-    expect(nommees.has(TABLE)).toBe(OPTIONS_DES_CABINETS_PREVUES)
+    expect(nommees.has(TABLE)).toBe(OPTIONS_DES_CABINETS_EN_BASE)
   })
 })
 

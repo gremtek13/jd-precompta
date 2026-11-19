@@ -36,7 +36,7 @@ import { COPIE_DES_FICHIERS_PREVUE } from './copieDesFichiers'
 import { STOCKS_PREVUS } from './stocks'
 import { EXERCICES_DECALES_PREVUS } from './exercices'
 import { AFFECTATION_PREVUE } from './affectationDuResultat'
-import { OPTIONS_DES_CABINETS_PREVUES } from './modulesDuCabinet'
+import { OPTIONS_DES_CABINETS_EN_BASE } from './modulesDuCabinet'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
@@ -165,7 +165,7 @@ describe('le filtre du plan', () => {
         && auPlanDesStocks(table, STOCKS_PREVUS)
         && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS)
         && auPlanDeLAffectation(table, AFFECTATION_PREVUE)
-        && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_PREVUES))
+        && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_EN_BASE))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)

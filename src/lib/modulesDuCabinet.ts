@@ -33,6 +33,11 @@ import type { DroitsAcces, Domaine } from './droitsAcces'
  *  table absente). Il se lève le jour de la migration (OPT7). */
 export const OPTIONS_DES_CABINETS_PREVUES = false
 
+// Le drapeau de la BASE, à part de celui des écrans (le patron de `COMPTES_BANCAIRES_EN_BASE`) : la migration
+// `options_des_cabinets` est en production depuis le 19/11/2026 (244), la table est donc au plan de sauvegarde ; les
+// écrans, eux, attendent `OPTIONS_DES_CABINETS_PREVUES`.
+export const OPTIONS_DES_CABINETS_EN_BASE = true
+
 /** La table que la migration pose : une table du CABINET, hors de l'export d'un dossier (conception 56, § 7). */
 export const TABLES_DES_OPTIONS_DES_CABINETS = ['options_des_cabinets'] as const
 
