@@ -1171,6 +1171,24 @@ begin
   end if;
 end $$;
 
+-- ══ Les options des cabinets (conception 56, OPT1) ══ Au plan du code quand `OPTIONS_DES_CABINETS_PREVUES` est levé —
+-- c'est-à-dire quand leur migration est en base : le script met leur table juste après `copies_des_fichiers`
+-- (ORDRE_RESTAURATION_PREVU : une table du cabinet, hors de l'export d'un dossier), les tables qui suivent reculant d'un
+-- rang ; son chemin (`cabinet`, que la restauration saute) ; aucune vague. Joué en dernier. Absente de la base, rien
+-- n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.options_des_cabinets') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'copies_des_fichiers';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'options_des_cabinets');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('options_des_cabinets','cabinet',null,null);
+  end if;
+end $$;
+
 do $$
 declare t text;
 begin

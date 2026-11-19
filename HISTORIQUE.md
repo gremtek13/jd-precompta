@@ -54098,3 +54098,18 @@ social suit la formule de la notice (il baisse de la part), à confronter à la 
 factures gardé avec un montant est celui des lots, un ordre de grandeur. Dit dans la conversation : le cabinet a cherché où
 ouvrir « précomptabilité seule » ou « comptabilité complète » sur un cabinet — les options par cabinet (conception 56) passent
 devant, OPT1 et OPT2 lancés ; « continue en autonomie ».
+### 19/11/2026 — OPT1 ET OPT2 : LES OPTIONS PAR CABINET, LE MODULE ET LA MIGRATION (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production, rien à l'écran.) Le cabinet cherchait où régler « précomptabilité seule » ou « comptabilité
+complète » : rien n'existait. OPT2, `lib/modulesDuCabinet.ts`, pur : le socle et huit modules, une dépendance (H suppose F), l'extinction
+gardée, les tables d'appartenance (22 onglets fermés par le compilateur, 17 + 8 routes, 7 cases, 16 Edge Functions, `send-email` par ses
+5 usages), les mots des refus ; `modulesDeclares.test.ts` part de tout, huit défauts plantés ; N n'a que des sections (OPT3). OPT1,
+`options_des_cabinets`, par l'outil : une ligne absente est un module fermé (OPT-Q3 (B)), les cabinets existants ont tout ouvert ;
+`regler_option_du_cabinet` au super-administrateur seul — ouvrir ouvre ce qui est supposé, fermer se refuse sous un module qui le suppose
+puis si un dossier dépend (F : une bascule ; E : un envoi sans issue connue, `envoi` seul, un « déposée » de Super PDP pouvant durer, OPT1-Q1 ;
+N : une association de NOE5), cinq dossiers nommés au plus ; `modules_ouverts_du_dossier` au cabinet et à tout accès client. § 2.6 confirmé
+sur la réplique (un chef levait son plafond de blocage), la garde des plafonds le refuse. Hors de l'export d'un dossier ; restauration.sql
+aligné. Copie de réplique à 242 : rc 0, seconde application refusée, retour refusé tant qu'un module est fermé puis signature égale (neuf
+familles) ; essai 12/12 et 12 mutations sur 12 ; l'essai de réplique (E et N posés sans leurs gardes, NOE3 et NOE5 dans les deux ordres)
+4/4 et 2 mutations sur 2 ; rls.sql 273 lignes, 0 en faute, 161 mutations sur 161 ; le banc SÛR. Fichier `974241b9…` (sans sa dernière fin
+de ligne `ca03b10b…`). Restent la fiche OPT1-migration, OPT1-Q1 à Q3, puis OPT3 et OPT4.
