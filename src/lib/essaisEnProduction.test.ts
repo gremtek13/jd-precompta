@@ -500,7 +500,7 @@ describe('les essais de la base, rejoués en production', () => {
     // Trente et un le même jour : `autresImpotsDesCotisations` sorti (EXP58-Q6 en production, 20261119120000, collée).
     // Trente-deux le même jour : `optionsDesCabinets` (OPT1, `options_des_cabinets`) entré dans la famille « apres », après sa
     // migration préparée ; joué sur une copie de la réplique à 242 (12 verdicts sur 12), SÛR au banc.
-    expect(cas.length).toBe(0)
+    expect(cas.length).toBe(32)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

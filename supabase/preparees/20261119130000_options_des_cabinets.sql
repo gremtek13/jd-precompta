@@ -4,7 +4,7 @@
 -- 19/11/2026, PAS APPLIQUÉE. Le récit : HISTORIQUE.md, « 19/11/2026 — OPT1 ET OPT2 : LES OPTIONS PAR CABINET, LE MODULE ET LA
 -- MIGRATION (PRÉPARÉE, PAS APPLIQUÉE) » ; la conception : docs/conceptions/56-options-par-cabinet.md ; l'essai :
 -- supabase/essais/optionsDesCabinets.sql (et, sur une réplique seulement, optionsDesCabinetsEnCours.sql) ; le bloc OC de
--- supabase/essais/rls.sql ; le retour : supabase/preparees/retour/20261119120100_retour_options_des_cabinets.sql ; le module
+-- supabase/essais/rls.sql ; le retour : supabase/preparees/retour/20261119130100_retour_options_des_cabinets.sql ; le module
 -- qui redit ses refus et ses libellés : src/lib/modulesDuCabinet.ts (`OPTIONS_DES_CABINETS_PREVUES`).
 --
 -- LA RÈGLE. L'application se découpe en un SOCLE toujours ouvert (la précomptabilité : les pièces, la banque, la caisse, le
