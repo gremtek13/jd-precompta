@@ -2684,7 +2684,7 @@ function rapprochementsCotisationRefuses(
 // redéploie (EXP58Q5-Q3). Baissé, `points_a_traiter` lit le registre par la liste de colonnes d'hier, à l'octet près : les deux
 // colonnes n'existent pas avant la migration, et une lecture qui les nommerait serait refusée en entier (le refus de lecture
 // partielle tairait alors toute la Checklist). Levé, il les lit, et une dotation du plan continué se juge comme la base l'écrit.
-const CUMUL_REPRIS_PREVU = false
+const CUMUL_REPRIS_PREVU = true
 
 interface ImmobilisationRow {
   id: string; nature_id: string | null; libelle: string; valeur: number

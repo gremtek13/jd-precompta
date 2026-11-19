@@ -29,7 +29,7 @@ import { estFigee } from './validationExercice'
 // la parité est éprouvée par amortissements.test.ts sur une table relevée en base.
 //
 // LE PLAN CONTINUÉ DEPUIS UN CUMUL REPRIS (EXP58-Q5, décision du cabinet du 17/11/2026 ; la migration préparée
-// `cumul_repris_des_biens`, supabase/preparees/20261117190000_cumul_repris_des_biens.sql). Un bien acquis avant la reprise du
+// `cumul_repris_des_biens`, supabase/schema/20261119080000_cumul_repris_des_biens.sql). Un bien acquis avant la reprise du
 // dossier peut porter le cumul de ses amortissements au 31 décembre qui précède l'année de l'ouverture, tel que l'ancien
 // tableau le porte (`cumul_repris`, `cumul_repris_au`). Ses dotations suivantes partent alors de la valeur nette restante,
 // répartie sur les jours qui restent du plan — au lieu du recalcul depuis la mise en service, qui s'écartait du 28 repris quand

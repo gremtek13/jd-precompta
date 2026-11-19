@@ -54044,3 +54044,16 @@ l'horloge), forme d'un lot, date impossible ou après aujourd'hui, montant hors 
 fois dans l'envoi (même sous deux dates), un choix de régime hors liste, double, absent ou inutile. 17 essais (de bout en bout par BOR1 ;
 le canari sur cent envois tirés d'une graine) ; le scanner de BOR1 étendu au module et à la liste des régimes, cinq défauts plantés ;
 10 mutations nommées, toutes mordent. La forme des tables reste à BOR3 ; RGPD.md non touché (BORQ8-Q1, à BOR3/BOR4).
+
+### 19/11/2026 — EXP58-Q5 EN PRODUCTION : LE CUMUL REPRIS D'UN BIEN (242)
+
+Collée par le cabinet le 19/11/2026 (le corps d'`ecrire_dotation_amortissement` porte un `delete`, que l'outil retient), sous la
+version 20261119080000 : le bloc d'hier redaté, rééprouvé le matin sur une copie de réplique portée à 241 (rc 0, essai 34 sur 34,
+second collage refusé). Vérifié en production : la ligne d'historique à l'empreinte du fichier sans sa dernière fin de ligne
+(`59098b22…`), les quatre corps de la garde de fin, les deux colonnes. Le fichier passe à l'export, texte inchangé ; le socle
+régénéré (cinq lignes dans `immobilisations`) ; les trois contrôles égaux des deux côtés — dérive 242 `8a723db3…`, socle 83
+`46cb5916…`, inventaire 3 268 `ab77b93c…`. `CUMUL_REPRIS_PREVU` levé dans `lib/cumulRepris.ts` et dans la copie de l'assistant,
+même commit ; l'essai sort de la famille « en attente » (31 essais de production). `agentComptableAuPlan.test.ts` : ses quatre
+empreintes relevées de nouveau — la lecture du registre (deux colonnes de plus) et la phrase de la consigne sur le plan continué.
+La suite entière : 23 411 tests verts. Reste, après la fusion : redéployer `agent-comptable` (v59 ne lit pas le cumul ; aucun
+bien n'en porte encore). Non fait : les essais `cumulReprisDesBiens.sql` et `dotations.sql` rejoués en production.

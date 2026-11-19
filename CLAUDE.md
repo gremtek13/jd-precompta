@@ -1229,8 +1229,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`achatsAImmobiliser`) ; la reprise se confronte au registre, compte par compte, en attention (IMMO-Q1) ; sous le
   barème, la catégorie « Carburant / déplacements » se dit (`carburant-sous-bareme`, VEH-Q1) → « LES IMMOBILISATIONS ET
   LE VÉHICULE : LE BIEN REPRIS, LA REPRISE CONFRONTÉE AU REGISTRE, LE CARBURANT SOUS LE BARÈME (IMMO-Q1, IMMO-Q2,
-  VEH-Q1) ». **Le cumul repris d'un bien** (EXP58-Q5, préparée, `CUMUL_REPRIS_PREVU` baissé ; l'assistant à reprendre à la levée) :
-  l'ancien tableau au 31/12 de la reprise, le plan continué depuis lui → « EXP58-Q5 : LE CUMUL REPRIS D'UN BIEN ».
+  VEH-Q1) ». **Le cumul repris d'un bien** (EXP58-Q5, en production depuis le 19/11/2026 (242, collée), `CUMUL_REPRIS_PREVU` levé dans l'application et l'assistant) :
+  l'ancien tableau au 31/12 de la reprise, le plan continué depuis lui → « EXP58-Q5 : LE CUMUL REPRIS D'UN BIEN », « EXP58-Q5 EN PRODUCTION ».
 - **La validation confronte la banque au relevé** (MVPD7-Q2 à Q5, confirmées le 04/11/2026) : sans balance reprise, un
   premier relevé parti d'un solde la bloque (`ouverture-sans-reprise`) ; un 512 qui diffère du relevé du 31/12 avertit
   (`banque-au-releve`, `lib/releveAuTrenteEtUn.ts`, la règle de la preuve de la Révision) ; drapeau des quatre champs

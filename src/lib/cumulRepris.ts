@@ -10,13 +10,13 @@ import { exerciceQuiFige } from './validationExercice'
 // module porte ce que l'écran en dit avant le clic — les refus des trois contraintes de la base et de sa garde, dans des mots
 // qui disent quoi corriger — et ce qu'il écrit. Le calcul vit dans lib/amortissements.ts, que la migration redit en entiers.
 
-/** Le drapeau de la migration `cumul_repris_des_biens` (supabase/preparees/20261117190000_cumul_repris_des_biens.sql), baissé
+/** Le drapeau de la migration `cumul_repris_des_biens` (supabase/schema/20261119080000_cumul_repris_des_biens.sql), levé le 19/11/2026 (collée, 242) ; baissé
  *  jusqu'à son application : l'onglet Immobilisations ne montre ni n'écrit le cumul repris — les colonnes n'existent pas
  *  encore, et une écriture qui les nommerait serait refusée en entier. Le moteur, lui, lit le cumul de tout bien qui en porte
  *  un, sans drapeau : sans la migration, aucun n'en porte. Il se lève le jour de l'application, dans le même commit que la
  *  constante de la copie de l'assistant (`agent-comptable`, bloc AMORTISSEMENT : la lecture du registre et la consigne), que
  *  src/lib/agentComptableAmortissement.test.ts veut dans le même état ; puis l'assistant se redéploie (EXP58Q5-Q3). */
-export const CUMUL_REPRIS_PREVU = false
+export const CUMUL_REPRIS_PREVU = true
 
 /** Le cumul tel que le champ le donne : vide, aucun cumul repris (le plan part de la mise en service) ; sinon le nombre lu,
  *  la virgule française valant le point, NaN s'il ne se lit pas — la lecture de la valeur d'un bien (`valeurSaisie`). */
