@@ -1,8 +1,9 @@
 -- RETOUR ARRIÈRE DE `paiements_assurance_maladie` (conception 53, NOE3) — DESTRUCTIF, À ACCORDER PAR LE CABINET, À COLLER
 -- dans l'éditeur SQL de Supabase, dans une transaction, avec sa ligne d'historique (le texte retire deux tables, leur garde
 -- et quatre fonctions). La migration : supabase/preparees/20261116191000_paiements_assurance_maladie.sql (préparée le
--- 16/11/2026, sous une version provisoire) ; le récit : HISTORIQUE.md, « 16/11/2026 — NOE1 ET NOE3 : LA LECTURE DES
--- PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE (PRÉPARÉE, PAS APPLIQUÉE) ».
+-- 16/11/2026, sous une version provisoire, amendée le 19/11/2026 avant tout collage : l'organisme complémentaire, BOR3) ; le
+-- récit : HISTORIQUE.md, « 16/11/2026 — NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE (PRÉPARÉE,
+-- PAS APPLIQUÉE) » et « 19/11/2026 — BOR3 ». Les empreintes ci-dessous sont celles des corps amendés.
 --
 -- L'ORDRE : D'ABORD l'application, son drapeau baissé (`PAIEMENTS_ASSURANCE_MALADIE_PREVUS`, le fichier de la migration sorti
 -- de l'export) et remise en ligne — levé, une sauvegarde lirait les tables —, PUIS ce texte.
@@ -30,11 +31,11 @@ begin
     raise exception 'La migration paiements_assurance_maladie n''est pas en base (ou ce retour est déjà fait) : rien à défaire.';
   end if;
   if (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.importer_paiements_assurance_maladie(uuid,jsonb)'))
-       is distinct from '01169d2aa2178c110c2d73a1c062ece2'
+       is distinct from '62b9f0f603ece252446552d81c39d24b'
      or (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.retirer_import_assurance_maladie(uuid)'))
        is distinct from '758c59154be4c08f680119c7cd0c1e4c'
      or (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.refus_de_l_import_assurance_maladie(jsonb,date)'))
-       is distinct from '2174298d2012a2cb0382599fe8d24eed'
+       is distinct from '690d81f6c0e1c08c5149466068f21370'
      or (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = to_regprocedure('public.garder_paiements_assurance_maladie()'))
        is distinct from '97548e624b2380eab867a53f3f850189' then
     raise exception 'Les fonctions des paiements de l''assurance maladie ne sont plus celles que la migration a posées : relire la base avant ce retour.';

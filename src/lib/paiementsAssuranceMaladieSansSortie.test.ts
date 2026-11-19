@@ -10,7 +10,9 @@ import { describe, expect, it } from 'vitest'
 //
 // ET AUCUN MOTEUR NE LIT LES DEUX TABLES (conception 53, §8 : la recette entrerait deux fois) : leurs noms ne paraissent dans
 // `src/` que là où la liste ci-dessous le dit, chaque fichier sous sa raison ; un lecteur nouveau se range ici, sa raison
-// avec lui, ou il est une faute. Le plancher : les fichiers de la liste existent et nomment bien une des tables.
+// avec lui, ou il est une faute. Le plancher : les fichiers de la liste existent et nomment bien une des tables. Le même
+// relevé pour les quatre tables du FACTURÉ (conception 59, § 5.1, BOR3) : le facturé n'est pas une recette, aucun moteur ne
+// le lit ; le registre des lots et la clé du dossier, aucun écran non plus (aucune policy ne les ouvre).
 
 const MODULE = 'src/lib/paiementsAssuranceMaladie.ts'
 const IMPORTS_PERMIS = new Set(['./csv'])
@@ -94,5 +96,34 @@ describe('aucun moteur ne lit les tables des paiements de l’assurance maladie'
 
   it('le plancher : chaque fichier de la liste existe et nomme une des tables', () => {
     expect(nommant).toEqual(Object.keys(LECTEURS_PERMIS).sort())
+  })
+})
+
+// Les fichiers de `src/` qui nomment une des quatre tables du facturé (BOR3), chacun sous sa raison.
+const LECTEURS_DU_FACTURE_PERMIS: Readonly<Record<string, string>> = {
+  'src/lib/importDuFactureAssuranceMaladie.ts': 'le module de l’import, qui nomme la fonction d’import et la migration',
+  'src/lib/importDuFactureAssuranceMaladie.test.ts': 'les essais du module, qui nomment la migration',
+  'src/lib/sauvegarde.ts': 'le plan de sauvegarde, derrière le drapeau',
+  'src/lib/sauvegardeFacturesAssuranceMaladie.test.ts': 'les essais du plan de sauvegarde',
+  'src/lib/restaurationEssai.test.ts': 'la garde de l’essai de restauration',
+  'src/lib/restaurationInterrompue.ts': 'ce que la restauration dit ne pas porter : le registre et la clé',
+  'src/lib/restaurationInterrompue.test.ts': 'les essais de ces mots, qui relisent la migration',
+  'src/lib/types.ts': 'le type des imports et des totaux',
+  'src/lib/paiementsAssuranceMaladieSansSortie.test.ts': 'ce relevé, qui nomme les tables qu’il cherche',
+}
+
+describe('aucun moteur ne lit les tables du facturé à l’assurance maladie', () => {
+  const racine = process.cwd()
+  const nommant = fichiers(resolve(racine, 'src'))
+    .filter((f) => /factures_assurance_maladie|lots_teletransmission_importes|cles_des_lots_teletransmission/.test(readFileSync(f, 'utf8')))
+    .map((f) => relative(racine, f).split('\\').join('/'))
+    .sort()
+
+  it('seuls les fichiers de la liste nomment les tables', () => {
+    expect(nommant.filter((f) => !(f in LECTEURS_DU_FACTURE_PERMIS))).toEqual([])
+  })
+
+  it('le plancher : chaque fichier de la liste existe et nomme une des tables', () => {
+    expect(nommant).toEqual(Object.keys(LECTEURS_DU_FACTURE_PERMIS).sort())
   })
 })

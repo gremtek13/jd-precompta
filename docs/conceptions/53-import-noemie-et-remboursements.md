@@ -301,3 +301,21 @@ retrait d'un import associé.
 - **Restent** : NOE5b, l'écran (la fiche d'un crédit et la section NOEMIE : la proposition justifiée, « Associer », « Défaire »,
   le lot, les contrôles ; `candidatsDuMouvement` qui écarte un crédit associé) ; à NOE8, la table au plan de sauvegarde et son
   bloc dans `rls.sql`, avec le drapeau `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES`.
+
+## 12. NOE3 amendée avant son collage (19/11/2026, avec BOR3)
+
+- **L'organisme complémentaire** (BOR-Q5 (B), BORQ5-Q1 (A) ; conception 59, § 13.4 et § 14.6) : `paiements_assurance_maladie`
+  reçoit `organisme_complementaire`, un entier de 1 à 9 999 999 999, de la seule part complémentaire, nul quand le fichier ne le
+  dit pas (« non dit ») ; il entre dans la forme d'un paiement (huit clés : la version 1 redéfinie, rien n'ayant été importé) et
+  dans la clé TOTALE, donc dans le conflit et « rien de neuf ». L'export CSV lu aujourd'hui ne le nomme pas : `lireLesPaiements`
+  l'envoie nul ; un réglage de colonne s'ajoutera quand un état qui le nomme sera montré.
+- **L'état des paiements de Télévitale** (la recherche du 19/11/2026 : des lignes sans facture — les aides, les régularisations
+  — et des montants négatifs — les indus) : la table les admettait déjà, sans texte. Une somme positive versée sans facture est un
+  `forfait`, sous son organisme ; une somme négative est une régularisation de sa part (`regularisations_centimes`), seule (le net
+  égal aux régularisations, aucune facture) ou déduite des factures payées le même jour ; le net peut être négatif, le brut jamais.
+  Une somme positive sans facture sur la part obligatoire, ou un indu écrit sans régularisation, se refusent : le lecteur de
+  l'état, quand il s'écrira, les rangera ainsi. L'essai le prouve (étapes 60 à 72).
+- **NOE5 tient** : sa garde de tête relit les corps de `garder_paiements_assurance_maladie` et de
+  `retirer_import_assurance_maladie`, que l'amendement ne touche pas ; ses deux essais passent tels quels. Son module ne forme plus
+  de paire quand deux parts complémentaires nommées partagent une journée et une caisse (à égalité, rien de proposé). La section
+  P7 de `rls.sql` prend désormais sa table (sans elle, NOE5 appliquée mettait 3bis+ en faute).

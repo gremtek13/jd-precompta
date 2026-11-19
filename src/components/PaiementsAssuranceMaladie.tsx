@@ -14,7 +14,7 @@ import {
 } from '../lib/paiementsAssuranceMaladie'
 import {
   LIBELLES_DES_PARTS, PRESENTATION_AU_CABINET, PRESENTATION_AU_CLIENT, RAPPEL_AU_CABINET, SANS_LA_CASE_BANQUE, USAGES, VIDE_DIT,
-  confirmationDeLImport, confirmationDuRetrait, ecartsDits, genreDit, montantDit, organismeDit, phraseApresLImport,
+  confirmationDeLImport, confirmationDuRetrait, ecartsDits, genreDit, montantDit, organismeDuPaiementDit, phraseApresLImport,
   refusDeLaTailleDesPaiements, reglageChoisi, reglageVide, rejetsDits, totalDesPaiements, type ReglageDUnePartALEcran,
   type UsageDUneColonne,
 } from '../lib/paiementsAssuranceMaladieVue'
@@ -279,7 +279,7 @@ function ListeDesImports({ espace, imports, paiements, enCours, associes, aRetir
 }
 
 function TableauDesPaiements({ paiements, libelle }: {
-  paiements: readonly Pick<PaiementAssuranceMaladie, 'date_journee_comptable' | 'regime' | 'caisse' | 'part' | 'montant_centimes' | 'regularisations_centimes' | 'nombre_de_factures'>[]
+  paiements: readonly Pick<PaiementAssuranceMaladie, 'date_journee_comptable' | 'regime' | 'caisse' | 'organisme_complementaire' | 'part' | 'montant_centimes' | 'regularisations_centimes' | 'nombre_de_factures'>[]
   libelle: string
 }) {
   return (
@@ -290,9 +290,9 @@ function TableauDesPaiements({ paiements, libelle }: {
         </thead>
         <tbody>
           {paiements.map((p) => (
-            <tr key={`${p.date_journee_comptable}|${p.regime}|${p.caisse}|${p.part}`}>
+            <tr key={`${p.date_journee_comptable}|${p.regime}|${p.caisse}|${p.part}|${p.organisme_complementaire}`}>
               <td data-libelle="Journée comptable">{formatDate(p.date_journee_comptable)}</td>
-              <td data-libelle="Organisme">{organismeDit(p.regime, p.caisse)}</td>
+              <td data-libelle="Organisme">{organismeDuPaiementDit(p)}</td>
               <td data-libelle="Part">{LIBELLES_DES_PARTS[p.part]}</td>
               <td data-libelle="Net payé">{montantDit(p.montant_centimes)}</td>
               <td data-libelle="Régularisations">{p.regularisations_centimes === 0 ? '—' : montantDit(p.regularisations_centimes)}</td>

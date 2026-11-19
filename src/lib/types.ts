@@ -2535,6 +2535,9 @@ export interface PaiementAssuranceMaladie {
   date_journee_comptable: string
   regime: number | null
   caisse: number | null
+  /** L'organisme complémentaire de la part complémentaire, en chiffres ; nul : non dit (la migration amendée le 19/11/2026,
+   *  BOR-Q5 (B), BORQ5-Q1 (A)), et toujours pour les autres parts. */
+  organisme_complementaire: number | null
   part: 'obligatoire' | 'complementaire' | 'forfait'
   /** Le net, régularisations déduites, en centimes. */
   montant_centimes: number
@@ -2554,6 +2557,42 @@ export interface OptionDuCabinet {
   /** Le super-administrateur qui l'a réglée ; nul pour les lignes que la migration a posées. */
   changee_par: string | null
   changee_le: string
+}
+
+// LE FACTURÉ À L'ASSURANCE MALADIE (conception 59, BOR3 ; migration `factures_assurance_maladie`, préparée, pas appliquée —
+// lib/importDuFactureAssuranceMaladie.ts). Un import de bordereaux de télétransmission et les totaux qu'il a apportés : des
+// dates, des entiers, une part de la liste, AUCUN texte, aucune donnée de patient. Écrits par
+// `importer_factures_assurance_maladie`, retirés ensemble par `retirer_import_factures_assurance_maladie` ; aucune mise à jour.
+// Le registre des lots (`lots_teletransmission_importes`, des empreintes) et la clé du dossier (`cles_des_lots_teletransmission`)
+// n'ont aucun type ici : aucun rôle de l'API ne les lit. Ils ne comptent dans aucun moteur.
+export interface ImportFacturesAssuranceMaladie {
+  id: string
+  dossier_id: string
+  premier_lot_le: string
+  dernier_lot_le: string
+  nombre_de_lots: number
+  /** La somme des factures que ses lots annoncent : un ordre de grandeur (BOR2-Q1 (A)). */
+  nombre_de_factures: number
+  importe_par: string
+  importe_le: string
+}
+
+export interface FactureAssuranceMaladie {
+  id: string
+  dossier_id: string
+  import_id: string
+  /** La date de création des lots (l'en-tête du bordereau), jamais une date de soins. */
+  date_creation_lot: string
+  part: 'obligatoire' | 'complementaire'
+  /** Le régime et la caisse de la part obligatoire ; nuls pour la part complémentaire. */
+  regime: number | null
+  caisse: number | null
+  /** L'organisme complémentaire de la part complémentaire, en chiffres ; nul : non dit (BORQ5-Q1 (A)). */
+  organisme_complementaire: number | null
+  /** Le facturé de la part, en centimes, signé. */
+  montant_centimes: number
+  nombre_de_lots: number
+  nombre_de_factures: number
 }
 
 // L'AFFECTATION DU RÉSULTAT ET L'APPROBATION DES COMPTES (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`,

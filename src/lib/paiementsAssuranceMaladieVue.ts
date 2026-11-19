@@ -40,6 +40,15 @@ export function organismeDit(regime: number | null, caisse: number | null): stri
   return [regime === null ? null : `régime ${regime}`, caisse === null ? null : `caisse ${caisse}`].filter(Boolean).join(', ')
 }
 
+/** L'organisme d'un paiement, son organisme complémentaire compris quand il est dit (la part complémentaire, BOR-Q5 (B)) : des
+ *  codes, jamais une personne. */
+export function organismeDuPaiementDit(p: { regime: number | null; caisse: number | null; organisme_complementaire: number | null }): string {
+  const caisse = organismeDit(p.regime, p.caisse)
+  if (p.organisme_complementaire === null) return caisse
+  const complementaire = `organisme complémentaire ${p.organisme_complementaire}`
+  return p.regime === null && p.caisse === null ? complementaire : `${caisse}, ${complementaire}`
+}
+
 export const montantDit = (centimes: number) => formatMoney(centimes / 100)
 
 /** Le genre d'une colonne, en mots : ce que toutes ses cellules non vides sont. « texte » quand ce n'est ni une date, ni un

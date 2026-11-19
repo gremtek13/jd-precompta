@@ -103,7 +103,7 @@ function mouvement(o: Partial<LigneBancaire> & Pick<LigneBancaire, 'id'>): Ligne
   }
 }
 const paiement = (o: Record<string, unknown>) => ({
-  dossier_id: D, import_id: 'i1', date_journee_comptable: '2026-03-03', regime: 1, caisse: 691, part: 'obligatoire',
+  dossier_id: D, import_id: 'i1', date_journee_comptable: '2026-03-03', regime: 1, caisse: 691, organisme_complementaire: null, part: 'obligatoire',
   montant_centimes: 12345, regularisations_centimes: 0, nombre_de_factures: 3, ...o,
 })
 const IMPORT = {

@@ -16,6 +16,8 @@
 // dossier — ses pièces et ses packs, que la sauvegarde ne porte pas, un logo « déjà là » — existaient avant elle, et ce
 // sont précisément ceux que la restauration vient rejoindre : les retirer détruirait ce qu'elle cherche à rendre.
 
+import { FACTURES_ASSURANCE_MALADIE_PREVUES } from './importDuFactureAssuranceMaladie'
+
 /** Le dossier qu'une tentative de restauration a créé puis laissé inachevé. */
 export interface DossierPartiel {
   id: string
@@ -97,8 +99,20 @@ export const CONNEXIONS_HORS_PERIMETRE: readonly string[] = [
 export const NUMEROTATION_HORS_PERIMETRE =
   'Les compteurs de numérotation des factures et des devis (`facture_numerotation`, `devis_numerotation`) ne sont pas inclus : leurs tables n’ont aucune policy, leur lecture rend zéro ligne. Rien n’est perdu : la numérotation reprend du plus haut numéro émis de la série, que les factures et les devis restaurés portent, et le compteur se repose à la première facture ou au premier devis émis ensuite.'
 
+// Le facturé à l'assurance maladie (conception 59, BOR3 ; migration `factures_assurance_maladie`, préparée) : le registre des
+// lots et la clé du dossier n'ont aucune policy, et la sauvegarde les lit vides ; la fonction d'import retient ensuite tout lot
+// créé dans la période d'un import restauré, tant qu'il n'est pas retiré (vérifié dans le texte de la migration préparée). Dit
+// dès que la migration est en base, sous son drapeau.
+export const FACTURE_HORS_PERIMETRE =
+  'Le registre des lots de télétransmission importés et la clé de leurs empreintes (`lots_teletransmission_importes`, `cles_des_lots_teletransmission`) ne sont pas inclus : leurs tables n’ont aucune policy, leur lecture rend zéro ligne, et la clé ne quitte jamais la base. Après une restauration, un import du facturé à l’assurance maladie restauré ne reconnaît plus ses lots : la base refuse tout lot créé dans sa période tant qu’il n’est pas retiré, puis ses bordereaux se réimportent.'
+
+/** Ce que la sauvegarde tait et que la restauration fait refaire, selon que le facturé à l'assurance maladie est en base. */
+export function horsPerimetreDesSecrets(factureEnBase: boolean): readonly string[] {
+  return [...CONNEXIONS_HORS_PERIMETRE, NUMEROTATION_HORS_PERIMETRE, ...(factureEnBase ? [FACTURE_HORS_PERIMETRE] : [])]
+}
+
 /** Ce que la sauvegarde tait et que la restauration fait refaire, ajouté à la liste du manifeste (RESTAU-Q3). */
-export const HORS_PERIMETRE_DES_SECRETS: readonly string[] = [...CONNEXIONS_HORS_PERIMETRE, NUMEROTATION_HORS_PERIMETRE]
+export const HORS_PERIMETRE_DES_SECRETS: readonly string[] = horsPerimetreDesSecrets(FACTURES_ASSURANCE_MALADIE_PREVUES)
 
 /**
  * La liste « hors périmètre » que l'écran de la restauration montre : celle du manifeste, telle que la sauvegarde l'a

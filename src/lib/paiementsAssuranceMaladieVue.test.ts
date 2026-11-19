@@ -3,7 +3,7 @@ import { motsDuCabinet } from './espaceVentes'
 import type { ImportAEnvoyer, LectureDesPaiements } from './paiementsAssuranceMaladie'
 import {
   PRESENTATION_AU_CLIENT, SANS_LA_CASE_BANQUE, VIDE_DIT, confirmationDeLImport, confirmationDuRetrait, ecartsDits, genreDit,
-  organismeDit, phraseApresLImport, refusDeLaTailleDesPaiements, reglageChoisi, reglageVide, rejetsDits,
+  organismeDit, organismeDuPaiementDit, phraseApresLImport, refusDeLaTailleDesPaiements, reglageChoisi, reglageVide, rejetsDits,
 } from './paiementsAssuranceMaladieVue'
 
 // Les mots et les règles de l'écran d'import (NOE4) : rien n'est deviné (le réglage part vide, ce qui manque se dit) ; une
@@ -13,8 +13,8 @@ import {
 const imp: ImportAEnvoyer = {
   version: 1,
   paiements: [
-    { date_journee_comptable: '2026-11-02', regime: 1, caisse: 691, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 },
-    { date_journee_comptable: '2026-11-03', regime: 1, caisse: 691, part: 'obligatoire', montant_centimes: -500, regularisations_centimes: -500, nombre_de_factures: 0 },
+    { date_journee_comptable: '2026-11-02', regime: 1, caisse: 691, organisme_complementaire: null, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 },
+    { date_journee_comptable: '2026-11-03', regime: 1, caisse: 691, organisme_complementaire: null, part: 'obligatoire', montant_centimes: -500, regularisations_centimes: -500, nombre_de_factures: 0 },
   ],
   rejets: { nombre: 2, montant_centimes: 1500 },
 }
@@ -49,6 +49,11 @@ describe('les mots de l’aperçu', () => {
   it('l’organisme et les rejets : un non-dit n’est jamais zéro', () => {
     expect(organismeDit(null, null)).toBe('non dit')
     expect(organismeDit(1, 691)).toBe('régime 1, caisse 691')
+    // L'organisme complémentaire, dit quand il l'est (la migration amendée le 19/11/2026).
+    expect(organismeDuPaiementDit({ regime: 1, caisse: 691, organisme_complementaire: null })).toBe('régime 1, caisse 691')
+    expect(organismeDuPaiementDit({ regime: 1, caisse: 691, organisme_complementaire: 1234567890 })).toBe('régime 1, caisse 691, organisme complémentaire 1234567890')
+    expect(organismeDuPaiementDit({ regime: null, caisse: null, organisme_complementaire: 1234567890 })).toBe('organisme complémentaire 1234567890')
+    expect(organismeDuPaiementDit({ regime: null, caisse: null, organisme_complementaire: null })).toBe('non dit')
     expect(rejetsDits(null)).toBe('les rejets ne sont pas dits par le fichier')
     expect(rejetsDits({ nombre: null, montant_centimes: null })).toBe('les rejets ne sont pas dits par le fichier')
     expect(rejetsDits({ nombre: 0, montant_centimes: 0 })).toBe('aucun rejet')

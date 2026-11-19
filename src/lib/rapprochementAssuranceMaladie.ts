@@ -60,7 +60,7 @@ export interface AssociationAssuranceMaladie {
 export type MouvementDuRapprochement = Pick<LigneBancaire, 'id' | 'date' | 'libelle' | 'libelle_brut' | 'montant' | 'statut'
   | 'prelevement_personnel' | 'encaissements_de_factures'>
 export type PaiementDuRapprochement = Pick<PaiementAssuranceMaladie, 'id' | 'date_journee_comptable' | 'regime' | 'caisse'
-  | 'part' | 'montant_centimes' | 'nombre_de_factures'>
+  | 'organisme_complementaire' | 'part' | 'montant_centimes' | 'nombre_de_factures'>
 export type AssociationDuRapprochement = Pick<AssociationAssuranceMaladie, 'paiement_id' | 'ligne_bancaire_id'>
 
 /** Une liste et ce qu'on sait de sa lecture (la forme de `LectureComplete`). */
@@ -265,7 +265,7 @@ export function rapprocherLesPaiements(entree: EntreeDuRapprochement): Rapproche
   // journée et d'un même organisme) ; un mouvement ne regarde que ceux de son montant exact.
   const seuls = new Map<number, PaiementDuRapprochement[]>()
   const paires = new Map<number, [PaiementDuRapprochement, PaiementDuRapprochement][]>()
-  const partsParCle = new Map<string, { obligatoire?: PaiementDuRapprochement; complementaire?: PaiementDuRapprochement }>()
+  const partsParCle = new Map<string, { obligatoire?: PaiementDuRapprochement; complementaire?: PaiementDuRapprochement; ambigu?: boolean }>()
   const journeesLibres = new Map<string, PaiementDuRapprochement[]>()
   for (const p of entree.paiements.lignes) {
     if (paiementsAssocies.has(p.id) || p.montant_centimes === 0 || !estUneDateCivile(p.date_journee_comptable)) continue
@@ -274,11 +274,15 @@ export function rapprocherLesPaiements(entree: EntreeDuRapprochement): Rapproche
     if (p.part === 'forfait') continue
     const cle = `${p.date_journee_comptable}|${p.regime ?? 'nul'}|${p.caisse ?? 'nul'}`
     const parts = partsParCle.get(cle) ?? {}
+    // Deux parts complémentaires d'une même journée et d'une même caisse — deux organismes complémentaires dits (la migration
+    // de NOE3 amendée le 19/11/2026, BOR-Q5 (B)) — : la paire n'est plus une, aucune ne se propose pour cette clé (à égalité,
+    // rien de proposé) ; chaque paiement reste candidat seul.
+    if (parts[p.part] !== undefined) parts.ambigu = true
     parts[p.part] = p
     partsParCle.set(cle, parts)
   }
-  for (const { obligatoire, complementaire } of partsParCle.values()) {
-    if (obligatoire && complementaire) {
+  for (const { obligatoire, complementaire, ambigu } of partsParCle.values()) {
+    if (!ambigu && obligatoire && complementaire) {
       ajouter(paires, obligatoire.montant_centimes + complementaire.montant_centimes, [obligatoire, complementaire])
     }
   }
@@ -458,7 +462,9 @@ export function groupeDit(paiements: readonly PaiementDuRapprochement[]): string
   const premier = paiements[0]
   const parts = paiements.map((p) => LIBELLES_DES_PARTS[p.part].toLowerCase()).join(' et ')
   const factures = paiements.reduce((s, p) => s + p.nombre_de_factures, 0)
-  return `journée comptable du ${formatDate(premier.date_journee_comptable)}, organisme ${organismeDit(premier.regime, premier.caisse)}, `
+  const complementaire = paiements.find((p) => p.organisme_complementaire !== null)?.organisme_complementaire
+  return `journée comptable du ${formatDate(premier.date_journee_comptable)}, organisme ${organismeDit(premier.regime, premier.caisse)}`
+    + `${complementaire === undefined ? '' : `, organisme complémentaire ${complementaire}`}, `
     + `${parts}${factures > 0 ? `, ${pluriel(factures, 'facture')}` : ''}`
 }
 

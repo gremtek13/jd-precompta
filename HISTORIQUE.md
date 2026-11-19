@@ -54098,6 +54098,7 @@ social suit la formule de la notice (il baisse de la part), à confronter à la 
 factures gardé avec un montant est celui des lots, un ordre de grandeur. Dit dans la conversation : le cabinet a cherché où
 ouvrir « précomptabilité seule » ou « comptabilité complète » sur un cabinet — les options par cabinet (conception 56) passent
 devant, OPT1 et OPT2 lancés ; « continue en autonomie ».
+
 ### 19/11/2026 — OPT1 ET OPT2 : LES OPTIONS PAR CABINET, LE MODULE ET LA MIGRATION (PRÉPARÉE, PAS APPLIQUÉE)
 
 (Agent architecte ; rien en production, rien à l'écran.) Le cabinet cherchait où régler « précomptabilité seule » ou « comptabilité
@@ -54113,3 +54114,22 @@ aligné. Copie de réplique à 242 : rc 0, seconde application refusée, retour 
 familles) ; essai 12/12 et 12 mutations sur 12 ; l'essai de réplique (E et N posés sans leurs gardes, NOE3 et NOE5 dans les deux ordres)
 4/4 et 2 mutations sur 2 ; rls.sql 273 lignes, 0 en faute, 161 mutations sur 161 ; le banc SÛR. Fichier `974241b9…` (sans sa dernière fin
 de ligne `ca03b10b…`). Restent la fiche OPT1-migration, OPT1-Q1 à Q3, puis OPT3 et OPT4.
+
+### 19/11/2026 — BOR3 : LE FACTURÉ À L'ASSURANCE MALADIE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) Sur BOR1Q1-Q1 (A), BORQ5-Q1 (A), BOR-Q8 (A) et BOR2-Q1 (A), conception 59, § 14.
+`20261119140000_factures_assurance_maladie` (à coller : son retrait supprime) : quatre tables sans texte — l'import ; ses totaux par
+date de création du lot, organisme et part, la complémentaire sous `organisme_complementaire` (nul : « non dit ») ; le registre, une
+empreinte HMAC-SHA-256 de « lot:numéro:date:caisse » sous la clé du dossier, jamais le numéro ; la clé, tirée par la base. L'import,
+tout ou rien, au cabinet et au client « Banque », confronte les totaux aux lots et refuse un lot déjà importé sous son RANG et le
+jour de son import. Registre et clé sans aucune policy, hors de la sauvegarde (BOR3-Q1 : lisible par le cabinet, une empreinte d'un
+numéro de quelques milliers de valeurs se renverserait) ; un import restauré retient les lots de sa période jusqu'à son retrait ;
+aucun gel par l'exercice validé (BOR3-Q2). La caisse est de l'empreinte : rien n'établit qu'un numéro de lot soit unique d'une caisse
+à l'autre. NOE3 amendée avant collage (`organisme_complementaire` dans la forme et la clé totale) ; relue contre l'état des
+paiements de Télévitale, elle admettait déjà aides (`forfait`) et indus (régularisations, net négatif) : prouvé. NOE5 tient ; son
+module ne forme plus de paire ambiguë ; la section P7 de `rls.sql` prend enfin sa table (NOE5 appliquée y mettait 3bis+ en faute).
+Preuves, copie de `replique_227` portée à 242 : dans les trois ordres, essais 72, 9, 66, 42 et 6 verdicts sans faute ; 26 mutations
+SQL et 11 TypeScript mordent ; retours rendant la signature d'avant, refusés sur une ligne ; seconde application refusée ; deux relevés
+de la base (241 et 243 cas) rejugés. Rejouées à 243 derrière OPT1 (le bloc FM passe au n° 17) : `rls.sql` sans préparée 271 lignes,
+0 en faute, 157 mutations sur 157 ; OPT1, NOE3, NOE5 et BOR3 dans trois ordres, 281, 0, 166 sur 166, les sept essais verts, les retours
+rendant 243 ; `restauration.sql` IDENTIQUE (106 tables, 30 lignes ; NOE5 l'arrête sur ses clés : NOE8) ; banc SÛR. RGPD.md § 8.7 proposé.

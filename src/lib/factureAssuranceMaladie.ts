@@ -16,9 +16,11 @@
 //         son numéro (BOR-Q5 (B)) ; rien ici ne le devine ;
 //     des montants en centimes ENTIERS, aucun texte (ni libellé, ni ville, ni numéro de lot) : des dates, des entiers et des
 //     unions littérales ;
-//   - L'IDENTIFICATION DES LOTS POUR LE REGISTRE (BOR1-Q1 (C), puis BOR1Q1-Q1 (A)) : le numéro du lot et sa date de création,
-//     À PART, pour le seul appel d'import, qui les donnera à la base ; c'est la BASE qui en calculera l'empreinte sous une clé
-//     secrète du dossier, puis oubliera le numéro (BOR3). Ce module n'en calcule aucune : une empreinte faite ici le serait
+//   - L'IDENTIFICATION DES LOTS POUR LE REGISTRE (BOR1-Q1 (C), puis BOR1Q1-Q1 (A)) : le numéro du lot, sa date de création,
+//     le code de sa caisse et le nombre de ses factures, À PART, pour le seul appel d'import, qui les donnera à la base ; c'est
+//     la BASE qui calcule l'empreinte du numéro, de la date et de la caisse sous une clé secrète du dossier, puis oublie le
+//     numéro (BOR3, la migration préparée le 19/11/2026) ; la caisse et le nombre de factures
+//     lui servent aussi à confronter les totaux à leurs lots. Ce module n'en calcule aucune : une empreinte faite ici le serait
 //     sous une clé que le navigateur connaîtrait, et un numéro de lot n'a que quelques milliers de valeurs (§ 13.3). Le numéro
 //     n'entre dans aucun agrégat, aucun résumé, aucune raison de refus ; il n'est rendu que par une FONCTION
 //     (`pourLAppelDImport`), que `JSON.stringify` saute : un résultat sérialisé par mégarde (un journal, un message) ne le
@@ -42,7 +44,8 @@
 //
 // CE QUI RELÈVE DE BOR3 (la migration), ET QUE CE MODULE NE FIXE PAS : la forme des tables, le nom des colonnes et des
 // paramètres de la fonction d'import, la clé et l'algorithme de l'empreinte. Le type des agrégats est celui du module ; la
-// fonction d'import le recevra par une traduction écrite avec elle.
+// fonction d'import le reçoit par la traduction écrite avec elle (lib/importDuFactureAssuranceMaladie.ts,
+// `corpsDeLImportDuFacture`).
 //
 // LE NOMBRE DE FACTURES D'UN AGRÉGAT est celui des LOTS qui y contribuent (BOR1 ne rend que le compte d'un lot, jamais celui
 // des lignes dont une part est non nulle) : un ordre de grandeur, dit tel (§ 4.2) ; une part nulle d'un lot n'y contribue pas.
@@ -93,10 +96,13 @@ export interface ResumeDuFacture {
   duCentimes: number
 }
 
-/** Un lot pour le registre de BOR3 : son numéro et sa date de création. Rendu au seul appel d'import. */
+/** Un lot pour le registre de BOR3 : son numéro, sa date de création, le code de sa caisse (un entier, comme l'agrégat) et
+ *  le nombre de ses factures. Rendu au seul appel d'import. */
 export interface LotPourLeRegistre {
   numero: number
   creeLe: string
+  caisse: number
+  nombreDeFactures: number
 }
 
 /**
@@ -268,7 +274,9 @@ export function factureDesBordereaux(bordereaux: readonly BordereauLu[], paramet
   })
 
   // 5. L'identification des lots, à part : une copie figée, rendue par une fonction seulement.
-  const lots: readonly LotPourLeRegistre[] = Object.freeze(bordereaux.map((b) => Object.freeze({ numero: b.lot, creeLe: b.creeLe })))
+  const lots: readonly LotPourLeRegistre[] = Object.freeze(bordereaux.map((b) => Object.freeze({
+    numero: b.lot, creeLe: b.creeLe, caisse: Number(b.organisme.code), nombreDeFactures: b.nombreDeFactures,
+  })))
   const identificationDesLots: IdentificationDesLots = { nombre: lots.length, pourLAppelDImport: () => lots }
 
   return { etat: 'pret', agregats, resume, identificationDesLots }

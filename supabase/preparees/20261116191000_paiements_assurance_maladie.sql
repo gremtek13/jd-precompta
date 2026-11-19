@@ -7,11 +7,23 @@
 -- avant le clic : src/lib/paiementsAssuranceMaladie.ts. Le patron : la prévision publiée (C8-Q2,
 -- supabase/preparees/20261115100000_previsions_publiees.sql).
 --
+-- AMENDÉE le 19/11/2026, AVANT tout collage (BOR3, conception 59, § 14 ; HISTORIQUE.md, « 19/11/2026 — BOR3 ») : la colonne
+-- `organisme_complementaire` (BOR-Q5 (B) : les complémentaires suivies une à une, sous leur numéro, pour le payé comme pour
+-- le facturé ; BORQ5-Q1 (A) : nulle, « non dite », tant que le fichier lu ne la nomme pas), dans la forme d'un paiement et
+-- dans sa clé TOTALE ; et relue contre l'état des paiements de Télévitale (« Paiement Noemie par journée comptable », la
+-- recherche du 19/11/2026) : il porte des lignes SANS facture — les aides, les régularisations — et des montants NÉGATIFS —
+-- les indus, les trop-perçus. La table les admettait déjà, sans élargir à un texte : une somme positive qui ne paie aucune
+-- facture (une aide, un forfait) est un `forfait` ; une somme négative (un indu, une régularisation qui retire) est une
+-- RÉGULARISATION de sa part (`regularisations_centimes`, négatif), seule (montant = régularisations, aucune facture) ou
+-- déduite des factures qu'elle accompagne ; un net négatif s'admet, le brut (net moins régularisations) jamais. L'essai le
+-- prouve ligne à ligne. Version 1 redéfinie (huit clés par paiement) : rien n'a jamais été importé.
+--
 -- LA RÈGLE. Le fichier se lit dans le navigateur de celui qui importe — le praticien depuis son espace client, ou le cabinet
 -- (NOE-Q1, « Le praticien et le cabinet ») — et n'en sortent que des AGRÉGATS : un paiement par journée comptable, organisme
--- (le code du régime et celui de la caisse, deux entiers) et part (obligatoire, complémentaire, forfait), son montant net,
--- ce que les régularisations en ont retiré, et le nombre de factures qu'il paie ; par import, la période lue et, si le
--- fichier les dit, le nombre des rejets (une part rejetée d'une facture en est un) et leur montant total (NOE-Q4).
+-- (le code du régime et celui de la caisse, deux entiers ; pour la part complémentaire, l'organisme complémentaire, un
+-- entier, ou rien) et part (obligatoire, complémentaire, forfait), son montant net, ce que les régularisations en ont retiré,
+-- et le nombre de factures qu'il paie ; par import, la période lue et, si le fichier les dit, le nombre des rejets (une part
+-- rejetée d'une facture en est un) et leur montant total (NOE-Q4).
 -- Rien d'autre : ni nom, ni NIR, ni date de
 -- naissance, ni acte, ni date de soins, ni numéro de facture ou de lot (des pseudonymes d'un patient par le logiciel du
 -- praticien, RGPD, considérant 26), ni la référence du virement (NOE-Q3 : la journée comptable seule), ni l'empreinte du
@@ -26,9 +38,9 @@
 --   1. `imports_assurance_maladie` : un import — son dossier, la période lue (la plus ancienne et la plus récente journée
 --      comptable du fichier), les rejets (nuls quand le fichier ne les dit pas, jamais 0 sur un non-dit), qui et quand
 --      (posés par la base). `paiements_assurance_maladie` : les paiements que l'import a APPORTÉS, chacun sous une clé
---      TOTALE (dossier, journée comptable, régime, caisse, part ; deux organismes non dits se heurtent : `nulls not
---      distinct`) — réimporter une période qui recouvre ne double rien ; la garde tient chaque paiement dans le dossier de
---      son import. Aucune mise à jour, pour personne : un import se retire et se refait.
+--      TOTALE (dossier, journée comptable, régime, caisse, part, organisme complémentaire ; deux organismes non dits se
+--      heurtent : `nulls not distinct`) — réimporter une période qui recouvre ne double rien ; la garde tient chaque
+--      paiement dans le dossier de son import. Aucune mise à jour, pour personne : un import se retire et se refait.
 --   2. `refus_de_l_import_assurance_maladie(import, jour)` : le refus, en mots, d'un import, ou nul ; ne lit rien en base ;
 --      aucun rôle de l'API ne l'exécute.
 --   3. `importer_paiements_assurance_maladie(dossier, import)`, aux droits du propriétaire, TOUT OU RIEN, pour le cabinet du
@@ -148,28 +160,32 @@ create table public.paiements_assurance_maladie (
   date_journee_comptable date not null,
   regime smallint,
   caisse smallint,
+  organisme_complementaire bigint,
   part text not null,
   montant_centimes bigint not null,
   regularisations_centimes bigint not null,
   nombre_de_factures integer not null,
   constraint paiements_assurance_maladie_part check (part in ('obligatoire', 'complementaire', 'forfait')),
+  -- L'organisme complémentaire ne se dit que de la part complémentaire, en chiffres ; nul, il n'est pas dit (BORQ5-Q1 (A)).
   constraint paiements_assurance_maladie_organisme check (
-    (regime is null or regime between 0 and 99) and (caisse is null or caisse between 0 and 999)),
+    (regime is null or regime between 0 and 99) and (caisse is null or caisse between 0 and 999)
+    and (organisme_complementaire is null or (part = 'complementaire' and organisme_complementaire between 1 and 9999999999))),
   constraint paiements_assurance_maladie_date check (date_journee_comptable >= date '2000-01-01'),
   -- Le brut (le net moins les régularisations, qui sont négatives ou nulles) est positif ou nul ; un paiement porte quelque
-  -- chose.
+  -- chose. Un indu, un trop-perçu, une régularisation qui retire : une régularisation, seule (net = régularisations, brut
+  -- nul) ou déduite des factures payées le même jour ; le net peut être négatif.
   constraint paiements_assurance_maladie_montants check (
     regularisations_centimes <= 0 and regularisations_centimes > -100000000000000
     and montant_centimes - regularisations_centimes between 0 and 99999999999999
     and (montant_centimes <> 0 or regularisations_centimes <> 0)),
-  -- Un forfait ne paie aucune facture ; une autre part paie au moins une facture dès que son brut n'est pas nul, et aucune
-  -- quand il l'est (une régularisation seule).
+  -- Un forfait ne paie aucune facture — une aide, toute somme positive versée sans facture, est un forfait ; une autre part
+  -- paie au moins une facture dès que son brut n'est pas nul, et aucune quand il l'est (une régularisation seule).
   constraint paiements_assurance_maladie_factures check (
     nombre_de_factures between 0 and 100000
     and (part <> 'forfait' or nombre_de_factures = 0)
     and (part = 'forfait' or (nombre_de_factures = 0) = (montant_centimes = regularisations_centimes))),
   constraint paiements_assurance_maladie_une_cle unique nulls not distinct
-    (dossier_id, date_journee_comptable, regime, caisse, part)
+    (dossier_id, date_journee_comptable, regime, caisse, part, organisme_complementaire)
 );
 
 create index paiements_assurance_maladie_import on public.paiements_assurance_maladie (import_id);
@@ -184,8 +200,10 @@ comment on column public.imports_assurance_maladie.nombre_de_rejets is
   'Le nombre de rejets que le fichier dit, par import (NOE-Q4) : une part rejetée d''une facture (obligatoire ou complémentaire) compte un rejet ; nul quand le fichier ne dit pas les rejets.';
 comment on column public.imports_assurance_maladie.importe_par is
   'Le compte qui a importé (auth.uid()), sans clé étrangère : il survit au retrait du compte.';
+comment on column public.paiements_assurance_maladie.organisme_complementaire is
+  'L''organisme complémentaire de la part complémentaire, en chiffres ; nul : non dit (BORQ5-Q1 (A)), et toujours pour les autres parts.';
 comment on column public.paiements_assurance_maladie.montant_centimes is
-  'Le net payé sous cette clé, régularisations déduites, en centimes.';
+  'Le net payé sous cette clé, régularisations déduites, en centimes ; négatif quand un indu ou une régularisation l''emporte.';
 comment on column public.paiements_assurance_maladie.regularisations_centimes is
   'Ce que les régularisations ont retiré du paiement (négatif ou nul), en centimes.';
 comment on column public.paiements_assurance_maladie.nombre_de_factures is
@@ -278,7 +296,7 @@ as $$
 declare
   c_forme constant text := 'L''import n''est pas dans la forme que la base connaît (version 1).';
   c_nombre constant text := 'Un import porte de 1 à 5 000 paiements.';
-  c_paiement constant text := 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien, une part de la liste, des montants en centimes entiers et un nombre de factures.';
+  c_paiement constant text := 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.';
   c_a_venir constant text := 'Un paiement de l''import porte une journée comptable à venir.';
   c_coherence constant text := 'Un paiement de l''import ne se tient pas : ses factures, son montant et ses régularisations ne s''accordent pas.';
   c_doublon constant text := 'L''import porte deux fois le même paiement : une même journée comptable, un même organisme et une même part.';
@@ -291,6 +309,7 @@ declare
   v_date date;
   v_regime numeric;
   v_caisse numeric;
+  v_organisme numeric;
   v_montant numeric;
   v_regularisations numeric;
   v_factures numeric;
@@ -326,13 +345,14 @@ begin
       return c_paiement;
     end if;
     if (select array_agg(k order by k collate "C") from jsonb_object_keys(v_paiement) k)
-         is distinct from array['caisse', 'date_journee_comptable', 'montant_centimes', 'nombre_de_factures', 'part',
-                                'regime', 'regularisations_centimes'] then
+         is distinct from array['caisse', 'date_journee_comptable', 'montant_centimes', 'nombre_de_factures',
+                                'organisme_complementaire', 'part', 'regime', 'regularisations_centimes'] then
       return c_paiement;
     end if;
     if jsonb_typeof(v_paiement -> 'date_journee_comptable') is distinct from 'string'
        or jsonb_typeof(v_paiement -> 'regime') not in ('null', 'number')
        or jsonb_typeof(v_paiement -> 'caisse') not in ('null', 'number')
+       or jsonb_typeof(v_paiement -> 'organisme_complementaire') not in ('null', 'number')
        or jsonb_typeof(v_paiement -> 'part') is distinct from 'string'
        or jsonb_typeof(v_paiement -> 'montant_centimes') is distinct from 'number'
        or jsonb_typeof(v_paiement -> 'regularisations_centimes') is distinct from 'number'
@@ -356,11 +376,14 @@ begin
     end if;
     v_regime := (v_paiement ->> 'regime')::numeric;
     v_caisse := (v_paiement ->> 'caisse')::numeric;
+    v_organisme := (v_paiement ->> 'organisme_complementaire')::numeric;
     v_montant := (v_paiement ->> 'montant_centimes')::numeric;
     v_regularisations := (v_paiement ->> 'regularisations_centimes')::numeric;
     v_factures := (v_paiement ->> 'nombre_de_factures')::numeric;
     if (v_regime is not null and (v_regime <> trunc(v_regime) or v_regime < 0 or v_regime > 99))
        or (v_caisse is not null and (v_caisse <> trunc(v_caisse) or v_caisse < 0 or v_caisse > 999))
+       or (v_organisme is not null and ((v_paiement ->> 'part') <> 'complementaire' or v_organisme <> trunc(v_organisme)
+                                        or v_organisme < 1 or v_organisme > 9999999999))
        or v_montant <> trunc(v_montant) or abs(v_montant) >= c_plafond
        or v_regularisations <> trunc(v_regularisations) or v_regularisations > 0 or v_regularisations <= -c_plafond
        or v_factures <> trunc(v_factures) or v_factures < 0 or v_factures > 100000 then
@@ -380,7 +403,8 @@ begin
   -- 4. Deux paiements de même clé (la journée, l'organisme, la part ; deux organismes non dits se heurtent).
   if exists (
       select 1 from jsonb_array_elements(v_paiements) e
-       group by e ->> 'date_journee_comptable', (e ->> 'regime')::numeric, (e ->> 'caisse')::numeric, e ->> 'part'
+       group by e ->> 'date_journee_comptable', (e ->> 'regime')::numeric, (e ->> 'caisse')::numeric, e ->> 'part',
+                (e ->> 'organisme_complementaire')::numeric
       having count(*) > 1) then
     return c_doublon;
   end if;
@@ -409,7 +433,7 @@ end
 $$;
 
 comment on function public.refus_de_l_import_assurance_maladie(jsonb, date) is
-  'Le refus, en mots, d''un import des paiements de l''assurance maladie (NOE3) pour le jour donné, ou nul s''il est bien formé : sa forme (version 1, trois clés), le nombre de ses paiements, chaque paiement (sept clés, une journée qui n''est pas à venir, un organisme en chiffres ou nul, une part de la liste, des centimes entiers qui se tiennent), deux paiements de même clé, les rejets. N''écrit rien ; aucun rôle de l''API ne l''exécute.';
+  'Le refus, en mots, d''un import des paiements de l''assurance maladie (NOE3) pour le jour donné, ou nul s''il est bien formé : sa forme (version 1, trois clés), le nombre de ses paiements, chaque paiement (huit clés, une journée qui n''est pas à venir, un organisme en chiffres ou nul — l''organisme complémentaire pour la seule part complémentaire —, une part de la liste, des centimes entiers qui se tiennent), deux paiements de même clé, les rejets. N''écrit rien ; aucun rôle de l''API ne l''exécute.';
 
 -- ══ 3. Importer ══════════
 -- D'UN SEUL TENANT, sous un verrou des paiements du dossier (deux imports ne se croisent pas). Le jour est celui de Paris,
@@ -454,6 +478,7 @@ begin
      and p.regime is not distinct from (e ->> 'regime')::numeric::smallint
      and p.caisse is not distinct from (e ->> 'caisse')::numeric::smallint
      and p.part = e ->> 'part'
+     and p.organisme_complementaire is not distinct from (e ->> 'organisme_complementaire')::numeric::bigint
    where p.montant_centimes <> (e ->> 'montant_centimes')::numeric::bigint
       or p.regularisations_centimes <> (e ->> 'regularisations_centimes')::numeric::bigint
       or p.nombre_de_factures <> (e ->> 'nombre_de_factures')::numeric::integer;
@@ -470,7 +495,8 @@ begin
          and p.date_journee_comptable = (e ->> 'date_journee_comptable')::date
          and p.regime is not distinct from (e ->> 'regime')::numeric::smallint
          and p.caisse is not distinct from (e ->> 'caisse')::numeric::smallint
-         and p.part = e ->> 'part');
+         and p.part = e ->> 'part'
+         and p.organisme_complementaire is not distinct from (e ->> 'organisme_complementaire')::numeric::bigint);
   if v_nouveaux = 0 then
     raise exception 'Ces paiements sont déjà tous importés : rien de neuf.' using errcode = '22023';
   end if;
@@ -483,10 +509,12 @@ begin
     from jsonb_array_elements(p_import -> 'paiements') e
   returning * into v_import;
 
-  insert into public.paiements_assurance_maladie (dossier_id, import_id, date_journee_comptable, regime, caisse, part,
-                                                  montant_centimes, regularisations_centimes, nombre_de_factures)
+  insert into public.paiements_assurance_maladie (dossier_id, import_id, date_journee_comptable, regime, caisse,
+                                                  organisme_complementaire, part, montant_centimes, regularisations_centimes,
+                                                  nombre_de_factures)
   select p_dossier_id, v_import.id, (e ->> 'date_journee_comptable')::date, (e ->> 'regime')::numeric::smallint, (e ->> 'caisse')::numeric::smallint,
-         e ->> 'part', (e ->> 'montant_centimes')::numeric::bigint, (e ->> 'regularisations_centimes')::numeric::bigint, (e ->> 'nombre_de_factures')::numeric::integer
+         (e ->> 'organisme_complementaire')::numeric::bigint, e ->> 'part', (e ->> 'montant_centimes')::numeric::bigint,
+         (e ->> 'regularisations_centimes')::numeric::bigint, (e ->> 'nombre_de_factures')::numeric::integer
     from jsonb_array_elements(p_import -> 'paiements') e
    where not exists (
       select 1 from public.paiements_assurance_maladie p
@@ -494,7 +522,8 @@ begin
          and p.date_journee_comptable = (e ->> 'date_journee_comptable')::date
          and p.regime is not distinct from (e ->> 'regime')::numeric::smallint
          and p.caisse is not distinct from (e ->> 'caisse')::numeric::smallint
-         and p.part = e ->> 'part');
+         and p.part = e ->> 'part'
+         and p.organisme_complementaire is not distinct from (e ->> 'organisme_complementaire')::numeric::bigint);
   perform set_config('jd.paiements_assurance_maladie', '', true);
   return v_import;
 end;

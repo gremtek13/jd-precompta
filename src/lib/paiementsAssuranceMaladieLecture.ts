@@ -22,7 +22,7 @@ import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from './types'
 // accès « Banque » est celle de la migration (NOE5-Q1) : elle se présente au cabinet avant d'être appliquée.
 
 const COLONNES_IMPORT = 'id, dossier_id, periode_du, periode_au, nombre_de_rejets, montant_rejete_centimes, importe_par, importe_le'
-const COLONNES_PAIEMENT = 'id, dossier_id, import_id, date_journee_comptable, regime, caisse, part, montant_centimes, regularisations_centimes, nombre_de_factures'
+const COLONNES_PAIEMENT = 'id, dossier_id, import_id, date_journee_comptable, regime, caisse, organisme_complementaire, part, montant_centimes, regularisations_centimes, nombre_de_factures'
 const COLONNES_ASSOCIATION = 'id, dossier_id, paiement_id, ligne_bancaire_id, associe_par, associe_le'
 
 export type PaiementsLus =

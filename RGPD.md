@@ -727,6 +727,29 @@ par le logiciel de télétransmission), ou l'accepter en le signalant comme à s
 constaté dans un dossier réel. Le remède serait alors l'une des deux options ci-dessus, pas un
 changement d'hébergeur.
 
+**Les paiements et le facturé de l'assurance maladie** *(proposé le 19/11/2026, À APPROUVER par le cabinet : la fiche
+BOR3-RGPD ; conceptions 53 et 59, migrations NOE3, NOE5 et BOR3 préparées, pas appliquées)*. Deux fichiers qui portent des
+patients se LISENT désormais, sans entrer : le retour NOEMIE du logiciel du praticien (le payé) et son bordereau de
+télétransmission (le facturé). Chacun s'ouvre dans le navigateur de celui qui importe, et rien d'autre n'en sort qu'un agrégat —
+par journée comptable ou date de création du lot, organisme et part, en centimes, avec un nombre de factures ; ni nom, ni NIR, ni
+date de naissance, ni acte, ni date de soins, ni numéro de facture ; le fichier ne part ni au stockage, ni vers une Edge Function,
+ni dans un journal, ni au modèle de l'assistant (décision du cabinet du 16/11/2026, « on récupère que les chiffres et on stocke pas
+de données patients »). Les tables n'ont aucune colonne de texte libre, et leurs fonctions refusent toute autre clé.
+**Ce que la base garde de plus, et pourquoi** : pour refuser un lot importé deux fois (BOR1-Q1 (C)), une EMPREINTE de chaque lot —
+un HMAC-SHA-256 de son numéro, de sa date de création et de sa caisse, sous une clé secrète propre au dossier que seule la
+fonction d'import lit, jamais le numéro (BOR1Q1-Q1 (A)). Dans le logiciel du praticien, un numéro de lot désigne des factures,
+donc des patients : son empreinte est une donnée pseudonymisée (RGPD, art. 4, 5°), qui reste une donnée personnelle concernant
+la santé, comme un agrégat d'un jour où une seule facture est partie. Ni le cabinet ni le client ne lisent l'empreinte ni la clé
+(aucune policy), la sauvegarde d'un dossier ne les porte pas, et rien hors de la base ne relie une empreinte à un numéro. La
+condition de l'absence d'hébergeur tient : aucun fichier ni aucune ligne de patient n'est hébergé.
+**Qui lit le fichier** (NOE-Q1, BOR-Q8 (A), BORQ8-Q1 (A)) : le praticien, depuis son espace client, sous sa case « Banque » ; le
+cabinet, sur place — jamais par e-mail, et l'adresse de collecte écartera un retour NOEMIE ou un bordereau (NOE-Q6, BOR-Q9 (A),
+à faire : NOE7, BOR6), ce qui remplace, pour eux, la décision du 24/09/2026 de ne rien changer au code. **Ce qui attend le
+cabinet** : BORQ8-Q1 (A) admet aussi un fichier « remis de la main à la main » au cabinet ; or la réponse du 24/09/2026, ci-dessus,
+dit que le praticien n'a pas le droit de transmettre ses bordereaux à son expert-comptable — une remise, même sans rien en
+garder, en est une (code de la santé publique, art. L. 1110-4). La recommandation : le cabinet n'importe que sur l'ordinateur du
+praticien, le fichier ne quittant jamais son poste.
+
 **Pour mémoire, si un hébergement HDS devenait un jour nécessaire** (recherché le 24/09/2026) :
 411 hébergeurs certifiés en mai 2026, liste tenue par l'Agence du Numérique en Santé ; depuis le
 16/05/2026 seuls comptent les certificats au référentiel v2, qui impose l'Espace économique européen

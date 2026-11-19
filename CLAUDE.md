@@ -576,6 +576,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   → « BOR : LES RÉPONSES DU CABINET, LES RÉGIMES, L'OUTIL LOCAL » ; BOR2 (19/11/2026), `lib/factureAssuranceMaladie.ts`, pur et sans sortie :
   des bordereaux lus aux agrégats (jour de création, régime lu ou choisi, caisse, part obligatoire, mutuelle « non dit »), « Assuré »
   oublié, le numéro du lot rendu par une seule fonction pour l'import, jamais sérialisé, aucune empreinte ici → « BOR2 : LE FACTURÉ EN AGRÉGATS ».
+  BOR3 (19/11/2026), préparée, à coller (`factures_assurance_maladie`, `FACTURES_ASSURANCE_MALADIE_PREVUES` baissé) : quatre tables
+  sans texte, le numéro d'un lot jamais gardé — son empreinte HMAC sous une clé du dossier qu'aucun rôle de l'API ne lit, hors de la
+  sauvegarde ; NOE3 amendée avant collage (`organisme_complementaire`) ; BOR3-migration, Q1, Q2 et RGPD ouvertes → « BOR3 : LE FACTURÉ À
+  L'ASSURANCE MALADIE, EN BASE ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)
