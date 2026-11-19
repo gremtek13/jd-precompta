@@ -54230,6 +54230,7 @@ par patient ; des agrégats et des empreintes, données pseudonymisées concerna
 l'article L. 1111-8 (BOR3RGPD-Q1). CLAUDE.md (« Pas d'hébergement HDS » : « ne dépose pas », plus « ne transmet pas »), trois
 commentaires du code, la conception 59 (§ 15) suivent. BOR3-Q1 (A) et BOR3-Q2 (A), à la recommandation : rien ne change à la
 préparée. Ouvertes : BOR3RGPD-Q1, BOR3RGPD-Q2 (le support remis après l'import).
+
 ### 19/11/2026 — OPT3-Q1 ET OPT3-Q2 : DANS UN DOSSIER, LES MODULES DE SON CABINET ; L'OBLIGATION DE FACTURE ÉLECTRONIQUE AU SOCLE
 
 (Agent dev ; rien en production, `OPTIONS_DES_CABINETS_PREVUES` toujours baissé : aucune lecture, tout ouvert, comme hier.) Deux
