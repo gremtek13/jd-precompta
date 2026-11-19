@@ -1,5 +1,5 @@
 -- LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE DE COTISATION : LA CFP ET LA CURPS EN BS (EXP58-Q6 et EXP58-Q7 ; la migration
--- préparée `autres_impots_des_cotisations`, supabase/preparees/20261119120000_autres_impots_des_cotisations.sql). Le récit :
+-- préparée `autres_impots_des_cotisations`, supabase/schema/20261119120000_autres_impots_des_cotisations.sql). Le récit :
 -- HISTORIQUE.md, « 19/11/2026 — EXP58-Q6 ET EXP58-Q7 : LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (PRÉPARÉE, PAS APPLIQUÉE) ». À
 -- rejouer après toute migration qui touche `rapprocher_cotisation`, `enregistrer_paiement_personnel_cotisation`,
 -- `garder_paiement_personnel`, `garder_cotisation_valide`, la table `cotisations_declarees`, le catalogue des rôles

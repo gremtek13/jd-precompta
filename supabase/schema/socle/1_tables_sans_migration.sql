@@ -60,6 +60,7 @@ create table public.cotisations_declarees (
   annee_payee integer,
   nature text,
   part_regularisation numeric,
+  montant_autres_impots numeric,
   constraint cotisations_declarees_pkey PRIMARY KEY (id),
   constraint cotisations_declarees_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
   constraint cotisations_declarees_annee_payee_bornes CHECK (((annee_payee >= ((EXTRACT(year FROM echeance))::integer - 5)) AND (annee_payee <= ((EXTRACT(year FROM echeance))::integer + 1)))),
