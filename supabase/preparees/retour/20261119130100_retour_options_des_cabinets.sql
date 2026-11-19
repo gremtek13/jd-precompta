@@ -1,6 +1,6 @@
 -- RETOUR ARRIÈRE DE `options_des_cabinets` (conception 56, OPT1) — DESTRUCTIF, À ACCORDER PAR LE CABINET, À COLLER dans
 -- l'éditeur SQL de Supabase, dans une transaction, avec sa ligne d'historique (le texte retire une table, deux fonctions,
--- une garde et son déclencheur). La migration : supabase/preparees/20261119120000_options_des_cabinets.sql (préparée le
+-- une garde et son déclencheur). La migration : supabase/preparees/20261119130000_options_des_cabinets.sql (préparée le
 -- 19/11/2026, sous une version provisoire) ; le récit : HISTORIQUE.md, « 19/11/2026 — OPT1 ET OPT2 : LES OPTIONS PAR
 -- CABINET, LE MODULE ET LA MIGRATION (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
