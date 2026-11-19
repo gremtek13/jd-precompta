@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useModulesOuverts } from '../../context/ModulesOuverts'
+import { estOuvert, MODULE_DE_LA_CASE } from '../../lib/modulesDuCabinet'
 import DeuxFacteursDesComptes from '../../components/DeuxFacteursDesComptes'
 import { casesDesAcces } from '../../lib/deuxFacteursExiges'
 import { supabase } from '../../lib/supabase'
@@ -59,6 +61,11 @@ type AccesLu = Pick<Membership, 'id' | 'user_id' | 'email' | 'droit_ventes' | 'd
   | 'droit_achats' | 'droit_frais' | 'droit_documents'>
 
 export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossierId: string; dossierNom: string; codeEmail: string | null }) {
+  // LES MODULES DU CABINET (conception 56, OPT3) : une case ne s'offre que si son module est ouvert (`MODULE_DE_LA_CASE`) ;
+  // cochée, elle reste en base (§ 3.3), et la confirmation du retrait d'un accès la nomme toujours (`DOMAINES`). Le drapeau
+  // baissé : toutes les cases d'hier.
+  const { ouverts } = useModulesOuverts()
+  const casesDesModulesOuverts = DOMAINES.filter((d) => estOuvert(MODULE_DE_LA_CASE[d.domaine], ouverts))
   const [rows, setRows] = useState<AccesLu[]>([])
   // Le dossier du cabinet ne reçoit aucun accès client (ligne 47, LM2) : la désignation, lue pour CE dossier (une lecture qui ne
   // rejette jamais, gardée avec l'identifiant), juge le formulaire AVANT le clic. Drapeau baissé, rien ne se lit et le
@@ -573,7 +580,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
             <thead>
               <tr>
                 <th>Utilisateur</th>
-                {DOMAINES.map((d) => <th key={d.domaine}>{d.libelle}</th>)}
+                {casesDesModulesOuverts.map((d) => <th key={d.domaine}>{d.libelle}</th>)}
                 <th></th>
               </tr>
             </thead>
@@ -584,7 +591,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
                 return (
                   <tr key={r.id}>
                     <td data-libelle="Utilisateur">{personne}</td>
-                    {DOMAINES.map((d) => {
+                    {casesDesModulesOuverts.map((d) => {
                       // Le geste que le réglage laisse à CETTE case, dans son état lu : une case « Ventes » cochée d'un
                       // dossier non basculé se décoche, décochée elle est grisée ; illisible, grisée dans les deux états. Sa
                       // raison est dans la phrase au-dessus de la liste, que la case désigne. « Caisse » (étape C11) suit le statut

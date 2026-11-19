@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import { useModulesOuverts } from '../context/ModulesOuverts'
+import { estOuvert } from '../lib/modulesDuCabinet'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
@@ -76,7 +78,11 @@ export default function DossiersList() {
   // Le compte connecté : le tableau de bord ne montre que les dossiers que le cabinet lui ouvre (23Q2Q2Q1-Q1, voir
   // lib/dossiersOuverts.ts) — la base rend aussi ceux où il a un accès client. Passé à `load`, qui ne lit rien du rendu.
   const compte = session?.user.id ?? null
-  const ribsAConfirmer = useDossiersAuRibAConfirmer(compte)
+  // Les RIB à confirmer appartiennent à la facturation (conception 56, OPT3) : module fermé, aucune lecture, aucune carte. Le
+  // drapeau baissé : la lecture d'hier.
+  const { ouverts } = useModulesOuverts()
+  const facturationOuverte = estOuvert('facturation', ouverts)
+  const ribsAConfirmer = useDossiersAuRibAConfirmer(facturationOuverte ? compte : null)
   const [dossiers, setDossiers] = useState<DossierRow[]>([])
   // LE DOSSIER DU CABINET (ligne 47, LM2) n'est pas un client : il se range à part (« Mon cabinet »), hors des tuiles, des
   // priorités et de la liste des dossiers, qui ne comptent que des clients. `designes` : les dossiers désignés, lus avec la liste
@@ -257,7 +263,7 @@ export default function DossiersList() {
 
       {/* Hors de la grille, au-dessus d'elle et de toute sa largeur : elle ne dépend d'aucune des lectures du tableau de bord (ni
           chargement, ni panne ne la retardent ou ne la taisent), et ce qu'elle dit vaut pour tous les dossiers. */}
-      <RibsAConfirmer lecture={ribsAConfirmer} dossiersDuCabinet={designes} className="ribs-a-confirmer-tete" />
+      {facturationOuverte && <RibsAConfirmer lecture={ribsAConfirmer} dossiersDuCabinet={designes} className="ribs-a-confirmer-tete" />}
 
       {/* L'alerte du chiffre d'affaires, à la hausse et à la baisse, des dossiers que le compte suit (la demande du cabinet du
           15/11/2026 ; ses réponses du 16/11/2026) : hors de la grille aussi, sous le drapeau de sa migration ; lue une fois la

@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useId, useRef, useState } from 'react'
+import { useModulesOuverts } from '../context/ModulesOuverts'
+import { estOuvert } from '../lib/modulesDuCabinet'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { messageErreur } from '../lib/messageErreur'
@@ -225,6 +227,8 @@ const SENS_DE_L_ETAT: Record<Exclude<EtatDuMouvement, 'encaissement_factures' | 
 
 export default function ClientBanque() {
   const { dossierActifId, session } = useAuth()
+  // La section des paiements de l'assurance maladie, sous son module (conception 56, OPT3) ; le drapeau baissé, offerte comme hier.
+  const { ouverts } = useModulesOuverts()
   const dossierId = dossierActifId
   const moi = session?.user.id ?? null
   const [lecture, setLecture] = useState<Etat>({ etat: 'chargement' })
@@ -393,7 +397,7 @@ export default function ClientBanque() {
       )}
       {/* Les paiements de l'assurance maladie (NOE4), sous « Banque » : la section ne se monte que sous son drapeau, sur un code
           NAF de santé (NOE4-Q1 (C) ; ailleurs, rien ne se dit au client), et relit la case à la base avec ses tables. */}
-      {lecture.etat === 'lu' && <PaiementsAssuranceMaladie espace="client" dossierId={dossierId} codeNaf={codeNaf} />}
+      {lecture.etat === 'lu' && estOuvert('assurance_maladie', ouverts) && <PaiementsAssuranceMaladie espace="client" dossierId={dossierId} codeNaf={codeNaf} />}
     </>
   )
 }
