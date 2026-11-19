@@ -54197,3 +54197,36 @@ par dossier, sept collections ; une phrase générique le rappelle (OPT4-Q1). Le
 fait (`create-cabinet` à toucher, OPT4-Q2). Tests : `optionsDuCabinetVue.test.ts` (le critère, l'ordre et les paramètres confrontés au
 texte de la migration), `OptionsDesCabinets.test.tsx` (les deux états du drapeau par accesseur, deux et trois clics, l'échec, la lecture
 partielle) ; deux mutations mordent ; le scanner des déclarations et celui des écrans avant lecture reçoivent le nouveau lecteur.
+
+### 19/11/2026 — OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) Sur OPT1-Q3 (B) : `cabinets_select` ouvre à tout accès client d'un dossier la ligne
+entière de son cabinet, plafonds de l'assistant compris ; la RLS ne choisit que des lignes. D'abord l'application : le relevé des
+19 lectures de `cabinets` (12 fichiers) — le client lit la charte (`branding.ts`) et le nom du mandataire, le chef sa charte
+(`CabinetBrandingPage`, qui lisait `*` : ses sept colonnes nommées), le super-administrateur les plafonds (`SuperAdminPage`), les
+Edge Functions avec la clé du service ; `lecturesDesCabinets.test.ts` part de tout `.from('cabinets')`, lit la chaîne comme une
+expression, refuse `*`, un plafond, une liste illisible, un embarquement ; quatre exceptions au nombre près ; défaut planté. Puis
+`plafonds_hors_du_client` (20261119150000, par l'outil : `attisdropped` est passé par l'outil dans 240 et 241) : la lecture de la
+table retirée à anon et authenticated, huit colonnes rendues, `plafonds_de_l_assistant()` (security definer, `admin_du_cabinet`) ;
+écartées, une table à part (deux colonnes à retirer, OPT1 qui ne s'appliquerait plus) et la ligne fermée au client (chaque
+lecture du client changée). `PLAFONDS_HORS_DU_CLIENT_PREVUS` baissé : l'écran du super-administrateur lit alors par la fonction,
+un cabinet non rendu « Illisibles », sans « Plafond IA ». rls.sql : HR5 accepte la lecture par colonne de `cabinets` telle que la
+migration la pose (l'ancien fichier y était en faute, et OC lisait un plafond dans son SET : une valeur fixe), bloc PL neuf. Copie
+de réplique à 243 : sans, 272 lignes, 0 en faute, 157 sur 157 ; avec, 274, 0, 160 sur 160, essai 8/8, seconde application
+refusée ; avec OPT1 dans les deux ordres, 277, 0, 164 sur 164, essai 8/8, optionsDesCabinets 12/12 ; les retours dans les deux
+ordres rendent la signature (neuf familles) ; le banc : SÛR (un compte de tous les cabinets retiré de l'étape 7 et de M-PL2).
+Fichier `3d25e43f…` (sans sa dernière fin de ligne `ff0521c7…`). Restent la fiche OPT1Q3-migration et OPT1Q3-Q1.
+
+### 19/11/2026 — BOR3-RGPD (B), BOR3-Q1 (A) ET BOR3-Q2 (A) : LE BORDEREAU REMIS DE LA MAIN À LA MAIN, RGPD.MD § 8.7
+
+(Agent architecte ; aucune migration.) Le cabinet a choisi (B), contre la recommandation (l'import sur place seulement) : quand
+il importe un bordereau de télétransmission, il le fait sur place ou d'un fichier que le praticien lui remet de la main à la
+main, jamais par e-mail (BORQ8-Q1 (A) tel quel). RGPD.md § 8.7 porte le texte définitif à la place du texte « À APPROUVER » : le
+fichier lu dans le navigateur, des agrégats et des empreintes seuls en base ; la remise est une transmission, couverte par le
+secret du praticien (CSP, art. L. 1110-4), qu'il décide et dont il répond, et qui revient pour ce seul cas sur la réponse du
+24/09/2026 ; ce que l'application tient et ce qu'elle ne tient pas (le support remis) ; la consigne aux clients. Le texte proposé
+affirmait que « la condition de l'absence d'hébergeur tient » : il dit désormais ce qui est hébergé (aucun fichier, aucune ligne
+par patient ; des agrégats et des empreintes, données pseudonymisées concernant la santé) et laisse ouverte la question de
+l'article L. 1111-8 (BOR3RGPD-Q1). CLAUDE.md (« Pas d'hébergement HDS » : « ne dépose pas », plus « ne transmet pas »), trois
+commentaires du code, la conception 59 (§ 15) suivent. BOR3-Q1 (A) et BOR3-Q2 (A), à la recommandation : rien ne change à la
+préparée. Ouvertes : BOR3RGPD-Q1, BOR3RGPD-Q2 (le support remis après l'import).

@@ -55,6 +55,11 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     nature: 'lecture',
     raison: 'Lit le rôle de la session (fonction `security definer` sans écriture), au montage d’AuthContext.',
   },
+  'rpc:plafonds_de_l_assistant': {
+    nature: 'lecture',
+    raison: 'Les plafonds de l’assistant des cabinets que l’appelant administre (fonction `security definer` sans écriture ; '
+      + 'migration préparée `plafonds_hors_du_client`, OPT1-Q3) : l’écran du super-administrateur les lit au chargement.',
+  },
   'rpc:identites_des_fiches_liees': {
     nature: 'lecture',
     raison: 'L’identité que chaque dossier lié donne (fonction `security definer` sans écriture ; migration préparée '

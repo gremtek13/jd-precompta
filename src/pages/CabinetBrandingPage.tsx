@@ -55,7 +55,11 @@ export default function CabinetBrandingPage() {
   async function charger() {
     if (!monCabinetId) return
     setLoading(true)
-    const { data, error: chargeError } = await supabase.from('cabinets').select('*').eq('id', monCabinetId).maybeSingle()
+    // Les colonnes de `Cabinet`, nommées : jamais `*`, qui demanderait aussi les plafonds de l'assistant, fermés aux rôles de
+    // l'API par la migration `plafonds_hors_du_client` (OPT1-Q3 ; lecturesDesCabinets.test.ts).
+    const { data, error: chargeError } = await supabase.from('cabinets')
+      .select('id, nom, couleur_primaire, couleur_primaire_claire, police_google_font, logo_storage_path, created_at')
+      .eq('id', monCabinetId).maybeSingle()
     setErreurChargement(chargeError ? messageErreur(chargeError, "La charte du cabinet n'a pas pu être lue.") : null)
     if (data) {
       setCabinet(data)
