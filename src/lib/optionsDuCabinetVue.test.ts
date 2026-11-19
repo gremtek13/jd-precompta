@@ -71,7 +71,7 @@ describe('ce que l’écran tient de la migration', () => {
   })
 
   it('l’écran appelle la fonction sous ses trois paramètres', () => {
-    expect(REGLER).toMatch(/^create function public\.regler_option_du_cabinet\(p_cabinet_id uuid, p_module text, p_ouverte boolean\)/)
+    expect(REGLER).toMatch(/^create function public\.regler_option_du_cabinet\(p_cabinet_id uuid, p_module text, p_ouverte boolean\)/i)
     expect(LECTURE).toMatch(/rpc\('regler_option_du_cabinet', \{ p_cabinet_id: cabinetId, p_module: module, p_ouverte: ouverte \}\)/)
   })
 })
