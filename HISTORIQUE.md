@@ -54016,6 +54016,7 @@ PAS TROUVÉ : aucun exemplaire ni capture du PDF de l'état — ses libellés, s
 les autres logiciels ; rien d'amelipro. Le cahier NOEMIE-PS de 2004 porte en page 2 « aucune cession des droits d'auteurs » : pas lu
 au-delà, pas recopié (NOE2-Q1 tient). Conséquences pour NOE3 : un agrégat par journée, organisme et part doit admettre des lignes
 SANS facture et des montants NÉGATIFS. Le lecteur du PDF ne s'écrit pas sur ces sources : il attend une page réelle.
+
 ### 19/11/2026 — C8Q2Q3-Q1 (A) : LE RACCORD DE PLUS D'UN MOIS, AVERTI AU CABINET
 
 La prévision publiée se publie toujours ; le cabinet est averti avant le clic quand la banque des comptes n'est plus à jour.
