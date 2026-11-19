@@ -49,6 +49,7 @@ import EquipePage from './EquipePage'
 import RetourBanque from './RetourBanque'
 import SecuriteDuCompte from './SecuriteDuCompte'
 import SuperAdminPage from './SuperAdminPage'
+import OptionsDesCabinets from './OptionsDesCabinets'
 import AccesTab from './dossier/AccesTab'
 import { DOSSIER_DU_CABINET_PREVU } from '../lib/dossierDuCabinet'
 import AssistantTab from './dossier/AssistantTab'
@@ -383,6 +384,9 @@ const ECRANS: Ecran[] = [
     </MemoryRouter>
   ) },
   { nom: 'SuperAdminPage', fichier: 'pages/SuperAdminPage.tsx', rendre: () => <MemoryRouter><SuperAdminPage /></MemoryRouter> },
+  // Les modules des cabinets (OPT4) : monté par SuperAdminPage le drapeau `OPTIONS_DES_CABINETS_PREVUES` levé seulement ; ici
+  // monté seul, le parc et ses options lus en entier avant toute case, donc tout geste.
+  { nom: 'OptionsDesCabinets', fichier: 'pages/OptionsDesCabinets.tsx', rendre: () => <OptionsDesCabinets relecture={0} /> },
   { nom: 'EquipePage', fichier: 'pages/EquipePage.tsx', rendre: () => <MemoryRouter><EquipePage /></MemoryRouter> },
   { nom: 'CabinetBrandingPage', fichier: 'pages/CabinetBrandingPage.tsx', rendre: () => <MemoryRouter><CabinetBrandingPage /></MemoryRouter> },
   // Le modèle de plan du cabinet (PC5) : le modèle et les catégories communes lus en entier avant tout champ, donc tout geste.

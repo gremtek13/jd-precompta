@@ -54180,3 +54180,20 @@ nomme toujours toutes les cases), les points de la Vue d'ensemble (`pointsSousLe
 déclaration de TVA à la tenue), la CA3 (tenue) et les cartes facture électronique et e-reporting (E) de l'onglet TVA, NOEMIE (Banque,
 « Ma banque »), la connexion bancaire, les RIB à confirmer (aucune lecture, facturation fermée), « Proposer une catégorie ». Tests :
 `modulesAffiches.test.ts` et `DossierParcours.test.tsx` sous « tous ouverts », « socle seul » et chaque module seul. OPT4 non fait.
+
+### 19/11/2026 — OPT4 : L'ÉCRAN DES MODULES DES CABINETS, DERRIÈRE `OPTIONS_DES_CABINETS_PREVUES` BAISSÉ
+
+(Agent dev ; rien en production, rien à l'écran tant que le drapeau est baissé.) `pages/OptionsDesCabinets.tsx`, monté par
+`SuperAdminPage` le drapeau levé seulement : par cabinet, les huit modules en cases, lus EN ENTIER (`lib/optionsDesCabinetsLecture.ts` :
+les cabinets, `options_des_cabinets`, les dossiers avec leur bascule, les envois des deux tables de transmissions à l'état `envoi`) ;
+une lecture partielle ou rompue se dit (`BandeauLecturePartielle`) et n'offre aucune case ; un cabinet aux lignes illisibles non plus ;
+un cabinet neuf (aucune ligne) dit son socle seul (OPT-Q3 (B)). `lib/optionsDuCabinetVue.ts`, pur, applique les mots de
+`modulesDuCabinet.ts` sans les recopier : la fermeture refusée avant le clic sous un module qui la suppose, puis sous un dossier basculé
+(F) ou un envoi sans issue connue (E), les dossiers dans l'ordre `collate "C"` de la base ; N, que l'écran ne sait pas juger (la table de
+NOE5), la base le dit après le clic. La confirmation nomme le cabinet, le module, ce qui s'ouvre (et ce qui s'ouvre avec lui) ou
+disparaît des écrans, que rien n'est supprimé ; `regler_option_du_cabinet` sous un verrou `useRef` relâché après la relecture, le refus
+dit dans la fenêtre. OPT1-Q1 (A) — dire les encaissements à déclarer avant de fermer E — n'est PAS calculé : `pastilleDeclaration` lit,
+par dossier, sept collections ; une phrase générique le rappelle (OPT4-Q1). Le choix des modules à la création d'un cabinet n'est pas
+fait (`create-cabinet` à toucher, OPT4-Q2). Tests : `optionsDuCabinetVue.test.ts` (le critère, l'ordre et les paramètres confrontés au
+texte de la migration), `OptionsDesCabinets.test.tsx` (les deux états du drapeau par accesseur, deux et trois clics, l'échec, la lecture
+partielle) ; deux mutations mordent ; le scanner des déclarations et celui des écrans avant lecture reçoivent le nouveau lecteur.

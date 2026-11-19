@@ -10,6 +10,8 @@ import { formatDate } from '../lib/format'
 import { messageErreur } from '../lib/messageErreur'
 import { LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, refusDeLaRegle } from '../lib/recuperationMotDePasse'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
+import { OPTIONS_DES_CABINETS_PREVUES } from '../lib/modulesDuCabinet'
+import OptionsDesCabinets from './OptionsDesCabinets'
 
 interface CabinetApercu {
   id: string
@@ -75,6 +77,9 @@ export default function SuperAdminPage() {
   const [plafondBlocage, setPlafondBlocage] = useState('')
   const [plafondEnregistrement, setPlafondEnregistrement] = useState(false)
   const [plafondErreur, setPlafondErreur] = useState<string | null>(null)
+
+  // La clé de relecture des modules des cabinets (OPT4) : un cabinet créé ou supprimé change la liste qu'ils lisent.
+  const [relectureDesOptions, setRelectureDesOptions] = useState(0)
 
   async function load() {
     setLoading(true)
@@ -198,6 +203,7 @@ export default function SuperAdminPage() {
       setPassword('')
       setAjout(false)
       load()
+      setRelectureDesOptions((n) => n + 1)
     } finally {
       creationEnCours.current = false
       setEnregistrement(false)
@@ -220,6 +226,7 @@ export default function SuperAdminPage() {
     }
     setASupprimer(null)
     load()
+    setRelectureDesOptions((n) => n + 1)
   }
 
   function ouvrirPlafond(c: CabinetApercu) {
@@ -414,6 +421,9 @@ export default function SuperAdminPage() {
           </div>
         )}
       </div>
+
+      {/* Les modules de chaque cabinet (conception 56, OPT4) : rien ne lit `options_des_cabinets` avant sa migration. */}
+      {OPTIONS_DES_CABINETS_PREVUES && <OptionsDesCabinets relecture={relectureDesOptions} />}
 
       {/* La restauration vit ici parce qu'on restaure un dossier qui n'existe PLUS : il n'y a aucun
           écran de dossier où mettre ce bouton. Et parce que c'est la seule action de l'application
