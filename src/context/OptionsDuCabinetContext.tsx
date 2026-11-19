@@ -1,14 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from './AuthContext'
-import { ModulesFournis, TOUT_OUVERT_SANS_LECTURE, useModulesOuverts, type EtatDesModules } from './ModulesOuverts'
+import { EN_LECTURE, etatDeLaLecture, ModulesFournis, TOUT_OUVERT_SANS_LECTURE, useModulesOuverts, type EtatDesModules } from './ModulesOuverts'
 import { droitsSur, type DroitsAcces } from '../lib/droitsAcces'
 import { droitsMasques, OPTIONS_DES_CABINETS_PREVUES } from '../lib/modulesDuCabinet'
-import { lireLesModulesDuCabinet, lireLesModulesDuDossier, type ModulesDuCabinetLus } from '../lib/optionsDuCabinetLecture'
+import { lireLesModulesDuCabinet, lireLesModulesDuDossier } from '../lib/optionsDuCabinetLecture'
 
 // LE FOURNISSEUR DES MODULES OUVERTS (conception 56, § 2.3, lot OPT3), sur le patron d'`AuthContext` : une lecture au
 // changement d'IDENTIFIANT de ce qu'elle lit — le cabinet du compte du cabinet, la société affichée du client —, jamais à
 // chaque retour sur l'onglet. La réponse se garde avec sa clé : une réponse pour une autre clé ne s'affiche pas, l'état repart
 // en lecture. Ce que les écrans lisent : ModulesOuverts.tsx (`useModulesOuverts`).
+//
+// HORS D'UN DOSSIER SEULEMENT, côté cabinet (OPT3-Q1 (A), 19/11/2026) : la coque, la liste, le tableau de bord suivent le cabinet
+// du compte ; à l'intérieur d'un dossier, ModulesDuDossier.tsx les remplace par ceux du cabinet DU DOSSIER.
 
 /** La clé de ce que la coque lit : `cabinet:<id>` ou `dossier:<id>`, ou nul quand rien n'est à lire. */
 export function cleDesOptions(role: 'cabinet' | 'client' | null, cabinetId: string | null, dossierId: string | null): string | null {
@@ -16,13 +19,6 @@ export function cleDesOptions(role: 'cabinet' | 'client' | null, cabinetId: stri
   if (role === 'client') return dossierId ? `dossier:${dossierId}` : null
   return null
 }
-
-/** Ce que l'état devient d'une lecture revenue. */
-function etatDeLaLecture(lu: ModulesDuCabinetLus): EtatDesModules {
-  return lu.etat === 'lus' ? { etat: 'lus', ouverts: lu.ouverts } : { etat: 'illisibles', ouverts: [], motif: lu.motif }
-}
-
-const EN_LECTURE: EtatDesModules = { etat: 'lecture', ouverts: [] }
 
 /** `prevues` : le drapeau, en propriété pour que les tests jouent ses deux états. */
 export function OptionsDuCabinetProvider({ children, prevues = OPTIONS_DES_CABINETS_PREVUES }: { children: ReactNode; prevues?: boolean }) {

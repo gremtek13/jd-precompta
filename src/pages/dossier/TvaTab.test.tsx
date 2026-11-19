@@ -2,6 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TvaTab from './TvaTab'
+import { ModulesFournis } from '../../context/ModulesOuverts'
+import { MOTS_DU_REFUS, type ModuleOptionnel } from '../../lib/modulesDuCabinet'
 import type {
   ANouveau, ArticleExoneration, Categorie, DeclarationTva, LigneBancaire, ModeComptable, PeriodiciteTva, Piece, ReglementGroupe,
   StatutTva, VentilationBancaire,
@@ -222,8 +224,10 @@ const ligneDe = (libelle: string) => screen.getByText(libelle).closest('tr') as 
 // Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
 function Hote({
   periodicite = 'trimestrielle', surDebits = false, assujetti = true, statut, article = null, numero = false, siret = null, valides = [],
-  espion, plan = PLAN_PAR_DEFAUT, dossier = 'd', mode = 'tresorerie', bascule = false,
+  espion, plan = PLAN_PAR_DEFAUT, dossier = 'd', mode = 'tresorerie', bascule = false, modules,
 }: {
+  // Les modules du cabinet du dossier (OPT3) : sans fournisseur, tous ouverts (le drapeau baissé), sauf mention contraire.
+  modules?: readonly ModuleOptionnel[]
   // Le dossier ouvert : « d », sauf mention contraire.
   dossier?: string
   // Le modèle comptable et le réglage des ventes facturées (étape VF4c3) : trésorerie, et pas basculé, sauf mention contraire.
@@ -251,7 +255,7 @@ function Hote({
     assujetti_tva: assujetti,
     numero_tva_attribue: numero,
   })
-  return (
+  const onglet = (
     <AvecExercicesValides annees={valides}>
       <TvaTab
         dossierId={dossier}
@@ -270,6 +274,7 @@ function Hote({
       />
     </AvecExercicesValides>
   )
+  return modules === undefined ? onglet : <ModulesFournis etat={{ etat: 'lus', ouverts: modules }}>{onglet}</ModulesFournis>
 }
 
 async function afficher(props: Parameters<typeof Hote>[0] = {}) {
@@ -1322,5 +1327,31 @@ describe('TvaTab — les recettes de caisse', () => {
     expect(screen.getByText(/La CA3 ne se calcule pas sans la caisse du dossier/)).toBeTruthy()
     expect(screen.queryByText('CA3 — 1er trimestre 2027')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Enregistrer la déclaration' })).toBeNull()
+  })
+})
+
+// OPT3-Q2 (A), 19/11/2026 : l'information sur l'obligation de facture électronique est du SOCLE ; seule la carte de
+// l'e-reporting (sa déclaration, son fichier) suit le module « Facture électronique » du cabinet du dossier.
+describe('TvaTab — sous les modules du cabinet du dossier (OPT3-Q2)', () => {
+  const titres = () => screen.queryAllByRole('heading', { level: 3 }).map((h) => h.textContent)
+
+  it('au socle seul, un dossier exonéré : l’obligation de facture électronique se dit, l’e-reporting ne s’offre pas', async () => {
+    await afficher({ assujetti: false, statut: 'exonere', article: 'cgi_261_4_1', modules: [] })
+    expect(titres()).toContain('Facturation électronique')
+    expect(titres()).not.toContain('E-reporting')
+  })
+
+  it('au socle seul, un redevable : la CA3 ne s’offre pas (la tenue), l’obligation se dit, l’e-reporting non', async () => {
+    render(<Hote modules={[]} />)
+    await act(async () => {})
+    expect(screen.getByText(/La préparation de la CA3 appartient au module/).textContent).toContain(MOTS_DU_REFUS.ecranDuDossier)
+    expect(titres()).toContain('Facturation électronique')
+    expect(titres()).not.toContain('E-reporting')
+  })
+
+  it('le module « Facture électronique » ouvert : les deux cartes', async () => {
+    await afficher({ assujetti: false, statut: 'exonere', article: 'cgi_261_4_1', modules: ['facture_electronique'] })
+    expect(titres()).toContain('Facturation électronique')
+    expect(titres()).toContain('E-reporting')
   })
 })

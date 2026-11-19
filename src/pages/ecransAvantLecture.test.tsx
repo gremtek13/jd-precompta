@@ -812,6 +812,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
   'context/AuthContext.tsx': 'pas un écran : tant qu’il lit la session, App ne montre que « Chargement… »',
   'context/OptionsDuCabinetContext.tsx': 'pas un écran : le drapeau baissé, aucune lecture ; levé, tant qu’il lit les modules du '
     + 'cabinet (état `lecture`), App ne montre que « Chargement… », et aucun module ne s’ouvre avant le retour (OptionsDuCabinetContext.test.tsx)',
+  'context/ModulesDuDossier.tsx': 'pas un écran : le drapeau baissé, aucune lecture ; levé, tant qu’il lit les modules du cabinet du '
+    + 'dossier (état `lecture`), la page du dossier ne monte aucun onglet et la barre latérale attend ; la réponse d’un dossier quitté '
+    + 'n’écrit rien (ModulesDuDossier.test.tsx, DossierDetail.test.tsx) ; n’écrit rien en base',
   'pages/TuilesVentesClient.tsx': 'ne lit plus (étape A6b2) : reçoit la lecture des ventes de l’accueil (AccueilVentesClient, montée ici) et ne fait que compter ses pastilles ; n’écrit rien',
   'pages/PaiementParMaCaisse.tsx': 'reçoit de « Mes pièces » (ClientUpload) une caisse lue en entier et rejouée et des pièces lues en entier (caisseDeMesPieces) — rien ne le monte avant ; ne paie ni ne retire qu’au clic confirmé, puis relit la caisse (ClientUpload.caisse.test.tsx)',
   'pages/dossier/ReglementParLaCaisse.tsx':'reçoit de la fiche d’une pièce (FichePiece, que PiecesTab ouvre) la caisse que l’onglet a lue (lireLaCaisseDuDossier), « Lecture de la caisse du dossier… » tant qu’elle n’est pas revenue, et rien le drapeau baissé ; ne règle ni ne retire un paiement qu’au clic confirmé, sur une caisse lue en entier (ReglementParLaCaisse.test.tsx)',

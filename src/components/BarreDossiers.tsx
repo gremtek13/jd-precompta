@@ -53,8 +53,11 @@ export default function BarreDossiers({
 }) {
   const [groupes, setGroupes] = useState<Record<string, boolean>>(lireGroupes)
   // Les écrans, lus à chaque rendu : l'onglet Caisse n'y est que la caisse en base, l'onglet Inventaire que l'inventaire offert (lib/ongletsDossier.ts).
-  // Et les écrans des seuls modules ouverts du cabinet (conception 56, OPT3) : le drapeau baissé, tous.
-  const { ouverts } = useModulesOuverts()
+  // Et les écrans des seuls modules ouverts du cabinet (conception 56, OPT3) : le drapeau baissé, tous. Ceux du cabinet DU
+  // DOSSIER ouvert (OPT3-Q1 (A)) : la coque enveloppe cette barre de leur lecture (context/ModulesDuDossier.tsx) ; tant qu'elle
+  // n'est pas revenue, l'arborescence attend.
+  const modules = useModulesOuverts()
+  const { ouverts } = modules
   const tousLesGroupes = groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, ouverts)
   const DESTINATIONS = tousLesGroupes.filter((g) => g.cible)
   const REGROUPEMENTS = tousLesGroupes.filter((g) => g.enfants)
@@ -117,6 +120,12 @@ export default function BarreDossiers({
             {ouvert ? <Avatar nom={ouvert.nom} taille={26} /> : <span className="skeleton barre-avatar-attente" />}
             <span className="barre-nom">{ouvert?.nom ?? (chargement ? 'Chargement…' : 'Ce dossier')}</span>
           </Link>
+          {modules.etat === 'lecture' ? (
+            <div className="barre-chargement" aria-busy="true" aria-label="Chargement des écrans du dossier">
+              <span className="skeleton skeleton-ligne" />
+              <span className="skeleton skeleton-ligne" />
+            </div>
+          ) : (
           <div className="barre-arbre">
             {DESTINATIONS.map((g) => (
               <NavLink key={g.id} to={`/dossiers/${dossierOuvertId}/${g.cible}`} className="barre-lien">
@@ -146,6 +155,7 @@ export default function BarreDossiers({
               )
             })}
           </div>
+          )}
         </section>
       )}
 

@@ -54230,3 +54230,21 @@ par patient ; des agrégats et des empreintes, données pseudonymisées concerna
 l'article L. 1111-8 (BOR3RGPD-Q1). CLAUDE.md (« Pas d'hébergement HDS » : « ne dépose pas », plus « ne transmet pas »), trois
 commentaires du code, la conception 59 (§ 15) suivent. BOR3-Q1 (A) et BOR3-Q2 (A), à la recommandation : rien ne change à la
 préparée. Ouvertes : BOR3RGPD-Q1, BOR3RGPD-Q2 (le support remis après l'import).
+### 19/11/2026 — OPT3-Q1 ET OPT3-Q2 : DANS UN DOSSIER, LES MODULES DE SON CABINET ; L'OBLIGATION DE FACTURE ÉLECTRONIQUE AU SOCLE
+
+(Agent dev ; rien en production, `OPTIONS_DES_CABINETS_PREVUES` toujours baissé : aucune lecture, tout ouvert, comme hier.) Deux
+réponses du cabinet, à la recommandation. OPT3-Q1 (A) : à l'intérieur d'un dossier, côté cabinet, les onglets, la barre latérale,
+les fiches et l'assistant suivent les modules du cabinet DU DOSSIER, lus par `modules_ouverts_du_dossier` (ouverte à
+`admin_du_dossier`) ; hors d'un dossier (la coque, la liste, le tableau de bord), ceux du cabinet du compte, comme avant. Un
+fournisseur neuf, `context/ModulesDuDossier.tsx`, garde la réponse avec l'identifiant du dossier lu (une réponse d'un dossier quitté,
+arrivée la dernière, n'écrit rien), passe l'état d'au-dessus tel quel hors d'un dossier ou le drapeau baissé, rend toujours le même
+arbre (rien ne se remonte en entrant ou en sortant d'un dossier), et ne relit pas un dossier qu'un fournisseur au-dessus lit déjà :
+la coque (`Layout.tsx`) enveloppe la barre latérale et la page, `DossierDetail` s'enveloppe aussi pour se suffire — une lecture par
+dossier ouvert. En lecture, aucun onglet ne se monte, l'onglet de l'adresse n'est pas jugé fermé, la barre latérale attend ;
+illisible, le socle seul et `MOTS_DU_REFUS.optionsDuDossierIllisibles` ; un onglet fermé se dit `ecranDuDossier` (« au cabinet de ce
+dossier » : le super-administrateur n'a pas de « votre cabinet » ici). OPT3-Q2 (A) : dans l'onglet TVA, la carte « Facturation
+électronique » (l'obligation) est du socle ; seule la carte de l'e-reporting suit le module ; le scanner d'OPT2 ne range pas les
+cartes, rien à y changer. OPT4-Q1 (A) et OPT4-Q2 (A), tranchées le même jour : rien ne change, la phrase de rappel reste et rien ne
+se choisit à la création d'un cabinet. Tests : `ModulesDuDossier.test.tsx`, `DossierDetail.test.tsx` (le drapeau par accesseur : zéro
+appel baissé, le super-administrateur sans modules au compte devant un dossier qui a tout, la course, l'illisible), `TvaTab.test.tsx` ;
+trois mutations mordent (l'annulation, la lecture partagée, l'enveloppe de la coque).

@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from '../components/Layout'
 import DossierDetail from './DossierDetail'
 import { DOSSIER_FERME_PAR_LE_CABINET, POUR_OUVRIR_LE_DOSSIER } from '../lib/dossiersOuverts'
+import { ModulesFournis, type EtatDesModules } from '../context/ModulesOuverts'
+import { MOTS_DU_REFUS, TOUS_LES_MODULES } from '../lib/modulesDuCabinet'
 
 // La vraie page d'un dossier, montée dans la vraie coque. Deux choses que rien d'autre ne voit :
 //
@@ -73,13 +75,32 @@ const faux = vi.hoisted(() => ({
   ouvertures: {} as Record<string, boolean | { erreur: string }>,
   retenuesOuverture: {} as Record<string, Promise<void>>,
   lecturesOuverture: 0,
+  // LES MODULES DU CABINET DU DOSSIER (OPT3-Q1 (A)) : ce que `modules_ouverts_du_dossier` rend pour chaque dossier (tous par
+  // défaut), refusé à la demande ; sa lecture retenue à la demande, et les dossiers lus, dans l'ordre.
+  modules: {} as Record<string, readonly string[] | { erreur: string }>,
+  retenuesModules: {} as Record<string, Promise<void>>,
+  lecturesModules: [] as string[],
+  // Le drapeau `OPTIONS_DES_CABINETS_PREVUES`, joué par un accesseur : baissé, sauf mention contraire.
+  optionsPrevues: false,
 }))
+
+vi.mock('../lib/modulesDuCabinet', async (original) => {
+  const vrai = await original<typeof import('../lib/modulesDuCabinet')>()
+  return { ...vrai, get OPTIONS_DES_CABINETS_PREVUES() { return faux.optionsPrevues } }
+})
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
     // Le plan effectif d'un dossier, un rôle par ligne dans l'ordre du catalogue, comme la base le rend.
     rpc: (nom: string, args: { p_dossier_id: string }) => {
       const identifiant = args.p_dossier_id
+      if (nom === 'modules_ouverts_du_dossier') {
+        faux.lecturesModules.push(identifiant)
+        return (faux.retenuesModules[identifiant] ?? Promise.resolve()).then(async () => {
+          const reponse = faux.modules[identifiant] ?? (await import('../lib/modulesDuCabinet')).TOUS_LES_MODULES
+          return 'erreur' in reponse ? { data: null, error: { message: reponse.erreur } } : { data: [...reponse], error: null }
+        })
+      }
       if (nom === 'admin_du_dossier') {
         faux.lecturesOuverture++
         return (faux.retenuesOuverture[identifiant] ?? Promise.resolve()).then(() => {
@@ -488,10 +509,11 @@ vi.mock('../context/AuthContext', () => ({
 vi.mock('../lib/branding', () => ({ useCabinetBranding: () => null }))
 vi.mock('../lib/theme', () => ({ useTheme: () => ({ theme: 'light', toggleTheme: () => {} }) }))
 
-async function afficher(chemin: string) {
-  await act(async () => {
-    render(
-      <MemoryRouter initialEntries={[chemin]}>
+// `auDessus` : les modules du cabinet du COMPTE, que la coque reçoit de l'application (OptionsDuCabinetContext) ; sans lui,
+// aucun fournisseur, comme dans les tests d'hier.
+async function afficher(chemin: string, auDessus?: EtatDesModules) {
+  const routes = (
+    <MemoryRouter initialEntries={[chemin]}>
         <Routes>
           {/* Les deux routes de l'application (voir App.tsx) : la barre latérale mène à /dossiers/:id,
               que la page complète aussitôt par son onglet — sans quitter la page. */}
@@ -500,8 +522,10 @@ async function afficher(chemin: string) {
             <Route path="/dossiers/:id/:tab" element={<DossierDetail />} />
           </Route>
         </Routes>
-      </MemoryRouter>,
-    )
+      </MemoryRouter>
+  )
+  await act(async () => {
+    render(auDessus === undefined ? routes : <ModulesFournis etat={auDessus}>{routes}</ModulesFournis>)
   })
 }
 
@@ -564,6 +588,10 @@ beforeEach(() => {
   faux.ouvertures = {}
   faux.retenuesOuverture = {}
   faux.lecturesOuverture = 0
+  faux.modules = {}
+  faux.retenuesModules = {}
+  faux.lecturesModules = []
+  faux.optionsPrevues = false
 })
 
 describe('Page d’un dossier — l’assistant dans le panneau de droite', () => {
@@ -1406,5 +1434,90 @@ describe('Page d’un dossier — l’onglet Inventaire', () => {
     drapeauDeLInventaire.leve = true
     await afficher('/dossiers/d2/inventaire')
     expect(screen.getByRole('tablist', { name: 'Exercice' })).toBeTruthy()
+  })
+})
+
+// OPT3-Q1 (A), 19/11/2026 : à l'intérieur d'un dossier, les onglets, la barre latérale et l'assistant suivent les modules du
+// cabinet DU DOSSIER (`modules_ouverts_du_dossier`), lus une fois pour la coque et la page, gardés avec l'identifiant du dossier ;
+// hors d'un dossier, ceux du cabinet du compte. Le drapeau baissé : aucune lecture, tout ouvert, comme hier.
+describe('Page d’un dossier — les modules du cabinet du dossier (OPT3-Q1)', () => {
+  const boutonAssistant = () => {
+    const titre1 = screen.queryByRole('heading', { level: 1 })
+    return titre1 ? within(titre1.closest('header')!).queryByRole('button', { name: 'Assistant' }) : null
+  }
+  const TOUT_AU_COMPTE: EtatDesModules = { etat: 'lus', ouverts: TOUS_LES_MODULES }
+  const RIEN_AU_COMPTE: EtatDesModules = { etat: 'illisibles', ouverts: [], motif: 'le cabinet du compte n’est pas connu' }
+
+  it('le drapeau baissé : aucune lecture, tous les onglets et l’assistant, comme hier', async () => {
+    await afficher('/dossiers/d1/bilan')
+    expect(screen.getByText(/^Bilan — modèle/)).toBeTruthy()
+    expect(boutonAssistant()).not.toBeNull()
+    expect(faux.lecturesModules).toEqual([])
+  })
+
+  it('le super-administrateur, sans modules au compte, ouvre le dossier d’un cabinet qui a tout : les modules DU DOSSIER, lus une fois', async () => {
+    faux.optionsPrevues = true
+    await afficher('/dossiers/d1/bilan', RIEN_AU_COMPTE)
+    expect(screen.getByText(/^Bilan — modèle/)).toBeTruthy()
+    expect(boutonAssistant()).not.toBeNull()
+    expect(screen.queryByText(MOTS_DU_REFUS.ecranDuDossier)).toBeNull()
+    // La barre latérale aussi : l'écran de la tenue y est (son groupe déplié, l'onglet affiché y vivant).
+    expect(within(screen.getByRole('region', { name: 'Dossier ouvert' })).getByRole('link', { name: 'Bilan' })).toBeTruthy()
+    // La coque et la page partagent la même lecture.
+    expect(faux.lecturesModules).toEqual(['d1'])
+  })
+
+  it('au compte, tout ; le dossier d’un cabinet au socle seul : l’onglet de la tenue mène à la Vue d’ensemble, qui le dit', async () => {
+    faux.optionsPrevues = true
+    faux.modules = { d1: [] }
+    await afficher('/dossiers/d1/bilan', TOUT_AU_COMPTE)
+    expect(screen.queryByText(/^Bilan — modèle/)).toBeNull()
+    expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
+    expect(screen.getByText(MOTS_DU_REFUS.ecranDuDossier)).toBeTruthy()
+    expect(boutonAssistant()).toBeNull()
+    expect(within(screen.getByRole('region', { name: 'Dossier ouvert' })).queryByRole('link', { name: 'Bilan' })).toBeNull()
+  })
+
+  it('en lecture : aucun onglet, ni l’onglet de l’adresse jugé fermé, et la barre latérale attend ; puis les onglets', async () => {
+    faux.optionsPrevues = true
+    const r = retenue()
+    faux.retenuesModules = { d1: r.promesse }
+    await afficher('/dossiers/d1/bilan', TOUT_AU_COMPTE)
+    expect(screen.queryByText(/^Bilan — modèle/)).toBeNull()
+    expect(screen.queryByText('Vue d’ensemble du dossier')).toBeNull()
+    expect(screen.queryByText(MOTS_DU_REFUS.ecranDuDossier)).toBeNull()
+    expect(screen.getByLabelText('Chargement des écrans du dossier')).toBeTruthy()
+    await act(async () => { r.relacher() })
+    expect(screen.getByText(/^Bilan — modèle/)).toBeTruthy()
+    expect(screen.queryByLabelText('Chargement des écrans du dossier')).toBeNull()
+  })
+
+  it('illisibles : le côté fermé, le socle seul, et la page le dit', async () => {
+    faux.optionsPrevues = true
+    faux.modules = { d1: { erreur: 'refusé' } }
+    await afficher('/dossiers/d1/bilan', TOUT_AU_COMPTE)
+    expect(screen.getByText(MOTS_DU_REFUS.optionsDuDossierIllisibles)).toBeTruthy()
+    expect(screen.queryByText(/^Bilan — modèle/)).toBeNull()
+    expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
+    expect(boutonAssistant()).toBeNull()
+  })
+
+  it('la réponse d’un dossier quitté, arrivée la dernière, ne s’affiche pas dans le suivant', async () => {
+    faux.optionsPrevues = true
+    const r = retenue()
+    faux.retenuesModules = { d1: r.promesse }
+    faux.modules = { d1: TOUS_LES_MODULES, d2: ['tenue'] }
+    await afficher('/dossiers/d1/checklist', TOUT_AU_COMPTE)
+    await allerAuDossier('Bravo Santé')
+    expect(titre()).toBe('Bravo Santé')
+    expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
+    // Celle de d1 (l'assistant ouvert) revient après : d2 reste sans assistant.
+    await act(async () => { r.relacher() })
+    expect(titre()).toBe('Bravo Santé')
+    expect(boutonAssistant()).toBeNull()
+    // Et d2 garde SES modules lus : ses onglets restent montés, la page ne repart pas en lecture.
+    expect(screen.getByText('Vue d’ensemble du dossier')).toBeTruthy()
+    expect(screen.queryByLabelText('Chargement des écrans du dossier')).toBeNull()
+    expect(faux.lecturesModules).toEqual(['d1', 'd2'])
   })
 })

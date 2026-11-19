@@ -611,10 +611,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`options_des_cabinets` : un cabinet neuf n'a que le socle, les existants tout ouvert ; et la garde des plafonds de
   l'assistant, OPT-Q7), `OPTIONS_DES_CABINETS_PREVUES` baissé → « OPT1 ET OPT2 : LES OPTIONS PAR CABINET ». OPT3 branché derrière
   le même drapeau (`context/ModulesOuverts.tsx`, `OptionsDuCabinetContext.tsx`, `lib/optionsDuCabinetLecture.ts` : baissé, tout
-  ouvert sans lecture ; levé, illisible = le socle seul) → « OPT3 : LES MODULES BRANCHÉS DANS LES ÉCRANS ». OPT4, l'écran du
+  ouvert sans lecture ; levé, illisible = le socle seul ; dans un dossier, les modules de SON cabinet, `context/ModulesDuDossier.tsx`,
+  OPT3-Q1 (A) ; l'obligation de facture électronique au socle, OPT3-Q2 (A)) → « OPT3 : LES MODULES BRANCHÉS DANS LES ÉCRANS »,
+  « OPT3-Q1 ET OPT3-Q2 ». OPT4, l'écran du
   super-administrateur, derrière le même drapeau (`pages/OptionsDesCabinets.tsx`, `lib/optionsDuCabinetVue.ts` : huit cases par
-  cabinet lues en entier, les refus de la base dits avant le clic, la confirmation qui nomme ; le choix à la création reste, OPT4-Q1
-  et OPT4-Q2 ouvertes) → « OPT4 : L'ÉCRAN DES MODULES DES CABINETS ». OPT1-Q3 (B) : les plafonds de l'assistant fermés au client —
+  cabinet lues en entier, les refus de la base dits avant le clic, la confirmation qui nomme ; OPT4-Q1 et OPT4-Q2 (A) : la phrase de
+  rappel reste, rien à la création d'un cabinet) → « OPT4 : L'ÉCRAN DES MODULES DES CABINETS ». OPT1-Q3 (B) : les plafonds de l'assistant fermés au client —
   aucune lecture de `cabinets` d'un connecté ne demande plus `*` ni un plafond (`lecturesDesCabinets.test.ts`), la migration
   `plafonds_hors_du_client` préparée, par l'outil (droits par colonne, `plafonds_de_l_assistant()` à l'équipe du cabinet),
   `PLAFONDS_HORS_DU_CLIENT_PREVUS` baissé → « OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT ».

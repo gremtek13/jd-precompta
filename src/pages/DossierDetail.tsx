@@ -34,6 +34,7 @@ import { CAISSE_EXPORTEE } from '../lib/caisse'
 import { INVENTAIRE_EXPORTE } from '../lib/inventaire'
 import { ongletsValides } from '../lib/ongletsDossier'
 import { useModulesOuverts } from '../context/ModulesOuverts'
+import { ModulesDuDossier } from '../context/ModulesDuDossier'
 import { estOuvert, MOTS_DU_REFUS, TOUS_LES_MODULES } from '../lib/modulesDuCabinet'
 import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
 import { AnneeProvider, useAnnee } from '../context/AnneeContext'
@@ -72,16 +73,27 @@ function calculerAnneeParDefaut(anneesDisponibles: number[]): ValeurAnnee {
   return anneesDisponibles[0]
 }
 
+// LES MODULES DU CABINET DU DOSSIER (OPT3-Q1 (A), 19/11/2026) : tout ce que cette page monte — onglets, fiches, assistant —
+// suit les modules du cabinet AUQUEL LE DOSSIER APPARTIENT, lus avec l'identifiant du dossier (context/ModulesDuDossier.tsx ;
+// sous la coque, qui les lit déjà pour la barre latérale, rien n'est relu). Le drapeau baissé : aucune lecture, tout ouvert.
 export default function DossierDetail() {
+  const { id } = useParams<{ id: string }>()
+  return <ModulesDuDossier dossierId={id ?? null}><PageDuDossier /></ModulesDuDossier>
+}
+
+function PageDuDossier() {
   const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>()
   const navigate = useNavigate()
   // LES MODULES DU CABINET (conception 56, OPT3) : un onglet d'un module fermé ne s'offre pas, et son adresse directe mène à la
-  // Vue d'ensemble, qui le dit (`ongletFerme`). Le drapeau baissé : tout ouvert, les onglets d'hier.
+  // Vue d'ensemble, qui le dit (`ongletFerme`). Le drapeau baissé : tout ouvert, les onglets d'hier. Tant que les modules du
+  // dossier ne sont pas revenus, aucun onglet ne se monte (`pret`) et l'onglet de l'adresse n'est pas encore jugé fermé.
   const modules = useModulesOuverts()
+  const modulesEnLecture = modules.etat === 'lecture'
+  const ongletsConnus = ongletsValides(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, TOUS_LES_MODULES)
   const ongletsOffertsIci = ongletsValides(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, modules.ouverts)
-  const tab: DossierTab = ongletsOffertsIci.includes(tabParam as DossierTab) ? (tabParam as DossierTab) : 'checklist'
-  const ongletFerme = tabParam !== undefined && !ongletsOffertsIci.includes(tabParam as DossierTab)
-    && ongletsValides(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, TOUS_LES_MODULES).includes(tabParam as DossierTab)
+  const tab: DossierTab = (modulesEnLecture ? ongletsConnus : ongletsOffertsIci).includes(tabParam as DossierTab) ? (tabParam as DossierTab) : 'checklist'
+  const ongletFerme = !modulesEnLecture && tabParam !== undefined && !ongletsOffertsIci.includes(tabParam as DossierTab)
+    && ongletsConnus.includes(tabParam as DossierTab)
   // Le dossier lu, AVEC l'identifiant pour lequel il l'a été — et de même pour les années. Cette page
   // ne se remonte pas quand la barre latérale mène d'un dossier à l'autre (même route, autre :id) :
   // un état gardé seul désignerait encore l'ANCIEN dossier jusqu'à la fin de la lecture du nouveau,
@@ -141,7 +153,7 @@ export default function DossierDetail() {
   // Aucun onglet ne se monte avant le plan : aucun geste n'écrit avant qu'il soit lu, et chaque onglet qui compose une
   // écriture le reçoit, entier.
   const pret = !erreurDossier && !erreurValides && !erreurPlan && !erreurModele && dossier !== null
-    && anneesDisponibles !== null && modele !== null && ouvert
+    && anneesDisponibles !== null && modele !== null && ouvert && !modulesEnLecture
 
   // Change ce dossier-là et lui seul : une réponse qui revient après qu'on a changé de dossier ne
   // doit pas écrire l'ancien sur le nouveau.
@@ -430,7 +442,8 @@ export default function DossierDetail() {
               }
             />
 
-            {ongletFerme && <p className="error-text" role="status">{MOTS_DU_REFUS.ecranDuCabinet}</p>}
+            {modules.etat === 'illisibles' && <p className="error-text" role="status">{MOTS_DU_REFUS.optionsDuDossierIllisibles}</p>}
+            {ongletFerme && <p className="error-text" role="status">{MOTS_DU_REFUS.ecranDuDossier}</p>}
             {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} statutTva={dossier?.statut_tva ?? null} modele={modele} ventesParLesFactures={dossier?.ventes_par_les_factures === true} onNavigate={allerA} />}
             {tab === 'pieces' && (
               <PiecesTab

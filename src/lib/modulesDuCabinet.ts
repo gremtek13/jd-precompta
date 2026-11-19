@@ -173,9 +173,13 @@ export function refusDExtinction(module: ModuleOptionnel, dossiers: readonly str
 export const MOTS_DU_REFUS = {
   /** Une adresse directe vers un écran d'un module fermé mène au socle et le dit (étage 1). */
   ecranDuCabinet: 'Ce module n’est pas ouvert à votre cabinet.',
+  /** Dans un dossier, les modules sont ceux du cabinet DU DOSSIER (OPT3-Q1 (A)) : le super-administrateur qui ouvre le dossier
+   *  d'un autre cabinet n'a pas de « votre cabinet » ici. */
+  ecranDuDossier: 'Ce module n’est pas ouvert au cabinet de ce dossier.',
   ecranDuClient: 'Cette partie de ton espace n’est pas ouverte par ton cabinet.',
   /** Les options illisibles : seul le socle se monte, un bandeau le dit, rien ne s'écrit de ce qui n'a pas été lu. */
   optionsIllisibles: 'Les options du cabinet n’ont pas pu être lues : seul le socle s’affiche.',
+  optionsDuDossierIllisibles: 'Les options du cabinet de ce dossier n’ont pas pu être lues : seul le socle s’affiche dans ce dossier.',
   /** Une Edge Function d'un module fermé refuse en 403 AVANT toute dépense (étage 2). */
   fonctionFermee: 'Ce module n’est pas ouvert au cabinet de ce dossier.',
   /** Les options illisibles par une Edge Function : 503, avant toute dépense. */
