@@ -1,5 +1,5 @@
 -- LES OPTIONS PAR CABINET (conception 56, lot OPT1 ; la migration `options_des_cabinets`, préparée le 19/11/2026, pas
--- appliquée : supabase/preparees/20261119130000_options_des_cabinets.sql). Le récit : HISTORIQUE.md, « 19/11/2026 — OPT1 ET
+-- appliquée : supabase/schema/20261119140325_options_des_cabinets.sql). Le récit : HISTORIQUE.md, « 19/11/2026 — OPT1 ET
 -- OPT2 : LES OPTIONS PAR CABINET, LE MODULE ET LA MIGRATION (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après
 -- toute migration qui touche `options_des_cabinets`, `regler_option_du_cabinet`, `modules_ouverts_du_dossier`,
 -- `garder_plafonds_de_l_assistant`, `cabinets`, `is_super_admin`, `admin_du_cabinet`, `admin_du_dossier` ou

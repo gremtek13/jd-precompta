@@ -23,7 +23,7 @@ import {
 
 const TABLE = 'options_des_cabinets'
 const MIGRATION = readFileSync(
-  new URL('../../supabase/preparees/20261119130000_options_des_cabinets.sql', import.meta.url), 'utf8')
+  new URL('../../supabase/schema/20261119140325_options_des_cabinets.sql', import.meta.url), 'utf8')
 
 describe('le filtre du plan, côté options des cabinets', () => {
   it('la table n’est au plan que le drapeau levé ; toute autre l’est toujours', () => {

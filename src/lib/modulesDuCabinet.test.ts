@@ -29,7 +29,7 @@ import {
 // réglage et de la lecture —, confronté au TEXTE de la migration : un mot changé d'un côté seulement est une faute ici.
 // Le jour où la migration entre dans l'export, ce test lira le fichier exporté (son nom de version change).
 
-const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261119130000_options_des_cabinets.sql', import.meta.url), 'utf8')
+const MIGRATION = readFileSync(new URL('../../supabase/schema/20261119140325_options_des_cabinets.sql', import.meta.url), 'utf8')
 /** Une chaîne SQL entre apostrophes, rendue telle que la base la dit (`''` → `'`). */
 const sql = (s: string) => s.replace(/''/g, "'")
 /** Le corps d'une fonction de la migration. */
