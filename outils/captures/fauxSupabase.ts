@@ -78,6 +78,11 @@ const CLIENT_DU_DOSSIER_BASCULE = typeof localStorage === 'undefined' ? false : 
 // barre du bas du téléphone porte ses SEPT entrées, le cas le plus large (en base, « Ventes » suppose un dossier basculé : le banc
 // mesure la coque, il ne rejoue pas la garde) — et fixe la nature de ses recettes en espèces (c9, un produit).
 const CAISSE_DU_CLIENT_DU_BANC = typeof localStorage === 'undefined' ? false : localStorage.getItem('banc-client-caisse') === '1'
+/** L'original d'une facture reprise du cabinet infirmier (d1), pour la passe `client-caisse` seule (voir `pieces`). */
+const PIECE_ORIGINALE_D_UNE_REPRISE = 'a8d50000-0000-4000-8000-000000000412'
+/** Les liens d'une facture reprise vers sa pièce que `pieces_hors_de_la_caisse_du_client` lit (voir `rpcDuBanc`). */
+const PIECES_HORS_DE_LA_CAISSE: readonly { dossier_id: string; piece_id: string; retire_le: string | null }[] =
+  CAISSE_DU_CLIENT_DU_BANC ? [{ dossier_id: 'd1', piece_id: PIECE_ORIGINALE_D_UNE_REPRISE, retire_le: null }] : []
 
 // LE MEMBRE DE L'ÉQUIPE QUI EST AUSSI CLIENT D'UN DOSSIER (23Q2Q2Q1-Q1) : une clé, posée par la passe `membre` de debordements.mjs,
 // fait du compte du banc un « Comptable » du cabinet, assigné au cabinet infirmier (d1) et à l'atelier (d7), et client de Marc
@@ -250,6 +255,14 @@ const pieces: Ligne[] = [
     flux_hote: 'flux.plateforme-alpha.example', flux_id: 'fx-17',
     identite_numero: 'F2026-0013', identite_siren_vendeur: '123456789', identite_date: '2026-09-18', identite_nature: 'facture',
   },
+  // L'ORIGINAL D'UNE FACTURE REPRISE (A8Q5Q3Q2Q2-Q1, en production depuis le 16/11/2026), pour la seule passe `client-caisse` :
+  // une vente déposée que la base cite comme la pièce d'une facture reprise de l'ancien logiciel (`PIECES_HORS_DE_LA_CAISSE`,
+  // plus bas). « Mes pièces » offre encore son geste, mais le formulaire dit, avant le clic, que le cabinet l'enregistre lui-même.
+  // Un UUID : la lecture de la base n'en rend pas d'autre forme, et le module refuse toute autre.
+  ...(CAISSE_DU_CLIENT_DU_BANC ? [{
+    ...piece(PIECE_ORIGINALE_D_UNE_REPRISE, '2026-07-15', 'Résidence Les Tilleuls SAS', 240, 0, null, 'validee'),
+    type_piece: 'vente', nom_fichier: 'F2025-0412-RESIDENCE-LES-TILLEULS.pdf',
+  }] : []),
 ]
 
 // DEUX ACHATS À DES FOURNISSEURS ÉTABLIS HORS DE FRANCE (ligne 28.5, e-reporting, étape e3), fictifs comme le reste : un
@@ -2910,6 +2923,15 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
   // `pieces_citees_de_la_simulation` (A8Q5-Q2, migration `reprises_au_client`, en production depuis le 11/11/2026), que « Ma
   // simulation » lit : les pièces citées par un lien actif d'une facture reprise — le banc n'en porte aucune.
   if (nom === 'pieces_citees_de_la_simulation') return { data: [], error: null }
+  // `pieces_hors_de_la_caisse_du_client` (A8Q5Q3Q2Q2-Q1, migration `especes_du_client_hors_des_reprises`, en production depuis le
+  // 16/11/2026), que « Mes pièces » lit avant d'offrir un geste de la caisse : les pièces citées par un lien ACTIF d'une facture
+  // reprise, leurs seuls identifiants, triés — comme la fonction en base. Le banc ne porte pas la table des liens (que les écrans
+  // du cabinet liraient avec leurs factures reprises) : ses liens sont `PIECES_HORS_DE_LA_CAISSE`, l'original de la passe
+  // `client-caisse` seul. Sans cette réponse, la liste était « illisible » et « Mes pièces » n'offrait plus aucun geste.
+  if (nom === 'pieces_hors_de_la_caisse_du_client') {
+    const pieces = PIECES_HORS_DE_LA_CAISSE.filter((l) => l.dossier_id === dossierId && l.retire_le === null).map((l) => l.piece_id).sort()
+    return { data: pieces, error: null }
+  }
   return { data: nom === 'verifier_exercice_valide', error: null }
 }
 
