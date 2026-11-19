@@ -27,7 +27,19 @@ vi.mock('./rolesDuChange', async (original) => {
   const vrai = await original<typeof import('./rolesDuChange')>()
   return { ...vrai, get ECARTS_DE_REGLEMENT_PREVUS() { return drapeauDuChange.leve ?? vrai.ECARTS_DE_REGLEMENT_PREVUS } }
 })
-afterEach(() => { drapeauDuChange.leve = undefined })
+// Le drapeau de la part « autres impôts » (EXP58-Q6, lib/autresImpotsDesCotisations.ts), de même : sans demande, l'état réel
+// (levé depuis la migration collée le 19/11/2026).
+const drapeauDesAutresImpots = vi.hoisted(() => ({ leve: undefined as boolean | undefined }))
+vi.mock('./autresImpotsDesCotisations', async (original) => {
+  const vrai = await original<typeof import('./autresImpotsDesCotisations')>()
+  const etat = () => drapeauDesAutresImpots.leve ?? vrai.AUTRES_IMPOTS_DES_COTISATIONS_PREVUS
+  return {
+    ...vrai,
+    get AUTRES_IMPOTS_DES_COTISATIONS_PREVUS() { return etat() },
+    partAutresImpots: (c: { montant_autres_impots?: number | null }) => vrai.partAutresImpotsSelon(etat(), c),
+  }
+})
+afterEach(() => { drapeauDuChange.leve = undefined; drapeauDesAutresImpots.leve = undefined })
 
 // PC5 — LE MODÈLE DE PLAN DU CABINET (ligne 43 ; la migration `modele_de_plan_du_cabinet`, préparée le 12/11/2026). Le module
 // redit avant le clic les refus de `regler_modele_du_cabinet` : ce test confronte chacun de ses mots au texte de la migration
@@ -61,7 +73,7 @@ const ligne = (role: LigneDuPlanReglee['role'], compte: string, autres: Partial<
   ({ role, compte, libelle: null, prefixe_auxiliaire: null, ...autres })
 
 // La réponse de `modele_du_cabinet` : une ligne par rôle du catalogue de la base, les deux du change compris depuis leur
-// migration (12/11/2026, src/test/rolesDeLaBase.ts).
+// migration (12/11/2026), et celui des autres impôts depuis la sienne (19/11/2026, src/test/rolesDeLaBase.ts).
 function reponse(regles: Record<string, { compte: string; libelle?: string; prefixe?: string }> = {}, origine?: string) {
   return {
     data: ROLES_DE_LA_BASE.map((r) => ({
@@ -241,15 +253,19 @@ describe('les deux rôles du change dans le modèle du cabinet (ligne 31 ; drape
   const DU_CHANGE = ['pertes_de_change', 'gains_de_change']
   const lire = () => modeleDeLaReponse(reponse()) as Extract<LectureDuModele, { motif: null }>
 
-  it('drapeau levé : la saisie et le CSV portent les 34 rôles de la base, les deux du change compris', () => {
-    expect(ROLES_DE_LA_BASE).toHaveLength(34)
+  it('drapeau levé : la saisie et le CSV portent les 35 rôles de la base, les deux du change et celui des autres impôts compris', () => {
+    expect(ROLES_DE_LA_BASE).toHaveLength(35)
     const lu = lire()
     const saisie = saisieDuModele(lu.modele)
-    expect(Object.keys(saisie)).toHaveLength(34)
+    expect(Object.keys(saisie)).toHaveLength(35)
+    expect(saisie.autres_impots).toEqual({ compte: '637800', libelle: 'Taxes diverses', prefixe: '' })
+    expect((modeleDeLaReponse(reponse({ autres_impots: { compte: '635800' } })) as Extract<LectureDuModele, { motif: null }>).regles)
+      .toEqual(['autres_impots'])
     expect(saisie.pertes_de_change).toEqual({ compte: '656000', libelle: 'Pertes de change sur créances et dettes commerciales', prefixe: '' })
     expect(saisie.gains_de_change?.compte).toBe('756000')
     const lignes = csvDuModele(lu).trimEnd().split('\r\n')
-    expect(lignes).toHaveLength(35)
+    expect(lignes).toHaveLength(36)
+    expect(lignes).toContain('Taxes diverses;autres_impots;637800;Taxes diverses;;application')
     expect(lignes).toContain('Pertes de change sur créances et dettes commerciales;pertes_de_change;656000;Pertes de change sur créances et dettes commerciales;;application')
     expect(lignes).toContain('Gains de change sur créances et dettes commerciales;gains_de_change;756000;Gains de change sur créances et dettes commerciales;;application')
     expect(comptesDuModele(saisie)).toEqual([])
@@ -286,17 +302,34 @@ describe('les deux rôles du change dans le modèle du cabinet (ligne 31 ; drape
     expect(refusDuModele([ligne('pertes_de_change', '656100'), ligne('gains_de_change', '756100')], [])).toBeNull()
   })
 
+  // Les deux drapeaux baissés, l'état d'avant le change : la réponse de la base porte pourtant les trois rôles.
   it('drapeau baissé : rien ne change — 32 rôles, un CSV de 33 lignes, aucun rôle du change lu ni réglé', () => {
     drapeauDuChange.leve = false
+    drapeauDesAutresImpots.leve = false
     const lu = lire()
     const saisie = saisieDuModele(lu.modele)
     expect(Object.keys(saisie)).toHaveLength(ROLES_COMPTABLES.length)
-    for (const role of DU_CHANGE) expect(role in saisie).toBe(false)
+    for (const role of [...DU_CHANGE, 'autres_impots']) expect(role in saisie).toBe(false)
     expect(csvDuModele(lu).trimEnd().split('\r\n')).toHaveLength(ROLES_COMPTABLES.length + 1)
     expect(csvDuModele(lu)).not.toContain('_de_change')
+    expect(csvDuModele(lu)).not.toContain('autres_impots')
     expect(comptesDuModele(saisie)).toEqual([])
     const lire2 = () => modeleDeLaReponse(reponse({ pertes_de_change: { compte: '666000' } })) as Extract<LectureDuModele, { motif: null }>
     expect(lire2().regles).toEqual([])
     expect(changementsDuModele([], PLAN_LU_PAR_DEFAUT)).toEqual([])
+  })
+
+  // Le drapeau des autres impôts baissé seul (l'état d'avant le 19/11/2026) : les 34 rôles d'hier, le rôle ni lu ni réglé.
+  it('drapeau des autres impôts baissé : 34 rôles, un CSV de 35 lignes, le rôle des autres impôts ni lu ni réglé', () => {
+    drapeauDesAutresImpots.leve = false
+    const lu = lire()
+    const saisie = saisieDuModele(lu.modele)
+    expect(Object.keys(saisie)).toHaveLength(34)
+    expect('autres_impots' in saisie).toBe(false)
+    expect(csvDuModele(lu).trimEnd().split('\r\n')).toHaveLength(35)
+    expect(csvDuModele(lu)).not.toContain('autres_impots')
+    const regle = modeleDeLaReponse(reponse({ autres_impots: { compte: '635800' } })) as Extract<LectureDuModele, { motif: null }>
+    expect(regle.motif).toBeNull()
+    expect(regle.regles).toEqual([])
   })
 })

@@ -54073,3 +54073,19 @@ hors des comptes du catalogue (34 puis 35 rôles), une fois adaptés `planCompta
 seconde fois refusée ; le socle change d'une ligne. Derrière `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` (baissé, et la constante de
 l'assistant) : écriture, refus, 2035, concordance, FEC, situation, gestes et onglet ; douze mutations TypeScript sur douze. Levé, DD
 baisse de la part (le renvoi 26 rend BK, pas BS). Questions : EXP58Q6-migration, EXP58Q6-Q1 à Q3.
+
+### 19/11/2026 — EXP58-Q6 EN PRODUCTION : LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (243)
+
+Collée par le cabinet sous la version 20261119120000 (le bloc rééprouvé sur une copie de réplique portée à 242 : rc 0, essai 27
+sur 27, second collage refusé). Vérifiée en production : la ligne d'historique `f2b41e19…`, les corps de `rapprocher_cotisation`
+`1335506c…`, `enregistrer_paiement_personnel_cotisation` `afd3787e…` et `garder_paiement_personnel` `6419de48…`, le compte 637800 au
+catalogue ; les trois contrôles égaux des deux côtés — dérive 243 `2da3b2a5…`, socle 83 `a9f83f2d…`, inventaire 3 269 `bc73b3fd…`.
+Le fichier passe à l'export, texte inchangé ; le socle change d'une ligne ; `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` levé dans
+`lib/autresImpotsDesCotisations.ts` et dans la copie de l'assistant ; `ROLES_DE_LA_BASE` à 35 rôles ; l'essai sort de la famille
+« en attente » (31). Neuf fichiers de tests adaptés, aucune épreuve retirée : la migration lue dans l'export, l'état baissé confronté
+à la définition d'AVANT elle (`derniereDefinitionSql(…, sauf elle)`) et le levé à la dernière ; le drapeau baissé joué par accesseur
+dans `modeleDuCabinet.test.ts` (34 rôles) ; deux épreuves devenues vides (un rôle lu deux fois des deux côtés) resserrées. Les quatre
+empreintes de `agentComptableAuPlan.test.ts` relevées de nouveau après preuve sur deux copies hors du dépôt : constante à `false`, les
+empreintes d'avant ; à `true`, la seule phrase de la consigne sur la part, dans les 73 demandes au modèle de chaque dossier. La suite
+entière : 23 447 tests verts dans 938 fichiers. Reste, après la fusion : redéployer `agent-comptable`. Non fait : les essais rejoués en production, le banc de
+captures (la colonne neuve de l'onglet Cotisations).

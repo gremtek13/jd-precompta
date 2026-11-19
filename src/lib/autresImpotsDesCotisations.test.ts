@@ -26,10 +26,11 @@ import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { NON_VALIDEE } from '../test/ecritures'
 import { LIBELLES_PAR_DEFAUT, planLuDe } from '../test/modeles'
 import { ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
-import { definitionsSql, fichiersDuSchema, fichiersPrepares } from '../test/schema'
+import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { ventesFactureesVides } from '../test/ventesFacturees'
 
-// LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (EXP58-Q6, EXP58-Q7 ; la migration préparée `autres_impots_des_cotisations`).
+// LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (EXP58-Q6, EXP58-Q7 ; la migration `autres_impots_des_cotisations`, en production depuis
+// le 19/11/2026, 243, et dans l'export : supabase/schema/20261119120000_autres_impots_des_cotisations.sql).
 // Le drapeau joué par un accesseur, ses deux états écrits : baissé, rien ne change, à l'octet près, même sur une échéance
 // qui porterait une part ; levé, l'écriture, la 2035, la concordance, le FEC et les gestes la portent comme la base.
 const drapeau = vi.hoisted(() => ({ leve: undefined as boolean | undefined }))
@@ -46,7 +47,9 @@ afterEach(() => { drapeau.leve = undefined })
 const lever = () => { drapeau.leve = true }
 const baisser = () => { drapeau.leve = false }
 
-const MIGRATION = fichiersPrepares().find((f) => f.chemin.endsWith('_autres_impots_des_cotisations.sql'))!
+const MIGRATION = fichiersDuSchema().find((f) => f.chemin.endsWith('_autres_impots_des_cotisations.sql'))!
+// Les fichiers de l'export AVANT elle : ce que la base exécutait la veille, le drapeau baissé.
+const AVANT_ELLE = (f: { chemin: string }) => !f.chemin.endsWith('_autres_impots_des_cotisations.sql')
 const md5 = (t: string) => createHash('md5').update(t, 'utf8').digest('hex')
 const sansApostrophes = (s: string) => s.replace(/''/g, "'").replace(/’/g, "'")
 const messagesSql = (sql: string) => [...sql.matchAll(/raise exception '((?:[^']|'')*)'/g)].map((m) => m[1].replace(/''/g, "'"))
@@ -77,7 +80,7 @@ const AVEC_LE_ROLE: PlanComptable = { ...PLAN_PAR_DEFAUT, autres_impots: '637800
 
 describe('le rôle des autres impôts, la migration et l’essai', () => {
   it('le rôle est celui que la migration insère au catalogue : 635 et 637, 637800, « Taxes diverses », sans préfixe, rang 660', () => {
-    expect(MIGRATION, 'la migration préparée est introuvable').toBeDefined()
+    expect(MIGRATION, 'la migration est introuvable dans l’export').toBeDefined()
     expect(MIGRATION.texte).toContain("('autres_impots', array['635', '637'], '637800', 'Taxes diverses', null, 660);")
     expect(ROLE_AUTRES_IMPOTS).toEqual({
       role: 'autres_impots', racines: ['635', '637'], compteDefaut: '637800', libelleDefaut: 'Taxes diverses',
@@ -93,9 +96,10 @@ describe('le rôle des autres impôts, la migration et l’essai', () => {
       .toContain(`empreinte_roles_autres_impots constant text := '${empreinte}';`)
   })
 
-  it('le drapeau reste baissé tant que l’export ne porte pas la migration, et la constante de l’assistant le suit', () => {
+  it('le drapeau est levé : l’export porte la migration, et la constante de l’assistant le suit', () => {
     const dansLExport = fichiersDuSchema().some((f) => f.chemin.endsWith('_autres_impots_des_cotisations.sql'))
-    expect(module.AUTRES_IMPOTS_DES_COTISATIONS_PREVUS).toBe(dansLExport)
+    expect(dansLExport).toBe(true)
+    expect(module.AUTRES_IMPOTS_DES_COTISATIONS_PREVUS).toBe(true)
     const assistant = readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
     const lignes = [...assistant.matchAll(/^const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS = (true|false)$/gm)]
     expect(lignes).toHaveLength(1)
@@ -103,6 +107,10 @@ describe('le rôle des autres impôts, la migration et l’essai', () => {
   })
 
   it('la base écrit les quatre lignes du rapprochement et les trois du paiement personnel que le module compose', () => {
+    // La migration est la dernière définition de l'export : c'est elle que la base exécute.
+    for (const nom of ['rapprocher_cotisation', 'enregistrer_paiement_personnel_cotisation', 'garder_paiement_personnel']) {
+      expect(derniereDefinitionSql(nom), nom).toBe(derniere(nom, [MIGRATION]))
+    }
     const rapprocher = derniere('rapprocher_cotisation', [MIGRATION])
     expect(rapprocher).toContain("  v_compte_impots := public.compte_du_role(v_ligne.dossier_id, 'autres_impots');")
     expect(rapprocher).toContain('      (v_compte_cotisations, v_sens_compte, v_total - v_csg - v_impots),\n'
@@ -114,9 +122,11 @@ describe('le rôle des autres impôts, la migration et l’essai', () => {
     expect(derniere('garder_paiement_personnel', [MIGRATION])).toContain('new.montant_csg_crds, new.montant_autres_impots, new.dossier_id')
   })
 
-  it('les refus du paiement personnel : baissé, ceux de l’export ; levé, ceux de la migration, dans son ordre', () => {
+  it('les refus du paiement personnel : baissé, ceux de l’export d’avant elle ; levé, ceux de la migration, dans son ordre', () => {
     expect(refusPaiementPersonnelSelon(false).map((r) => r.modele))
-      .toEqual(messagesSql(derniere('enregistrer_paiement_personnel_cotisation', fichiersDuSchema())))
+      .toEqual(messagesSql(derniereDefinitionSql('enregistrer_paiement_personnel_cotisation', AVANT_ELLE)))
+    expect(refusPaiementPersonnelSelon(true).map((r) => r.modele))
+      .toEqual(messagesSql(derniereDefinitionSql('enregistrer_paiement_personnel_cotisation')))
     expect(refusPaiementPersonnelSelon(true).map((r) => r.modele))
       .toEqual(messagesSql(derniere('enregistrer_paiement_personnel_cotisation', [MIGRATION])))
     expect(refusPaiementPersonnelSelon(false)).toBe(REFUS_PAIEMENT_PERSONNEL)
@@ -241,7 +251,9 @@ describe('drapeau levé : l’écriture d’une échéance', () => {
 
   it('la lecture du plan exige le rôle, sous ses racines, sans préfixe', () => {
     lever()
-    const lignes = [...ROLES_DE_LA_BASE, ROLE_AUTRES_IMPOTS].map((r) => ({
+    // La base rend le rôle depuis la migration : il est dans `ROLES_DE_LA_BASE`, une fois.
+    expect(ROLES_DE_LA_BASE.filter((r) => r.role === 'autres_impots')).toEqual([ROLE_AUTRES_IMPOTS])
+    const lignes = ROLES_DE_LA_BASE.map((r) => ({
       role: r.role, compte: r.compteDefaut, libelle: LIBELLES_PAR_DEFAUT[r.role as keyof typeof LIBELLES_PAR_DEFAUT] ?? r.libelleDefaut,
       prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
     }))

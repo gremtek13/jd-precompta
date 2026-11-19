@@ -57,6 +57,11 @@ const ECRITE = [
 function definitionSql(): string {
   return derniereDefinitionSql('rapprocher_cotisation')
 }
+// Depuis le 19/11/2026 (EXP58-Q6, `autres_impots_des_cotisations`, en production, 243), la dernière est celle de la part
+// « autres impôts » (le drapeau levé) ; celle d'AVANT elle reste l'écriture du drapeau baissé, que l'application garde.
+function definitionDAvantLesAutresImpots(): string {
+  return derniereDefinitionSql('rapprocher_cotisation', (f) => !f.chemin.endsWith('_autres_impots_des_cotisations.sql'))
+}
 
 // Une apostrophe se double en SQL, se courbe à l'écran : comparées, elles sont la même.
 const sansApostrophes = (s: string) => s.replace(/''/g, "'").replace(/’/g, "'")
@@ -66,21 +71,29 @@ describe('les comptes de l’écriture', () => {
   // rapprochement, avec « L'écriture proposée ne correspond pas », sans que rien dise pourquoi. Depuis l'étape PC2
   // (ligne 43), elle les lit dans le plan du dossier par la CLÉ de leur rôle, dont le défaut est la constante d'ici.
   it('sont ceux que la fonction SQL exportée attend, dans le sens du mouvement', () => {
-    const sql = definitionSql()
-    // Depuis MCB5 (`jambe_de_banque_par_compte`, en production depuis le 12/11/2026), la banque du MOUVEMENT.
-    expect(sql).toContain('v_banque := public.compte_de_banque_du_mouvement(v_ligne.id);')
-    expect(sql).toContain("v_compte_cotisations := public.compte_du_role(v_ligne.dossier_id, 'cotisations_exploitant');")
-    expect(sql).toContain("v_compte_exploitant := public.compte_du_role(v_ligne.dossier_id, 'exploitant');")
-    expect([PLAN_PAR_DEFAUT.banque, PLAN_PAR_DEFAUT.cotisations_exploitant, PLAN_PAR_DEFAUT.exploitant])
-      .toEqual([COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT])
-    expect(sql).toContain('(v_banque, v_sens_banque, v_total)')
-    expect(sql).toContain('(v_compte_cotisations, v_sens_compte, v_total - v_csg)')
-    expect(sql).toContain('(v_compte_exploitant, v_sens_compte, v_csg)')
-    expect(sql).toContain("v_sens_banque := case when v_ligne.montant > 0 then 'debit' else 'credit' end")
-    expect(sql).toContain("v_sens_compte := case when v_ligne.montant > 0 then 'credit' else 'debit' end")
-    // La CSG-CRDS ne passe au compte de l'exploitant (108000 par défaut) qu'en trésorerie, et la base le lit au même
-    // endroit que l'écran.
-    expect(sql).toContain("if v_mode = 'tresorerie' and v_cotisation.montant_csg_crds is not null then")
+    // Le drapeau baissé : les trois lignes d'avant la part « autres impôts ».
+    const avant = definitionDAvantLesAutresImpots()
+    expect(avant).toContain('(v_compte_cotisations, v_sens_compte, v_total - v_csg)')
+    expect(avant).toContain('(v_compte_exploitant, v_sens_compte, v_csg)')
+    // Levé, la base qui l'exécute : la part au compte du rôle `autres_impots`, hors de la cotisation.
+    const leve = definitionSql()
+    expect(leve).toContain("v_compte_impots := public.compte_du_role(v_ligne.dossier_id, 'autres_impots');")
+    expect(leve).toContain('(v_compte_cotisations, v_sens_compte, v_total - v_csg - v_impots),\n'
+      + '      (v_compte_exploitant, v_sens_compte, v_csg),\n      (v_compte_impots, v_sens_compte, v_impots)\n')
+    for (const sql of [avant, leve]) {
+      // Depuis MCB5 (`jambe_de_banque_par_compte`, en production depuis le 12/11/2026), la banque du MOUVEMENT.
+      expect(sql).toContain('v_banque := public.compte_de_banque_du_mouvement(v_ligne.id);')
+      expect(sql).toContain("v_compte_cotisations := public.compte_du_role(v_ligne.dossier_id, 'cotisations_exploitant');")
+      expect(sql).toContain("v_compte_exploitant := public.compte_du_role(v_ligne.dossier_id, 'exploitant');")
+      expect([PLAN_PAR_DEFAUT.banque, PLAN_PAR_DEFAUT.cotisations_exploitant, PLAN_PAR_DEFAUT.exploitant])
+        .toEqual([COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT])
+      expect(sql).toContain('(v_banque, v_sens_banque, v_total)')
+      expect(sql).toContain("v_sens_banque := case when v_ligne.montant > 0 then 'debit' else 'credit' end")
+      expect(sql).toContain("v_sens_compte := case when v_ligne.montant > 0 then 'credit' else 'debit' end")
+      // La CSG-CRDS ne passe au compte de l'exploitant (108000 par défaut) qu'en trésorerie, et la base le lit au même
+      // endroit que l'écran.
+      expect(sql).toContain("if v_mode = 'tresorerie' and v_cotisation.montant_csg_crds is not null then")
+    }
   })
 
   it('portent un libellé, que la balance et le FEC reprennent', () => {

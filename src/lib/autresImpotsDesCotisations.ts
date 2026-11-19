@@ -6,10 +6,10 @@ import type { DefinitionRoleComptable } from './planComptable'
 // L'Urssaf appelle avec les cotisations sociales personnelles deux contributions qui n'en sont pas : la contribution à la
 // formation professionnelle des travailleurs indépendants (C. trav., art. L. 6331-48) et la CURPS (CSP, art. L. 4031-4).
 // L'expert-comptable les range « dans un sous-compte des autres impôts » (2035E-9) : en BS (2035-A, ligne 13, « Autres
-// impôts »), et non en BK. La migration `autres_impots_des_cotisations` (supabase/preparees/20261119120000…, préparée, pas
-// appliquée) pose la part sur l'échéance (`cotisations_declarees.montant_autres_impots`, le patron de `montant_csg_crds`),
-// le rôle `autres_impots` au catalogue, et les deux fonctions qui recomposent l'écriture d'une échéance avec une ligne de
-// plus. Ce module porte le drapeau, le rôle et la lecture d'une part tapée ; la composition est dans
+// impôts »), et non en BK. La migration `autres_impots_des_cotisations` (supabase/schema/20261119120000…, en production depuis
+// le 19/11/2026, 243, collée par le cabinet) pose la part sur l'échéance (`cotisations_declarees.montant_autres_impots`, le
+// patron de `montant_csg_crds`), le rôle `autres_impots` au catalogue, et les deux fonctions qui recomposent l'écriture d'une
+// échéance avec une ligne de plus. Ce module porte le drapeau, le rôle et la lecture d'une part tapée ; la composition est dans
 // lib/cotisationRapprochee.ts et lib/cotisationPersonnelle.ts, la 2035 dans lib/declaration2035.ts.
 //
 // LE DRAPEAU BAISSÉ, RIEN NE CHANGE, À L'OCTET PRÈS : la part ne se lit pas (`partAutresImpotsSelon`), l'écriture et la 2035
