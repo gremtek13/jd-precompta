@@ -189,7 +189,7 @@
 --      préparée) : le client « Banque » lit les imports et les paiements de son dossier, rien sans la case ; il ne les écrit
 --      pas en direct (la garde) ; le catalogue. Deux mutations ; la section P7 compte les deux tables parmi celles de la
 --      banque ; avant la migration, une ligne « EN ATTENTE ».
---  16. Les options des cabinets (bloc OC, en fin de fichier ; migration `options_des_cabinets`, OPT1, préparée) : l'équipe
+--  16. Les options des cabinets (bloc OC, en fin de fichier ; migration `options_des_cabinets`, OPT1, en production) : l'équipe
 --      du cabinet lit ses options, chef ou membre, le client d'un dossier du cabinet et l'anonyme rien ; ni le client ni un
 --      chef de cabinet qui n'est pas super-administrateur ne les règle, ni ne les écrit en direct, ni ne change les plafonds de
 --      l'assistant ; le catalogue. Quatre mutations ; avant la migration, une ligne « EN ATTENTE ».
@@ -12147,7 +12147,7 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $am$;
 
--- ══ OC. Les options des cabinets (conception 56, OPT1 ; migration `options_des_cabinets`, PRÉPARÉE) ══════════════════
+-- ══ OC. Les options des cabinets (conception 56, OPT1 ; migration `options_des_cabinets`, EN PRODUCTION) ═════════════
 -- Une table du CABINET, sans dossier : lue par l'équipe du cabinet (`admin_du_cabinet`, chef ou non), écrite par
 -- `regler_option_du_cabinet` seule, le super-administrateur (aucune policy d'écriture). Le client ne la lit pas, même quand
 -- il a un accès à un dossier du cabinet : il lit ses modules par `modules_ouverts_du_dossier`. La même migration garde les

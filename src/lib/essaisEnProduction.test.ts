@@ -335,7 +335,8 @@ describe('les essais de la base, rejoués en production', () => {
     // joue en production (aucune suppression).
     // Le trente-septième, optionsDesCabinetsEnCours, le 19/11/2026 (OPT1, migration `options_des_cabinets`) : il pose, sans
     // leurs gardes (`session_replication_role`), un envoi resté sans issue connue et un paiement de l'assurance maladie associé,
-    // pour éprouver l'extinction gardée ; son compagnon, optionsDesCabinets.sql, se joue en production, et son catalogue
+    // pour éprouver l'extinction gardée ; son compagnon, optionsDesCabinets.sql, se joue en production (la migration y est
+    // depuis le 19/11/2026, 244), et son catalogue
     // aussi : le bloc OC de rls.sql.
     // Le trente-huitième, facturesAssuranceMaladieSuppression, le 19/11/2026 (BOR3, la migration du facturé à l'assurance
     // maladie) : il retire en direct une clé, une empreinte, un total, un import et un dossier jetable, sous la garde
@@ -508,7 +509,9 @@ describe('les essais de la base, rejoués en production', () => {
     // migrations préparées : un seul modèle « apres » porte les trois ; SÛRS au banc, sur une copie de la réplique à 243.
     // Trente-six le même jour : `plafondsHorsDuClient` (OPT1-Q3, `plafonds_hors_du_client`) entré dans la famille « apres »,
     // après sa migration préparée ; joué sur une copie de la réplique à 243 (8 verdicts sur 8, dans les deux ordres avec OPT1).
-    expect(cas.length).toBe(36)
+    // Trente-cinq le même jour : `optionsDesCabinets` sorti (OPT1 en production, 20261119140325, par l'outil ; il ne cherche
+    // aucun semis, il se joue comme un essai de la production).
+    expect(cas.length).toBe(35)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

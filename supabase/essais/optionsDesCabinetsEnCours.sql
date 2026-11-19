@@ -1,5 +1,5 @@
 -- L'EXTINCTION GARDÉE DE LA FACTURE ÉLECTRONIQUE ET DES PAIEMENTS DE L'ASSURANCE MALADIE, SUR UNE RÉPLIQUE SEULEMENT
--- (conception 56, lot OPT1 ; la migration `options_des_cabinets`, préparée le 19/11/2026 :
+-- (conception 56, lot OPT1 ; la migration `options_des_cabinets`, en production depuis le 19/11/2026, 244 :
 -- supabase/schema/20261119140325_options_des_cabinets.sql). Elle pose, le temps d'une sous-transaction, des lignes
 -- SANS LEURS GARDES (`session_replication_role = replica`, le super-utilisateur) : un envoi d'une facture ou d'une
 -- déclaration d'encaissement resté sans issue connue, et l'association d'un paiement de l'assurance maladie à un crédit du
