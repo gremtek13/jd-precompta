@@ -54162,6 +54162,7 @@ A8Q5Q3Q2Q2-Q1 (16/11/2026, drapeau `ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES`
 accepte) ; la visite neuve `client/mes-pieces-caisse-reprise` ouvre son geste et attend la phrase de la base (« … ton cabinet
 l'enregistre. »). Mesuré : 13 visites, 0 débordement à 390 px (la passe `client-banque`, qui partage le faux, 0 aussi). En passant :
 le Chromium de l'environnement est sous `chrome-linux64`, que la détection de `vitrine.mjs` ne cherche pas (`CHROMIUM=` le contourne).
+
 ### 19/11/2026 — OPT3 : LES MODULES BRANCHÉS DANS LES ÉCRANS, DERRIÈRE `OPTIONS_DES_CABINETS_PREVUES` BAISSÉ
 
 La lecture (`lib/optionsDuCabinetLecture.ts`) : le cabinet lit `options_des_cabinets` de son cabinet par `lireTout`, le client
