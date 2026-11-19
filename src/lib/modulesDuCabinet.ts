@@ -137,7 +137,8 @@ export function refusDeFermeture(module: ModuleOptionnel, ouverts: readonly Modu
  *     lib/encaissementsAffichage.ts : l'obligation due, la plateforme qui a accepté la facture) : l'écran du
  *     super-administrateur le dira avant le clic (OPT4), la base ne le refuse pas (la fiche OPT1-Q1) ;
  *   - les paiements de l'assurance maladie, quand un paiement est associé à un crédit du relevé
- *     (`paiements_assurance_maladie_mouvements`, NOE5, préparée : tant qu'elle n'est pas en base, rien ne retient).
+ *     (la table de l'association, NOE5, préparée : tant qu'elle n'est pas en base, rien ne retient ; ce module ne la lit
+ *     pas, la base seule la juge).
  * Les autres modules se ferment toujours : leurs données restent en base, comptées et exportées, et rien n'y est en cours.
  */
 export const EXTINCTIONS_GARDEES: Readonly<Partial<Record<ModuleOptionnel, string>>> = {

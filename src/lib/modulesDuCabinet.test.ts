@@ -34,7 +34,7 @@ const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261119120000_
 const sql = (s: string) => s.replace(/''/g, "'")
 /** Le corps d'une fonction de la migration. */
 function corps(nom: string): string {
-  const m = new RegExp(`create function public\\.${nom}\\([\\s\\S]*?\\n\\$\\$;\\n`).exec(MIGRATION)
+  const m = new RegExp(`create function public\\.${nom}\\([\\s\\S]*?\\n\\$\\$;\\n`, 'i').exec(MIGRATION)
   if (!m) throw new Error(`${nom} introuvable dans la migration`)
   return m[0]
 }
