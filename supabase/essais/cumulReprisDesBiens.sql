@@ -1,5 +1,5 @@
 -- LE CUMUL REPRIS D'UN BIEN, LE PLAN CONTINUÉ (EXP58-Q5 ; la migration préparée `cumul_repris_des_biens`,
--- supabase/preparees/20261117190000_cumul_repris_des_biens.sql). Le récit : HISTORIQUE.md, « 17/11/2026 — EXP58-Q5 : LE CUMUL
+-- supabase/schema/20261119080000_cumul_repris_des_biens.sql). Le récit : HISTORIQUE.md, « 17/11/2026 — EXP58-Q5 : LE CUMUL
 -- REPRIS D'UN BIEN, LE PLAN CONTINUÉ (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer après toute migration qui touche
 -- `ecrire_dotation_amortissement`, le calcul (`amortissement_cumule_continue_centimes`, `dotation_amortissement_continue`,
 -- `amortissement_cumule_centimes`, `rang_360`), `garder_cumul_repris`, `garder_bien_valide`, leurs déclencheurs, ou les

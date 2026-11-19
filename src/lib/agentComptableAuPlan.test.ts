@@ -59,11 +59,14 @@ const consigneDe = (x: Rendu) => {
 // le 11/11/2026 (A8C5B) : chaque scénario rejoué avant et après, et la seule différence est voulue — la description de
 // resume_dossier, la phrase des factures reprises dans la consigne d'un dossier basculé, trois clés de resume_dossier à zéro
 // sur un dossier basculé sans reprise, et trois scénarios neufs ; les deux consignes du plan par défaut sont inchangées.
+// Les quatre relevées de nouveau le 19/11/2026 (EXP58-Q5, `CUMUL_REPRIS_PREVU` levé avec la migration collée) : la différence
+// voulue est la lecture du registre (deux colonnes de plus, `cumul_repris` et `cumul_repris_au`) et la phrase de la consigne sur
+// le plan continué ; les deux états de la constante se jouent dans agentComptableAmortissement.test.ts.
 const EMPREINTES = {
-  bnc: 'e3e8b07974156bf13cedcc5183b80393ec0b98603c7a5275c6887c75f2bcc324',
-  societe: 'ed9be8d6ed41f9abcd1e7fa13abe96864df732a0fe5767471cab1b50413b7bd6',
-  consigneBnc: 'aa004c37bbb6ecea970855c4ca615b16b17a58802be034b710e7469957938aa4',
-  consigneSociete: '5ace09aeda941eb3de32fe2dbc30f79b62f080460eb70f71c68094a3722f6fb6',
+  bnc: 'd0f11fae4d94d3da4c4c0ce1956a09e4fc1e125bf09b22254f8fa2350fd47505',
+  societe: 'f43b6f30843f28fc110a6f8b5984ffaac6dfaf7aab39fa82960d4bd21070ac33',
+  consigneBnc: '987deaacabb4b3daaa31c6f2995bda7f1dfe272bd6584c11fd87abe815201107',
+  consigneSociete: '3a1cf12f5491a1f159f8f3934aad64d9c75b35d0a170a26309616ff4c18928d7',
 }
 
 describe('agent-comptable ferme le dossier dont le plan ne se lit pas, avant toute dépense', () => {
