@@ -54133,3 +54133,19 @@ SQL et 11 TypeScript mordent ; retours rendant la signature d'avant, refusés su
 de la base (241 et 243 cas) rejugés. Rejouées à 243 derrière OPT1 (le bloc FM passe au n° 17) : `rls.sql` sans préparée 271 lignes,
 0 en faute, 157 mutations sur 157 ; OPT1, NOE3, NOE5 et BOR3 dans trois ordres, 281, 0, 166 sur 166, les sept essais verts, les retours
 rendant 243 ; `restauration.sql` IDENTIQUE (106 tables, 30 lignes ; NOE5 l'arrête sur ses clés : NOE8) ; banc SÛR. RGPD.md § 8.7 proposé.
+
+### 19/11/2026 — NOE8 (UNE PART) : L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AU PLAN DE SAUVEGARDE
+
+(Agent architecte ; rien en production, aucune migration changée.) Constat : NOE5 appliquée, `restauration.sql` s'arrêtait sur ses
+trois clés (une table hors du plan), et `sauvegardeRelations.test.ts` aurait échoué dès son entrée dans l'export ; une sauvegarde ne
+l'aurait pas portée. `paiements_assurance_maladie_mouvements` entre au plan derrière `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES`
+(`auPlanDeLAssociationAssuranceMaladie`, le patron de NOE3 et de BOR3) : juste après `lignes_bancaires` (le paiement est déjà
+réinséré après `controles_releves_bancaires`), trois relations (dossier et mouvement en cascade, paiement sans action), chemin
+direct, aucune vague ; `sauvegardeAssociationsAssuranceMaladie.test.ts` joue les deux états du drapeau, confronte les relations au
+texte de la migration et plante l'ordre ; son bloc dans `restauration.sql` et `restaurationEssai.test.ts`. La restauration n'a pas
+à changer : la garde de NOE5 et sa policy d'insertion ouvrent la porte au super-administrateur, la ligne repart telle quelle
+(`associe_par`, `associe_le` compris) — éprouvé sur la vraie table : trois associations réinsérées identiques, un autre compte
+refusé en 42501. Copie de `replique_227` portée à 243 : sans préparée, IDENTIQUE (100 tables, 20 lignes, 200 clés) ; NOE3, NOE5,
+OPT1, BOR3 et trois associations semées par la fonction, le script d'avant s'arrête, le nouveau rend IDENTIQUE (107 tables, 30
+lignes, 213 clés) ; ancré avant le mouvement, il s'arrête en 23503 (la section P7 de `rls.sql` et le leurre la connaissaient
+déjà). Reste de NOE8 : la mise en production (les migrations, le drapeau levé, les essais et les trois contrôles de l'export).
