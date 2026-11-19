@@ -53986,3 +53986,17 @@ module préparé derrière un drapeau baissé, avant la migration, est écarté 
 faire (la colonne, le compte, le partage entre échéances, la source de la ligne (B) de la 2035-SD). Quatre questions,
 EXP58-Q6 à Q9. Les chiffres, quand cela viendra : BK et BT baissent de la part, BS monte d'autant, le résultat ne bouge
 pas ; CH baisse de la dotation de chaque bien de transport l'année du barème, le résultat monte d'autant.
+
+### 19/11/2026 — NEUF RÉPONSES DU CABINET (PAGE DES ARBITRAGES), TOUTES À LA RECOMMANDATION
+
+Relues le 19/11/2026 dans la collection des réponses : BOR1Q1-Q1 (A), le numéro du lot gardé sous une empreinte calculée par
+la base, à clé secrète du dossier ; BORQ5-Q1 (A), la part « Mutuelle » d'un bordereau gardée sous un organisme « non dit »,
+détaillée plus tard ; BORQ8-Q1 (A), le praticien importe, le cabinet seulement sur place ou de la main à la main, jamais par
+e-mail (RGPD.md § 8.7 à dire) ; C8Q2Q3-Q1 (A), la prévision se publie avec un avertissement au cabinet quand le raccord
+dépasse un mois ; NOE5B1-Q1 (A), la catégorie habituelle reste en deux temps ; EXP58-Q6 (A), la migration de la CFP et de la
+CURPS en « autres impôts » se prépare maintenant, avant la validation de 2025 ; EXP58-Q7 (A), la part saisie par échéance
+depuis l'échéancier de l'Urssaf, l'estimation en rappel annuel, le compte lu dans un FEC d'ACD sinon choisi par le cabinet ;
+EXP58-Q8 (B), le véhicule au barème attend la 2035 de 2025 ; EXP58-Q9 (A), la ligne (B) reste la saisie de la carte Véhicules.
+Dit aussi dans la conversation : le bordereau des paiements NOEMIE ne viendra pas tout de suite — la forme de cet état se
+cherche dans les sources publiques. Le bloc du cumul repris, redaté (version 20261119080000), est rééprouvé sur une copie de
+réplique portée à 241 : collé rc 0, empreinte `59098b22…`, essai 34 sur 34, second collage refusé.
