@@ -17,7 +17,7 @@ import type { DefinitionRoleComptable } from './planComptable'
 // Cotisations ne la saisit pas. Il ne se lève qu'APRÈS la migration : levé avant, chaque plan lu serait incomplet — aucun
 // onglet ne se monterait — et l'écran écrirait une colonne absente. La constante de même nom de l'assistant
 // (`agent-comptable`, bloc COTISATION) se lève avec lui, et l'assistant se redéploie.
-export const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS: boolean = false
+export const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS: boolean = true
 
 // LE RÔLE DU PLAN (EXP58-Q7). Aucun FEC du logiciel de l'expert-comptable ne dit son numéro dans le dépôt : le plan comptable
 // général (règlement ANC n° 2014-03, version consolidée au 1er janvier 2026, art. 1121-1, classe 63) range les autres impôts

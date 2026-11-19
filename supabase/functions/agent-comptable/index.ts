@@ -2580,7 +2580,7 @@ function mouvementsVentilesDesynchronises(
 // `autres_impots_des_cotisations`, l'assistant redéployé : baissée, la colonne ne se lit pas, la part vaut zéro, et le
 // rôle ne s'exige pas du plan (bloc PLAN DU DOSSIER, qui la lit aussi) — l'écriture d'hier. Déclarée ici, en tête du bloc que
 // les gardes extraient.
-const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS = false
+const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS = true
 interface CotisationRow {
   id: string; echeance: string; montant_appele: number; montant_verse: number | null; montant_csg_crds: number | null
   montant_autres_impots?: number | null
