@@ -16,6 +16,17 @@ export type EtatDesModules =
 
 export const TOUT_OUVERT_SANS_LECTURE: EtatDesModules = { etat: 'lus', ouverts: TOUS_LES_MODULES }
 
+/** Rien n'est encore revenu : aucun module optionnel. */
+export const EN_LECTURE: EtatDesModules = { etat: 'lecture', ouverts: [] }
+
+/** Ce que l'état devient d'une lecture revenue (`ModulesDuCabinetLus`, lib/optionsDuCabinetLecture.ts, décrit par sa forme :
+ *  ce module n'importe pas le lecteur) : illisible, le côté fermé. */
+export function etatDeLaLecture(
+  lu: { readonly etat: 'lus'; readonly ouverts: readonly ModuleOptionnel[] } | { readonly etat: 'illisibles'; readonly motif: string },
+): EtatDesModules {
+  return lu.etat === 'lus' ? { etat: 'lus', ouverts: lu.ouverts } : { etat: 'illisibles', ouverts: [], motif: lu.motif }
+}
+
 export const ModulesOuvertsContext = createContext<EtatDesModules | null>(null)
 
 /** Sans fournisseur : tout ouvert tant que le drapeau est baissé (les écrans d'hier, rendus seuls par leurs tests) ; le

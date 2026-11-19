@@ -7,6 +7,7 @@ import { useCabinetBranding } from '../lib/branding'
 import { useListeDossiers } from '../lib/listeDossiers'
 import { useDroitsAffiches } from '../context/OptionsDuCabinetContext'
 import { useModulesOuverts } from '../context/ModulesOuverts'
+import { ModulesDuDossier } from '../context/ModulesDuDossier'
 import { MOTS_DU_REFUS, routeDuClientOuverte, type RouteDeLEspaceClient } from '../lib/modulesDuCabinet'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
@@ -312,6 +313,10 @@ function Coque() {
   const email = session?.user.email ?? null
 
   return (
+    // Dans un dossier, côté cabinet, la barre latérale et la page du dossier suivent les modules du cabinet DU DOSSIER, lus une
+    // fois pour les deux (OPT3-Q1 (A), context/ModulesDuDossier.tsx) ; la coque elle-même (`modules`, lu au-dessus) garde ceux du
+    // cabinet du compte.
+    <ModulesDuDossier dossierId={role === 'cabinet' ? idOuvert : null}>
     <div className={`app-shell${reduite ? ' barre-reduite' : ''}${glisse ? ' redimensionnement' : ''}`} style={styleCoque}>
       <aside className="sidebar" id="barre-laterale">
         {boutonRetour('barre-haut')}
@@ -627,5 +632,6 @@ function Coque() {
       )}
       <EmplacementPanneauDroit />
     </div>
+    </ModulesDuDossier>
   )
 }
