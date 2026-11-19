@@ -132,6 +132,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
       + 'sans écriture ; migration `pieces_jointes_ecartees_au_client`, ligne 22.9), au montage de « Mes pièces » et de l’accueil du client '
       + '(`lib/piecesJointesEcarteesClientLecture.ts`, ligne 22.94).',
   },
+  'rpc:modules_ouverts_du_dossier': {
+    nature: 'lecture',
+    raison: 'Les modules ouverts du cabinet d’un dossier (fonction `stable`, `security definer`, sans écriture ; migration '
+      + '`options_des_cabinets`, OPT1, préparée), lus par le fournisseur des options au changement de la société affichée du '
+      + 'client (`lib/optionsDuCabinetLecture.ts`, OPT3) — derrière `OPTIONS_DES_CABINETS_PREVUES`.',
+  },
   'rpc:etat_facture_electronique': {
     nature: 'lecture',
     raison: 'L’état de la facture électronique d’un dossier — connexions reliées ou non, nom et dates, adresse de réception '

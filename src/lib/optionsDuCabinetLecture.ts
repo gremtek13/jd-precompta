@@ -29,7 +29,7 @@ export async function lireLesModulesDuCabinet(cabinetId: string, prevues: boolea
   try {
     const lecture = await lireTout<OptionLue>((debut, fin) =>
       supabase.from('options_des_cabinets').select('cabinet_id, module, ouverte', { count: 'exact' })
-        .eq('cabinet_id', cabinetId).order('module').range(debut, fin),
+        .eq('cabinet_id', cabinetId).order('cabinet_id').order('module').range(debut, fin),
     )
     if (!lecture.complete) return { etat: 'illisibles', cle: cabinetId, motif: lecture.motif ?? 'lecture incomplète' }
     const connus = MODULES_OPTIONNELS as readonly unknown[]
