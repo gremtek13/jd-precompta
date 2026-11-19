@@ -11,7 +11,9 @@ import { describe, expect, it } from 'vitest'
 //   - l'ouverture n'a aucune sortie non plus, n'importe que le module pur, et ses seuls imports dynamiques sont pdf.js et son
 //     ouvrier servi par l'application ; pdf.js n'y reçoit que des octets (`getDocument({ data`), jamais une adresse, ni une
 //     adresse de polices, de tables de caractères ou de wasm qu'il irait chercher.
-//   - le facturé (BOR2) n'a aucune sortie et n'importe que la liste des régimes, elle-même sans sortie ni import.
+//   - le facturé (BOR2) n'a aucune sortie et n'importe que la liste des régimes, elle-même sans sortie ni import ;
+//   - l'import du facturé (BOR3), qui compose le corps de l'appel — les numéros des lots y passent, pour la base seule — et
+//     redit les refus de la base, n'a aucune sortie et n'importe rien (le type du facturé seul).
 // Éprouvé par des défauts plantés dans chacun.
 
 const PUR = 'src/lib/bordereauDeTeletransmission.ts'
@@ -120,5 +122,32 @@ describe('l’ouverture n’a aucune sortie, et pdf.js n’y reçoit que des oct
     expect(journal).not.toBe(texte)
     expect(juger(journal)).toEqual(['un journal'])
     expect(juger(texte.replace("await import('pdfjs-dist')", "await import('./supabase')"))).toEqual(['le client de la base', 'l’import dynamique de \'./supabase\''])
+  })
+})
+
+// L'IMPORT DU FACTURÉ (BOR3, lib/importDuFactureAssuranceMaladie.ts) : le corps de l'appel porte les numéros des lots, que la
+// base seule transforme en empreintes ; il se compose à l'appel et ne sort que par son retour. Le module n'a aucune sortie et
+// n'importe rien (le type du facturé seul).
+const IMPORT_DU_FACTURE = 'src/lib/importDuFactureAssuranceMaladie.ts'
+
+describe('l’import du facturé n’a aucune sortie, et n’importe que le type du facturé', () => {
+  const texte = readFileSync(resolve(process.cwd(), IMPORT_DU_FACTURE), 'utf8')
+  const juger = (t: string) => fautes(t, new Set(), new Set())
+
+  it('aucune sortie, aucun import en valeur ; BOR2 en type seulement', () => {
+    expect(juger(texte)).toEqual([])
+    expect(texte).toContain('import type { FactureDesBordereaux } from \'./factureAssuranceMaladie\'')
+  })
+
+  it('quatre défauts plantés se voient : un journal du corps, le client de la base, l’horloge, BOR2 importé en valeur', () => {
+    const corps = '  return {\n    version: 1,\n    lots: facture.identificationDesLots.pourLAppelDImport()'
+    expect(texte).toContain(corps)
+    expect(juger(texte.replace(corps, `  console.debug(facture)\n${corps}`))).toEqual(['un journal'])
+    expect(juger(`import { supabase } from './supabase'\n${texte}`)).toEqual(['le client de la base', 'l’import de ./supabase'])
+    const jour = '  if (!estUneDateDeLot(jour)) return R.aVenir'
+    expect(texte).toContain(jour)
+    expect(juger(texte.replace(jour, `  const maintenant = Date.now()\n${jour}`))).toEqual(['l’horloge'])
+    expect(juger(texte.replace('import type { FactureDesBordereaux }', 'import { type FactureDesBordereaux, factureDesBordereaux }')))
+      .toEqual(['l’import de ./factureAssuranceMaladie'])
   })
 })

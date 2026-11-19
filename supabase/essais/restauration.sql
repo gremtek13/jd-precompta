@@ -1171,6 +1171,29 @@ begin
   end if;
 end $$;
 
+-- ══ Le facturé à l'assurance maladie (BOR3, 19/11/2026) ══ Au plan du code quand `FACTURES_ASSURANCE_MALADIE_PREVUES` est
+-- levé — c'est-à-dire quand sa migration est en base : le script met ses quatre tables juste après `cotisations_declarees`
+-- (ORDRE_RESTAURATION_PREVU : une place qu'aucun voisin ne fixe, après une table que toute base porte), la clé, puis l'import,
+-- ses totaux et ses empreintes ; les tables qui suivent reculent de quatre rangs ; leurs chemins. Aucune vague. La clé et le
+-- registre n'ont aucune policy : la sauvegarde n'en porte aucune ligne. Absentes de la base, rien n'entre : le plan est celui
+-- d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.factures_assurance_maladie') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'cotisations_declarees';
+    update essai_restauration._ordre set rang = -(rang + 4) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'cles_des_lots_teletransmission');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 2, 'imports_factures_assurance_maladie');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 3, 'factures_assurance_maladie');
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 4, 'lots_teletransmission_importes');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('cles_des_lots_teletransmission','direct',null,null),('imports_factures_assurance_maladie','direct',null,null),
+     ('factures_assurance_maladie','direct',null,null),('lots_teletransmission_importes','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les options des cabinets (conception 56, OPT1) ══ Au plan du code quand `OPTIONS_DES_CABINETS_PREVUES` est levé —
 -- c'est-à-dire quand leur migration est en base : le script met leur table juste après `copies_des_fichiers`
 -- (ORDRE_RESTAURATION_PREVU : une table du cabinet, hors de l'export d'un dossier), les tables qui suivent reculant d'un

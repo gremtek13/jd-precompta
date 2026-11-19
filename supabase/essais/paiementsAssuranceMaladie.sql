@@ -10,7 +10,12 @@
 -- d'un autre dossier, un compte sans accès et l'anonyme ne lisent rien et n'écrivent rien ; la case décochée, le client ne lit
 -- ni n'importe plus ; un fichier réimporté ne double rien, un fichier qui diverge se refuse ; un exercice validé retient
 -- l'import et le retrait ; personne n'écrit ni ne réécrit en direct (ni le client, ni un chef qui n'est pas
--- super-administrateur, ni le rôle des Edge Functions) ; le catalogue.
+-- super-administrateur, ni le rôle des Edge Functions) ; le catalogue. Depuis l'amendement du 19/11/2026 (BOR3, avant tout
+-- collage), les étapes 60 à 72 : l'état des paiements de Télévitale — une aide versée sans facture (un forfait sous son
+-- organisme), un indu seul, un net négatif, un indu sur un forfait, admis ; une somme positive sans facture sur la part
+-- obligatoire et un indu écrit sans régularisation, refusés —, et l'organisme complémentaire (BOR-Q5 (B), BORQ5-Q1 (A)) —
+-- nommé à côté du non dit, refusé sur la part obligatoire, à onze chiffres, en texte, ou absent de la forme ; de la clé du
+-- conflit et de « rien de neuf ».
 --
 -- Trois dossiers jetables du cabinet du dossier `test` (préfixe `e5300000-0000-4000-8000`) : DB, où l'accès du client d'essai
 -- porte « Banque », DS, où il ne la porte pas, et DX, où il n'a aucun accès. Chaque étape se joue dans sa sous-transaction et
@@ -49,18 +54,18 @@ begin
   end if;
   base := jsonb_build_object('version', 1, 'rejets', jsonb_build_object('nombre', 2, 'montant_centimes', 4500),
     'paiements', jsonb_build_array(
-      jsonb_build_object('date_journee_comptable', to_char(jour - 3, 'YYYY-MM-DD'), 'regime', 1, 'caisse', 691, 'part', 'obligatoire',
+      jsonb_build_object('date_journee_comptable', to_char(jour - 3, 'YYYY-MM-DD'), 'regime', 1, 'caisse', 691, 'organisme_complementaire', null, 'part', 'obligatoire',
         'montant_centimes', 12345, 'regularisations_centimes', 0, 'nombre_de_factures', 7),
-      jsonb_build_object('date_journee_comptable', to_char(jour - 3, 'YYYY-MM-DD'), 'regime', 1, 'caisse', 691, 'part', 'complementaire',
+      jsonb_build_object('date_journee_comptable', to_char(jour - 3, 'YYYY-MM-DD'), 'regime', 1, 'caisse', 691, 'organisme_complementaire', null, 'part', 'complementaire',
         'montant_centimes', 2345, 'regularisations_centimes', 0, 'nombre_de_factures', 3),
-      jsonb_build_object('date_journee_comptable', to_char(jour - 2, 'YYYY-MM-DD'), 'regime', null, 'caisse', null, 'part', 'forfait',
+      jsonb_build_object('date_journee_comptable', to_char(jour - 2, 'YYYY-MM-DD'), 'regime', null, 'caisse', null, 'organisme_complementaire', null, 'part', 'forfait',
         'montant_centimes', 50000, 'regularisations_centimes', 0, 'nombre_de_factures', 0),
-      jsonb_build_object('date_journee_comptable', to_char(jour - 1, 'YYYY-MM-DD'), 'regime', 1, 'caisse', 691, 'part', 'obligatoire',
+      jsonb_build_object('date_journee_comptable', to_char(jour - 1, 'YYYY-MM-DD'), 'regime', 1, 'caisse', 691, 'organisme_complementaire', null, 'part', 'obligatoire',
         'montant_centimes', 900, 'regularisations_centimes', -100, 'nombre_de_factures', 1)));
   imp := base::text;
   -- Le même fichier, une journée de plus (celle du jour) : il recouvre le premier.
   imp_plus := jsonb_set(base, '{paiements}', (base -> 'paiements') || jsonb_build_array(jsonb_build_object(
-    'date_journee_comptable', to_char(jour, 'YYYY-MM-DD'), 'regime', 1, 'caisse', 691, 'part', 'obligatoire',
+    'date_journee_comptable', to_char(jour, 'YYYY-MM-DD'), 'regime', 1, 'caisse', 691, 'organisme_complementaire', null, 'part', 'obligatoire',
     'montant_centimes', 4000, 'regularisations_centimes', 0, 'nombre_de_factures', 2)))::text;
   -- Un fichier qui diverge : la part obligatoire de la première journée, un centime de plus.
   imp_autre := jsonb_set(base, '{paiements,0,montant_centimes}', '12346')::text;
@@ -172,17 +177,17 @@ begin
       (31, '31. aucun paiement (22023)', null, null, 'chef',
         $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', '[]'))$q$, '22023', 'Un import porte de 1 à 5 000 paiements.'),
       (32, '32. un paiement qui porte un nom (une clé de plus, 22023)', null, null, 'chef',
-        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,nom}', '"DUPONT-ESSAI"'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien, une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,nom}', '"DUPONT-ESSAI"'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
       (33, '33. un organisme dit par un texte (22023)', null, null, 'chef',
-        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,regime}', '"01"'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien, une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,regime}', '"01"'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
       (34, '34. une part hors de la liste (22023)', null, null, 'chef',
-        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,part}', '"autre"'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien, une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,part}', '"autre"'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
       (35, '35. une fraction de centime (22023)', null, null, 'chef',
-        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,montant_centimes}', '12345.5'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien, une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,montant_centimes}', '12345.5'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
       (36, '36. une régularisation positive (22023)', null, null, 'chef',
-        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,regularisations_centimes}', '100'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien, une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,regularisations_centimes}', '100'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
       (37, '37. un jour qui n''existe pas (22023)', null, null, 'chef',
-        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,date_journee_comptable}', '"2026-02-30"'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien, une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,date_journee_comptable}', '"2026-02-30"'))$q$, '22023', 'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
       (38, '38. une journée comptable à venir (22023)', null, null, 'chef',
         $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,date_journee_comptable}', to_jsonb('{J+1}'::text)))$q$, '22023', 'Un paiement de l''import porte une journée comptable à venir.'),
       (39, '39. un forfait qui paierait une facture (22023)', null, null, 'chef',
@@ -207,7 +212,55 @@ begin
         'OK', '0 0 false false'),
       (48, '48. aucun connecté n''exécute le refus ni la garde', null, null, 'client',
         $q$select has_function_privilege('authenticated', 'public.refus_de_l_import_assurance_maladie(jsonb, date)', 'execute') || ' ' || has_function_privilege('authenticated', 'public.garder_paiements_assurance_maladie()', 'execute')$q$,
-        'OK', 'false false')
+        'OK', 'false false'),
+      -- L'état des paiements de Télévitale (la recherche du 19/11/2026) : des lignes sans facture et des montants négatifs.
+      (60, '60. une aide de la caisse, versée sans facture : un forfait, sous son organisme',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set(jsonb_set(jsonb_set('{I}'::jsonb, '{paiements,2,regime}', '1'), '{paiements,2,caisse}', '691'), '{paiements,2,montant_centimes}', '25000'))$q$, null, 'chef',
+        $q$select p.part || ' ' || p.montant_centimes || ' ' || p.nombre_de_factures || ' ' || p.regime || ' ' || p.caisse from paiements_assurance_maladie p where p.dossier_id = '{DB}' and p.part = 'forfait'$q$,
+        'OK', 'forfait 25000 0 1 691'),
+      (61, '61. un indu seul, sans facture : une régularisation de sa part (le net égal aux régularisations)',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set(jsonb_set(jsonb_set('{I}'::jsonb, '{paiements,3,montant_centimes}', '-1500'), '{paiements,3,regularisations_centimes}', '-1500'), '{paiements,3,nombre_de_factures}', '0'))$q$, null, 'client',
+        $q$select p.montant_centimes || ' ' || p.regularisations_centimes || ' ' || p.nombre_de_factures from paiements_assurance_maladie p where p.dossier_id = '{DB}' and p.date_journee_comptable = '{J-1}'$q$,
+        'OK', '-1500 -1500 0'),
+      (62, '62. un net négatif : des factures payées, et un indu qui l''emporte',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set(jsonb_set('{I}'::jsonb, '{paiements,3,montant_centimes}', '-200'), '{paiements,3,regularisations_centimes}', '-300'))$q$, null, 'client',
+        $q$select p.montant_centimes || ' ' || p.regularisations_centimes || ' ' || p.nombre_de_factures from paiements_assurance_maladie p where p.dossier_id = '{DB}' and p.date_journee_comptable = '{J-1}'$q$,
+        'OK', '-200 -300 1'),
+      (63, '63. un indu sur un forfait : une régularisation, sans facture',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set(jsonb_set('{I}'::jsonb, '{paiements,2,montant_centimes}', '-4000'), '{paiements,2,regularisations_centimes}', '-4000'))$q$, null, 'chef',
+        $q$select p.montant_centimes || ' ' || p.regularisations_centimes || ' ' || p.nombre_de_factures from paiements_assurance_maladie p where p.dossier_id = '{DB}' and p.part = 'forfait'$q$,
+        'OK', '-4000 -4000 0'),
+      (64, '64. une somme positive sans facture sur la part obligatoire se refuse : c''est un forfait (22023)', null, null, 'chef',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set(jsonb_set('{I}'::jsonb, '{paiements,3,regularisations_centimes}', '0'), '{paiements,3,nombre_de_factures}', '0'))$q$, '22023',
+        'Un paiement de l''import ne se tient pas : ses factures, son montant et ses régularisations ne s''accordent pas.'),
+      (65, '65. un indu écrit en montant négatif sans régularisation se refuse : il en est une (22023)', null, null, 'chef',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set(jsonb_set(jsonb_set('{I}'::jsonb, '{paiements,3,montant_centimes}', '-1500'), '{paiements,3,regularisations_centimes}', '0'), '{paiements,3,nombre_de_factures}', '0'))$q$, '22023',
+        'Un paiement de l''import ne se tient pas : ses factures, son montant et ses régularisations ne s''accordent pas.'),
+      -- L'organisme complémentaire (BOR-Q5 (B), BORQ5-Q1 (A)).
+      (66, '66. la part complémentaire nommée par son organisme, à côté de la non dite, la même journée et la même caisse',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', ('{I}'::jsonb -> 'paiements') || jsonb_build_array(jsonb_set('{I}'::jsonb -> 'paiements' -> 1, '{organisme_complementaire}', '1234567890'))))$q$, null, 'client',
+        $q$select string_agg(coalesce(p.organisme_complementaire::text, 'non dit') || ':' || p.montant_centimes, ',' order by p.organisme_complementaire nulls first) from paiements_assurance_maladie p where p.dossier_id = '{DB}' and p.part = 'complementaire'$q$,
+        'OK', 'non dit:2345,1234567890:2345'),
+      (67, '67. un organisme complémentaire sur la part obligatoire (22023)', null, null, 'chef',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,0,organisme_complementaire}', '12345678'))$q$, '22023',
+        'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+      (68, '68. un organisme complémentaire de onze chiffres (22023)', null, null, 'chef',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,1,organisme_complementaire}', '10000000000'))$q$, '22023',
+        'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+      (69, '69. un organisme complémentaire écrit en texte (22023)', null, null, 'chef',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements,1,organisme_complementaire}', '"MUTUELLE ESSAI"'))$q$, '22023',
+        'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+      (70, '70. un paiement à sept clés, la forme d''avant l''amendement (22023)', null, null, 'chef',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', '{I}'::jsonb #- '{paiements,0,organisme_complementaire}')$q$, '22023',
+        'Un paiement de l''import est mal formé : une journée comptable, un organisme en chiffres ou rien (l''organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.'),
+      (71, '71. le payé d''un organisme complémentaire déjà en base avec d''autres chiffres : refusé, la journée nommée (22023)',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', ('{I}'::jsonb -> 'paiements') || jsonb_build_array(jsonb_set('{I}'::jsonb -> 'paiements' -> 1, '{organisme_complementaire}', '1234567890'))))$q$, null, 'chef',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', ('{I}'::jsonb -> 'paiements') || jsonb_build_array(jsonb_set(jsonb_set('{I}'::jsonb -> 'paiements' -> 1, '{organisme_complementaire}', '1234567890'), '{montant_centimes}', '2346'))))$q$, '22023',
+        'Un paiement de l''import est déjà en base avec d''autres chiffres (la journée comptable du {J-3fr}) : retirer d''abord l''import qui le porte.'),
+      (72, '72. … et celui d''un autre organisme complémentaire, la même journée et la même caisse, est neuf',
+        $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', ('{I}'::jsonb -> 'paiements') || jsonb_build_array(jsonb_set('{I}'::jsonb -> 'paiements' -> 1, '{organisme_complementaire}', '1234567890'))))$q$, null, 'chef',
+        $q$select i.periode_du || ' ' || i.periode_au from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', ('{I}'::jsonb -> 'paiements') || jsonb_build_array(jsonb_set(jsonb_set('{I}'::jsonb -> 'paiements' -> 1, '{organisme_complementaire}', '1234567891'), '{montant_centimes}', '999')))) i$q$,
+        'OK', '{J-3} {J-1}')
     ) as t(rang, etape, pose, pose_proprietaire, profil, requete, code, attendu) loop
       v_code := 'OK'; v_msg := null; v_obs := null;
       v_attendu := replace(replace(replace(replace(replace(replace(e.attendu,

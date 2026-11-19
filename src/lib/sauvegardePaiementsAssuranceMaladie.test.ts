@@ -104,7 +104,7 @@ describe('les paiements dans les deux états du drapeau : la réinsertion', () =
     ],
     paiements_assurance_maladie: [
       { id: 'p1', dossier_id: 'd1', import_id: 'i1', date_journee_comptable: '2026-11-02', regime: 1, caisse: 691,
-        part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 },
+        organisme_complementaire: null, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 },
     ],
   }
 

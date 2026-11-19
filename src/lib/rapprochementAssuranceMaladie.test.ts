@@ -17,7 +17,7 @@ const mouvement = (o: Partial<MouvementDuRapprochement> & Pick<MouvementDuRappro
   encaissements_de_factures: false, ...o,
 })
 const paiement = (o: Partial<PaiementDuRapprochement> & Pick<PaiementDuRapprochement, 'id' | 'date_journee_comptable' | 'montant_centimes'>): PaiementDuRapprochement => ({
-  regime: 1, caisse: 691, part: 'obligatoire', nombre_de_factures: 3, ...o,
+  regime: 1, caisse: 691, organisme_complementaire: null, part: 'obligatoire', nombre_de_factures: 3, ...o,
 })
 const entree = (mouvements: MouvementDuRapprochement[], paiements: PaiementDuRapprochement[],
   associations: AssociationDuRapprochement[] = [], o: Partial<EntreeDuRapprochement> = {}): EntreeDuRapprochement => ({
@@ -53,6 +53,22 @@ describe('les candidats d’un mouvement : le montant au centime, la journée de
     const deux = calcule(entree([mouvement({ id: 'mo', date: '2026-03-04', montant: 100 }), mouvement({ id: 'mc', date: '2026-03-04', montant: 23.45 })], p))
     expect([deux.parMouvement.get('mo'), deux.parMouvement.get('mc')].map((e) => e?.genre === 'propose' && e.proposition.paiementIds))
       .toEqual([['o'], ['c']])
+  })
+
+  it('deux parts complémentaires d’organismes complémentaires dits, une journée et une caisse : aucune paire, chacune seule (NOE3 amendée)', () => {
+    const p = [paiement({ id: 'o', date_journee_comptable: '2026-03-03', montant_centimes: 10000, nombre_de_factures: 9 }),
+      paiement({ id: 'c1', date_journee_comptable: '2026-03-03', montant_centimes: 2345, part: 'complementaire', organisme_complementaire: 1234567890, nombre_de_factures: 4 }),
+      paiement({ id: 'c2', date_journee_comptable: '2026-03-03', montant_centimes: 1000, part: 'complementaire', organisme_complementaire: 1234567891, nombre_de_factures: 1 })]
+    // Sans l'ambiguïté, o + c2 (110,00) puis o + c1 (123,45) feraient chacun une paire : aucune ne se propose.
+    for (const montant of [123.45, 110]) {
+      const r = calcule(entree([mouvement({ id: 'm', date: '2026-03-04', montant, libelle: REF('260303') })], p))
+      expect(r.parMouvement.get('m')?.genre).not.toBe('propose')
+    }
+    const seul = calcule(entree([mouvement({ id: 'm', date: '2026-03-04', montant: 23.45, libelle: REF('260303') })], p))
+    const etat = seul.parMouvement.get('m')
+    expect(etat?.genre === 'propose' && etat.proposition.paiementIds).toEqual(['c1'])
+    expect(etat?.genre === 'propose' && justificationDuCandidat(etat.proposition, seul.paiementsParId)).toContain(
+      'organisme régime 1, caisse 691, organisme complémentaire 1234567890, part complémentaire, 4 factures')
   })
 
   it('deux parts d’organismes différents ne se somment pas ; un forfait ne se somme jamais', () => {

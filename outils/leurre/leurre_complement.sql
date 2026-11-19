@@ -251,5 +251,40 @@ begin
         where not exists (select 1 from public.hausses_vues_avec_le_client v where v.dossier_id = lc.d)$i$;
   end if;
 end $hausse$;
+-- Les paiements et le facturé de l'assurance maladie (migrations `paiements_assurance_maladie`, NOE3,
+-- `association_paiements_assurance_maladie`, NOE5, et `factures_assurance_maladie`, BOR3, sur la réplique qui les porte) : un
+-- paiement dans l'import que le remplisseur a posé, son association au premier mouvement du leurre, la clé du dossier et une
+-- empreinte dans l'import du facturé, selon leurs CHECK (des centimes, trente-deux octets) ; sans texte libre (les tables
+-- n'en ont pas), le montant du leurre est le marqueur, et les octets se tirent de son texte.
+do $assurance_maladie$
+begin
+  if to_regclass('public.paiements_assurance_maladie') is not null then
+    execute $i$insert into public.paiements_assurance_maladie (dossier_id, import_id, date_journee_comptable, regime, caisse,
+                                                             organisme_complementaire, part, montant_centimes, regularisations_centimes,
+                                                             nombre_de_factures)
+      select lc.d, (select i.id from public.imports_assurance_maladie i where i.dossier_id = lc.d order by 1 limit 1), '2025-06-17', 1, 691,
+             null, 'obligatoire', (montant * 100)::bigint, 0, 1
+        from lc where not exists (select 1 from public.paiements_assurance_maladie p where p.dossier_id = lc.d)
+         and exists (select 1 from public.imports_assurance_maladie i where i.dossier_id = lc.d)$i$;
+  end if;
+  if to_regclass('public.paiements_assurance_maladie_mouvements') is not null then
+    execute $i$insert into public.paiements_assurance_maladie_mouvements (dossier_id, paiement_id, ligne_bancaire_id, associe_par)
+      select lc.d, (select p.id from public.paiements_assurance_maladie p where p.dossier_id = lc.d order by 1 limit 1),
+             (select l.id from public.lignes_bancaires l where l.dossier_id = lc.d order by 1 limit 1), chef
+        from lc where not exists (select 1 from public.paiements_assurance_maladie_mouvements a where a.dossier_id = lc.d)
+         and exists (select 1 from public.paiements_assurance_maladie p where p.dossier_id = lc.d)
+         and exists (select 1 from public.lignes_bancaires l where l.dossier_id = lc.d)$i$;
+  end if;
+  if to_regclass('public.cles_des_lots_teletransmission') is not null and to_regclass('public.lots_teletransmission_importes') is not null then
+    execute $i$insert into public.cles_des_lots_teletransmission (dossier_id, cle)
+      select d, decode(md5(m || ' cle') || md5(m || ' cle bis'), 'hex')
+        from lc where not exists (select 1 from public.cles_des_lots_teletransmission c where c.dossier_id = lc.d)$i$;
+    execute $i$insert into public.lots_teletransmission_importes (dossier_id, import_id, empreinte)
+      select lc.d, (select i.id from public.imports_factures_assurance_maladie i where i.dossier_id = lc.d order by 1 limit 1),
+             decode(md5(m || ' lot') || md5(m || ' lot bis'), 'hex')
+        from lc where not exists (select 1 from public.lots_teletransmission_importes r where r.dossier_id = lc.d)
+         and exists (select 1 from public.imports_factures_assurance_maladie i where i.dossier_id = lc.d)$i$;
+  end if;
+end $assurance_maladie$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;

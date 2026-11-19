@@ -15,7 +15,7 @@ const mouvement = (o: Partial<MouvementDuRapprochement> & Pick<MouvementDuRappro
   prelevement_personnel: false, encaissements_de_factures: false, ...o,
 })
 const PAIEMENT: PaiementDuRapprochement = {
-  id: 'p1', date_journee_comptable: '2026-03-03', regime: 1, caisse: 691, part: 'obligatoire', montant_centimes: 12345, nombre_de_factures: 3,
+  id: 'p1', date_journee_comptable: '2026-03-03', regime: 1, caisse: 691, organisme_complementaire: null, part: 'obligatoire', montant_centimes: 12345, nombre_de_factures: 3,
 }
 const lue = <T>(lignes: T[], complete = true) => ({ lignes, complete, motif: complete ? null : 'coupée' })
 const ASSOCIATION = { id: 'a1', dossier_id: 'd1', paiement_id: 'p1', ligne_bancaire_id: 'm1', associe_par: 'u', associe_le: '2026-03-06T09:00:00Z' }

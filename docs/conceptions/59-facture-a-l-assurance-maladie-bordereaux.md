@@ -349,7 +349,7 @@ verse d'elle-même au semestre suivant).
 | BOR7 | La mise en production : la migration, le drapeau levé, les essais, les trois contrôles de l'export | tout |
 
 **Ce tableau est celui d'origine ; le plan remis à jour sur les réponses du cabinet du 18/11/2026 est au § 13.5** (et le § 4.3,
-pour le numéro du lot, se lit avec le § 13.3).
+pour le numéro du lot, se lit avec les § 13.3 et 14 : une empreinte à clé secrète, jamais le numéro).
 
 Si BOR-Q1 répond « le bordereau des paiements » : ce PDF est du **payé**, et il nourrit NOE (un gabarit PDF dans
 `lib/paiementsAssuranceMaladie.ts`, qui ne lit aujourd'hui qu'un CSV) avant de nourrir BOR. BOR1 sert aux deux.
@@ -784,7 +784,7 @@ garde-fou change ce que le cabinet a décidé (« le numéro gardé »), il lui 
 | BOR0 | Sans code. Restent : la page rendue anonyme du bordereau des paiements (NOE1), une page des statistiques « par caisse » et « par organisme complémentaire » (BOR-Q2, BOR-Q5), une page du suivi tiers payant (BOR-Q6) ; **le premier passage de l'outil local** sur un vrai bordereau, dont la sortie (ou la raison) se rapporte telle quelle | — | le cabinet |
 | BOR1 | **Fait** (§ 12.2), et le 18/11/2026 après-midi : BOR1-Q2 (B), le contrôle par ligne gardé (BOR1-Q3), la liste des régimes (§ 13.2), l'outil local (§ 13.1) | fait | — |
 | BOR2 | **Fait le 19/11/2026** (HISTORIQUE.md, « BOR2 : LE FACTURÉ EN AGRÉGATS »). `lib/factureAssuranceMaladie.ts`, pur et sans sortie : des bordereaux lus aux agrégats (la date de création du lot ; le régime reconnu ou choisi, la caisse au code imprimé ; la part obligatoire = « Caisse », la part complémentaire = « Mutuelle » sous un organisme non dit ; « Assuré » non gardé) ; l'identification des lots pour le registre ; le scanner « sans sortie » étendu, le canari | moyen (un module, ses tests) | BOR1Q1-Q1, BORQ5-Q1 |
-| BOR3 | La migration préparée, par l'outil, drapeau baissé : l'import, le facturé sous son import, le registre des lots (et la clé du dossier si BOR1Q1-Q1 (A)), la fonction d'import tout ou rien, la RLS (le cabinet et le client « Banque »), la restrictive `deux_facteurs` sous condition, la porte devant les gardes, l'essai SQL, le plan de sauvegarde derrière le drapeau ; **et NOE3 amendée avant son collage** (l'organisme complémentaire, BOR-Q5 (B)) ; RGPD.md relu | grand (la base : toute la rigueur) | BOR2, BOR1Q1-Q1, BORQ5-Q1 |
+| BOR3 | **Préparé le 19/11/2026 (§ 14)** : la migration `factures_assurance_maladie` (à coller : son retrait supprime), drapeau `FACTURES_ASSURANCE_MALADIE_PREVUES` baissé ; NOE3 amendée avant son collage (l'organisme complémentaire) ; RGPD.md § 8.7 proposé. Le plan d'origine : l'import, le facturé sous son import, le registre des lots et la clé du dossier, la fonction d'import tout ou rien, la RLS (le cabinet et le client « Banque »), la restrictive `deux_facteurs` sous condition, l'essai SQL, le plan de sauvegarde derrière le drapeau | fait | — |
 | BOR4 | L'écran, dans la section NOEMIE de l'onglet Banque et de « Ma banque » : le fichier lu dans le navigateur, le régime « à choisir » quand le libellé ne le dit pas, les agrégats avant le clic, « lot déjà importé le … » | moyen | BOR3, BORQ8-Q1 |
 | BOR5 | `lib/duContrePaye.ts` et la section « Facturé à l'assurance maladie » : le niveau 1 (estimé) seul tant qu'aucun suivi tiers payant n'est lu, par organisme et par part (par mutuelle quand elle est connue) | moyen | BOR3, NOE3 |
 | BOR6 | Les points d'attention (avec NOE6) ; le refus au dépôt (le titre, dans le navigateur) ; l'écart à la réception par e-mail, après la mesure de sa faisabilité dans `receive-email` | moyen à grand (une Edge Function) | BOR5, BOR-Q9 |
@@ -831,6 +831,133 @@ Ordre : BOR0 (le cabinet) en parallèle de BOR2, puis BOR3 → BOR4 → BOR5 →
     "option_recommandee": "(A) Le praticien importe ; le cabinet seulement sur place ou de la main à la main, jamais par e-mail",
     "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 13.4 ; RGPD.md § 8.7",
     "pose": "2026-11-18"
+  }
+]
+```
+
+## 14. BOR3, préparé le 19/11/2026 : ce que la base garde
+
+Rien n'est appliqué. La migration : `supabase/preparees/20261119140000_factures_assurance_maladie.sql` ; son retour, son essai
+(`facturesAssuranceMaladie.sql`, et `facturesAssuranceMaladieSuppression.sql` sur une réplique) ; le module qui redit ses refus et
+compose le corps de l'appel : `src/lib/importDuFactureAssuranceMaladie.ts`. Le récit : HISTORIQUE.md, « 19/11/2026 — BOR3 ».
+
+### 14.1 Les quatre tables
+
+- `imports_factures_assurance_maladie` : le dossier, la première et la dernière date de création des lots, le nombre des lots et de
+  leurs factures (BOR2-Q1 (A)), qui et quand (posés par la base).
+- `factures_assurance_maladie` : les totaux de l'import, par date de création, part et organisme — la part obligatoire sous son
+  régime et sa caisse, la part complémentaire sans eux, sous `organisme_complementaire` (un entier ; nul : « non dit », BORQ5-Q1
+  (A)) ; le montant signé (un lot d'avoirs), le nombre de lots et de factures. Clé TOTALE (dossier, import, date, part, régime,
+  caisse, organisme complémentaire) : les totaux se somment à la lecture, le registre empêchant qu'un lot compte deux fois.
+- `lots_teletransmission_importes` : le registre, une empreinte de 32 octets par lot, unique dans le dossier — un HMAC-SHA-256
+  (pgcrypto) de « lot:numéro:date de création:caisse », les entiers ramenés à leur forme (7 et 7.0 sont le même lot), sous la clé du
+  dossier. La caisse y entre parce que rien n'établit qu'un numéro de lot soit unique d'une caisse à l'autre un même jour ; elle ne
+  relâche rien (un lot réimprimé garde sa caisse).
+- `cles_des_lots_teletransmission` : la clé du dossier, 32 octets tirés par la base (`gen_random_bytes`) au premier import ; elle
+  ne change jamais et ne part qu'avec le dossier.
+
+Aucune colonne de texte hors de la part ; la garde de fin le relit au catalogue.
+
+### 14.2 Qui lit, qui écrit
+
+- Le cabinet du dossier et un accès « Banque » importent et retirent (BOR-Q8 (A)), et lisent les imports et les totaux. **Cette
+  lecture et ces deux gestes du client se présentent au cabinet avant l'application** (fiche BOR3-migration).
+- Le registre et la clé : AUCUNE policy, pour personne (ni le cabinet, ni le client, ni la restauration) ; seule la fonction
+  d'import les lit. Le rôle des Edge Functions passe la RLS, comme pour `connexions_plateformes`, et la garde lui refuse toute
+  écriture.
+- La garde (aux droits de l'appelant, sans la porte `_acces_avant_les_gardes`) : rien ne s'écrit hors de l'import (et de la
+  restauration, pour l'import et ses totaux, jamais une empreinte), rien ne se modifie, rien ne part hors du retrait de son import ou
+  de son dossier.
+
+### 14.3 Le numéro du lot
+
+Il arrive en paramètre de `importer_factures_assurance_maladie`, sert à l'empreinte et aux contrôles, et ne s'écrit dans aucune
+table, aucun refus, aucun avis : « Le bordereau N de l'envoi a déjà été importé le JJ/MM/AAAA » nomme le RANG du bordereau dans
+l'envoi et le jour de l'import qui l'a apporté. Côté navigateur, le corps de l'appel (`corpsDeLImportDuFacture`) se compose au
+moment de l'appel ; ce que l'écran montre avant le clic (le résultat de BOR2) ne porte aucun numéro. Hors de la portée de la
+base : ce que les journaux de Postgres garderaient des paramètres d'une requête — à relever en production avant BOR7
+(`log_statement`, `log_min_duration_statement`, `log_parameter_max_length` : sur la réplique, `none`, `-1`, `-1`).
+
+### 14.4 La sauvegarde, et l'import restauré (BOR3-Q1)
+
+Le § 13.3 voulait la clé dans la sauvegarde. Elle n'y est pas : la sauvegarde d'un dossier se lit sous la session du cabinet, qui
+pourrait donc lire la clé, et une empreinte d'un numéro de quelques milliers de valeurs se renverse avec elle. La clé et le
+registre n'ont aucune policy : leur lecture rend zéro ligne (le patron de `connexions_plateformes`), et l'écran de la restauration
+le dit (`FACTURE_HORS_PERIMETRE`). Le prix : un import RESTAURÉ n'a plus le registre de ses lots. La fonction d'import le
+reconnaît — un import sans aucun lot au registre n'a pu être écrit que par la restauration — et refuse tout lot dont la date de
+création tombe dans sa période tant qu'il n'est pas retiré ; on le retire, puis on réimporte ses bordereaux. Un lot n'est jamais
+compté deux fois en silence.
+
+### 14.5 Ce que la base contrôle
+
+La forme (version 1, trois clés ; quatre par lot, huit par total) ; de 1 à 2 000 lots et au plus 5 000 totaux ; chaque lot (numéro
+de 1 à 999 999 999, date de création depuis 1990 et jamais à venir, caisse de 0 à 999, de 1 à 10 000 factures) ; deux lots de même
+empreinte ; chaque total (son organisme selon sa part, des centimes entiers, au moins autant de factures que de lots) ; deux totaux
+de même clé ; les totaux confrontés aux lots — chacun porte la date d'un lot (et, pour la part obligatoire, la caisse d'un lot de ce
+jour) et ne compte pas plus de lots ni de factures que ces lots n'en portent ; puis le registre et l'import restauré. Un exercice
+validé ne fige pas le facturé : il ne compte dans aucun moteur, et un lot de décembre est payé en janvier (BOR3-Q2).
+
+### 14.6 NOE3 amendée, NOE5 relue
+
+NOE3 (préparée, jamais collée) reçoit `organisme_complementaire` dans la forme d'un paiement (huit clés, version 1 redéfinie) et
+dans sa clé TOTALE (BOR-Q5 (B), BORQ5-Q1 (A)). Relue contre l'état des paiements de Télévitale (la recherche du 19/11/2026), elle
+admettait déjà les lignes sans facture et les montants négatifs : une somme positive sans facture (une aide) est un `forfait` ; un
+indu ou une régularisation qui retire est une régularisation de sa part, seule ou déduite des factures du jour ; un net négatif
+s'admet, un brut négatif jamais. L'essai le prouve (étapes 60 à 72). NOE5 tient sans changement en base (sa garde de tête relit
+des corps de NOE3 que l'amendement ne touche pas) ; son module ne forme plus de paire quand deux parts complémentaires nommées
+partagent une journée et une caisse.
+
+### 14.7 Les questions nouvelles
+
+```json
+[
+  {
+    "id": "BOR3-migration",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR3)",
+    "titre": "Le client « Banque » lit et importe son facturé : la migration à appliquer",
+    "question": "La migration du facturé ouvre au client qui porte la case « Banque » la lecture des imports et des totaux du facturé de son dossier, et deux gestes : importer ses bordereaux et retirer un import. L'appliquer ainsi ?",
+    "contexte": "Tu as décidé que le praticien importe ses bordereaux, et le cabinet aussi (BOR-Q8 (A), BORQ8-Q1 (A)). La migration préparée le 19/11/2026 ouvre donc au client « Banque » la lecture des imports (période des lots, nombre de lots et de factures, qui et quand) et des totaux (par date de création du lot, organisme et part, en centimes) de son dossier, et l'import et le retrait par deux fonctions. Rien d'autre : il ne lit ni le registre des lots ni la clé du dossier (aucune policy, pour personne), n'écrit rien en direct, et un total ne lui apprend que ce que son logiciel de télétransmission lui dit déjà, agrégé. C'est la règle des paiements NOEMIE (NOE3), sous la même case. CLAUDE.md veut qu'une policy qui ouvre une lecture au client se présente au cabinet avant d'être appliquée.",
+    "recommandation": "(A) : l'appliquer telle quelle, avec NOE3 et NOE5, après les PDF rendus anonymes (NOE3-quand) — c'est la lecture de la banque que la case « Banque » ouvre déjà.",
+    "options": ["(A) L'appliquer telle quelle : le client « Banque » lit, importe et retire", "(B) Le client lit et importe, le cabinet seul retire un import", "(C) Le cabinet seul : revenir sur BOR-Q8 (A)"],
+    "option_recommandee": "(A) L'appliquer telle quelle : le client « Banque » lit, importe et retire",
+    "source": "supabase/preparees/20261119140000_factures_assurance_maladie.sql ; docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 14.2 ; CLAUDE.md, « Trois domaines font exception »",
+    "pose": "2026-11-19"
+  },
+  {
+    "id": "BOR3-Q1",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR3)",
+    "titre": "La clé des lots hors de la sauvegarde",
+    "question": "La clé secrète du dossier et le registre des lots restent-ils hors de la sauvegarde, un import restauré retenant alors les lots de sa période jusqu'à son retrait ?",
+    "contexte": "La conception (§ 13.3) voulait la clé dans la sauvegarde, pour qu'une restauration reconnaisse encore les lots déjà importés. Mais la sauvegarde d'un dossier se fait dans le navigateur du cabinet : la clé y serait lisible par le cabinet, et un numéro de lot n'ayant que quelques milliers de valeurs, son empreinte se renverserait avec elle. La migration préparée ne la met donc pas dans la sauvegarde (ni le registre, inutile sans elle) ; en contrepartie, après une restauration, la base refuse tout lot créé dans la période d'un import restauré tant qu'il n'est pas retiré, puis ses bordereaux se réimportent. Rien n'est jamais compté deux fois ; une restauration est rare (Supabase sauvegarde aussi la base entière chaque jour, clé comprise).",
+    "recommandation": "(A) : hors de la sauvegarde — la clé ne quitte jamais la base, et une restauration coûte un réimport, jamais un double compte.",
+    "options": ["(A) La clé et le registre hors de la sauvegarde ; un import restauré retient les lots de sa période jusqu'à son retrait", "(B) La clé et le registre dans la sauvegarde : la restauration reconnaît les lots, mais le cabinet peut lire la clé", "(C) Une clé maîtresse du projet, une clé par dossier tirée d'elle, le registre dans la sauvegarde : reconnu après une restauration dans le même projet, pas dans un autre"],
+    "option_recommandee": "(A) La clé et le registre hors de la sauvegarde ; un import restauré retient les lots de sa période jusqu'à son retrait",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 13.3 et § 14.4 ; src/lib/restaurationInterrompue.ts (FACTURE_HORS_PERIMETRE)",
+    "pose": "2026-11-19"
+  },
+  {
+    "id": "BOR3-Q2",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR3)",
+    "titre": "Le facturé n'est pas figé par un exercice validé",
+    "question": "Un import du facturé reste-t-il importable et retirable quand l'exercice de ses lots est validé ?",
+    "contexte": "Les paiements NOEMIE (NOE3) se figent avec l'exercice validé de leur journée comptable. Le facturé, lui, ne compte dans aucun moteur (ni 2035, ni CA3, ni FEC, ni association au relevé) : c'est un contrôle de ce que l'assurance maladie doit. Et un lot créé fin décembre est payé en janvier : le contrôle de l'année suivante a besoin du facturé de décembre, même l'année close validée. La migration préparée ne le fige donc pas.",
+    "recommandation": "(A) : jamais figé — il ne compte nulle part, et le contrôle « dû contre payé » enjambe le 31 décembre.",
+    "options": ["(A) Jamais figé : importable et retirable quelle que soit l'année validée", "(B) Figé comme les paiements, par l'année de création du lot"],
+    "option_recommandee": "(A) Jamais figé : importable et retirable quelle que soit l'année validée",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 14.5 ; supabase/preparees/20261116191000_paiements_assurance_maladie.sql",
+    "pose": "2026-11-19"
+  },
+  {
+    "id": "BOR3-RGPD",
+    "chantier": "Facturé à l'assurance maladie (conception 59, BOR3 ; RGPD.md § 8.7)",
+    "titre": "Le bordereau remis au cabinet : sur place seulement ?",
+    "question": "Quand c'est le cabinet qui importe un bordereau, le fait-il seulement sur l'ordinateur du praticien, le fichier ne quittant jamais son poste — ou aussi d'un fichier remis de la main à la main ?",
+    "contexte": "RGPD.md § 8.7 fonde l'absence d'hébergeur de données de santé sur ta réponse du 24/09/2026 : le praticien « n'a pas le droit de transmettre ses bordereaux de télétransmission à son expert-comptable ». Tu as choisi (BORQ8-Q1 (A)) : le cabinet importe sur place ou d'un fichier remis de la main à la main, jamais par e-mail. L'hébergement reste hors de question dans les deux cas (rien de nominatif n'entre en base : des agrégats et des empreintes). Mais un fichier remis au cabinet, même sur une clé USB, est une transmission du bordereau, que le secret professionnel du praticien (code de la santé publique, art. L. 1110-4) juge en elle-même ; sur l'ordinateur du praticien, rien ne lui est transmis. Le texte proposé pour § 8.7 est écrit dans RGPD.md, à approuver avec cette réponse.",
+    "recommandation": "(A) : sur place seulement — le cabinet importe sur l'ordinateur du praticien, ou c'est le praticien qui importe ; aucun bordereau n'est remis au cabinet, et la réponse du 24/09/2026 reste vraie.",
+    "options": ["(A) Sur place seulement : le fichier ne quitte jamais le poste du praticien", "(B) Sur place ou de la main à la main, jamais par e-mail (BORQ8-Q1 (A) tel quel), et RGPD.md § 8.7 le dit", "(C) Le praticien seul importe un bordereau"],
+    "option_recommandee": "(A) Sur place seulement : le fichier ne quitte jamais le poste du praticien",
+    "source": "RGPD.md § 8.7 ; code de la santé publique, art. L. 1110-4 et L. 1111-8 (Légifrance) ; docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 13.4",
+    "pose": "2026-11-19"
   }
 ]
 ```

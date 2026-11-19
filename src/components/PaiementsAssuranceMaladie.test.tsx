@@ -151,8 +151,8 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
 
   it('le refus de la base se dit avant le clic : un paiement déjà en base avec d’autres chiffres, puis rien de neuf', async () => {
     const enBase = (montant: number): PaiementAssuranceMaladie => ({
-      id: 'p1', dossier_id: 'd1', import_id: 'i1', date_journee_comptable: '2026-11-02', regime: null, caisse: 691, part: 'obligatoire',
-      montant_centimes: montant, regularisations_centimes: 0, nombre_de_factures: 2,
+      id: 'p1', dossier_id: 'd1', import_id: 'i1', date_journee_comptable: '2026-11-02', regime: null, caisse: 691, organisme_complementaire: null,
+      part: 'obligatoire', montant_centimes: montant, regularisations_centimes: 0, nombre_de_factures: 2,
     })
     faux.lecture = lus([enBase(9999)])
     const premier = render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf="86.90D" />)
@@ -185,7 +185,7 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
         p_dossier_id: 'd1',
         p_import: {
           version: 1,
-          paiements: [{ date_journee_comptable: '2026-11-02', regime: null, caisse: 691, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 }],
+          paiements: [{ date_journee_comptable: '2026-11-02', regime: null, caisse: 691, organisme_complementaire: null, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 }],
           rejets: { nombre: 1, montant_centimes: 1200 },
         },
       },
@@ -202,7 +202,7 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
   const IMPORT = { id: 'i1', dossier_id: 'd1', periode_du: '2026-11-02', periode_au: '2026-11-03', nombre_de_rejets: 0,
     montant_rejete_centimes: 0, importe_par: 'u1', importe_le: '2026-11-04T09:00:00Z' }
   const PAYE: PaiementAssuranceMaladie = { id: 'p1', dossier_id: 'd1', import_id: 'i1', date_journee_comptable: '2026-11-02', regime: null,
-    caisse: 691, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 }
+    caisse: 691, organisme_complementaire: null, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 }
   const ASSOCIEE = { id: 'a1', dossier_id: 'd1', paiement_id: 'p1', ligne_bancaire_id: 'm1', associe_par: 'u1', associe_le: '2026-11-05T09:00:00Z' }
   const avecAssociations = (lignes: typeof ASSOCIEE[], complete = true): PaiementsLus =>
     ({ dossierId: 'd1', etat: 'lus', imports: lue([IMPORT]), paiements: lue([PAYE]), associations: lue(lignes, complete) })

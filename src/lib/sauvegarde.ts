@@ -47,6 +47,7 @@ import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
 import { HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE } from './hausseDuChiffreDAffaires'
 import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from './paiementsAssuranceMaladie'
 import { OPTIONS_DES_CABINETS_PREVUES, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
+import { FACTURES_ASSURANCE_MALADIE_PREVUES } from './importDuFactureAssuranceMaladie'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -262,6 +263,27 @@ export const TABLES_DES_PAIEMENTS_ASSURANCE_MALADIE: readonly string[] = ['impor
  *  base. */
 export function auPlanDesPaiementsAssuranceMaladie(table: string, prevus: boolean): boolean {
   return prevus || !TABLES_DES_PAIEMENTS_ASSURANCE_MALADIE.includes(table)
+}
+
+// LE FACTURÉ À L'ASSURANCE MALADIE (conception 59, BOR3 ; migration `factures_assurance_maladie`, PRÉPARÉE le 19/11/2026,
+// supabase/preparees/20261119140000_factures_assurance_maladie.sql) : la clé des lots d'un dossier, ses imports de
+// bordereaux, les totaux qu'ils ont apportés et le registre des empreintes de leurs lots, sans aucune donnée de patient. Sous
+// le drapeau de la migration (`FACTURES_ASSURANCE_MALADIE_PREVUES`, src/lib/importDuFactureAssuranceMaladie.ts), baissé : la
+// production n'a pas les tables, et les lire ferait échouer toute sauvegarde. Leurs relations (au dossier, en cascade ; le
+// total et l'empreinte à leur import, en cascade, leur garde les tenant dans le dossier de leur import), leur rang (juste
+// après `cotisations_declarees`, une place qu'aucun voisin ne fixe : la clé, puis l'import, ses totaux et ses empreintes),
+// leurs chemins ; aucune vague ; leur clé est la commune, `id`. LA CLÉ ET LE REGISTRE N'ONT AUCUNE POLICY : leur lecture rend
+// zéro ligne, et la sauvegarde ne les porte donc jamais (la clé ne quitte pas la base, BOR3-Q1) ; la restauration ne réinsère
+// que les imports et leurs totaux, par la porte que leur garde et leurs policies ouvrent au super-administrateur, et la
+// fonction d'import retient alors tout lot créé dans la période d'un import restauré, tant qu'il n'est pas retiré
+// (restaurationInterrompue.ts le dit à l'écran de la restauration). sauvegardeFacturesAssuranceMaladie.test.ts éprouve le
+// plan prévu et le plan du jour, sous chaque état du drapeau.
+export const TABLES_DU_FACTURE_ASSURANCE_MALADIE: readonly string[] = ['cles_des_lots_teletransmission',
+  'imports_factures_assurance_maladie', 'factures_assurance_maladie', 'lots_teletransmission_importes']
+
+/** Une table au plan, côté facturé à l'assurance maladie : toutes, sauf les siennes tant que sa migration n'est pas en base. */
+export function auPlanDuFactureAssuranceMaladie(table: string, prevues: boolean): boolean {
+  return prevues || !TABLES_DU_FACTURE_ASSURANCE_MALADIE.includes(table)
 }
 
 // LES SAISIES DE LA 2035 PAR LE CABINET (étapes 2035S3 à S5 ; migration `saisies_2035`, en production depuis le 07/11/2026,
@@ -653,6 +675,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesPrevisionsPubliees(table, PREVISIONS_PUBLIEES_PREVUES)
     && auPlanDeLaHausseDuChiffreDAffaires(table, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE)
     && auPlanDesPaiementsAssuranceMaladie(table, PAIEMENTS_ASSURANCE_MALADIE_PREVUS)
+    && auPlanDuFactureAssuranceMaladie(table, FACTURES_ASSURANCE_MALADIE_PREVUES)
     && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
     && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
@@ -871,6 +894,14 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'imports_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'paiements_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'paiements_assurance_maladie', parent: 'imports_assurance_maladie', colonne: 'import_id', aLaSuppression: 'cascade' },
+  // Le facturé à l'assurance maladie (BOR3, préparée) : la clé, l'import, ses totaux et ses empreintes, à leur dossier ; le
+  // total et l'empreinte à leur import, en cascade (leur garde les tient dans le dossier de leur import).
+  { enfant: 'cles_des_lots_teletransmission', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'imports_factures_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'factures_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'factures_assurance_maladie', parent: 'imports_factures_assurance_maladie', colonne: 'import_id', aLaSuppression: 'cascade' },
+  { enfant: 'lots_teletransmission_importes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'lots_teletransmission_importes', parent: 'imports_factures_assurance_maladie', colonne: 'import_id', aLaSuppression: 'cascade' },
   { enfant: 'saisies_2035', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'saisies_2035e', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'exercices', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -1266,6 +1297,12 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'imports_assurance_maladie',
   'paiements_assurance_maladie',
   'cotisations_declarees',
+  // Le facturé à l'assurance maladie (BOR3, préparée) : après le dossier, la clé, puis l'import avant ses totaux et ses
+  // empreintes ; une place qu'aucun voisin ne fixe — l'essai de restauration les met après `cotisations_declarees`.
+  'cles_des_lots_teletransmission',
+  'imports_factures_assurance_maladie',
+  'factures_assurance_maladie',
+  'lots_teletransmission_importes',
   'declarations_tva',
   'dossier_assignations',
   'emprunts',
@@ -1890,6 +1927,10 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   hausses_vues_avec_le_client: { acces: 'direct' },
   imports_assurance_maladie: { acces: 'direct' },
   paiements_assurance_maladie: { acces: 'direct' },
+  cles_des_lots_teletransmission: { acces: 'direct' },
+  imports_factures_assurance_maladie: { acces: 'direct' },
+  factures_assurance_maladie: { acces: 'direct' },
+  lots_teletransmission_importes: { acces: 'direct' },
   saisies_2035: { acces: 'direct' },
   saisies_2035e: { acces: 'direct' },
   stocks_de_cloture: { acces: 'direct' },

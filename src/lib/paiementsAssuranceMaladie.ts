@@ -12,7 +12,8 @@ import { parseDateBancaire, parseMontantBancaire } from './csv'
 // AGRÉGATS que rend ce module atteignent la base, au clic, par `importer_paiements_assurance_maladie`.
 //
 // CE QUI SORT D'ICI, ET RIEN D'AUTRE : par journée comptable, organisme (le code du régime et celui de la caisse, des
-// entiers, ou rien) et part (obligatoire, complémentaire), le montant net en centimes, ce que les régularisations en ont
+// entiers, ou rien ; l'organisme complémentaire de la part complémentaire, un entier, ou rien — « non dit », BORQ5-Q1 (A) :
+// l'export lu ici ne le nomme pas encore) et part (obligatoire, complémentaire), le montant net en centimes, ce que les régularisations en ont
 // retiré, le nombre de factures payées ; le nombre des rejets et leur montant total, si le fichier dit les statuts ; des
 // COMPTES de ce qui a été écarté, sous un numéro de ligne et une raison — JAMAIS la valeur d'une cellule (un message
 // d'erreur finit dans un journal). Ni nom, ni NIR, ni date de naissance, ni date de soins, ni acte, ni numéro de facture ou
@@ -44,11 +45,14 @@ export const PAIEMENTS_ASSURANCE_MALADIE_PREVUS = false
 export type PartDuPaiement = 'obligatoire' | 'complementaire' | 'forfait'
 export const PARTS_DU_PAIEMENT: readonly PartDuPaiement[] = ['obligatoire', 'complementaire', 'forfait']
 
-/** Un paiement agrégé, tel qu'il part en base : les sept clés que la fonction d'import accepte, et aucune autre. */
+/** Un paiement agrégé, tel qu'il part en base : les huit clés que la fonction d'import accepte, et aucune autre (la
+ *  migration amendée le 19/11/2026, avant tout collage : l'organisme complémentaire, BOR-Q5 (B)). */
 export interface PaiementAgrege {
   date_journee_comptable: string
   regime: number | null
   caisse: number | null
+  /** L'organisme complémentaire, en chiffres (de 1 à 9 999 999 999), de la seule part complémentaire ; nul : non dit. */
+  organisme_complementaire: number | null
   part: PartDuPaiement
   /** Le net, régularisations déduites, en centimes. */
   montant_centimes: number
@@ -80,7 +84,7 @@ export type PaiementEnBase = Omit<PaiementAgrege, never>
 export const REFUS_DE_L_IMPORT = {
   forme: 'L\'import n\'est pas dans la forme que la base connaît (version 1).',
   nombre: 'Un import porte de 1 à 5 000 paiements.',
-  paiement: 'Un paiement de l\'import est mal formé : une journée comptable, un organisme en chiffres ou rien, une part de la liste, des montants en centimes entiers et un nombre de factures.',
+  paiement: 'Un paiement de l\'import est mal formé : une journée comptable, un organisme en chiffres ou rien (l\'organisme complémentaire, pour la seule part complémentaire), une part de la liste, des montants en centimes entiers et un nombre de factures.',
   aVenir: 'Un paiement de l\'import porte une journée comptable à venir.',
   coherence: 'Un paiement de l\'import ne se tient pas : ses factures, son montant et ses régularisations ne s\'accordent pas.',
   doublon: 'L\'import porte deux fois le même paiement : une même journée comptable, un même organisme et une même part.',
@@ -104,8 +108,10 @@ export function refusDuConflit(journee: string): string {
 // ── La forme d'un import, redite (`refus_de_l_import_assurance_maladie`) ─────────────────────────────────────────────────
 const PLAFOND = 100_000_000_000_000
 const CLES_DE_L_IMPORT = ['paiements', 'rejets', 'version']
-const CLES_D_UN_PAIEMENT = ['caisse', 'date_journee_comptable', 'montant_centimes', 'nombre_de_factures', 'part', 'regime',
-  'regularisations_centimes']
+const CLES_D_UN_PAIEMENT = ['caisse', 'date_journee_comptable', 'montant_centimes', 'nombre_de_factures',
+  'organisme_complementaire', 'part', 'regime', 'regularisations_centimes']
+/** L'organisme complémentaire, au plus : dix chiffres (sa forme publique n'est pas établie, conception 59, § 13.4). */
+const ORGANISME_COMPLEMENTAIRE_MAX = 9_999_999_999
 const CLES_DES_REJETS = ['montant_centimes', 'nombre']
 
 const estObjet = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -142,9 +148,10 @@ export function refusDeLImport(imp: unknown, jour: string): string | null {
   if (paiements.length < 1 || paiements.length > 5000) return REFUS_DE_L_IMPORT.nombre
   for (const p of paiements) {
     if (!estObjet(p) || !memesCles(p, CLES_D_UN_PAIEMENT)) return REFUS_DE_L_IMPORT.paiement
-    const { date_journee_comptable: date, regime, caisse, part, montant_centimes: montant,
+    const { date_journee_comptable: date, regime, caisse, organisme_complementaire: organisme, part, montant_centimes: montant,
       regularisations_centimes: regularisations, nombre_de_factures: factures } = p
     if (typeof date !== 'string' || !(regime === null || typeof regime === 'number') || !(caisse === null || typeof caisse === 'number')
+      || !(organisme === null || typeof organisme === 'number')
       || typeof part !== 'string' || typeof montant !== 'number' || typeof regularisations !== 'number' || typeof factures !== 'number') {
       return REFUS_DE_L_IMPORT.paiement
     }
@@ -152,6 +159,7 @@ export function refusDeLImport(imp: unknown, jour: string): string | null {
     if (!(PARTS_DU_PAIEMENT as readonly string[]).includes(part)) return REFUS_DE_L_IMPORT.paiement
     if ((regime !== null && (!estEntier(regime) || regime < 0 || regime > 99))
       || (caisse !== null && (!estEntier(caisse) || caisse < 0 || caisse > 999))
+      || (organisme !== null && (part !== 'complementaire' || !estEntier(organisme) || organisme < 1 || organisme > ORGANISME_COMPLEMENTAIRE_MAX))
       || !estEntier(montant) || Math.abs(montant) >= PLAFOND
       || !estEntier(regularisations) || regularisations > 0 || regularisations <= -PLAFOND
       || !estEntier(factures) || factures < 0 || factures > 100000) {
@@ -182,9 +190,10 @@ export function refusDeLImport(imp: unknown, jour: string): string | null {
   return null
 }
 
-/** La clé TOTALE d'un paiement dans son dossier : la journée, l'organisme (deux organismes non dits se heurtent), la part. */
-export function cleDUnPaiement(p: Pick<PaiementAgrege, 'date_journee_comptable' | 'regime' | 'caisse' | 'part'>): string {
-  return `${p.date_journee_comptable}|${p.regime ?? '-'}|${p.caisse ?? '-'}|${p.part}`
+/** La clé TOTALE d'un paiement dans son dossier : la journée, l'organisme (deux organismes non dits se heurtent), la part,
+ *  l'organisme complémentaire. */
+export function cleDUnPaiement(p: Pick<PaiementAgrege, 'date_journee_comptable' | 'regime' | 'caisse' | 'part' | 'organisme_complementaire'>): string {
+  return `${p.date_journee_comptable}|${p.regime ?? '-'}|${p.caisse ?? '-'}|${p.part}|${p.organisme_complementaire ?? '-'}`
 }
 
 /** Ce que la fonction d'import fera d'un import bien formé, face aux paiements déjà en base du dossier : la journée la plus
@@ -417,9 +426,10 @@ export function lireLesPaiements(lignes: readonly { ligne: number; cellules: rea
         ecarter('organisme')
         continue
       }
-      const cle = cleDUnPaiement({ date_journee_comptable: journee, regime, caisse, part: c.part })
+      // L'export ne nomme pas encore l'organisme complémentaire (aucun en-tête connu, NOE1) : non dit (BORQ5-Q1 (A)).
+      const cle = cleDUnPaiement({ date_journee_comptable: journee, regime, caisse, part: c.part, organisme_complementaire: null })
       const agregat = agregats.get(cle) ?? {
-        date_journee_comptable: journee, regime, caisse, part: c.part,
+        date_journee_comptable: journee, regime, caisse, organisme_complementaire: null, part: c.part,
         montant_centimes: 0, regularisations_centimes: 0, nombre_de_factures: 0,
       }
       agregat.montant_centimes += montant
@@ -447,7 +457,8 @@ export function importAEnvoyer(lecture: LectureDesPaiements): ImportAEnvoyer | n
   return {
     version: 1,
     paiements: lecture.paiements.map((p) => ({
-      date_journee_comptable: p.date_journee_comptable, regime: p.regime, caisse: p.caisse, part: p.part,
+      date_journee_comptable: p.date_journee_comptable, regime: p.regime, caisse: p.caisse,
+      organisme_complementaire: p.organisme_complementaire, part: p.part,
       montant_centimes: p.montant_centimes, regularisations_centimes: p.regularisations_centimes,
       nombre_de_factures: p.nombre_de_factures,
     })),

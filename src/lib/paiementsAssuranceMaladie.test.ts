@@ -67,7 +67,7 @@ function lignesDuFichier(texte: string) {
 }
 
 const paiement = (p: Partial<PaiementAgrege> = {}): PaiementAgrege => ({
-  date_journee_comptable: '2026-11-02', regime: 1, caisse: 691, part: 'obligatoire',
+  date_journee_comptable: '2026-11-02', regime: 1, caisse: 691, organisme_complementaire: null, part: 'obligatoire',
   montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2, ...p,
 })
 const importDe = (paiements: PaiementAgrege[], rejets: ImportAEnvoyer['rejets'] = { nombre: 2, montant_centimes: 1500 }): ImportAEnvoyer =>
@@ -136,6 +136,26 @@ describe('refusDeLImport redit la forme que la base exige, dans son ordre (les �
     ['un montant rejeté sans rejet', avec(['rejets', 'nombre'], 0), REFUS_DE_L_IMPORT.rejets],
     ['des rejets qui portent un texte', avec(['rejets', 'motif'], 'libellé du rejet'), REFUS_DE_L_IMPORT.rejets],
     ['des rejets non dits', avec(['rejets'], null), null],
+    // L'organisme complémentaire (la migration amendée le 19/11/2026 : BOR-Q5 (B), BORQ5-Q1 (A) ; les étapes 66 à 70).
+    ['la part complémentaire sous son organisme complémentaire', avec(['paiements', 1, 'organisme_complementaire'], 1234567890), null],
+    ['un organisme complémentaire de dix chiffres, la borne', avec(['paiements', 1, 'organisme_complementaire'], 9999999999), null],
+    ['un organisme complémentaire sur la part obligatoire', avec(['paiements', 0, 'organisme_complementaire'], 12345678), REFUS_DE_L_IMPORT.paiement],
+    ['un organisme complémentaire sur un forfait', avec(['paiements', 2, 'organisme_complementaire'], 12345678), REFUS_DE_L_IMPORT.paiement],
+    ['un organisme complémentaire de onze chiffres', avec(['paiements', 1, 'organisme_complementaire'], 10000000000), REFUS_DE_L_IMPORT.paiement],
+    ['un organisme complémentaire nul (zéro)', avec(['paiements', 1, 'organisme_complementaire'], 0), REFUS_DE_L_IMPORT.paiement],
+    ['un organisme complémentaire écrit en texte', avec(['paiements', 1, 'organisme_complementaire'], 'MUTUELLE ESSAI'), REFUS_DE_L_IMPORT.paiement],
+    ['un paiement à sept clés, la forme d’avant l’amendement', (() => {
+      const copie = JSON.parse(JSON.stringify(bon)) as { paiements: Record<string, unknown>[] }
+      delete copie.paiements[0].organisme_complementaire
+      return copie
+    })(), REFUS_DE_L_IMPORT.paiement],
+    // L'état des paiements de Télévitale (la recherche du 19/11/2026) : des lignes sans facture, des montants négatifs (60 à 65).
+    ['une aide versée sans facture : un forfait, sous son organisme', avec(['paiements', 2, 'regime'], 1), null],
+    ['un indu seul : une régularisation, sans facture', importDe([paiement({ montant_centimes: -1500, regularisations_centimes: -1500, nombre_de_factures: 0 })]), null],
+    ['un net négatif : des factures payées et un indu qui l’emporte', importDe([paiement({ montant_centimes: -200, regularisations_centimes: -300, nombre_de_factures: 1 })]), null],
+    ['un indu sur un forfait', importDe([paiement({ part: 'forfait', regime: null, caisse: null, montant_centimes: -4000, regularisations_centimes: -4000, nombre_de_factures: 0 })]), null],
+    ['une somme positive sans facture sur la part obligatoire : c’est un forfait', importDe([paiement({ nombre_de_factures: 0 })]), REFUS_DE_L_IMPORT.coherence],
+    ['un indu écrit en montant négatif sans régularisation', importDe([paiement({ montant_centimes: -1500, nombre_de_factures: 0 })]), REFUS_DE_L_IMPORT.coherence],
   ])('%s', (_, imp, attendu) => {
     expect(refusDeLImport(imp, JOUR)).toBe(attendu)
   })
@@ -179,6 +199,14 @@ describe('le conflit et « rien de neuf », avant le clic (les étapes 23 à 25 
     expect(confrontationAuxPaiementsEnBase(importDe([sans]), [sans]).nouveaux).toBe(0)
     expect(confrontationAuxPaiementsEnBase(importDe([sans]), [paiement()]).nouveaux).toBe(1)
   })
+  it('l’organisme complémentaire est de la clé : nommé, il ne heurte ni le non dit ni un autre (étapes 66, 71 et 72)', () => {
+    const nonDit = paiement({ part: 'complementaire', montant_centimes: 790, nombre_de_factures: 1 })
+    const nomme = { ...nonDit, organisme_complementaire: 1234567890 }
+    expect(confrontationAuxPaiementsEnBase(importDe([nomme]), [nonDit])).toEqual({ conflit: null, nouveaux: 1, dejaImportes: 0 })
+    expect(refusAvantLEnvoi(importDe([{ ...nomme, montant_centimes: 791 }]), JOUR, [nonDit, nomme])).toBe(refusDuConflit('2026-11-02'))
+    expect(refusAvantLEnvoi(importDe([nonDit, nomme, { ...nomme, organisme_complementaire: 1234567891, montant_centimes: 999 }]), JOUR, [nonDit, nomme]))
+      .toBeNull()
+  })
 })
 
 describe('la lecture d’un export fabriqué : des agrégats, et rien d’autre', () => {
@@ -213,12 +241,13 @@ describe('la lecture d’un export fabriqué : des agrégats, et rien d’autre'
     expect([...new Set(sortie.match(/\d{4}-\d{2}-\d{2}/g))].sort()).toEqual(['2026-11-02', '2026-11-03'])
   })
 
-  it('l’import qui part a la forme que la base accepte, et ses sept clés seulement', () => {
+  it('l’import qui part a la forme que la base accepte, et ses huit clés seulement — l’organisme complémentaire non dit', () => {
     const envoi = importAEnvoyer(lecture)
     expect(envoi).not.toBeNull()
     expect(refusDeLImport(envoi, JOUR)).toBeNull()
     expect(Object.keys(envoi!.paiements[0]).sort()).toEqual(['caisse', 'date_journee_comptable', 'montant_centimes',
-      'nombre_de_factures', 'part', 'regime', 'regularisations_centimes'])
+      'nombre_de_factures', 'organisme_complementaire', 'part', 'regime', 'regularisations_centimes'])
+    expect(envoi!.paiements.every((p) => p.organisme_complementaire === null)).toBe(true)
     expect(importAEnvoyer(lireLesPaiements([], REGLAGE))).toBeNull()
   })
 

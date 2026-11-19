@@ -97,11 +97,13 @@ describe('les agrégats du facturé', () => {
     ])
   })
 
-  it('l’identification des lots : rendue par la seule fonction, dans l’ordre de l’envoi, figée', () => {
-    const r = pret(factureDesBordereaux([bordereau({ lot: 999999007, creeLe: '2026-10-07' }), bordereau({ lot: 999999001 })], parametres()))
+  it('l’identification des lots : rendue par la seule fonction, dans l’ordre de l’envoi, figée — la caisse et les factures avec (BOR3)', () => {
+    const r = pret(factureDesBordereaux([bordereau({ lot: 999999007, creeLe: '2026-10-07', organisme: { code: '012', libelle: 'CPAM - VILLE FICTIVE' } }),
+      bordereau({ lot: 999999001, nombreDeFactures: 5 })], parametres()))
     expect(r.identificationDesLots.nombre).toBe(2)
     const lots = r.identificationDesLots.pourLAppelDImport()
-    expect(lots).toEqual([{ numero: 999999007, creeLe: '2026-10-07' }, { numero: 999999001, creeLe: '2026-10-05' }])
+    expect(lots).toEqual([{ numero: 999999007, creeLe: '2026-10-07', caisse: 12, nombreDeFactures: 3 },
+      { numero: 999999001, creeLe: '2026-10-05', caisse: 999, nombreDeFactures: 5 }])
     expect(Object.isFrozen(lots)).toBe(true)
     expect(Object.isFrozen(lots[0])).toBe(true)
     expect(JSON.stringify(r.identificationDesLots)).toBe('{"nombre":2}')

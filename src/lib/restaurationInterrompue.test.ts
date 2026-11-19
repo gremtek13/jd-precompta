@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { FACTURES_ASSURANCE_MALADIE_PREVUES } from './importDuFactureAssuranceMaladie'
 import {
-  CONNEXIONS_HORS_PERIMETRE, HORS_PERIMETRE_DES_SECRETS, NUMEROTATION_HORS_PERIMETRE, RestaurationInterrompue,
+  CONNEXIONS_HORS_PERIMETRE, FACTURE_HORS_PERIMETRE, HORS_PERIMETRE_DES_SECRETS, horsPerimetreDesSecrets, NUMEROTATION_HORS_PERIMETRE,
+  RestaurationInterrompue,
   descriptionDuRetrait, dossierPartielDe, horsPerimetreAAfficher, messageApresRetrait, nomDuDossierPartiel,
   type DossierPartiel,
 } from './restaurationInterrompue'
@@ -52,6 +55,17 @@ describe('ce que la sauvegarde ne porte pas (RESTAU-Q3)', () => {
     for (const ligne of CONNEXIONS_HORS_PERIMETRE) expect(ligne).toMatch(/Après une restauration, /)
     expect(NUMEROTATION_HORS_PERIMETRE).toMatch(/`facture_numerotation`, `devis_numerotation`/)
     expect(NUMEROTATION_HORS_PERIMETRE).toMatch(/Rien n’est perdu : la numérotation reprend du plus haut numéro émis/)
+  })
+
+  it('le facturé à l’assurance maladie (BOR3) : son registre et sa clé dits hors périmètre, sous son drapeau seulement', () => {
+    expect(horsPerimetreDesSecrets(false)).toEqual([...CONNEXIONS_HORS_PERIMETRE, NUMEROTATION_HORS_PERIMETRE])
+    expect(horsPerimetreDesSecrets(true)).toEqual([...CONNEXIONS_HORS_PERIMETRE, NUMEROTATION_HORS_PERIMETRE, FACTURE_HORS_PERIMETRE])
+    expect(HORS_PERIMETRE_DES_SECRETS).toEqual(horsPerimetreDesSecrets(FACTURES_ASSURANCE_MALADIE_PREVUES))
+    expect(FACTURE_HORS_PERIMETRE).toMatch(/`lots_teletransmission_importes`, `cles_des_lots_teletransmission`/)
+    expect(FACTURE_HORS_PERIMETRE).toMatch(/Après une restauration, /)
+    // Ce que la phrase promet, la migration préparée le tient : le refus d'un lot dans la période d'un import restauré.
+    const migration = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261119140000_factures_assurance_maladie.sql'), 'utf8')
+    expect(migration).toContain('Un import restauré, dont la sauvegarde ne porte pas le registre des lots, couvre le %')
   })
 
   it('la raison pour laquelle rien n’est perdu est celle du texte exporté : le plus grand du repère et du plus haut émis', () => {
