@@ -54162,3 +54162,20 @@ A8Q5Q3Q2Q2-Q1 (16/11/2026, drapeau `ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES`
 accepte) ; la visite neuve `client/mes-pieces-caisse-reprise` ouvre son geste et attend la phrase de la base (« … ton cabinet
 l'enregistre. »). Mesuré : 13 visites, 0 débordement à 390 px (la passe `client-banque`, qui partage le faux, 0 aussi). En passant :
 le Chromium de l'environnement est sous `chrome-linux64`, que la détection de `vitrine.mjs` ne cherche pas (`CHROMIUM=` le contourne).
+### 19/11/2026 — OPT3 : LES MODULES BRANCHÉS DANS LES ÉCRANS, DERRIÈRE `OPTIONS_DES_CABINETS_PREVUES` BAISSÉ
+
+La lecture (`lib/optionsDuCabinetLecture.ts`) : le cabinet lit `options_des_cabinets` de son cabinet par `lireTout`, le client
+`modules_ouverts_du_dossier` de la société affichée ; tout échec, toute forme inconnue, un doublon, une ligne d'un autre cabinet
+tombent du côté FERMÉ. Le fournisseur (`context/OptionsDuCabinetContext.tsx`, monté sous `AuthProvider`) relit au changement de clé
+(`cabinet:<id>` ou `dossier:<id>`) et garde la réponse avec elle ; ce que les écrans lisent vit à part (`context/ModulesOuverts.tsx`),
+pour qu'une barre d'onglets n'importe ni la session ni le client Supabase. Drapeau baissé : tout ouvert, AUCUNE lecture (prouvé par
+`optionsDuCabinetLecture.test.ts` et `OptionsDuCabinetContext.test.tsx`, qui comptent les appels) ; sans fournisseur aussi. Levé :
+« Chargement… » à la porte tant que rien n'est revenu, le socle seul et `MOTS_DU_REFUS.optionsIllisibles` sur un échec.
+Branché : `groupesDuParcours`/`ongletsValides` (troisième paramètre obligatoire ; un groupe vide disparaît ; tous ouverts, la liste
+d'hier), les deux barres, `DossierDetail` (adresse d'un onglet fermé → Vue d'ensemble et `ecranDuCabinet`), l'assistant et sa bulle,
+les routes et entrées du client et `/retour-banque` (`routeDuClientOuverte`), les cases masquées par leur module (`droitsMasques`,
+`useDroitsAffiches`) avant les prédicats d'hier — sept écrans du client —, les colonnes de l'onglet Accès (la confirmation du retrait
+nomme toujours toutes les cases), les points de la Vue d'ensemble (`pointsSousLesModules` : le module de l'onglet cible, la
+déclaration de TVA à la tenue), la CA3 (tenue) et les cartes facture électronique et e-reporting (E) de l'onglet TVA, NOEMIE (Banque,
+« Ma banque »), la connexion bancaire, les RIB à confirmer (aucune lecture, facturation fermée), « Proposer une catégorie ». Tests :
+`modulesAffiches.test.ts` et `DossierParcours.test.tsx` sous « tous ouverts », « socle seul » et chaque module seul. OPT4 non fait.
