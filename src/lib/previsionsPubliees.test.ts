@@ -5,7 +5,7 @@ import { motsDuCabinet } from './espaceVentes'
 import { TRESORERIE_A_90_JOURS_OFFERTE } from './tresorerieClient'
 import { calculerPlanTresorerieAu, dateDuDepart, type LigneBanquePourPlan } from './planTresorerie'
 import {
-  CE_QUE_LE_CLIENT_LIT, composerLaPrevision, confirmationDeLaPublication, confirmationDuRetrait, contenuLu, memesMois,
+  avertissementDuRaccord, CE_QUE_LE_CLIENT_LIT, composerLaPrevision, joursDuRaccord, raccordDepasseUnMois, confirmationDeLaPublication, confirmationDuRetrait, contenuLu, memesMois,
   moisLePlusBas, NON_COMPTE_PREVISION_A_PART, nonComptesSelonLaPrevision, periodeDuRaccordEnLettres, phraseDeLaPublication,
   phraseDesMoisPasses, phraseDuDepart, phraseDuMoisLePlusBas, phraseDUnePrevisionPassee, phraseDuRaccord, phraseDuRythme,
   PREVISION_AUCUNE, PREVISION_CONTENU_ILLISIBLE, PREVISION_ESPECES, PREVISION_ILLISIBLE, PREVISION_MOT, PREVISION_PAS_UN_ENGAGEMENT,
@@ -319,5 +319,37 @@ describe('les mots', () => {
     expect(periodeDuRaccordEnLettres(c.raccord!)).toBe('Du 11 novembre 2026 au 30 novembre 2026')
     expect(phraseDuRaccord(c.raccord!).replace(/ | /g, ' ')).toBe('Du 11 novembre 2026 au 30 novembre 2026, après cette dernière '
       + 'écriture, elle compte ce rythme au prorata des jours : 2 222,26 € encaissés et 892,36 € payés.')
+  })
+})
+
+describe('un raccord de plus d’un mois : un avertissement au cabinet, jamais un refus (C8Q2Q3-Q1)', () => {
+  it('« plus d’un mois » : plus de 31 jours civils, bornes comprises', () => {
+    expect(joursDuRaccord({ du: '2026-11-01', au: '2026-11-30' })).toBe(30)
+    expect(joursDuRaccord({ du: '2026-10-31', au: '2026-11-30' })).toBe(31)
+    expect(joursDuRaccord({ du: '2028-02-01', au: '2028-02-29' })).toBe(29)
+    expect(raccordDepasseUnMois(null)).toBe(false)
+    expect(raccordDepasseUnMois({ du: '2026-10-31', au: '2026-11-30' })).toBe(false)
+    expect(raccordDepasseUnMois({ du: '2026-10-30', au: '2026-11-30' })).toBe(true)
+    expect(raccordDepasseUnMois({ du: '2026-10-03', au: '2026-11-30' })).toBe(true)
+  })
+
+  const jusquAu = (date: string) => RYTHME.filter((l) => l.date <= date)
+
+  it('la banque à jour : rien ; vieille de plus d’un mois : depuis quand, et le relevé à importer d’abord', () => {
+    expect(avertissementDuRaccord(compose())).toBeNull()
+    expect(avertissementDuRaccord(compose({ lignesBanque: jusquAu('2026-10-31') }))).toBeNull()
+    const vieux = compose({ lignesBanque: jusquAu('2026-10-02') })
+    expect(vieux.raccord).toMatchObject({ du: '2026-10-03', au: '2026-11-30' })
+    expect(avertissementDuRaccord(vieux)).toBe('La banque n’est à jour dans les comptes qu’au 02/10/2026 : le raccord, du '
+      + '03/10/2026 au 30/11/2026, compte 59 jours au rythme moyen, plus d’un mois. Importe d’abord le relevé qui suit cette '
+      + 'date : la prévision partira d’un solde plus récent. Tu peux aussi la publier telle quelle.')
+    // Sans raccord (la banque à jour au dernier jour du mois), aucun avertissement.
+    expect(avertissementDuRaccord({ depart: vieux.depart, raccord: null })).toBeNull()
+  })
+
+  it('la confirmation le reprend, et seulement alors', () => {
+    const vieux = compose({ lignesBanque: jusquAu('2026-10-02') })
+    expect(confirmationDeLaPublication(vieux, null).paragraphes).toContain(avertissementDuRaccord(vieux))
+    expect(confirmationDeLaPublication(compose(), null).paragraphes.join(' ')).not.toContain('Importe d’abord')
   })
 })

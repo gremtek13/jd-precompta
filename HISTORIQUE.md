@@ -54016,3 +54016,15 @@ PAS TROUVÉ : aucun exemplaire ni capture du PDF de l'état — ses libellés, s
 les autres logiciels ; rien d'amelipro. Le cahier NOEMIE-PS de 2004 porte en page 2 « aucune cession des droits d'auteurs » : pas lu
 au-delà, pas recopié (NOE2-Q1 tient). Conséquences pour NOE3 : un agrégat par journée, organisme et part doit admettre des lignes
 SANS facture et des montants NÉGATIFS. Le lecteur du PDF ne s'écrit pas sur ces sources : il attend une page réelle.
+### 19/11/2026 — C8Q2Q3-Q1 (A) : LE RACCORD DE PLUS D'UN MOIS, AVERTI AU CABINET
+
+La prévision publiée se publie toujours ; le cabinet est averti avant le clic quand la banque des comptes n'est plus à jour.
+« Plus d'un mois » se compte en jours civils, bornes comprises : le raccord couvre plus de 31 jours
+(`JOURS_DU_RACCORD_SANS_AVERTISSEMENT`, `joursDuRaccord`, `raccordDepasseUnMois`, `avertissementDuRaccord` dans
+`lib/previsionsPubliees.ts`). Écarté : « le raccord touche deux mois civils », qui avertissait le 1er novembre une banque à
+jour au 30 octobre ; la règle retenue ne dépend pas du jour du mois (un raccord parti du 1er n'est jamais averti, même en
+février). La phrase dit la date de la dernière écriture de banque, la période et ses jours, invite à importer d'abord le
+relevé qui suit et rappelle que la publication telle quelle reste possible ; elle s'affiche près de « Publier au client »
+(la ligne teintée `client-signalement`, qui passe à la ligne) et se reprend dans la confirmation. Rien côté client, rien en
+base ; ni la migration exportée ni l'essai SQL ne changent. Tests : `previsionsPubliees.test.ts` (seuil à 31 et 32 jours,
+février, banque à jour, confirmation) et `PrevisionsPubliees.test.tsx` (averti, geste offert, un seul appel ; à jour, rien).

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PrevisionsPubliees from './PrevisionsPubliees'
 import {
-  composerLaPrevision, REFUS_DU_MODULE, REFUS_PREVISION, refusDeLaLectureDuPlan, type ContenuDeLaPrevision, type EntreeDeLaPrevision,
+  avertissementDuRaccord, composerLaPrevision, REFUS_DU_MODULE, REFUS_PREVISION, refusDeLaLectureDuPlan, type ContenuDeLaPrevision, type EntreeDeLaPrevision,
   type PrevisionPubliee,
 } from '../../lib/previsionsPubliees'
 import type { LectureDuCabinet } from '../../lib/previsionsPublieesLecture'
@@ -117,6 +117,27 @@ describe('publier la prévision (cabinet)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Publier' }))
     await act(async () => { faux.retenir.forEach((r) => r()) })
     expect((await screen.findByRole('alert')).textContent).toContain(REFUS_PREVISION.dejaPubliee)
+  })
+
+  it('un raccord de plus d’un mois (C8Q2Q3-Q1) : averti près du bouton et dans la confirmation, le geste reste offert ; à jour, rien', async () => {
+    faux.lecture = lecture([])
+    const premier = ecran()
+    const attendu = avertissementDuRaccord(contenu())
+    expect(attendu).toContain('qu’au 20/10/2026')
+    expect(await screen.findByText(attendu!)).toBeTruthy()
+    const bouton = screen.getByRole('button', { name: 'Publier cette prévision' }) as HTMLButtonElement
+    expect(bouton.disabled).toBe(false)
+    fireEvent.click(bouton)
+    expect(screen.getByRole('alertdialog').textContent).toContain(attendu!)
+    fireEvent.click(screen.getByRole('button', { name: 'Publier' }))
+    expect(faux.appels).toHaveLength(1)
+    premier.unmount()
+    // La banque à jour au 10 novembre : le raccord couvre 20 jours, aucun avertissement, ni à l'écran ni dans la confirmation.
+    const aJour = { ...ENTREE, lignesBanque: [...LIGNES, ligne('2026-11-10', 'credit', 50)] }
+    ecran({ entree: aJour })
+    fireEvent.click(await screen.findByRole('button', { name: 'Publier cette prévision' }))
+    expect(screen.queryByText(/Importe d’abord/)).toBeNull()
+    expect(screen.getByRole('alertdialog').textContent).not.toContain('Importe d’abord')
   })
 
   it('une lecture partielle des prévisions ou du plan, aucun mouvement observé, des mois qui diffèrent : refusés avant le clic, sans aucun geste', async () => {

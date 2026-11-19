@@ -4,7 +4,7 @@ import { messageErreur } from '../../lib/messageErreur'
 import { aujourdHuiAParis, formatDate } from '../../lib/format'
 import { moisEnLettres } from '../../lib/echeancierClient'
 import {
-  CE_QUE_LE_CLIENT_LIT, composerLaPrevision, confirmationDeLaPublication, confirmationDuRetrait, contenuLu, memesMois, montantDit,
+  avertissementDuRaccord, CE_QUE_LE_CLIENT_LIT, composerLaPrevision, confirmationDeLaPublication, confirmationDuRetrait, contenuLu, memesMois, montantDit,
   previsionEnCours, REFUS_DU_MODULE, refusDeLaLectureDuPlan, type ContenuDeLaPrevision, type EntreeDeLaPrevision,
   type PrevisionPubliee,
 } from '../../lib/previsionsPubliees'
@@ -70,6 +70,8 @@ export default function PrevisionsPubliees({ dossierId, entree, moisAffiches, le
         : composition !== null && !composition.ok ? composition.refus
           : composition !== null && composition.ok && !memesMois(composition.contenu, moisAffiches) ? REFUS_DU_MODULE.moisDifferents
             : null
+  // Un raccord de plus d'un mois (C8Q2Q3-Q1) : un avertissement, jamais un refus — le bouton reste offert.
+  const avertissement = refus === null && composition !== null && composition.ok ? avertissementDuRaccord(composition.contenu) : null
 
   async function publier(contenu: ContenuDeLaPrevision, remplacee: PrevisionPubliee | null) {
     if (gesteEnCours.current) return
@@ -129,6 +131,12 @@ export default function PrevisionsPubliees({ dossierId, entree, moisAffiches, le
             consequence="Rien ne se publie ni ne se retire : recharge la page."
           />
           {refus && <p className="error-text">{refus}</p>}
+          {avertissement && (
+            <div className="client-signalement" style={{ marginBottom: 12 }}>
+              <span className="check-dot check-attention" aria-hidden="true" />
+              <p className="client-signalement-texte">{avertissement}</p>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
             <button
               type="button" className="btn btn-primary"
