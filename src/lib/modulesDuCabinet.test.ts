@@ -44,8 +44,8 @@ const REGLER = corps('regler_option_du_cabinet')
 const MODULES = corps('modules_ouverts_du_dossier')
 
 describe('la liste fermée et ses libellés, ceux de la migration', () => {
-  it('le drapeau de la migration est baissé : rien ne lit la table avant elle', () => {
-    expect(OPTIONS_DES_CABINETS_PREVUES).toBe(false)
+  it('le drapeau des écrans est levé : la migration est en production depuis le 19/11/2026 (244)', () => {
+    expect(OPTIONS_DES_CABINETS_PREVUES).toBe(true)
   })
 
   it('la contrainte de la table, les deux fonctions et les lignes des cabinets existants disent les huit modules, dans le même ordre', () => {

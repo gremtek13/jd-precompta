@@ -36,18 +36,24 @@ beforeEach(() => {
 
 const ligne = (module: string, ouverte: boolean, cabinet = 'c1') => ({ cabinet_id: cabinet, module, ouverte })
 
-describe('le drapeau baissé : tout ouvert, sans aucun appel', () => {
-  it('le drapeau est baissé aujourd’hui (la migration OPT1 n’est pas appliquée)', () => {
-    expect(OPTIONS_DES_CABINETS_PREVUES).toBe(false)
+describe('le drapeau baissé (un retour) : tout ouvert, sans aucun appel', () => {
+  it('le drapeau est levé aujourd’hui (la migration OPT1 est en production depuis le 19/11/2026)', () => {
+    expect(OPTIONS_DES_CABINETS_PREVUES).toBe(true)
   })
 
-  it('côté cabinet et côté client, par le défaut comme explicitement : aucun appel, tous les modules', async () => {
-    for (const lu of [await lireLesModulesDuCabinet('c1'), await lireLesModulesDuCabinet('c1', false),
-      await lireLesModulesDuDossier('d1'), await lireLesModulesDuDossier('d1', false)]) {
+  it('côté cabinet et côté client, baissé explicitement : aucun appel, tous les modules', async () => {
+    for (const lu of [await lireLesModulesDuCabinet('c1', false), await lireLesModulesDuDossier('d1', false)]) {
       expect(lu.etat).toBe('lus')
       expect(lu.etat === 'lus' ? lu.ouverts : null).toEqual(TOUS_LES_MODULES)
     }
     expect(appels).toEqual({ from: 0, rpc: 0 })
+  })
+
+  it('par le défaut, le drapeau levé : la table du cabinet et la fonction du dossier sont lues', async () => {
+    reponseRpc = { data: ['tenue'], error: null }
+    expect(await lireLesModulesDuCabinet('c1')).toEqual({ etat: 'lus', cle: 'c1', ouverts: [] })
+    expect(await lireLesModulesDuDossier('d1')).toEqual({ etat: 'lus', cle: 'd1', ouverts: ['tenue'] })
+    expect(appels).toEqual({ from: 1, rpc: 1 })
   })
 })
 

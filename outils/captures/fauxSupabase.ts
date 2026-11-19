@@ -29,7 +29,9 @@ import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { partDuRythme, periodeDuRaccord } from '../../src/lib/planTresorerie'
 import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from '../../src/lib/rattachement'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES, type LibellesDuPlan } from '../../src/lib/planComptable'
+import { MODULES_OPTIONNELS } from '../../src/lib/modulesDuCabinet'
 import { ROLES_DU_CHANGE } from '../../src/lib/rolesDuChange'
+import { ROLE_AUTRES_IMPOTS } from '../../src/lib/autresImpotsDesCotisations'
 import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
 import { mentionTva } from '../../src/lib/statutTva'
 import { instantane2035 } from '../../src/lib/validationExercice'
@@ -2258,6 +2260,9 @@ const TABLES: Record<string, Ligne[]> = {
   saisies_2035: SAISIES_2035_D1,
   // `dossier_du_cabinet` (LM1, en production depuis le 12/11/2026) : aucun dossier du banc n'est désigné.
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null, dossier_du_cabinet: null }],
+  // LES OPTIONS DU CABINET (OPT1, en production depuis le 19/11/2026) : le cabinet du banc a tout ouvert, comme les cabinets
+  // existants le jour de la migration — sans elles, chaque visite tomberait au socle seul et perdrait ses onglets.
+  options_des_cabinets: MODULES_OPTIONNELS.map((module) => ({ cabinet_id: 'cab1', module, ouverte: true })),
   // Pour le membre de l'équipe, ce que `dossiers_select` lui rend : ses dossiers assignés, et celui dont il est client.
   dossiers: MEMBRE_DU_BANC
     ? dossiers.filter((d) => [...DOSSIERS_ASSIGNES_AU_MEMBRE, DOSSIER_DONT_LE_MEMBRE_EST_CLIENT].includes(String(d.id)))
@@ -2879,7 +2884,9 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
   // depuis leur migration (12/11/2026), que la lecture exige le drapeau levé.
   if (nom === 'plan_du_dossier') {
     return {
-      data: [...ROLES_COMPTABLES, ...ROLES_DU_CHANGE].map((r) => ({
+      // Le rôle des autres impôts (EXP58-Q6, en production depuis le 19/11/2026, 243) aussi : sans lui, le plan était
+      // « incomplet », et chaque visite d'un dossier ne mesurait plus que la phrase qui le dit.
+      data: [...ROLES_COMPTABLES, ...ROLES_DU_CHANGE, ROLE_AUTRES_IMPOTS].map((r) => ({
         role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
       })),
       error: null,
@@ -2914,6 +2921,13 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
   }
   // `admin_du_dossier` (23Q2Q2Q1-Q1), comme la fonction en base (migration `hierarchie_comptables`) : le dossier est ouvert au compte
   // s'il est dans l'équipe du cabinet du dossier, chef, ou assigné à ce dossier — jamais par un accès client.
+  // `modules_ouverts_du_dossier` (OPT1) : les modules du cabinet du dossier, dans l'ordre de la liste fermée — tous, le cabinet du
+  // banc ayant tout ouvert (la table ci-dessus), pour un dossier que le banc porte.
+  if (nom === 'modules_ouverts_du_dossier') {
+    const dossier = (TABLES.dossiers ?? []).find((d) => d.id === dossierId)
+    const ouverts = (TABLES.options_des_cabinets ?? []).filter((o) => o.cabinet_id === (dossier?.cabinet_id ?? 'cab1') && o.ouverte === true)
+    return { data: MODULES_OPTIONNELS.filter((m) => ouverts.some((o) => o.module === m)), error: null }
+  }
   if (nom === 'admin_du_dossier') {
     const dossier = (TABLES.dossiers ?? []).find((d) => d.id === dossierId)
     const equipe = (TABLES.cabinet_admins ?? []).find((a) => a.user_id === session.user.id && a.cabinet_id === dossier?.cabinet_id)

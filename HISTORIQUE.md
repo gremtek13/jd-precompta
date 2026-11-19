@@ -54248,3 +54248,16 @@ cartes, rien à y changer. OPT4-Q1 (A) et OPT4-Q2 (A), tranchées le même jour 
 se choisit à la création d'un cabinet. Tests : `ModulesDuDossier.test.tsx`, `DossierDetail.test.tsx` (le drapeau par accesseur : zéro
 appel baissé, le super-administrateur sans modules au compte devant un dossier qui a tout, la course, l'illisible), `TvaTab.test.tsx` ;
 trois mutations mordent (l'annulation, la lecture partagée, l'enveloppe de la coque).
+
+### 19/11/2026 — OPT1 EN PRODUCTION : LES OPTIONS DES CABINETS, LES DEUX DRAPEAUX LEVÉS
+
+`options_des_cabinets` appliquée par l'outil (244), sur l'accord du cabinet, après une répétition sur une copie de la réplique à
+243 (l'essai 12 verdicts sur 12). Contrôles de l'export, égaux des deux côtés : empreinte de l'historique `9c85360d…`, dérive
+`bf8c9473…` à 244, socle 83 `a9f83f2d…`, inventaire 3 283 `1586d6c5…`. NON fait : `optionsDesCabinets.sql` et `rls.sql` rejoués en
+production. `OPTIONS_DES_CABINETS_EN_BASE` (le plan de sauvegarde) puis `OPTIONS_DES_CABINETS_PREVUES` (les écrans) levés. Tranché
+par la session : hors d'un dossier, un super-administrateur sans cabinet au compte voit tout ouvert, sans bandeau ; un compte du
+cabinet dont la lecture échoue reste fermé. Un écran rendu seul par son test garde l'état d'avant, tout ouvert (`src/test/ecrans.ts`) ;
+les faux clients qui montent un fournisseur répondent par `src/test/modulesDuCabinet.ts`, le banc de captures aussi (et le rôle
+`autres_impots`, qui manquait au plan du banc depuis 243 : chaque visite d'un dossier n'y mesurait plus que le refus du plan).
+`optionsDesCabinets` sort de la famille « apres » du leurre (34). Réponses du cabinet : OPT1-Q1 (A), OPT1-Q2 (A), OPT1-Q3 (B, le
+resserrement préparé par un autre agent).

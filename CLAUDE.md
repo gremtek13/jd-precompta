@@ -607,14 +607,15 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
   (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
   les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».
-  OPT2 en module (`lib/modulesDuCabinet.ts`, le scanner `modulesDeclares.test.ts` part de tout) ; OPT1 préparée, par l'outil
-  (`options_des_cabinets` : un cabinet neuf n'a que le socle, les existants tout ouvert ; et la garde des plafonds de
-  l'assistant, OPT-Q7), `OPTIONS_DES_CABINETS_PREVUES` baissé → « OPT1 ET OPT2 : LES OPTIONS PAR CABINET ». OPT3 branché derrière
-  le même drapeau (`context/ModulesOuverts.tsx`, `OptionsDuCabinetContext.tsx`, `lib/optionsDuCabinetLecture.ts` : baissé, tout
-  ouvert sans lecture ; levé, illisible = le socle seul ; dans un dossier, les modules de SON cabinet, `context/ModulesDuDossier.tsx`,
-  OPT3-Q1 (A) ; l'obligation de facture électronique au socle, OPT3-Q2 (A)) → « OPT3 : LES MODULES BRANCHÉS DANS LES ÉCRANS »,
-  « OPT3-Q1 ET OPT3-Q2 ». OPT4, l'écran du
-  super-administrateur, derrière le même drapeau (`pages/OptionsDesCabinets.tsx`, `lib/optionsDuCabinetVue.ts` : huit cases par
+  OPT2 en module (`lib/modulesDuCabinet.ts`, le scanner `modulesDeclares.test.ts` part de tout) ; OPT1 (`options_des_cabinets` : un
+  cabinet neuf n'a que le socle, les existants tout ouvert ; et la garde des plafonds de l'assistant, OPT-Q7) EN PRODUCTION depuis
+  le 19/11/2026 (244, par l'outil), ses deux drapeaux levés (`OPTIONS_DES_CABINETS_EN_BASE`, `OPTIONS_DES_CABINETS_PREVUES`) ;
+  OPT1-Q1 et Q2 (A), OPT1-Q3 (B) → « OPT1 ET OPT2 : LES OPTIONS PAR CABINET », « OPT1 EN PRODUCTION ». OPT3 branché
+  (`context/ModulesOuverts.tsx`, `OptionsDuCabinetContext.tsx`, `lib/optionsDuCabinetLecture.ts` : illisible = le socle seul ; le
+  super-administrateur sans cabinet, hors d'un dossier, tout ouvert ; dans un dossier, les modules de SON cabinet,
+  `context/ModulesDuDossier.tsx`, OPT3-Q1 (A) ; l'obligation de facture électronique au socle, OPT3-Q2 (A) ; un écran rendu seul
+  par son test voit tout ouvert, `src/test/ecrans.ts`) → « OPT3 : LES MODULES BRANCHÉS DANS LES ÉCRANS », « OPT3-Q1 ET OPT3-Q2 ».
+  OPT4, l'écran du super-administrateur, dans sa page (`pages/OptionsDesCabinets.tsx`, `lib/optionsDuCabinetVue.ts` : huit cases par
   cabinet lues en entier, les refus de la base dits avant le clic, la confirmation qui nomme ; OPT4-Q1 et OPT4-Q2 (A) : la phrase de
   rappel reste, rien à la création d'un cabinet) → « OPT4 : L'ÉCRAN DES MODULES DES CABINETS ». OPT1-Q3 (B) : les plafonds de l'assistant fermés au client —
   aucune lecture de `cabinets` d'un connecté ne demande plus `*` ni un plafond (`lecturesDesCabinets.test.ts`), la migration

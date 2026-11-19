@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { lireRetourDuLien } from './lib/recuperationMotDePasse'
+import { reponseDesModules } from './test/modulesDuCabinet'
 
 // « MES VENTES » DANS LA COQUE DU CLIENT (espace client, étape P4a), de bout en bout : le vrai AuthProvider, qui lit les
 // accès et leurs cases à la connexion ; la vraie coque (Layout), sa navigation et son sélecteur de société ; le vrai
@@ -45,7 +46,8 @@ vi.mock('./lib/supabase', async () => {
         signOut: async () => ({ error: null }),
       },
       from: (table: string) => chaine(table),
-      rpc: async () => ({ data: false, error: null }),
+      // Les modules de la société affichée (OPT1) : tous ouverts ; toute autre fonction, faux.
+      rpc: async (nom: string) => reponseDesModules(nom) ?? { data: false, error: null },
     },
   }
 })

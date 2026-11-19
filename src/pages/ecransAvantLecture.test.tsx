@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { SANS_ACOMPTE } from '../lib/acomptesDesFactures'
+import { TOUS_LES_MODULES } from '../lib/modulesDuCabinet'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import type { ReactNode } from 'react'
@@ -966,6 +967,9 @@ beforeAll(() => {
   // L'OUVERTURE DU DOSSIER AU COMPTE (23Q2Q2Q1-Q1) : un booléen ou rien. Lue « vide » — une liste —, elle serait illisible, et la
   // page dirait sa lecture ratée au lieu de monter ses onglets ; le faux client répond comme la base au chef du cabinet.
   etat.rendusRpc['rpc:admin_du_dossier'] = true
+  // LES MODULES DU CABINET DU DOSSIER (OPT3-Q1) : une liste de modules ; tous, comme la base pour un cabinet existant le jour de
+  // la migration — sans eux, la page ne monterait que le socle.
+  etat.rendusRpc['rpc:modules_ouverts_du_dossier'] = [...TOUS_LES_MODULES]
 })
 
 describe('aucun écran n’affirme le vide avant d’avoir lu', () => {
@@ -1175,13 +1179,15 @@ const LECTURES_PAR_FONCTION = new Set([
 // `MODELE_DU_CABINET_PREVU` : une lecture (`stable`), qui n'écrit rien.
 // Et les lettres de mission proposées d'un client (`lettres_de_mission_du_client`, ligne 47, LM6, migration
 // `lettres_du_client`, préparée), que « Mes lettres de mission » lit : une lecture (`stable`), qui n'écrit rien.
+// Et les modules du cabinet d'un dossier (`modules_ouverts_du_dossier`, OPT1, en production depuis le 19/11/2026), que la page
+// d'un dossier et la coque lisent (ModulesDuDossier.tsx) : une lecture (`stable`), qui n'écrit rien.
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
   'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
   'rpc:ventes_facturees_de_la_simulation', 'rpc:admin_du_dossier', 'rpc:caisse_du_client',
   'rpc:depots_des_honoraires', 'rpc:honoraires_deposes_au_dossier', 'rpc:pieces_citees_de_la_simulation',
   'rpc:modele_du_cabinet',
-  'rpc:lettres_de_mission_du_client',
+  'rpc:lettres_de_mission_du_client', 'rpc:modules_ouverts_du_dossier',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.
