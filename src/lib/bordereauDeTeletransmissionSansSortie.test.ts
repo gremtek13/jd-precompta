@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 //   - l'ouverture n'a aucune sortie non plus, n'importe que le module pur, et ses seuls imports dynamiques sont pdf.js et son
 //     ouvrier servi par l'application ; pdf.js n'y reçoit que des octets (`getDocument({ data`), jamais une adresse, ni une
 //     adresse de polices, de tables de caractères ou de wasm qu'il irait chercher.
+//   - le facturé (BOR2) n'a aucune sortie et n'importe que la liste des régimes, elle-même sans sortie ni import.
 // Éprouvé par des défauts plantés dans chacun.
 
 const PUR = 'src/lib/bordereauDeTeletransmission.ts'
@@ -64,6 +65,38 @@ describe('le module pur n’a aucune sortie et n’importe rien', () => {
     const horloge = texte.replace('function dateCivile(', 'const aujourdHui = new Date()\nfunction dateCivile(')
     expect(horloge).not.toBe(texte)
     expect(juger(horloge)).toEqual(['l’horloge'])
+  })
+})
+
+// LE FACTURÉ (BOR2, lib/factureAssuranceMaladie.ts) : des bordereaux lus aux agrégats, et l'identification des lots rendue au
+// seul appel d'import ; il n'a aucune sortie, n'importe que la liste des régimes (et des types), et cette liste n'a aucune
+// sortie ni aucun import (une sortie là serait une sortie du facturé, à un saut).
+const FACTURE = 'src/lib/factureAssuranceMaladie.ts'
+const REGIMES = 'src/lib/regimesAssuranceMaladie.ts'
+
+describe('le facturé n’a aucune sortie, et n’importe que la liste des régimes', () => {
+  const texte = readFileSync(resolve(process.cwd(), FACTURE), 'utf8')
+  const regimes = readFileSync(resolve(process.cwd(), REGIMES), 'utf8')
+  const juger = (t: string) => fautes(t, new Set(['./regimesAssuranceMaladie']), new Set())
+
+  it('aucune sortie ; les régimes seuls importés en valeur, BOR1 en type seulement ; la liste des régimes, ni sortie ni import', () => {
+    expect(juger(texte)).toEqual([])
+    expect(texte).toContain('import type { BordereauLu } from \'./bordereauDeTeletransmission\'')
+    expect(texte).toContain('from \'./regimesAssuranceMaladie\'')
+    expect(fautes(regimes, new Set(), new Set())).toEqual([])
+  })
+
+  it('quatre défauts plantés se voient : un journal des lots, le client de la base, l’horloge, BOR1 importé en valeur', () => {
+    const lots = '  const identificationDesLots: IdentificationDesLots = '
+    expect(texte).toContain(lots)
+    expect(juger(texte.replace(lots, `  console.info(lots)\n${lots}`))).toEqual(['un journal'])
+    expect(juger(`import { supabase } from './supabase'\n${texte}`)).toEqual(['le client de la base', 'l’import de ./supabase'])
+    const jour = '  const { aujourdHui, regimesChoisis } = parametres'
+    expect(texte).toContain(jour)
+    expect(juger(texte.replace(jour, '  const aujourdHui = new Date().toISOString().slice(0, 10)\n  const { regimesChoisis } = parametres'))).toEqual(['l’horloge'])
+    expect(juger(texte.replace('import type { BordereauLu }', 'import { type BordereauLu, lireBordereauxDeTeletransmission }')))
+      .toEqual(['l’import de ./bordereauDeTeletransmission'])
+    expect(fautes(`${regimes}\nfetch('https://exemple.invalid')`, new Set(), new Set())).toEqual(['le réseau', 'une adresse donnée à pdf.js'])
   })
 })
 
