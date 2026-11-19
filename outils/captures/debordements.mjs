@@ -90,6 +90,8 @@ const FENETRE_FACTURE = `${VOILE_FACTURE} > .card`
 // facture, qu'elles ne remplacent pas : seules elles portent un rôle (`dialog`, `alertdialog`), ce qui les désigne sans désigner
 // la carte du formulaire, que `FENETRE_FACTURE` prend en premier.
 const FENETRE_ARTICLE = 'div[style*="position: fixed"] > .card:is([role="dialog"], [role="alertdialog"])'
+// La fenêtre du plan de trésorerie (Financement) : un voile `position: fixed` et sa carte, sans rôle de dialogue.
+const FENETRE_ARTICLE_OU_PLAN = 'div[style*="position: fixed"] > .card'
 const VISITES = [
   // L'onglet TVA sur le seul dossier assujetti tenu en trésorerie : sur le cabinet infirmier, exonéré,
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
@@ -120,6 +122,18 @@ const VISITES = [
   {
     dossier: 'd1', onglet: 'banque', nom: 'banque/tous',
     apres: (page) => page.getByRole('button', { name: 'Tous', exact: true }).click(),
+  },
+  // LE MODE DE RÈGLEMENT D'UN MOUVEMENT (EXP58-Q1, `MODE_DE_REGLEMENT_PREVU` levé) dans la fiche du volet : le mode posé et le
+  // choix qui le corrige, sur le prélèvement de l'opérateur (« Prélèvement » posé dans le faux Supabase).
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'banque/mode-de-reglement',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.locator('tr.clickable', { hasText: 'PRLV SEPA TELECOM PLUS' }).first().click()
+      await page.getByRole('heading', { name: 'Mode de règlement' }).waitFor({ timeout: 10000 })
+      await page.getByText(/^Posé : Prélèvement/).waitFor({ timeout: 10000 })
+    },
   },
   // Le dossier assujetti : ses recettes du relevé, taxées ou sans taux — la pastille « TVA à choisir », le
   // taux d'une recette affectée —, leurs écritures au 445710, et le point de la Checklist qui les compte.
@@ -267,6 +281,28 @@ const VISITES = [
   {
     dossier: 'd1', onglet: 'immobilisations', nom: 'immobilisations/nature',
     apres: (page) => page.getByRole('button', { name: '+ Nature', exact: true }).first().click(),
+  },
+  // LE CUMUL REPRIS D'UN BIEN (EXP58-Q5, `CUMUL_REPRIS_PREVU` levé) : le formulaire d'un bien repris, son champ « Amortissements
+  // cumulés au 31/12/2025 » et sa phrase.
+  {
+    dossier: 'd1', onglet: 'immobilisations', nom: 'immobilisations/bien-repris',
+    apres: async (page) => {
+      await page.getByRole('button', { name: 'Ajouter un bien repris', exact: true }).click()
+      await page.getByText(/^Amortissements cumulés au /).first().waitFor({ timeout: 10000 })
+    },
+  },
+  // LE PLAN DE TRÉSORERIE ET « PUBLIER AU CLIENT » (C8-Q2, `PREVISIONS_PUBLIEES_PREVUES` levé) : la ligne de raccord du plan, puis,
+  // sous les échéances, l'avertissement d'un raccord de plus de 31 jours (la banque du faux Supabase s'arrête au 25/09/2026), le
+  // bouton qui remplace la prévision publiée au client et son geste « Retirer ». Le plan est la deuxième « Générer » de l'onglet.
+  {
+    dossier: 'd1', onglet: 'financement', nom: 'financement/plan-publier', fenetre: FENETRE_ARTICLE_OU_PLAN,
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('button', { name: 'Générer', exact: true }).nth(1).click()
+      await page.getByRole('heading', { name: 'Publier au client' }).waitFor({ timeout: 10000 })
+      await page.getByText(/^La banque n’est à jour dans les comptes qu’au /).waitFor({ timeout: 10000 })
+      await page.getByRole('button', { name: /^Remplacer la prévision publiée le /, }).waitFor({ timeout: 10000 })
+    },
   },
   { dossier: 'd7', onglet: 'immobilisations', nom: 'assujetti/immobilisations' },
   { dossier: 'd8', onglet: 'immobilisations', nom: 'engagement/immobilisations' },

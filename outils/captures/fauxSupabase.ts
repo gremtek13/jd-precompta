@@ -26,6 +26,7 @@ import { aPayerDe, declarationDeLaCa3, ecritureDeLaLiquidation, ecritureDuPaieme
 import { calculerTotaux } from '../../src/lib/montantsFacture'
 import { repartitionProposee, ttcParTaux } from '../../src/lib/encaissementsFactures'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
+import { partDuRythme, periodeDuRaccord } from '../../src/lib/planTresorerie'
 import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from '../../src/lib/rattachement'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES, type LibellesDuPlan } from '../../src/lib/planComptable'
 import { ROLES_DU_CHANGE } from '../../src/lib/rolesDuChange'
@@ -2128,6 +2129,31 @@ const SAISIES_2035_D1 = [
   { id: 'sa-4', dossier_id: 'd1', annee: 2025, code: 'CC', centimes: 171_200, note_annexe: null },
 ]
 
+// UNE PRÉVISION PUBLIÉE AU CLIENT (C8-Q2, `previsions_publiees`) : établie le 17/11/2026 sur un départ au 25/09/2026, donc un raccord
+// de 66 jours — celui qui dépasse un mois. Composée des fonctions de l'application, pour que `contenuLu` la relise à l'identique.
+function previsionPubliee(id: string, dossier: string, solde: number): Ligne {
+  const encaissements = 150_000
+  const decaissements = 120_000
+  const periode = periodeDuRaccord('2026-09-25', '2026-11-01')
+  if (periode === null) throw new Error('raccord attendu')
+  const entrees = partDuRythme(encaissements, periode.du, periode.au)
+  const sorties = partDuRythme(decaissements, periode.du, periode.au)
+  const apresRaccord = solde + entrees - sorties
+  const mois = ['2026-12', '2027-01', '2027-02'].map((m, i) => ({
+    mois: m, solde_debut: apresRaccord + i * (encaissements - decaissements), encaissements, decaissements,
+    solde_fin: apresRaccord + (i + 1) * (encaissements - decaissements),
+  }))
+  return {
+    id, dossier_id: dossier, geste: 'publication', remplace_id: null, publiee_le: '2026-11-17T09:00:00Z',
+    contenu: {
+      version: 1, etablie_le: '2026-11-17', depart: { au: '2026-09-25', solde },
+      rythme: { debut: '2025-11', fin: '2026-10', mois: 12, mois_observes: 12, encaissements, decaissements },
+      raccord: { du: periode.du, au: periode.au, solde_debut: solde, encaissements: entrees, decaissements: sorties, solde_fin: apresRaccord },
+      mois, avec_especes: false,
+    },
+  }
+}
+
 const TABLES: Record<string, Ligne[]> = {
   revision_seuils: REVUE_D9.seuils,
   revision_explications: REVUE_D9.explications,
@@ -2306,6 +2332,7 @@ const TABLES: Record<string, Ligne[]> = {
   // Un prêt du cabinet infirmier, débloqué fin juillet : 15 000 € à 3,6 % sur 48 mois, soit 336,01 € par
   // mois, plus 12,50 € d'assurance. C'est lui qui fait paraître l'emprunt dans Financement, le découpage
   // d'une échéance dans la fiche d'un mouvement (l17, à rapprocher) et les intérêts dans la 2035.
+  previsions_publiees: [previsionPubliee('pp1', 'd1', 1_877_669), previsionPubliee('pp7', 'd7', 2_450_000)],
   emprunts: [{
     id: 'em1', dossier_id: 'd1', nom: 'Prêt véhicule', organisme_preteur: 'Banque Régionale', capital_initial: 15000,
     taux_annuel: 3.6, date_debut: '2026-07-28', duree_mois: 48, created_at: MAINTENANT,
@@ -2398,7 +2425,8 @@ const TABLES: Record<string, Ligne[]> = {
     { id: 'ra5', dossier_id: 'd12', motif: 'horizon', sens: 'encaissement', categorie_id: 'c9', taux_tva: 20, created_at: MAINTENANT },
   ],
   lignes_bancaires: [
-    ligne('l1', '2026-09-15', 'PRLV SEPA TELECOM PLUS', -39.99, 'non_rapprochee', null),
+    // Le mode de règlement posé (EXP58-Q1) : la fiche de ce mouvement le dit sous « Mode de règlement ».
+    { ...ligne('l1', '2026-09-15', 'PRLV SEPA TELECOM PLUS', -39.99, 'non_rapprochee', null), mode_reglement: 'Prélèvement' },
     ligne('l2', '2026-09-11', 'CB PHARMA DISTRIB SUD', -186.4, 'non_rapprochee', null),
     ligne('l3', '2026-09-08', 'VIR CPAM TIERS PAYANT', 2418.6, 'non_rapprochee', null),
     ligne('l4', '2026-09-06', 'PRLV ENERGIE SERVICES', -84.2, 'rapprochee', 'p3'),
