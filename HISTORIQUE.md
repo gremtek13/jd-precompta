@@ -54000,3 +54000,19 @@ EXP58-Q8 (B), le véhicule au barème attend la 2035 de 2025 ; EXP58-Q9 (A), la 
 Dit aussi dans la conversation : le bordereau des paiements NOEMIE ne viendra pas tout de suite — la forme de cet état se
 cherche dans les sources publiques. Le bloc du cumul repris, redaté (version 20261119080000), est rééprouvé sur une copie de
 réplique portée à 241 : collé rc 0, empreinte `59098b22…`, essai 34 sur 34, second collage refusé.
+
+### 19/11/2026 — L'ÉTAT DES PAIEMENTS NOEMIE DE TÉLÉVITALE : CE QUE LES SOURCES PUBLIQUES DISENT, ET CE QU'ELLES NE DISENT PAS
+
+Le cabinet n'aura pas de page réelle avant un moment ; une recherche sur le web public (agent, rien d'écrit au code). Établi sur
+les manuels de l'éditeur (static.televitale.org/pdf : 057 médecin et dentiste p. 25-26, 038 support MK 2024 p. 46, 183 « Suivi de
+factures », 055 infirmier p. 23-25) : l'état s'appelle « Télétransmission - Paiement Noemie par journée comptable » (ou bouton
+« Noemie », « visualiser les retours par journée », bouton « bordereau »), un par journée ET par caisse, « le montant payé acte par
+acte (avec un total par facture, par lot, par journée) » ; il porte aussi les paiements de factures faites hors du logiciel, les
+aides, les « indus ou trop perçus » (montants négatifs) et les régularisations de la caisse ; le « rapport noemie par lot » est
+synthétique et ne les porte pas : il ne justifie pas un virement. Seul un aperçu avant impression est documenté (aucun export CSV) ;
+le format d'impression se règle (Outils - Options). Colonnes vues à l'ÉCRAN du suivi d'une facture, pas sur l'état : « Reçu le »,
+« Date comptable », « Organisme payeur », « Part » (AMO / AMC), « Payé », « Infos sur virement / rejet / régularisation ».
+PAS TROUVÉ : aucun exemplaire ni capture du PDF de l'état — ses libellés, ses totaux et sa mise en page restent inconnus ; rien chez
+les autres logiciels ; rien d'amelipro. Le cahier NOEMIE-PS de 2004 porte en page 2 « aucune cession des droits d'auteurs » : pas lu
+au-delà, pas recopié (NOE2-Q1 tient). Conséquences pour NOE3 : un agrégat par journée, organisme et part doit admettre des lignes
+SANS facture et des montants NÉGATIFS. Le lecteur du PDF ne s'écrit pas sur ces sources : il attend une page réelle.
