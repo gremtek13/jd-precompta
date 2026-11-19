@@ -54089,3 +54089,12 @@ empreintes de `agentComptableAuPlan.test.ts` relevées de nouveau après preuve 
 empreintes d'avant ; à `true`, la seule phrase de la consigne sur la part, dans les 73 demandes au modèle de chaque dossier. La suite
 entière : 23 447 tests verts dans 938 fichiers. Reste, après la fusion : redéployer `agent-comptable`. Non fait : les essais rejoués en production, le banc de
 captures (la colonne neuve de l'onglet Cotisations).
+
+### 19/11/2026 — CINQ RÉPONSES DU CABINET (PAGE DES ARBITRAGES), TOUTES À LA RECOMMANDATION
+
+Relues le 19/11/2026 : EXP58Q6-migration (A), la coller maintenant — collée le jour même ; EXP58Q6-Q1 (A), le compte par défaut
+637800 « Taxes diverses » ; EXP58Q6-Q2 (A), la part séparée en trésorerie comme en engagement ; EXP58Q6-Q3 (A), le revenu brut
+social suit la formule de la notice (il baisse de la part), à confronter à la 2035 de 2025 déposée ; BOR2-Q1 (A), le nombre de
+factures gardé avec un montant est celui des lots, un ordre de grandeur. Dit dans la conversation : le cabinet a cherché où
+ouvrir « précomptabilité seule » ou « comptabilité complète » sur un cabinet — les options par cabinet (conception 56) passent
+devant, OPT1 et OPT2 lancés ; « continue en autonomie ».
