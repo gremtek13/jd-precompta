@@ -34,6 +34,7 @@ import { COPIE_DES_FICHIERS_PREVUE } from './copieDesFichiers'
 import { STOCKS_PREVUS } from './stocks'
 import { EXERCICES_DECALES_PREVUS } from './exercices'
 import { AFFECTATION_PREVUE } from './affectationDuResultat'
+import { OPTIONS_DES_CABINETS_PREVUES } from './modulesDuCabinet'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
@@ -83,6 +84,7 @@ import {
   tablesSansChemin,
   violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures, auPlanDesHonorairesDeposes,
   auPlanDesDocumentsEtDemandes, auPlanDesAchatsDuClient, auPlanDesNotesDeFrais, auPlanDesSaisies2035E, auPlanDuModeleDuCabinet, auPlanDesCopiesDesFichiers, auPlanDesExercices, auPlanDuDepart, TABLES_DU_DEPART,
+  auPlanDesOptionsDesCabinets,
 } from './sauvegarde'
 
 // LES DEVIS AU PLAN DE SAUVEGARDE (espace client, étape P5). Leurs migrations attendent l'accord du cabinet : tant que
@@ -154,7 +156,8 @@ describe('le filtre du plan', () => {
         && auPlanDesCopiesDesFichiers(table, COPIE_DES_FICHIERS_PREVUE) && auPlanDeLInventaire(table, INVENTAIRE_PREVU)
         && auPlanDesStocks(table, STOCKS_PREVUS)
         && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS)
-        && auPlanDeLAffectation(table, AFFECTATION_PREVUE))
+        && auPlanDeLAffectation(table, AFFECTATION_PREVUE)
+        && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_PREVUES))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)

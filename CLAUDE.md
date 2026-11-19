@@ -601,6 +601,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
   (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
   les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».
+  OPT2 en module (`lib/modulesDuCabinet.ts`, le scanner `modulesDeclares.test.ts` part de tout) ; OPT1 préparée, par l'outil
+  (`options_des_cabinets` : un cabinet neuf n'a que le socle, les existants tout ouvert ; et la garde des plafonds de
+  l'assistant, OPT-Q7), `OPTIONS_DES_CABINETS_PREVUES` baissé, rien de branché → « OPT1 ET OPT2 : LES OPTIONS PAR CABINET ».
 - **Les exports vers les logiciels comptables** (17/11/2026), recherchés, rien d'écrit (`docs/conceptions/57-exports-vers-les-logiciels-comptables.md`) :
   le FEC avec ses pièces en ZIP est le pivot (ACD d'abord), puis l'ASCII Quadra et le TRA ; EXP-Q1 à Q8, EXP-E1 à E7 → « LES
   EXPORTS VERS LES LOGICIELS COMPTABLES : LA RECHERCHE ».
