@@ -112,7 +112,7 @@ function recettesFactureesDesMois(recettesFacturees: RecettesFacturees, debut: s
 
 // LES ENCAISSEMENTS SANS JUSTIFICATIF (lib/affectationBanque.ts) : un virement de l'Assurance maladie
 // affecté à une catégorie de recettes. Pour un infirmier c'est l'essentiel du chiffre d'affaires — il ne
-// transmet pas ses bordereaux —, et l'estimation ne comptait que les justificatifs de recette. À la date
+// dépose pas ses bordereaux —, et l'estimation ne comptait que les justificatifs de recette. À la date
 // du mouvement, comme la 2035 ; toute catégorie de recettes, comme une pièce de vente compte quelle que
 // soit sa catégorie.
 function recettesAffecteesDansLaPeriode(parts: readonly PartDuReleve[], debut: string, fin: string): number {

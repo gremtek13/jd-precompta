@@ -961,3 +961,15 @@ partagent une journée et une caisse.
   }
 ]
 ```
+
+## 15. Les réponses du 19/11/2026 : BOR3-Q1, BOR3-Q2 et BOR3-RGPD
+
+- **BOR3-Q1 (A)** et **BOR3-Q2 (A)**, à la recommandation : rien ne change à la migration préparée (§ 14).
+- **BOR3-RGPD (B)**, contre la recommandation : quand c'est le cabinet qui importe un bordereau, il le fait sur place (sur
+  l'ordinateur du praticien) ou d'un fichier que le praticien lui remet de la main à la main, jamais par e-mail (BORQ8-Q1 (A) tel
+  quel). RGPD.md § 8.7 porte le texte définitif : le fichier lu dans le navigateur, des agrégats et des empreintes seuls en base ;
+  la remise est une transmission, que le praticien décide et dont il répond sous son secret professionnel (code de la santé
+  publique, art. L. 1110-4), et qui revient, pour ce seul cas, sur la réponse du 24/09/2026 ; la consigne aux clients. Le § 13.4
+  et la fiche de BORQ8-Q1 restent tels qu'ils ont été posés ; ce paragraphe les clôt. Deux questions suivent : BOR3RGPD-Q1 (les
+  agrégats et les empreintes, données pseudonymisées concernant la santé, au regard de l'article L. 1111-8) et BOR3RGPD-Q2 (le
+  support remis, après l'import). L'écran d'import (BOR4) dira la consigne : rien n'y est encore écrit.

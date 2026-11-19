@@ -309,8 +309,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 
 - **Registre : `RGPD.md`.** Les données de patients sont dans les FICHIERS, pas dans les tables ; le texte OCR est une
   copie dérivée sans durée légale propre (seul levier de minimisation) ; aucune pièce n'atteint ses 10 ans avant 2033.
-- **Pas d'hébergement HDS** (24/09/2026, RGPD.md §8.7) : un praticien ne transmet pas ses bordereaux de télétransmission
-  (secret médical), le relevé SNIR justifie les recettes. Décision du cabinet : la condition tient à la consigne aux
+- **Pas d'hébergement HDS** (24/09/2026, RGPD.md §8.7) : un praticien ne dépose pas ses bordereaux de télétransmission
+  (secret médical), le relevé SNIR justifie les recettes ; un import NOEMIE ou BOR ne garde que des agrégats et des empreintes,
+  le fichier lu dans le navigateur — du praticien, ou du cabinet sur place ou remis de la main à la main, jamais par e-mail : une
+  transmission que le praticien décide sous son secret (BOR3-RGPD (B), 19/11/2026 ; BOR3RGPD-Q1 et Q2 ouvertes). Décision du cabinet : la condition tient à la consigne aux
   clients ; ne rien changer au code, ne pas réenquêter.
 - **Où partent les données** : `edgeFunctionsRegions.test.ts` (toute région AWS dans l'UE ; `AWS_REGION` relu par
   `evaluer-extraction` avec `limite: 0`). **Les droits chez AWS** : `edgeFunctionsIam.test.ts` (la policy vit chez AWS).
@@ -578,7 +580,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   oublié, le numéro du lot rendu par une seule fonction pour l'import, jamais sérialisé, aucune empreinte ici → « BOR2 : LE FACTURÉ EN AGRÉGATS ».
   BOR3 (19/11/2026), préparée, à coller (`factures_assurance_maladie`, `FACTURES_ASSURANCE_MALADIE_PREVUES` baissé) : quatre tables
   sans texte, le numéro d'un lot jamais gardé — son empreinte HMAC sous une clé du dossier qu'aucun rôle de l'API ne lit, hors de la
-  sauvegarde ; NOE3 amendée avant collage (`organisme_complementaire`) ; BOR3-migration, Q1, Q2 et RGPD ouvertes → « BOR3 : LE FACTURÉ À
+  sauvegarde ; NOE3 amendée avant collage (`organisme_complementaire`) ; BOR3-Q1 et Q2 (A), BOR3-RGPD (B) tranchées le 19/11/2026, BOR3-migration ouverte → « BOR3 : LE FACTURÉ À
   L'ASSURANCE MALADIE, EN BASE ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
@@ -612,7 +614,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   ouvert sans lecture ; levé, illisible = le socle seul) → « OPT3 : LES MODULES BRANCHÉS DANS LES ÉCRANS ». OPT4, l'écran du
   super-administrateur, derrière le même drapeau (`pages/OptionsDesCabinets.tsx`, `lib/optionsDuCabinetVue.ts` : huit cases par
   cabinet lues en entier, les refus de la base dits avant le clic, la confirmation qui nomme ; le choix à la création reste, OPT4-Q1
-  et OPT4-Q2 ouvertes) → « OPT4 : L'ÉCRAN DES MODULES DES CABINETS ».
+  et OPT4-Q2 ouvertes) → « OPT4 : L'ÉCRAN DES MODULES DES CABINETS ». OPT1-Q3 (B) : les plafonds de l'assistant fermés au client —
+  aucune lecture de `cabinets` d'un connecté ne demande plus `*` ni un plafond (`lecturesDesCabinets.test.ts`), la migration
+  `plafonds_hors_du_client` préparée, par l'outil (droits par colonne, `plafonds_de_l_assistant()` à l'équipe du cabinet),
+  `PLAFONDS_HORS_DU_CLIENT_PREVUS` baissé → « OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT ».
 - **Les exports vers les logiciels comptables** (17/11/2026), recherchés, rien d'écrit (`docs/conceptions/57-exports-vers-les-logiciels-comptables.md`) :
   le FEC avec ses pièces en ZIP est le pivot (ACD d'abord), puis l'ASCII Quadra et le TRA ; EXP-Q1 à Q8, EXP-E1 à E7 → « LES
   EXPORTS VERS LES LOGICIELS COMPTABLES : LA RECHERCHE ».

@@ -506,7 +506,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Trente-cinq le même jour : `paiementsAssuranceMaladie` (NOE3, amendée), `associationPaiementsAssuranceMaladie` (NOE5)
     // et `facturesAssuranceMaladie` (BOR3, la migration du facturé) entrés dans la famille « apres », après leurs
     // migrations préparées : un seul modèle « apres » porte les trois ; SÛRS au banc, sur une copie de la réplique à 243.
-    expect(cas.length).toBe(35)
+    // Trente-six le même jour : `plafondsHorsDuClient` (OPT1-Q3, `plafonds_hors_du_client`) entré dans la famille « apres »,
+    // après sa migration préparée ; joué sur une copie de la réplique à 243 (8 verdicts sur 8, dans les deux ordres avec OPT1).
+    expect(cas.length).toBe(36)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

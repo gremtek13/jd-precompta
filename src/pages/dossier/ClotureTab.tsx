@@ -341,7 +341,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       ),
       // Les paiements qui DATENT les pièces, et les mouvements AFFECTÉS à une catégorie sans
       // justificatif (ligne 26.6), qui comptent eux-mêmes — les encaissements de l'Assurance maladie
-      // d'un infirmier, qui ne transmet pas ses bordereaux. Tronquée, cette lecture ferait retomber sur
+      // d'un infirmier, qui ne dépose pas ses bordereaux. Tronquée, cette lecture ferait retomber sur
       // leur date de facture des pièces payées une autre année, ou retirerait des recettes : une 2035
       // plausible, fausse et signée, comme pour les quatre autres entrées. Elle rejoint donc le même
       // drapeau. TOUT le relevé : la 2035 n'en garde que les rapprochées (une ligne rapprochée d'une

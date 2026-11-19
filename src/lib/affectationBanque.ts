@@ -13,7 +13,7 @@ import { estFigee } from './validationExercice'
 // Jusqu'ici, seul un mouvement rapproché d'une PIÈCE produisait une écriture. Tout le reste — les
 // frais bancaires, les encaissements de l'Assurance maladie et des mutuelles, les remboursements —
 // n'était écrit nulle part : ni dans le brouillon, ni dans le FEC, ni dans la 2035. Pour un
-// infirmier, c'est l'essentiel de ses recettes : il ne transmet pas ses bordereaux (secret médical,
+// infirmier, c'est l'essentiel de ses recettes : il ne dépose pas ses bordereaux (secret médical,
 // décision du cabinet du 24/09/2026), ses honoraires arrivent par virement, et la 2035 ne comptait
 // que les justificatifs de recette. Une comptabilité tenue dans l'application doit porter CHAQUE
 // mouvement du relevé ; c'est la condition pour que son FEC soit celui du dossier.

@@ -193,6 +193,10 @@
 --      du cabinet lit ses options, chef ou membre, le client d'un dossier du cabinet et l'anonyme rien ; ni le client ni un
 --      chef de cabinet qui n'est pas super-administrateur ne les règle, ni ne les écrit en direct, ni ne change les plafonds de
 --      l'assistant ; le catalogue. Quatre mutations ; avant la migration, une ligne « EN ATTENTE ».
+--  18. Les plafonds de l'assistant hors de la lecture du client (bloc PL, en fin de fichier ; migration
+--      `plafonds_hors_du_client`, OPT1-Q3, préparée) : le client lit la charte de son cabinet, jamais un plafond — ni par la
+--      table, ni par un filtre, ni par la fonction ; l'anonyme n'exécute pas la fonction ; le catalogue (et HR5, la lecture
+--      par colonne). Trois mutations ; avant la migration, une ligne « EN ATTENTE ».
 --  17. Le facturé à l'assurance maladie (bloc FM, en fin de fichier ; migration `factures_assurance_maladie`, BOR3,
 --      préparée) : le client « Banque » lit les imports et les totaux de son dossier, rien sans la case ; il ne les écrit pas
 --      en direct (la garde) ; personne — ni le cabinet, ni le client, ni l'anonyme — ne lit le registre des lots ni la clé du
@@ -7010,7 +7014,8 @@ end $$;
 --        être membre de supabase_admin pour la changer), elle donnerait tout à une table qu'il créerait — que HR1
 --        attraperait aussitôt.
 --   HR4. anon et authenticated ne sont membres d'aucun rôle (pg_maintain, à lui seul, donnerait MAINTAIN partout).
---   HR5. Le contrôle POSITIF : sur chaque relation, anon et authenticated gardent SELECT, INSERT, DELETE et une mise à jour
+--   HR5. Le contrôle POSITIF : sur chaque relation, anon et authenticated gardent SELECT (de la table, ou, sur `cabinets`
+--        après `plafonds_hors_du_client`, de chaque colonne hors des deux plafonds), INSERT, DELETE et une mise à jour
 --        (de la table, ou d'une colonne : cabinet_admins.role), service_role et le propriétaire chaque privilège d'une
 --        relation ; le défaut du propriétaire leur donne toujours le DML, et tout à service_role. Sans lui, un retrait trop
 --        large passerait HR1 à HR3. Et un plancher : au moins les 85 relations du relevé, toutes examinées.
@@ -7077,6 +7082,13 @@ declare
               from (values ('anon'), ('authenticated')) r(n)
              cross join (values ('SELECT'), ('INSERT'), ('DELETE')) p(p)
              where not has_table_privilege(r.n, $1, p.p)
+               -- La lecture de `cabinets`, colonne par colonne, telle que `plafonds_hors_du_client` la pose (OPT1-Q3) :
+               -- chaque colonne hors des deux plafonds de l'assistant. Une colonne de plus qui ne se lirait pas reste ici.
+               and not (p.p = 'SELECT' and $1 = 'public.cabinets'::regclass::oid
+                        and not exists (select 1 from pg_attribute att
+                                         where att.attrelid = $1 and att.attnum > 0 and not att.attisdropped
+                                           and att.attname not in ('limite_ia_alerte_usd', 'limite_ia_blocage_usd')
+                                           and not has_column_privilege(r.n, $1, att.attnum, 'SELECT')))
             union
             select r.n || ' sans mise à jour'
               from (values ('anon'), ('authenticated')) r(n)
@@ -12240,7 +12252,7 @@ begin
       exception when others then par_un_chef := sqlstate || ' ' || sqlerrm;
       end;
       begin
-        update cabinets set limite_ia_blocage_usd = coalesce(limite_ia_blocage_usd, 0) + 1000 where id = cabinet;
+        update cabinets set limite_ia_blocage_usd = 987654.32 where id = cabinet;
         plafond_du_chef := 'ACCEPTÉ';
       exception when others then plafond_du_chef := sqlstate || ' ' || sqlerrm;
       end;
@@ -12319,7 +12331,7 @@ begin
       insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
-      with t as (update cabinets set limite_ia_blocage_usd = coalesce(limite_ia_blocage_usd, 0) + 1000 where id = cabinet returning 1)
+      with t as (update cabinets set limite_ia_blocage_usd = 987654.32 where id = cabinet returning 1)
         select count(*) into leve from t;
       reset role;
       raise exception 'ANNULATION_ESSAI';
@@ -12580,6 +12592,126 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $fm$;
+-- ══ PL. Les plafonds de l'assistant hors de la lecture du client (OPT1-Q3 ; migration `plafonds_hors_du_client`, PRÉPARÉE) ══
+-- La RLS de `cabinets` ouvre la ligne d'un cabinet à tout accès client d'un de ses dossiers ; la migration ferme aux deux rôles
+-- de l'API la lecture des deux plafonds (droits par colonne), que l'équipe du cabinet et le super-administrateur lisent par
+-- `plafonds_de_l_assistant()`. Le reste (le chef, le membre, le super-administrateur, l'écriture) : `plafondsHorsDuClient.sql`.
+--   PL1. Le client lit la charte de son cabinet (le contrôle POSITIF) ; ni un plafond, ni un filtre sur lui, ni la ligne
+--        entière (42501) ; la fonction ne lui rend rien ; l'anonyme ne l'exécute pas (42501).
+--   PL2. Le catalogue : aucun rôle de l'API ne lit la table entière ni un plafond, par aucun chemin ; chacun lit chaque autre
+--        colonne ; la fonction aux droits du propriétaire, le chemin fixé, exécutée par authenticated seul.
+-- Trois mutations, qui doivent mordre : M-PL1 (la table rendue à authenticated : le client lit un plafond), M-PL2 (la fonction
+-- sans son filtre : le client en reçoit des lignes), M-PL3 (une colonne ajoutée sans droit de lecture : PL2 la voit). Avant
+-- la migration, une ligne dit que le bloc attend.
+do $pl$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  cabinet uuid; charte bigint; un_plafond text; un_filtre text; la_ligne text; par_la_fonction bigint; de_l_anon text;
+  rendue text; sans_filtre bigint; colonne_de_plus boolean; catalogue boolean;
+  erreur text;
+  q_catalogue constant text := $q$
+    select not exists (select 1 from (values ('anon'), ('authenticated')) r(n)
+                        where has_table_privilege(r.n, 'public.cabinets', 'SELECT')
+                           or has_column_privilege(r.n, 'public.cabinets', 'limite_ia_alerte_usd', 'SELECT')
+                           or has_column_privilege(r.n, 'public.cabinets', 'limite_ia_blocage_usd', 'SELECT'))
+       and not exists (select 1 from (values ('anon'), ('authenticated')) r(n) cross join pg_attribute a
+                        where a.attrelid = 'public.cabinets'::regclass and a.attnum > 0 and not a.attisdropped
+                          and a.attname not in ('limite_ia_alerte_usd', 'limite_ia_blocage_usd')
+                          and not has_column_privilege(r.n, 'public.cabinets', a.attnum, 'SELECT'))
+       and coalesce((select p.prosecdef and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%')
+                            and not has_function_privilege('anon', p.oid, 'execute')
+                            and has_function_privilege('authenticated', p.oid, 'execute')
+                            and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+                       from pg_proc p where p.oid = 'public.plafonds_de_l_assistant()'::regprocedure), false)$q$;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.plafonds_de_l_assistant()') is null then
+    insert into rls_verdict values ('PL. les plafonds de l''assistant hors de la lecture du client : EN ATTENTE de la migration plafonds_hors_du_client',
+      'cabinets', 'la fonction plafonds_de_l_assistant est absente : le bloc se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    select d.cabinet_id into cabinet from dossiers d where d.id = dossier_du_client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into charte from cabinets c where c.id = cabinet and c.nom is not null;
+    begin perform c.limite_ia_blocage_usd from cabinets c where c.id = cabinet; un_plafond := 'LU'; exception when others then un_plafond := sqlstate; end;
+    begin perform c.id from cabinets c where c.limite_ia_alerte_usd is not null; un_filtre := 'LU'; exception when others then un_filtre := sqlstate; end;
+    begin perform to_jsonb(c) from cabinets c where c.id = cabinet; la_ligne := 'LU'; exception when others then la_ligne := sqlstate; end;
+    select count(*) into par_la_fonction from plafonds_de_l_assistant();
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      begin perform * from plafonds_de_l_assistant(); de_l_anon := 'EXÉCUTÉE'; exception when others then de_l_anon := sqlstate; end;
+      reset role;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    construit := true;
+    verdicts := verdicts || jsonb_build_object('controle', 'PL1. le client lit la charte de son cabinet (le contrôle positif) ; ni un plafond, ni un filtre sur lui, ni la ligne entière ; la fonction ne lui rend rien ; l''anonyme ne l''exécute pas',
+      'cible', 'cabinets',
+      'observe', 'charte ' || charte || ' | ' || un_plafond || ' ' || un_filtre || ' ' || la_ligne || ' | fonction ' || par_la_fonction || ' | anonyme ' || de_l_anon,
+      'ok', charte = 1 and un_plafond = '42501' and un_filtre = '42501' and la_ligne = '42501' and par_la_fonction = 0 and de_l_anon = '42501');
+    -- M-PL1 : la table rendue à authenticated.
+    begin
+      grant select on public.cabinets to authenticated;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin perform c.limite_ia_blocage_usd from cabinets c where c.id = cabinet; rendue := 'LU'; exception when others then rendue := sqlstate; end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PL1 — la lecture de la table entière rendue à authenticated',
+      'attendu', 'le client lit un plafond', 'observe', coalesce(rendue, '?'), 'mord', coalesce(rendue = 'LU', false));
+    -- M-PL2 : la fonction sans son filtre.
+    begin
+      create or replace function public.plafonds_de_l_assistant()
+      returns table (cabinet_id uuid, limite_ia_alerte_usd numeric, limite_ia_blocage_usd numeric)
+      language sql stable security definer set search_path = public
+      as 'select c.id, c.limite_ia_alerte_usd, c.limite_ia_blocage_usd from public.cabinets c';
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into sans_filtre from plafonds_de_l_assistant();
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-PL2 — la fonction des plafonds sans son filtre',
+      'attendu', 'le client en reçoit des lignes', 'observe', coalesce((sans_filtre >= 1)::text, '?'), 'mord', coalesce(sans_filtre >= 1, false));
+    -- M-PL3 : une colonne ajoutée à `cabinets` sans droit de lecture (le piège des droits par colonne).
+    begin
+      alter table public.cabinets add column essai_colonne_de_plus text;
+      execute q_catalogue into colonne_de_plus;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    mutations := mutations || jsonb_build_object('mutation', 'M-PL3 — une colonne ajoutée à cabinets, que les rôles de l''API ne lisent pas',
+      'attendu', 'PL2 la voit (faux)', 'observe', coalesce(colonne_de_plus::text, '?'), 'mord', coalesce(not colonne_de_plus, false));
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+  execute q_catalogue into catalogue;
+  verdicts := verdicts || jsonb_build_object('controle', 'PL2. aucun rôle de l''API ne lit la table entière ni un plafond, par aucun chemin ; chacun lit chaque autre colonne ; la fonction aux droits du propriétaire, exécutée par authenticated seul (lecture du catalogue)',
+    'cible', 'cabinets', 'observe', coalesce(catalogue::text, '?'), 'ok', coalesce(catalogue, false));
+  verdicts := verdicts || jsonb_build_object('controle', 'PL. le jeu d''essai des plafonds de l''assistant s''est construit', 'cible', 'le cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $pl$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

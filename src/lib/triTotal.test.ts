@@ -144,6 +144,13 @@ export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: st
       + 'fait sur une clé unique (supabase/schema/20261026000623_validation_des_ventes_facturees.sql) — l’assistant la lit '
       + 'depuis l’étape VF9c.',
   },
+  plafonds_de_l_assistant: {
+    colonnes: ['cabinet_id'],
+    preparee: 'supabase/preparees/20261119150000_plafonds_hors_du_client.sql',
+    raison: 'une ligne par cabinet : `from cabinets c` filtré par `admin_du_cabinet(c.id)`, sans jointure '
+      + '(supabase/preparees/20261119150000_plafonds_hors_du_client.sql) — l’écran du super-administrateur la lit, le '
+      + 'drapeau `PLAFONDS_HORS_DU_CLIENT_PREVUS` levé (OPT1-Q3).',
+  },
   identites_des_fiches_liees: {
     colonnes: ['contact_id'],
     raison: 'une ligne par fiche liée : `from contacts f` filtré sur le dossier, puis deux jointures GAUCHES sur la clé primaire '
