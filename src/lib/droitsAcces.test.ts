@@ -255,27 +255,29 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     ])
     // DEPUIS L'ÉTAPE B8, « Mes notes de frais » lit la case « Notes de frais » — ou « Achats » (B8-Q1) —, derrière `NOTES_DE_FRAIS_PREVUES`
     // (lib/notesDeFraisVue.ts, `mesNotesDeFraisOuvertes`), sa route et son entrée ; l'écran relit ses cases à la base.
-    expect(app).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId)) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />')
+    expect(app).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droits) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />')
     // DEPUIS L'ÉTAPE B5, « Mes achats » lit la case « Achats », derrière `ACHATS_DU_CLIENT_PREVUS` (lib/achatsClientVue.ts,
     // `mesAchatsOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
-    expect(app).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats) && <Route path="/mes-achats" element={<ClientAchats />} />')
+    expect(app).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droits.achats) && <Route path="/mes-achats" element={<ClientAchats />} />')
     // DEPUIS L'ÉTAPE B3a, « Mes documents » lit la case « Documents », derrière `DOCUMENTS_ET_DEMANDES_PREVUS`
     // (lib/documentsEtDemandesVue.ts, `mesDocumentsOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
     // « Mes demandes » ne lit aucune case : tout accès du dossier lit ses demandes (MEG2-Q9).
-    expect(app).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
+    expect(app).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droits.documents)')
     expect(app).toContain('mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />')
     const coque = readFileSync(resolve(process.cwd(), 'src/components/Layout.tsx'), 'utf8')
-    expect(coque).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
-    expect(coque).toContain("const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)")
-    expect(coque).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)')
-    expect(coque).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId))')
+    expect(coque).toContain('mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droits.documents)')
+    expect(coque).toContain("const mesDemandes = ouverte('/mes-demandes') && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)")
+    // `ouverte` : le client seul, sous le module de la route (conception 56, OPT3).
+    expect(coque).toContain("const ouverte = (route: RouteDeLEspaceClient) => role === 'client' && routeDuClientOuverte(route, modules.ouverts)")
+    expect(coque).toContain('mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droits.achats)')
+    expect(coque).toContain('mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droits)')
     // DEPUIS L'ÉTAPE LM6, « Mes lettres de mission » lit la case « Documents », derrière `DRAPEAU_DES_LETTRES_DU_CLIENT`
     // (lib/lettresDuClient.ts, `lettresDuClientOuvertes`), sa route et son entrée ; l'écran ne lit que par la fonction de la base.
-    expect(app).toContain('lettresDuClientOuvertes(lettresDuClientPrevues(), droitsSur(droitsParDossier ?? {}, dossierActifId).documents) && <Route path="/mes-lettres-de-mission" element={<ClientLettresDeMission />} />')
-    expect(coque).toContain('lettresDuClientOuvertes(lettresDuClientPrevues(), droitsSur(droitsParDossier ?? {}, dossierActifId).documents)')
+    expect(app).toContain('lettresDuClientOuvertes(lettresDuClientPrevues(), droits.documents) && <Route path="/mes-lettres-de-mission" element={<ClientLettresDeMission />} />')
+    expect(coque).toContain('lettresDuClientOuvertes(lettresDuClientPrevues(), droits.documents)')
     // DEPUIS L'ÉTAPE C4b, « Mes comptes » lit la case « Comptes », derrière `SITUATIONS_PUBLIEES_EXPORTEES`
     // (lib/situationsPubliees.ts, `mesComptesOuverts`), sa route et son entrée ; l'écran relit sa case à la base.
-    expect(app).toContain('mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)')
+    expect(app).toContain('mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droits.comptes)')
     const ecransClient = readdirSync(resolve(process.cwd(), 'src/pages')).filter((f) => /^Client\w+\.tsx$/.test(f) && !f.includes('.test.'))
     expect(ecransClient.sort()).toEqual([
       'ClientAchats.tsx', 'ClientAnalyse.tsx', 'ClientBanque.tsx', 'ClientCaisse.tsx', 'ClientComptes.tsx', 'ClientDemandes.tsx', 'ClientDocuments.tsx',
@@ -287,22 +289,27 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(app).toContain('<Route path="/mon-echeancier" element={<ClientEcheancier />} />')
     for (const fichier of ['ClientEcheancier.tsx', 'EcheancierAccueil.tsx']) {
       const texte = readFileSync(resolve(process.cwd(), `src/pages/${fichier}`), 'utf8')
-      expect(texte, fichier).toMatch(/const avecMontants = droitsSur\(droitsParDossier \?\? \{\}, (dossierActifId|dossierId)\)\.banque === true/)
+      // Depuis OPT3, la case masquée par son module : `droits` (useDroitsAffiches) pour la page, `droitsMasques` pour la carte.
+      expect(texte, fichier).toMatch(fichier === 'ClientEcheancier.tsx'
+        ? /const droits = useDroitsAffiches\(\)\n[^]*const avecMontants = droits\.banque === true/
+        : /const avecMontants = droitsMasques\(droitsSur\(droitsParDossier \?\? \{\}, dossierId\), ouverts\)\.banque === true/)
       expect(texte, fichier).not.toMatch(/droit_ventes|droit_banque|droit_caisse|\.ventes\b|\.caisse\b/)
-      expect(texte.match(/droitsSur\(/g), fichier).toHaveLength(1)
+      expect((texte.match(/droitsSur\(/g) ?? []).length + (texte.match(/useDroitsAffiches\(\)/g) ?? []).length, fichier).toBe(1)
     }
     // DEPUIS L'ÉTAPE P4b, l'accueil lit la case « Ventes » pour ses tuiles « À encaisser » et « À déclarer » : la même garde
     // que la route, sur la société affichée, et rien d'autre ; les tuiles relisent leurs cases à la base.
     const accueil = readFileSync(resolve(process.cwd(), 'src/pages/ClientHome.tsx'), 'utf8')
-    expect(accueil).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierId).ventes)')
+    expect(accueil).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droits.ventes)')
     // Et, depuis l'étape P9, la tuile « Ma banque » : la case « Banque » sous la garde de sa route, et rien d'autre.
-    expect(accueil).toContain('maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)')
+    expect(accueil).toContain('maBanqueOuverte(COUVERTURE_EXPORTEE, droits.banque)')
     // Et, depuis l'étape C12a, la tuile « Ma caisse » : la case « Caisse » sous la garde de sa route, et rien d'autre.
-    expect(accueil).toContain('maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).caisse)')
+    expect(accueil).toContain('maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droits.caisse)')
     expect(accueil).not.toMatch(/droit_ventes|droit_banque|droit_caisse/)
     expect(accueil.match(/\.banque\b/g)).toHaveLength(1)
     expect(accueil.match(/\.caisse\b/g)).toHaveLength(1)
-    expect(accueil.match(/droitsSur\(/g)).toHaveLength(3)
+    // Depuis OPT3, les trois cases d'une seule lecture des droits masqués par leur module.
+    expect(accueil.match(/droitsSur\(/g)).toBeNull()
+    expect(accueil.match(/useDroitsAffiches\(\)/g)).toHaveLength(1)
     // DEPUIS L'ÉTAPE A6b2, les cases se relisent à la base dans UNE lecture des ventes (`useVentesDuClient`), partagée par les tuiles
     // et l'encart « Facture électronique » : les tuiles ne lisent plus rien, l'encart ne lit que l'état de sa facture électronique.
     const lectureDesVentes = readFileSync(resolve(process.cwd(), 'src/lib/ventesDuClientLecture.ts'), 'utf8')
@@ -319,24 +326,25 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     // DEPUIS L'ÉTAPE C12b, « Mes pièces » lit la case « Caisse » sous la garde de la route de « Ma caisse », pour le paiement
     // d'une pièce par la caisse, et rien d'autre ; la lecture de la caisse la relit à la base (lib/caisseClientLecture.ts).
     const mesPieces = readFileSync(resolve(process.cwd(), 'src/pages/ClientUpload.tsx'), 'utf8')
-    expect(mesPieces).toContain('maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).caisse)')
+    expect(mesPieces).toContain('maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droits.caisse)')
     expect(mesPieces).not.toMatch(/droit_ventes|droit_banque|droit_caisse|\.ventes\b|\.banque\b/)
-    expect(mesPieces.match(/droitsSur\(/g)).toHaveLength(1)
+    expect(mesPieces.match(/droitsSur\(/g)).toBeNull()
+    expect(mesPieces.match(/useDroitsAffiches\(\)/g)).toHaveLength(1)
     expect(mesPieces).toContain('lireLaCaisseDuClient(')
     const simulation = readFileSync(resolve(process.cwd(), 'src/pages/ClientSimulation.tsx'), 'utf8')
-    expect(simulation).toContain('simulationOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)')
+    expect(simulation).toContain('simulationOuverte(COUVERTURE_EXPORTEE, droits.banque)')
     expect(simulation).not.toMatch(/droit_ventes|droit_banque|\.ventes\b/)
     // La route et l'entrée de « Mes ventes » lisent la case « Ventes » de la société AFFICHÉE, derrière le drapeau, et rien
     // d'autre ; l'écran, lui, relit ses cases à la base et ne lit pas celles d'AuthContext.
-    const gardeVentes = 'mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes)'
-    expect(app).toContain(`{${gardeVentes} && <Route path="/mes-ventes" element={<ClientVentes />} />}`)
+    const gardeVentes = 'mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droits.ventes)'
+    expect(app).toContain(`{ouverte('/mes-ventes') && ${gardeVentes} && <Route path="/mes-ventes" element={<ClientVentes />} />}`)
     const layout = readFileSync(resolve(process.cwd(), 'src/components/Layout.tsx'), 'utf8')
     expect(layout).toContain(gardeVentes)
     expect(layout).not.toMatch(/droit_ventes|droit_banque/)
     // « Ma banque » : la route et l'entrée lisent la case « Banque » de la société AFFICHÉE, derrière le drapeau, et rien
     // d'autre ; l'écran relit sa case à la base.
-    const gardeBanque = 'maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)'
-    expect(app).toContain(`{${gardeBanque} && <Route path="/ma-banque" element={<ClientBanque />} />}`)
+    const gardeBanque = 'maBanqueOuverte(COUVERTURE_EXPORTEE, droits.banque)'
+    expect(app).toContain(`{ouverte('/ma-banque') && ${gardeBanque} && <Route path="/ma-banque" element={<ClientBanque />} />}`)
     expect(layout).toContain(gardeBanque)
     expect(layout.match(/\.banque\b/g)).toHaveLength(1)
     const banque = readFileSync(resolve(process.cwd(), 'src/pages/ClientBanque.tsx'), 'utf8')
@@ -347,8 +355,8 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(ventes).not.toMatch(/droit_ventes|droit_banque|droitsParDossier|droitsSur\b/)
     // « Ma caisse » (étape C12a) : la route et l'entrée lisent la case « Caisse » de la société AFFICHÉE, derrière le drapeau,
     // et rien d'autre ; l'écran relit sa case à la base, par sa lecture, et ne lit pas celles d'AuthContext.
-    const gardeCaisse = 'maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).caisse)'
-    expect(app).toContain(`{${gardeCaisse} && <Route path="/ma-caisse" element={<ClientCaisse />} />}`)
+    const gardeCaisse = 'maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droits.caisse)'
+    expect(app).toContain(`{ouverte('/ma-caisse') && ${gardeCaisse} && <Route path="/ma-caisse" element={<ClientCaisse />} />}`)
     expect(layout).toContain(gardeCaisse)
     expect(layout.match(/\.caisse\b/g)).toHaveLength(1)
     expect(layout).not.toMatch(/droit_caisse/)
@@ -358,8 +366,8 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(lectureDeLaCaisse).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
     // « Mon analyse » (étape B9a) : aucune case à elle — la route et l'entrée sous la garde de « Mes ventes » OU de « Ma
     // banque », et rien d'autre ; l'écran demande ce que ces deux gardes ouvrent, et sa lecture relit les cases à la base.
-    expect(app).toContain(`{monAnalyseOuverte(${gardeVentes}, ${gardeBanque}) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}`)
-    expect(layout).toContain('{monAnalyseOuverte(mesVentes, maBanque) && (')
+    expect(app).toContain(`{ouverte('/mon-analyse') && monAnalyseOuverte(${gardeVentes}, ${gardeBanque}) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}`)
+    expect(layout).toContain("{ouverte('/mon-analyse') && monAnalyseOuverte(mesVentes, maBanque) && (")
     const analyse = readFileSync(resolve(process.cwd(), 'src/pages/ClientAnalyse.tsx'), 'utf8')
     expect(analyse).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, cases.ventes)')
     expect(analyse).toContain('maBanqueOuverte(COUVERTURE_EXPORTEE, cases.banque)')
@@ -372,10 +380,10 @@ describe('le module, la migration et les écrans disent la même chose', () => {
     expect(lectureDeLAnalyse).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
     // « Ma trésorerie » (étape C8) : aucune case à elle — la route et l'entrée sous son drapeau et la garde de « Ma banque »,
     // et rien d'autre ; l'écran demande ce que la garde de « Mes ventes » ouvre, et sa lecture relit les cases à la base.
-    expect(app).toContain(`{maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, ${gardeBanque}) && <Route path="/ma-tresorerie" element={<ClientTresorerie />} />}`)
+    expect(app).toContain(`{ouverte('/ma-tresorerie') && maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, ${gardeBanque}) && <Route path="/ma-tresorerie" element={<ClientTresorerie />} />}`)
     expect(layout).toContain('maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanque)')
     const tresorerie = readFileSync(resolve(process.cwd(), 'src/pages/ClientTresorerie.tsx'), 'utf8')
-    expect(tresorerie).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes)')
+    expect(tresorerie).toContain('mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droits.ventes)')
     expect(tresorerie).not.toMatch(/droit_ventes|droit_banque|droit_caisse|supabase|\.banque\b|\.caisse\b/)
     const lectureDeLaTresorerie = readFileSync(resolve(process.cwd(), 'src/lib/tresorerieClientLecture.ts'), 'utf8')
     expect(lectureDeLaTresorerie).toContain("supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId })")
@@ -2078,5 +2086,24 @@ describe('ce que dit la case « Documents », avec sa migration (B3a)', () => {
     expect(MIGRATION_DM).toContain("for select to authenticated using (client_du_dossier(dossier_id, 'documents') and retire_le is null);")
     expect(MIGRATION_DM).toContain("for select to authenticated using (lecteur = (select auth.uid()) and client_du_dossier(dossier_id, 'documents'));")
     for (const t of TABLES_LUES_AVEC_DOCUMENTS) expect(MIGRATION_DM).toMatch(new RegExp(`create policy \\w+ on public\\.${t}\\s+for select to authenticated using \\([^;]*'documents'`, 'i'))
+  })
+})
+
+// LES CASES MASQUÉES PAR LEUR MODULE (conception 56, OPT3) : les gardes ci-dessus lisent `droits`, et `droits` est, dans chacun
+// de ces écrans, les cases de la société AFFICHÉE masquées par leur module (`useDroitsAffiches`, `droitsMasques`) — le drapeau
+// baissé, les droits d'hier, champ par champ (modulesAffiches.test.ts). Aucun ne relit plus les droits bruts.
+describe('les écrans du client lisent les cases masquées par leur module', () => {
+  const racine = resolve(__dirname, '..')
+  for (const fichier of ['App.tsx', 'components/Layout.tsx', 'pages/ClientHome.tsx', 'pages/ClientUpload.tsx', 'pages/ClientSimulation.tsx',
+    'pages/ClientTresorerie.tsx', 'pages/ClientAnalyse.tsx', 'pages/ClientEcheancier.tsx']) {
+    it(fichier, () => {
+      const texte = readFileSync(resolve(racine, fichier), 'utf8')
+      expect(texte).toContain('const droits = useDroitsAffiches()')
+      expect(texte).not.toContain('droitsSur(droitsParDossier')
+    })
+  }
+  it('pages/EcheancierAccueil.tsx masque la case « Banque » de son dossier', () => {
+    expect(readFileSync(resolve(racine, 'pages/EcheancierAccueil.tsx'), 'utf8'))
+      .toContain('droitsMasques(droitsSur(droitsParDossier ?? {}, dossierId), ouverts).banque === true')
   })
 })
