@@ -1,5 +1,5 @@
 import { useAuth } from '../context/AuthContext'
-import { droitsSur } from '../lib/droitsAcces'
+import { useDroitsAffiches } from '../context/OptionsDuCabinetContext'
 import { SANS_IMPOT_SUR_LES_SOCIETES } from '../lib/echeancesFiscales'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
@@ -35,9 +35,11 @@ import { usePrevisionDuClient, type LectureDuClient } from '../lib/previsionsPub
 // montants connus, qui ne lisent rien d'elle. Lue en partie ou illisible, elle se tait sur son motif ; la projection, elle,
 // n'en dépend pas.
 export default function ClientTresorerie() {
-  const { dossierActifId, droitsParDossier } = useAuth()
+  const { dossierActifId } = useAuth()
+  // Les cases masquées par leur module (conception 56, OPT3) : le drapeau baissé, les droits d'hier.
+  const droits = useDroitsAffiches()
   // `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
-  const ventes = mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes)
+  const ventes = mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droits.ventes)
   const lecture = useTresorerieDuClient(dossierActifId, ventes)
   const prevision = usePrevisionDuClient(dossierActifId, PREVISIONS_PUBLIEES_PREVUES)
 

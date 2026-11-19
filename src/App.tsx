@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { HashRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { OptionsDuCabinetProvider, useDroitsAffiches, useModulesOuverts } from './context/OptionsDuCabinetContext'
+import { routeDuCabinetOuverte, routeDuClientOuverte, type RouteDeLEspaceClient } from './lib/modulesDuCabinet'
 import { lireRetourDuLien, type RetourDuLien } from './lib/recuperationMotDePasse'
 import Layout from './components/Layout'
 import Login from './pages/Login'
@@ -29,7 +31,6 @@ import ClientNotesDeFrais from './pages/ClientNotesDeFrais'
 import ClientEcheancier from './pages/ClientEcheancier'
 import ClientAnalyse from './pages/ClientAnalyse'
 import ClientTresorerie from './pages/ClientTresorerie'
-import { droitsSur } from './lib/droitsAcces'
 import { mesVentesOuvertes } from './lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from './lib/encaissementsFactures'
 import { maBanqueOuverte } from './lib/banqueClient'
@@ -82,8 +83,14 @@ function LienSansEffet({ avis, email, onContinuer, onDeconnexion }: {
 function Gate() {
   const {
     session, role, isSuperAdmin, estChef, loading, signOut,
-    recuperation, terminerRecuperation, avisDuLien, oublierAvisDuLien, dossierActifId, droitsParDossier,
+    recuperation, terminerRecuperation, avisDuLien, oublierAvisDuLien,
   } = useAuth()
+  // LES MODULES DU CABINET (conception 56, OPT3) : une route d'un module fermé ne se monte pas, et son adresse mène à
+  // l'accueil de l'espace (la redirection `*`). Les cases d'un accès client sont masquées par leur module (`useDroitsAffiches`)
+  // avant que les prédicats d'hier les lisent. Le drapeau baissé : tout ouvert, sans lecture, les routes d'hier.
+  const modules = useModulesOuverts()
+  const droits = useDroitsAffiches()
+  const ouverte = (route: RouteDeLEspaceClient) => routeDuClientOuverte(route, modules.ouverts)
   const navigate = useNavigate()
 
   // Le fragment d'un lien d'authentification n'est pas une route. Le client le vide lui-même quand il ouvre la
@@ -139,6 +146,8 @@ function Gate() {
   if (porteExigee === 'inscription') {
     return <InscriptionExigee espace={espaceDeLaPorte} email={session.user.email ?? null} onDeconnexion={signOut} />
   }
+  // Les modules du cabinet pas encore revenus : rien ne s'affiche qui pourrait disparaître (le vide est une affirmation).
+  if (role !== null && modules.etat === 'lecture') return <div className="login-shell"><p className="muted">Chargement…</p></div>
   // Après les rôles, pour parler à chacun comme il faut : le cabinet se vouvoie, le client se tutoie.
   if (porte === 'code') {
     return (
@@ -165,7 +174,7 @@ function Gate() {
             {estChef && <Route path="/apparence" element={<CabinetBrandingPage />} />}
             {/* Le retour de la banque après son accord (connexion bancaire) : `public/retour-banque.html`
                 y recopie les paramètres que la banque a mis dans l'adresse. */}
-            <Route path="/retour-banque" element={<RetourBanque />} />
+            {routeDuCabinetOuverte('/retour-banque', modules.ouverts) && <Route path="/retour-banque" element={<RetourBanque />} />}
             <Route path="/securite" element={<SecuriteDuCompte espace="cabinet" />} />
             <Route path="*" element={<Navigate to="/dossiers" replace />} />
           </>
@@ -175,32 +184,32 @@ function Gate() {
             <Route path="/accueil" element={<ClientHome />} />
             <Route path="/mes-pieces" element={<ClientUpload />} />
             <Route path="/mes-informations" element={<ClientInformations />} />
-            <Route path="/ma-simulation" element={<ClientSimulation />} />
+            {ouverte('/ma-simulation') && <Route path="/ma-simulation" element={<ClientSimulation />} />}
             {/* « Mon échéancier » (ligne 51.5, étape C1) : à tout accès client ; les montants, sous « Banque » seulement. */}
             <Route path="/mon-echeancier" element={<ClientEcheancier />} />
             {/* « Mes ventes » (espace client, étape P4a) : seulement si la société AFFICHÉE porte la case « Ventes » — un client
                 à plusieurs sociétés peut l'avoir sur l'une et pas sur l'autre. Sans elle, l'adresse renvoie à l'accueil, et
                 changer de société pour une qui ne la porte pas y ramène aussi ; la base refuse de toute façon (P2). */}
-            {mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes) && <Route path="/mes-ventes" element={<ClientVentes />} />}
+            {ouverte('/mes-ventes') && mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droits.ventes) && <Route path="/mes-ventes" element={<ClientVentes />} />}
             {/* « Ma banque » (espace client, étape P9) : de même, seulement si la société AFFICHÉE porte la case « Banque ». */}
-            {maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque) && <Route path="/ma-banque" element={<ClientBanque />} />}
+            {ouverte('/ma-banque') && maBanqueOuverte(COUVERTURE_EXPORTEE, droits.banque) && <Route path="/ma-banque" element={<ClientBanque />} />}
             {/* « Ma caisse » (ligne 26.6, étape C12a) : de même, seulement si la société AFFICHÉE porte la case « Caisse ». */}
-            {maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).caisse) && <Route path="/ma-caisse" element={<ClientCaisse />} />}
+            {ouverte('/ma-caisse') && maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droits.caisse) && <Route path="/ma-caisse" element={<ClientCaisse />} />}
             {/* « Mes comptes » (ligne 51.5, étape C4b) : de même, seulement si la société AFFICHÉE porte la case « Comptes ». */}
-            {mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes) && <Route path="/mes-comptes" element={<ClientComptes />} />}
+            {ouverte('/mes-comptes') && mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droits.comptes) && <Route path="/mes-comptes" element={<ClientComptes />} />}
             {/* « Mes documents » (ligne 51.5, étape B3a) : avec sa migration, et la case « Documents » sur la société AFFICHÉE ;
                 « Mes demandes », à tout accès client, avec sa migration seulement. */}
-            {mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents) && <Route path="/mes-documents" element={<ClientDocuments />} />}
+            {ouverte('/mes-documents') && mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droits.documents) && <Route path="/mes-documents" element={<ClientDocuments />} />}
             {/* « Mes lettres de mission » (ligne 47, étape LM6) : avec sa migration, et la case « Documents » sur la société AFFICHÉE. */}
-            {lettresDuClientOuvertes(lettresDuClientPrevues(), droitsSur(droitsParDossier ?? {}, dossierActifId).documents) && <Route path="/mes-lettres-de-mission" element={<ClientLettresDeMission />} />}
-            {mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />}
+            {ouverte('/mes-lettres-de-mission') && lettresDuClientOuvertes(lettresDuClientPrevues(), droits.documents) && <Route path="/mes-lettres-de-mission" element={<ClientLettresDeMission />} />}
+            {ouverte('/mes-demandes') && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS) && <Route path="/mes-demandes" element={<ClientDemandes />} />}
             {/* « Mes achats » (ligne 51.5, étape B5) : avec sa migration (B4), et la case « Achats » sur la société AFFICHÉE. */}
-            {mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats) && <Route path="/mes-achats" element={<ClientAchats />} />}
+            {ouverte('/mes-achats') && mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droits.achats) && <Route path="/mes-achats" element={<ClientAchats />} />}
             {/* « Mes notes de frais » (ligne 51.5, étape B8) : avec sa migration (B7), et la case « Notes de frais » ou « Achats » (B8-Q1) sur la société AFFICHÉE. */}
-            {mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId)) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />}
-            {monAnalyseOuverte(mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes), maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}
+            {ouverte('/mes-notes-de-frais') && mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droits) && <Route path="/mes-notes-de-frais" element={<ClientNotesDeFrais />} />}
+            {ouverte('/mon-analyse') && monAnalyseOuverte(mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droits.ventes), maBanqueOuverte(COUVERTURE_EXPORTEE, droits.banque)) && <Route path="/mon-analyse" element={<ClientAnalyse />} />}
             {/* « Ma trésorerie » (ligne 51.5, étape C8) : derrière son drapeau, quand « Ma banque » s'offre sur la société AFFICHÉE. */}
-            {maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)) && <Route path="/ma-tresorerie" element={<ClientTresorerie />} />}
+            {ouverte('/ma-tresorerie') && maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanqueOuverte(COUVERTURE_EXPORTEE, droits.banque)) && <Route path="/ma-tresorerie" element={<ClientTresorerie />} />}
             <Route path="/securite" element={<SecuriteDuCompte espace="client" />} />
             <Route path="*" element={<Navigate to="/accueil" replace />} />
           </>
@@ -219,7 +228,9 @@ export default function App({ retourDuLien }: { retourDuLien: RetourDuLien }) {
     // ce qui suit le # (ex. /#/dossiers/xxx) reste côté navigateur, jamais envoyé au serveur.
     <HashRouter>
       <AuthProvider retourDuLien={retourDuLien}>
-        <Gate />
+        <OptionsDuCabinetProvider>
+          <Gate />
+        </OptionsDuCabinetProvider>
       </AuthProvider>
     </HashRouter>
   )

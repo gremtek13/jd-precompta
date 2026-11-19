@@ -1,7 +1,7 @@
 import { useAuth } from '../context/AuthContext'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import ListeEcheances from '../components/ListeEcheances'
-import { droitsSur } from '../lib/droitsAcces'
+import { useDroitsAffiches } from '../context/OptionsDuCabinetContext'
 import {
   ECHEANCIER_CONDITIONS, ECHEANCIER_ILLISIBLE, ECHEANCIER_INTRODUCTION, ECHEANCIER_LECTURE_PARTIELLE, ECHEANCIER_SANS_MONTANTS,
   ECHEANCIER_VIDE, composerEcheancier,
@@ -18,9 +18,11 @@ import { aujourdHuiAParis } from '../lib/format'
 // partie, le bandeau le dit au-dessus de ce qui a été lu ; illisible, l'écran le dit et ne montre rien d'autre. « Aujourd'hui »
 // est le jour de Paris, lu au rendu.
 export default function ClientEcheancier() {
-  const { dossierActifId, droitsParDossier } = useAuth()
+  const { dossierActifId } = useAuth()
+  // Les cases masquées par leur module (conception 56, OPT3) : le drapeau baissé, les droits d'hier.
+  const droits = useDroitsAffiches()
   // `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
-  const avecMontants = droitsSur(droitsParDossier ?? {}, dossierActifId).banque === true
+  const avecMontants = droits.banque === true
   const lecture = useEcheancierDuClient(dossierActifId, avecMontants)
 
   if (!dossierActifId) {

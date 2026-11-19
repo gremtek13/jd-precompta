@@ -5,6 +5,7 @@ import Avatar from './widgets/Avatar'
 import { CAISSE_EXPORTEE } from '../lib/caisse'
 import { INVENTAIRE_EXPORTE } from '../lib/inventaire'
 import { groupesDuParcours, type IdGroupeParcours } from '../lib/ongletsDossier'
+import { useModulesOuverts } from '../context/OptionsDuCabinetContext'
 import { correspondALaRecherche } from '../lib/recherche'
 import type { DossierDeBarre } from '../lib/listeDossiers'
 import { TITRE_MON_CABINET, separerLeDossierDuCabinet } from '../lib/dossierDuCabinet'
@@ -52,7 +53,9 @@ export default function BarreDossiers({
 }) {
   const [groupes, setGroupes] = useState<Record<string, boolean>>(lireGroupes)
   // Les écrans, lus à chaque rendu : l'onglet Caisse n'y est que la caisse en base, l'onglet Inventaire que l'inventaire offert (lib/ongletsDossier.ts).
-  const tousLesGroupes = groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE)
+  // Et les écrans des seuls modules ouverts du cabinet (conception 56, OPT3) : le drapeau baissé, tous.
+  const { ouverts } = useModulesOuverts()
+  const tousLesGroupes = groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, ouverts)
   const DESTINATIONS = tousLesGroupes.filter((g) => g.cible)
   const REGROUPEMENTS = tousLesGroupes.filter((g) => g.enfants)
 

@@ -16,7 +16,8 @@ import CarteEtatDuDossier from '../components/CarteEtatDuDossier'
 import type { CotisationDeclaree, DocumentDivers, Dossier, LigneBancaire, Piece } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import { COUVERTURE_EXPORTEE, lireLaCouverture, type MoisCouvert } from '../lib/couvertureReleve'
-import { droitsSur } from '../lib/droitsAcces'
+import { useDroitsAffiches, useModulesOuverts } from '../context/OptionsDuCabinetContext'
+import { routeDuClientOuverte } from '../lib/modulesDuCabinet'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import AccueilVentesClient from './AccueilVentesClient'
@@ -57,18 +58,22 @@ type Depot = EnvoiDeLAccueil
 // non-comptable comprend : ni TVA ni résultat ici. Un solde, un seul : celui du compte en banque, LU au
 // dernier relevé contrôlé, pour un accès « Banque » (SoldeAccueil, demande du cabinet du 16/11/2026).
 export default function ClientHome() {
-  const { dossierActifId, droitsParDossier } = useAuth()
+  const { dossierActifId } = useAuth()
   const dossierId = dossierActifId
+  // LES MODULES DU CABINET (conception 56, OPT3) : une tuile d'un module fermé ne s'affiche pas, comme son entrée et sa route ;
+  // les cases masquées par leur module. Le drapeau baissé : tout ouvert, sans lecture, les tuiles d'hier.
+  const { ouverts } = useModulesOuverts()
+  const droits = useDroitsAffiches()
   // « Mes ventes » ouvert sur la société affichée, comme la coque le décide pour son entrée (Layout.tsx) : ses tuiles aussi.
-  const ventesOuvertes = mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierId).ventes)
+  const ventesOuvertes = routeDuClientOuverte('/mes-ventes', ouverts) && mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droits.ventes)
   // « Ma banque » (étape P9) : sa tuile, sous la même garde que son entrée — sur téléphone, l'accueil cache la barre du bas,
   // et ses tuiles en tiennent lieu.
-  const banqueOuverte = maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)
+  const banqueOuverte = routeDuClientOuverte('/ma-banque', ouverts) && maBanqueOuverte(COUVERTURE_EXPORTEE, droits.banque)
   // « Ma caisse » (ligne 26.6, étape C12a) : sa tuile, sous la même garde que son entrée.
-  const caisseOuverte = maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).caisse)
+  const caisseOuverte = routeDuClientOuverte('/ma-caisse', ouverts) && maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droits.caisse)
   // « Ma trésorerie » (étape C8) : sa tuile, sous la même garde que son entrée et sa route. Sur téléphone, son entrée n'est pas
   // dans la barre du bas, qui ne tient pas dix entrées à 390 px (index.css, `nav-hors-barre-du-bas`) : la tuile y mène.
-  const tresorerieOuverte = maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, banqueOuverte)
+  const tresorerieOuverte = routeDuClientOuverte('/ma-tresorerie', ouverts) && maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, banqueOuverte)
   const navigate = useNavigate()
   // Les pièces jointes que la réception par e-mail n'a pas déposées (ligne 22.94) : la lecture de « Mes pièces », écrite une
   // fois (lib/piecesJointesEcarteesClientLecture.ts), À PART de `load` — sa panne n'en fausse aucune autre, et la panne des
@@ -370,11 +375,13 @@ export default function ClientHome() {
           <span className="tuile-libelle">Mes informations</span>
           <span className="tuile-desc">Véhicule, titres-restaurant, chèques-vacances… à renseigner une fois.</span>
         </Link>
-        <Link to="/ma-simulation" className="tuile">
-          <span className="tuile-icone"><IconEstimation width={24} height={24} /></span>
-          <span className="tuile-libelle">Ma simulation</span>
-          <span className="tuile-desc">Une estimation de tes charges sociales à partir de tes chiffres.</span>
-        </Link>
+        {routeDuClientOuverte('/ma-simulation', ouverts) && (
+          <Link to="/ma-simulation" className="tuile">
+            <span className="tuile-icone"><IconEstimation width={24} height={24} /></span>
+            <span className="tuile-libelle">Ma simulation</span>
+            <span className="tuile-desc">Une estimation de tes charges sociales à partir de tes chiffres.</span>
+          </Link>
+        )}
       </div>
 
       {captureError && <p className="error-text" style={{ marginBottom: 16 }}>{captureError}</p>}
