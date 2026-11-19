@@ -22,7 +22,7 @@ export function cleDesOptions(role: 'cabinet' | 'client' | null, cabinetId: stri
 
 /** `prevues` : le drapeau, en propriété pour que les tests jouent ses deux états. */
 export function OptionsDuCabinetProvider({ children, prevues = OPTIONS_DES_CABINETS_PREVUES }: { children: ReactNode; prevues?: boolean }) {
-  const { role, monCabinetId, dossierActifId } = useAuth()
+  const { role, monCabinetId, dossierActifId, isSuperAdmin } = useAuth()
   const cle = cleDesOptions(role, monCabinetId, dossierActifId)
   const [lu, setLu] = useState<{ cle: string; etat: EtatDesModules } | null>(null)
 
@@ -42,9 +42,12 @@ export function OptionsDuCabinetProvider({ children, prevues = OPTIONS_DES_CABIN
   let valeur: EtatDesModules
   if (!prevues) valeur = TOUT_OUVERT_SANS_LECTURE
   else if (cle === null) {
-    // Un compte du cabinet dont le cabinet n'est pas connu ne se juge pas : fermé. Un client sans société affichée (ou une
-    // session sans rôle) n'a rien à ouvrir.
-    valeur = role === 'cabinet' ? { etat: 'illisibles', ouverts: [], motif: 'le cabinet du compte n’est pas connu' } : { etat: 'lus', ouverts: [] }
+    // Le super-administrateur dont le compte n'a PAS de cabinet n'a pas d'options à lire : hors d'un dossier, tout ouvert, sans
+    // bandeau (décision de la session du 19/11/2026) ; dans un dossier, ceux du cabinet du dossier (ModulesDuDossier.tsx,
+    // OPT3-Q1). Un autre compte du cabinet dont le cabinet n'est pas connu ne se juge pas : fermé. Un client sans société
+    // affichée (ou une session sans rôle) n'a rien à ouvrir.
+    if (role === 'cabinet' && isSuperAdmin) valeur = TOUT_OUVERT_SANS_LECTURE
+    else valeur = role === 'cabinet' ? { etat: 'illisibles', ouverts: [], motif: 'le cabinet du compte n’est pas connu' } : { etat: 'lus', ouverts: [] }
   } else valeur = lu !== null && lu.cle === cle ? lu.etat : EN_LECTURE
 
   return <ModulesFournis etat={valeur}>{children}</ModulesFournis>

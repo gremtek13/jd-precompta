@@ -5,7 +5,10 @@ import type { ModulesDuCabinetLus } from '../lib/optionsDuCabinetLecture'
 // LE FOURNISSEUR DES MODULES OUVERTS (conception 56, OPT3) : le drapeau baissé, tout ouvert et AUCUNE lecture (rien ne change à
 // l'écran ni dans les requêtes) ; levé, « lecture » d'abord, puis la réponse gardée avec sa clé, et le côté fermé sur un échec.
 
-const auth = { role: 'cabinet' as 'cabinet' | 'client' | null, monCabinetId: 'c1' as string | null, dossierActifId: null as string | null }
+const auth = {
+  role: 'cabinet' as 'cabinet' | 'client' | null, monCabinetId: 'c1' as string | null, dossierActifId: null as string | null,
+  isSuperAdmin: false,
+}
 vi.mock('./AuthContext', () => ({ useAuth: () => ({ ...auth, droitsParDossier: {} }) }))
 
 const lectures: string[] = []
@@ -16,7 +19,7 @@ vi.mock('../lib/optionsDuCabinetLecture', () => ({
 }))
 
 const { OptionsDuCabinetProvider, cleDesOptions } = await import('./OptionsDuCabinetContext')
-const { useModulesOuverts } = await import('./ModulesOuverts')
+const { etatSansFournisseur, useModulesOuverts } = await import('./ModulesOuverts')
 const { TOUS_LES_MODULES } = await import('../lib/modulesDuCabinet')
 
 function Sonde() {
@@ -28,23 +31,23 @@ const sonde = () => screen.getByTestId('sonde').textContent
 beforeEach(() => {
   lectures.length = 0
   enAttente.length = 0
-  Object.assign(auth, { role: 'cabinet', monCabinetId: 'c1', dossierActifId: null })
+  Object.assign(auth, { role: 'cabinet', monCabinetId: 'c1', dossierActifId: null, isSuperAdmin: false })
 })
 afterEach(cleanup)
 
-describe('le drapeau baissé', () => {
+describe('le drapeau baissé (un retour ; levé depuis le 19/11/2026)', () => {
   it('tout ouvert, aucune lecture, au montage comme au changement de cabinet ou de société', () => {
-    const { rerender } = render(<OptionsDuCabinetProvider><Sonde /></OptionsDuCabinetProvider>)
+    const { rerender } = render(<OptionsDuCabinetProvider prevues={false}><Sonde /></OptionsDuCabinetProvider>)
     expect(sonde()).toBe(`lus:${TOUS_LES_MODULES.join(',')}`)
     Object.assign(auth, { role: 'client', monCabinetId: null, dossierActifId: 'd1' })
-    rerender(<OptionsDuCabinetProvider><Sonde /></OptionsDuCabinetProvider>)
+    rerender(<OptionsDuCabinetProvider prevues={false}><Sonde /></OptionsDuCabinetProvider>)
     expect(sonde()).toBe(`lus:${TOUS_LES_MODULES.join(',')}`)
     expect(lectures).toEqual([])
   })
 
-  it('sans fournisseur, un écran lit tout ouvert (les écrans d’hier, rendus seuls par leurs tests)', () => {
-    render(<Sonde />)
-    expect(sonde()).toBe(`lus:${TOUS_LES_MODULES.join(',')}`)
+  it('sans fournisseur : tout ouvert le drapeau baissé, le côté FERMÉ levé (src/test/ecrans.ts rend tout ouvert aux écrans seuls)', () => {
+    expect(etatSansFournisseur(false)).toEqual({ etat: 'lus', ouverts: TOUS_LES_MODULES })
+    expect(etatSansFournisseur(true)).toEqual({ etat: 'illisibles', ouverts: [], motif: 'aucun fournisseur des options' })
   })
 })
 
@@ -80,6 +83,21 @@ describe('le drapeau levé', () => {
     render(<OptionsDuCabinetProvider prevues><Sonde /></OptionsDuCabinetProvider>)
     expect(sonde()).toBe('illisibles:')
     expect(lectures).toEqual([])
+  })
+
+  it('le super-administrateur sans cabinet au compte : tout ouvert, sans lecture ni bandeau (hors d’un dossier)', () => {
+    Object.assign(auth, { monCabinetId: null, isSuperAdmin: true })
+    render(<OptionsDuCabinetProvider prevues><Sonde /></OptionsDuCabinetProvider>)
+    expect(sonde()).toBe(`lus:${TOUS_LES_MODULES.join(',')}`)
+    expect(lectures).toEqual([])
+  })
+
+  it('le super-administrateur AVEC un cabinet au compte : les options de ce cabinet, lues ; un échec reste fermé', async () => {
+    Object.assign(auth, { isSuperAdmin: true })
+    render(<OptionsDuCabinetProvider prevues><Sonde /></OptionsDuCabinetProvider>)
+    expect(lectures).toEqual(['cabinet:c1'])
+    await act(async () => { enAttente[0]({ etat: 'illisibles', cle: 'c1', motif: 'refusé' }) })
+    expect(sonde()).toBe('illisibles:')
   })
 
   it('la clé : le cabinet du compte, ou la société affichée du client', () => {

@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { lireRetourDuLien } from './lib/recuperationMotDePasse'
+import { reponseDesModules } from './test/modulesDuCabinet'
 
 // « MA TRÉSORERIE » DANS LA COQUE DU CLIENT (ligne 51.5, étape C8), de bout en bout, comme « Ma caisse »
 // (espaceClientCaisse.test.tsx) : le vrai AuthProvider, la vraie coque (Layout), le vrai portier (App). Seuls les écrans sont
@@ -45,7 +46,8 @@ vi.mock('./lib/supabase', async () => {
         signOut: async () => ({ error: null }),
       },
       from: (table: string) => chaine(table),
-      rpc: async () => ({ data: false, error: null }),
+      // Les modules de la société affichée (OPT1) : tous ouverts ; toute autre fonction, faux.
+      rpc: async (nom: string) => reponseDesModules(nom) ?? { data: false, error: null },
     },
   }
 })

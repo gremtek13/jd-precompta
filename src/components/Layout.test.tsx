@@ -8,6 +8,7 @@ import Layout from './Layout'
 import PanneauDroit from './PanneauDroit'
 import { signalerMajDossiers } from '../lib/listeDossiers'
 import { usePanneauDroit } from '../lib/panneauDroit'
+import { reponseDesModules } from '../test/modulesDuCabinet'
 
 // La barre latérale d'ordinateur (Layout + BarreDossiers) : ce qu'elle promet, c'est de montrer les
 // écrans du dossier ouvert et TOUS les dossiers du cabinet, à un clic chacun. Ce qui la ferait mentir
@@ -88,6 +89,9 @@ vi.mock('../lib/supabase', async () => {
         return chaine
       },
       rpc: (nom: string, args: { p_dossier_id: string }) => {
+        // Les modules du cabinet du dossier ouvert (OPT3-Q1, ModulesDuDossier.tsx, que la coque monte) : tous ouverts.
+        const modules = reponseDesModules(nom)
+        if (modules !== null) return Promise.resolve(modules)
         if (nom !== 'admin_du_dossier') throw new Error(`Faux client : la fonction ${nom} n’est pas attendue.`)
         faux.ouverturesDemandees.push(args.p_dossier_id)
         const reponse = faux.ouvertures[args.p_dossier_id]

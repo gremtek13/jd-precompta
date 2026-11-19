@@ -26,16 +26,17 @@ import type { DroitsAcces, Domaine } from './droitsAcces'
 // CE QU'UNE OPTION N'EST PAS (§ 3.1) : une frontière de confidentialité. Elle ne change pas qui lit quelles données ; une
 // option fermée cache au cabinet des fonctions qu'il n'a pas souscrites, sur ses propres données. Elle ne change jamais un
 // chiffre : un moteur ne lit pas les options (OPT-Q2 (A) : les données d'une option éteinte restent comptées et exportées).
-// Rien ici n'est encore branché : OPT3 le branche, derrière `OPTIONS_DES_CABINETS_PREVUES`.
+// OPT3 le branche dans les écrans, derrière `OPTIONS_DES_CABINETS_PREVUES`, levé le 19/11/2026.
 
-/** Le drapeau de la migration `options_des_cabinets` (OPT1, préparée le 19/11/2026, pas appliquée) : baissé, aucun écran
- *  ne lit la table ni n'appelle ses deux fonctions, et le plan de sauvegarde ne la nomme pas (une sauvegarde lirait une
- *  table absente). Il se lève le jour de la migration (OPT7). */
-export const OPTIONS_DES_CABINETS_PREVUES = false
+/** Le drapeau des ÉCRANS de la migration `options_des_cabinets` (OPT1), levé le 19/11/2026 : la migration est en production
+ *  (244, par l'outil). Levé, la coque lit les options du cabinet du compte, un dossier celles du cabinet du dossier, le client
+ *  celles de sa société affichée (OPT3), et la page du super-administrateur offre l'écran des modules (OPT4). Baissé — un
+ *  retour —, aucun écran ne lit la table ni n'appelle ses deux fonctions : tout est ouvert, comme avant OPT3. */
+export const OPTIONS_DES_CABINETS_PREVUES = true
 
 // Le drapeau de la BASE, à part de celui des écrans (le patron de `COMPTES_BANCAIRES_EN_BASE`) : la migration
 // `options_des_cabinets` est en production depuis le 19/11/2026 (244), la table est donc au plan de sauvegarde ; les
-// écrans, eux, attendent `OPTIONS_DES_CABINETS_PREVUES`.
+// écrans suivent `OPTIONS_DES_CABINETS_PREVUES`, levé le même jour.
 export const OPTIONS_DES_CABINETS_EN_BASE = true
 
 /** La table que la migration pose : une table du CABINET, hors de l'export d'un dossier (conception 56, § 7). */
