@@ -336,11 +336,40 @@ export const CE_QUE_LE_CLIENT_LIT = 'Le client qui porte la case « Banque » li
   + 'que tu publies : figée au jour de sa publication, sous le mot « prévision », à part de ce qui est connu — jamais ajoutée '
   + 'à son solde attendu ni à son point bas. Il n’y lit ni les échéances listées ici, ni le nom d’un emprunt.'
 
+// UN RACCORD DE PLUS D'UN MOIS (C8Q2Q3-Q1 (A), décision du cabinet du 19/11/2026) : la prévision se publie toujours, mais le
+// cabinet est averti AVANT le clic, près du bouton et dans la confirmation, quand la banque des comptes n'est plus à jour.
+// « Plus d'un mois » se compte en JOURS CIVILS, bornes comprises : le raccord couvre plus de 31 jours. Ce choix ne dépend pas
+// du jour du mois où la prévision s'établit (un raccord parti du 1er du mois courant n'est jamais averti, même en février) ;
+// « touche deux mois civils » aurait averti le 1er novembre pour une banque à jour au 30 octobre. Rien côté client, rien en base.
+export const JOURS_DU_RACCORD_SANS_AVERTISSEMENT = 31
+
+/** Le nombre de jours civils du raccord, bornes comprises. */
+export function joursDuRaccord(raccord: Pick<RaccordDeLaPrevision, 'du' | 'au'>): number {
+  const jour = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)))
+  return Math.round((jour(raccord.au) - jour(raccord.du)) / 86_400_000) + 1
+}
+
+/** Vrai quand le raccord couvre plus d'un mois (plus de 31 jours) ; faux sans raccord. */
+export function raccordDepasseUnMois(raccord: Pick<RaccordDeLaPrevision, 'du' | 'au'> | null): boolean {
+  return raccord !== null && joursDuRaccord(raccord) > JOURS_DU_RACCORD_SANS_AVERTISSEMENT
+}
+
+/** L'avertissement du cabinet, ou nul : depuis quand la banque n'est plus à jour, et le relevé à importer d'abord. */
+export function avertissementDuRaccord(contenu: Pick<ContenuDeLaPrevision, 'depart' | 'raccord'>): string | null {
+  const raccord = contenu.raccord
+  if (raccord === null || !raccordDepasseUnMois(raccord)) return null
+  return `La banque n’est à jour dans les comptes qu’au ${formatDate(contenu.depart.au)} : le raccord, du `
+    + `${formatDate(raccord.du)} au ${formatDate(raccord.au)}, compte ${joursDuRaccord(raccord)} jours au rythme moyen, plus `
+    + 'd’un mois. Importe d’abord le relevé qui suit cette date : la prévision partira d’un solde plus récent. Tu peux aussi la '
+    + 'publier telle quelle.'
+}
+
 /** La confirmation d'une publication : elle NOMME ce qui part au client, et dit que c'est une prévision. */
 export function confirmationDeLaPublication(contenu: ContenuDeLaPrevision, remplacee: Pick<PrevisionPubliee, 'publiee_le'> | null): Confirmation {
   const r = contenu.rythme
   const dernier = contenu.mois[contenu.mois.length - 1]
   const raccord = contenu.raccord
+  const avertissement = avertissementDuRaccord(contenu)
   return {
     titre: remplacee ? 'Remplacer la prévision publiée au client ?' : 'Publier cette prévision au client ?',
     paragraphes: [
@@ -356,6 +385,7 @@ export function confirmationDeLaPublication(contenu: ContenuDeLaPrevision, rempl
           + `${montantDit(raccord.decaissements)} payés, solde au ${formatDate(raccord.au)}, ${montantDit(raccord.solde_fin)} ; `
           + `${moisEnLettres(contenu.mois[0].mois)} part de ce solde.`]
         : []),
+      ...(avertissement !== null ? [avertissement] : []),
       ...(contenu.avec_especes
         ? ['Les recettes en espèces de la caisse entrent dans ce rythme : le client les y lit, même sans la case « Caisse ».'] : []),
       'C’est une prévision, pas un engagement : il la lit sous ce mot, à part de son solde contrôlé et des montants connus, '
