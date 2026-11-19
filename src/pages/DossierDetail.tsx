@@ -33,6 +33,8 @@ import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 import { CAISSE_EXPORTEE } from '../lib/caisse'
 import { INVENTAIRE_EXPORTE } from '../lib/inventaire'
 import { ongletsValides } from '../lib/ongletsDossier'
+import { useModulesOuverts } from '../context/OptionsDuCabinetContext'
+import { estOuvert, MOTS_DU_REFUS, TOUS_LES_MODULES } from '../lib/modulesDuCabinet'
 import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
 import { AnneeProvider, useAnnee } from '../context/AnneeContext'
 import { ExercicesValidesProvider } from '../context/ExercicesValidesContext'
@@ -73,7 +75,13 @@ function calculerAnneeParDefaut(anneesDisponibles: number[]): ValeurAnnee {
 export default function DossierDetail() {
   const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>()
   const navigate = useNavigate()
-  const tab: DossierTab = ongletsValides(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE).includes(tabParam as DossierTab) ? (tabParam as DossierTab) : 'checklist'
+  // LES MODULES DU CABINET (conception 56, OPT3) : un onglet d'un module fermé ne s'offre pas, et son adresse directe mène à la
+  // Vue d'ensemble, qui le dit (`ongletFerme`). Le drapeau baissé : tout ouvert, les onglets d'hier.
+  const modules = useModulesOuverts()
+  const ongletsOffertsIci = ongletsValides(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, modules.ouverts)
+  const tab: DossierTab = ongletsOffertsIci.includes(tabParam as DossierTab) ? (tabParam as DossierTab) : 'checklist'
+  const ongletFerme = tabParam !== undefined && !ongletsOffertsIci.includes(tabParam as DossierTab)
+    && ongletsValides(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, TOUS_LES_MODULES).includes(tabParam as DossierTab)
   // Le dossier lu, AVEC l'identifiant pour lequel il l'a été — et de même pour les années. Cette page
   // ne se remonte pas quand la barre latérale mène d'un dossier à l'autre (même route, autre :id) :
   // un état gardé seul désignerait encore l'ANCIEN dossier jusqu'à la fin de la lecture du nouveau,
@@ -349,7 +357,7 @@ export default function DossierDetail() {
           <SelecteurExerciceEntete annees={anneesDisponibles} />
         </div>
       )}
-      <BoutonAssistant />
+      {estOuvert('assistant', modules.ouverts) && <BoutonAssistant />}
     </header>
   )
 
@@ -422,6 +430,7 @@ export default function DossierDetail() {
               }
             />
 
+            {ongletFerme && <p className="error-text" role="status">{MOTS_DU_REFUS.ecranDuCabinet}</p>}
             {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} statutTva={dossier?.statut_tva ?? null} modele={modele} ventesParLesFactures={dossier?.ventes_par_les_factures === true} onNavigate={allerA} />}
             {tab === 'pieces' && (
               <PiecesTab
@@ -589,7 +598,7 @@ export default function DossierDetail() {
         </ExercicesValidesProvider>
       )}
 
-      {!fermeParLeCabinet && <AssistantDossier dossierId={id} dossierNom={dossier?.nom ?? null} />}
+      {!fermeParLeCabinet && estOuvert('assistant', modules.ouverts) && <AssistantDossier dossierId={id} dossierNom={dossier?.nom ?? null} />}
     </>
   )
 }

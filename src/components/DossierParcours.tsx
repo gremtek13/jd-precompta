@@ -3,6 +3,7 @@ import { ICONES_PARCOURS, IconChecklist, IconDocuments, IconEcritures, IconInfor
 import { CAISSE_EXPORTEE } from '../lib/caisse'
 import { INVENTAIRE_EXPORTE } from '../lib/inventaire'
 import { groupesDuParcours, type DossierTab, type GroupeParcours, type IdGroupeParcours } from '../lib/ongletsDossier'
+import { useModulesOuverts } from '../context/OptionsDuCabinetContext'
 
 export type { DossierTab } from '../lib/ongletsDossier'
 
@@ -23,6 +24,8 @@ const ICONES_GROUPES: Record<IdGroupeParcours, IconComponent> = {
 // dossier ouvert, et cette barre-ci se masque (voir index.css, .nav-groupes).
 export default function DossierParcours({ tab, onChange }: { tab: DossierTab; onChange: (t: DossierTab) => void }) {
   const [ouvert, setOuvert] = useState<string | null>(null)
+  // Les écrans des seuls modules ouverts du cabinet (conception 56, OPT3), comme la barre latérale.
+  const { ouverts } = useModulesOuverts()
   const racineRef = useRef<HTMLDivElement>(null)
 
   // Ferme le menu déroulant ouvert au clic ailleurs sur la page — comportement attendu d'un menu,
@@ -51,7 +54,7 @@ export default function DossierParcours({ tab, onChange }: { tab: DossierTab; on
 
   return (
     <div className="nav-groupes" ref={racineRef}>
-      {groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE).map((groupe) => {
+      {groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, ouverts).map((groupe) => {
         const Icone = ICONES_GROUPES[groupe.id]
         const actif = estGroupeActif(groupe)
         return (

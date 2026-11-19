@@ -3,6 +3,8 @@ import ListeEcheances from '../components/ListeEcheances'
 import Widget from '../components/widgets/Widget'
 import { useAuth } from '../context/AuthContext'
 import { droitsSur } from '../lib/droitsAcces'
+import { useModulesOuverts } from '../context/OptionsDuCabinetContext'
+import { droitsMasques } from '../lib/modulesDuCabinet'
 import { ECHEANCIER_ILLISIBLE, ECHEANCIER_SANS_MONTANTS, ECHEANCIER_VIDE, composerEcheancier } from '../lib/echeancierClient'
 import { useEcheancierDuClient } from '../lib/echeancierClientLecture'
 import { SANS_IMPOT_SUR_LES_SOCIETES } from '../lib/echeancesFiscales'
@@ -16,8 +18,10 @@ const NB_ECHEANCES_DE_LA_CARTE = 4
 
 export default function EcheancierAccueil({ dossierId }: { dossierId: string }) {
   const { droitsParDossier } = useAuth()
+  const { ouverts } = useModulesOuverts()
   // `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
-  const avecMontants = droitsSur(droitsParDossier ?? {}, dossierId).banque === true
+  // La case « Banque » masquée par son module (conception 56, OPT3) : le drapeau baissé, celle d'hier.
+  const avecMontants = droitsMasques(droitsSur(droitsParDossier ?? {}, dossierId), ouverts).banque === true
   const lecture = useEcheancierDuClient(dossierId, avecMontants)
   const echeancier = lecture && lecture.etat !== 'illisible'
     ? composerEcheancier({

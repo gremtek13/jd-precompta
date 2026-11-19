@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CAISSE_EXPORTEE } from './caisse'
 import { INVENTAIRE_EXPORTE } from './inventaire'
+import { TOUS_LES_MODULES } from './modulesDuCabinet'
 import { GROUPES_PARCOURS, groupesDuParcours, libelleDeLOnglet, ongletsValides, type DossierTab } from './ongletsDossier'
 
 describe('libelleDeLOnglet — un écran nommé comme la navigation le nomme', () => {
@@ -27,40 +28,40 @@ describe('libelleDeLOnglet — un écran nommé comme la navigation le nomme', (
 // destination directe comme elle. La source est la fonction, qui joue chaque état ; la constante suit le drapeau du jour.
 describe('groupesDuParcours — la caisse offerte ou non', () => {
   // L'inventaire baissé : c'est la navigation d'avant l'onglet Inventaire que ces cas gardent.
-  const identifiants = (caisse: boolean) => groupesDuParcours(caisse, false).map((g) => g.id)
+  const identifiants = (caisse: boolean) => groupesDuParcours(caisse, false, TOUS_LES_MODULES).map((g) => g.id)
 
   it('baissé : la navigation d’hier, cinq groupes et vingt écrans, sans la caisse', () => {
     expect(identifiants(false)).toEqual(['checklist', 'documents-groupe', 'banque', 'comptabilite', 'cabinet'])
-    expect(ongletsValides(false, false)).toHaveLength(20)
-    expect(ongletsValides(false, false)).not.toContain('caisse')
+    expect(ongletsValides(false, false, TOUS_LES_MODULES)).toHaveLength(20)
+    expect(ongletsValides(false, false, TOUS_LES_MODULES)).not.toContain('caisse')
   })
 
   it('levé : « Caisse » vient juste après Banque, destination directe, et son adresse devient routable', () => {
     expect(identifiants(true)).toEqual(['checklist', 'documents-groupe', 'banque', 'caisse', 'comptabilite', 'cabinet'])
-    const caisse = groupesDuParcours(true, false).find((g) => g.id === 'caisse')!
+    const caisse = groupesDuParcours(true, false, TOUS_LES_MODULES).find((g) => g.id === 'caisse')!
     expect(caisse).toMatchObject({ label: 'Caisse', cible: 'caisse' })
     expect(caisse.enfants).toBeUndefined()
-    expect(ongletsValides(true, false)).toHaveLength(21)
-    expect(ongletsValides(true, false)).toContain('caisse')
+    expect(ongletsValides(true, false, TOUS_LES_MODULES)).toHaveLength(21)
+    expect(ongletsValides(true, false, TOUS_LES_MODULES)).toContain('caisse')
   })
 
   it('les deux états ne diffèrent que de cet onglet : rien d’autre ne bouge', () => {
-    expect(groupesDuParcours(true, false).filter((g) => g.id !== 'caisse')).toEqual(groupesDuParcours(false, false))
-    expect(ongletsValides(true, false).filter((t) => t !== 'caisse')).toEqual(ongletsValides(false, false))
+    expect(groupesDuParcours(true, false, TOUS_LES_MODULES).filter((g) => g.id !== 'caisse')).toEqual(groupesDuParcours(false, false, TOUS_LES_MODULES))
+    expect(ongletsValides(true, false, TOUS_LES_MODULES).filter((t) => t !== 'caisse')).toEqual(ongletsValides(false, false, TOUS_LES_MODULES))
   })
 
   it('chaque écran de la navigation est routable, dans les quatre états', () => {
     for (const caisse of [false, true]) {
       for (const inventaire of [false, true]) {
-        const ecrans = groupesDuParcours(caisse, inventaire).flatMap((g) => [...(g.cible ? [g.cible] : []), ...(g.enfants ?? []).map((e) => e.id)])
-        expect(ongletsValides(caisse, inventaire).sort()).toEqual([...ecrans].sort())
+        const ecrans = groupesDuParcours(caisse, inventaire, TOUS_LES_MODULES).flatMap((g) => [...(g.cible ? [g.cible] : []), ...(g.enfants ?? []).map((e) => e.id)])
+        expect(ongletsValides(caisse, inventaire, TOUS_LES_MODULES).sort()).toEqual([...ecrans].sort())
         expect(new Set(ecrans).size, 'aucun écran en double').toBe(ecrans.length)
       }
     }
   })
 
   it('la liste du jour suit les deux drapeaux, quel que soit leur état, et la caisse se nomme dans les deux', () => {
-    expect(GROUPES_PARCOURS).toEqual(groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE))
+    expect(GROUPES_PARCOURS).toEqual(groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, TOUS_LES_MODULES))
     expect(libelleDeLOnglet('caisse')).toBe('Caisse')
   })
 })
@@ -70,22 +71,22 @@ describe('groupesDuParcours — la caisse offerte ou non', () => {
 describe('groupesDuParcours — l’inventaire offert ou non', () => {
   it('baissé : la liste d’hier, sans l’inventaire, dans les deux états de la caisse', () => {
     for (const caisse of [false, true]) {
-      expect(ongletsValides(caisse, false)).not.toContain('inventaire')
-      const comptabilite = groupesDuParcours(caisse, false).find((g) => g.id === 'comptabilite')!.enfants!.map((e) => e.id)
+      expect(ongletsValides(caisse, false, TOUS_LES_MODULES)).not.toContain('inventaire')
+      const comptabilite = groupesDuParcours(caisse, false, TOUS_LES_MODULES).find((g) => g.id === 'comptabilite')!.enfants!.map((e) => e.id)
       expect(comptabilite).not.toContain('inventaire')
     }
   })
 
   it('levé : « Inventaire » précède Clôture, sous Comptabilité, et rien d’autre ne bouge', () => {
     for (const caisse of [false, true]) {
-      const comptabilite = groupesDuParcours(caisse, true).find((g) => g.id === 'comptabilite')!.enfants!
+      const comptabilite = groupesDuParcours(caisse, true, TOUS_LES_MODULES).find((g) => g.id === 'comptabilite')!.enfants!
       const ids = comptabilite.map((e) => e.id)
       expect(ids.indexOf('inventaire')).toBe(ids.indexOf('cloture') - 1)
       expect(comptabilite.find((e) => e.id === 'inventaire')!.label).toBe('Inventaire')
-      expect(ongletsValides(caisse, true)).toContain('inventaire')
-      expect(ongletsValides(caisse, true).filter((t) => t !== 'inventaire')).toEqual(ongletsValides(caisse, false))
-      const autres = groupesDuParcours(caisse, true).filter((g) => g.id !== 'comptabilite')
-      expect(autres).toEqual(groupesDuParcours(caisse, false).filter((g) => g.id !== 'comptabilite'))
+      expect(ongletsValides(caisse, true, TOUS_LES_MODULES)).toContain('inventaire')
+      expect(ongletsValides(caisse, true, TOUS_LES_MODULES).filter((t) => t !== 'inventaire')).toEqual(ongletsValides(caisse, false, TOUS_LES_MODULES))
+      const autres = groupesDuParcours(caisse, true, TOUS_LES_MODULES).filter((g) => g.id !== 'comptabilite')
+      expect(autres).toEqual(groupesDuParcours(caisse, false, TOUS_LES_MODULES).filter((g) => g.id !== 'comptabilite'))
     }
   })
 

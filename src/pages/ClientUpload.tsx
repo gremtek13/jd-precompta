@@ -33,7 +33,7 @@ import PiecesJointesEcarteesClient from './PiecesJointesEcarteesClient'
 import { useHonorairesDeposes } from '../lib/depotDesHonorairesLecture'
 import { honorairesDeposesIllisibles, motDuClientPourLaPiece } from '../lib/depotDesHonorairesVue'
 import PaiementParMaCaisse from './PaiementParMaCaisse'
-import { droitsSur } from '../lib/droitsAcces'
+import { useDroitsAffiches } from '../context/OptionsDuCabinetContext'
 import { CAISSE_DU_CLIENT_EXPORTEE, maCaisseOuverte } from '../lib/caisseClient'
 import { lireLaCaisseDuClient, type LectureDeLaCaisseDuClient } from '../lib/caisseClientLecture'
 import { pourLEspace } from '../lib/espaceVentes'
@@ -89,7 +89,9 @@ const COLONNES_DES_DEPOTS: ColonneTriable<Depot>[] = [
 ]
 
 export default function ClientUpload() {
-  const { dossierActifId, droitsParDossier, session } = useAuth()
+  const { dossierActifId, session } = useAuth()
+  // Les cases masquées par leur module (conception 56, OPT3) : le drapeau baissé, les droits d'hier.
+  const droits = useDroitsAffiches()
   const dossierId = dossierActifId
   const moi = session?.user.id ?? null
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -163,7 +165,7 @@ export default function ClientUpload() {
   // (lue à la connexion), la caisse se lit — et la case se RELIT à la base avec elle (lib/caisseClientLecture.ts) — depuis
   // l'année d'avant. Sans la case, rien ne se lit et « Mes pièces » est celle d'hier. Gardée avec la société et l'année lues :
   // une réponse d'une autre société ne s'affiche pas (`caisseDeMesPieces`).
-  const caisseOuverte = moi !== null && maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).caisse)
+  const caisseOuverte = moi !== null && maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droits.caisse)
   const aujourdhui = aujourdHuiAParis()
   const anneeEnCours = Number(aujourdhui.slice(0, 4))
   const [caisseLue, setCaisseLue] = useState<LectureDeLaCaisseDuClient | null>(null)

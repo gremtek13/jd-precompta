@@ -10,6 +10,7 @@
 
 import { CAISSE_EXPORTEE } from './caisse'
 import { INVENTAIRE_EXPORTE } from './inventaire'
+import { ongletOuvert, TOUS_LES_MODULES, type ModuleOptionnel } from './modulesDuCabinet'
 
 export type DossierTab =
   | 'checklist'
@@ -72,15 +73,42 @@ export interface GroupeParcours {
 // connaît pas le mode du dossier — l'onglet, lui, ne se monte qu'en engagement (DossierDetail).
 // Les états des drapeaux sont des paramètres OBLIGATOIRES plutôt que des constantes : les tests jouent chacun, et les
 // navigations lisent la liste à chaque rendu.
-export function groupesDuParcours(caisseEnBase: boolean, inventaireOffert: boolean): GroupeParcours[] {
+//
+// LES MODULES OUVERTS DU CABINET (conception 56, OPT3), troisième paramètre OBLIGATOIRE : un écran d'un module fermé n'est
+// pas offert (`MODULE_DE_L_ONGLET`, lib/modulesDuCabinet.ts) ; un groupe dont il ne reste aucun écran disparaît. Tous les
+// modules ouverts (`TOUS_LES_MODULES`, l'état du drapeau baissé), la liste est celle d'hier, au caractère près.
+export function groupesDuParcours(
+  caisseEnBase: boolean, inventaireOffert: boolean, modulesOuverts: readonly ModuleOptionnel[],
+): GroupeParcours[] {
   const groupes = inventaireOffert ? avecLInventaire(GROUPES_SANS_CAISSE) : GROUPES_SANS_CAISSE
-  if (!caisseEnBase) return groupes
+  const avecCaisse = caisseEnBase ? avecLaCaisse(groupes) : groupes
+  return sousLesModules(avecCaisse, modulesOuverts)
+}
+
+// L'onglet Caisse, juste après Banque.
+function avecLaCaisse(groupes: readonly GroupeParcours[]): GroupeParcours[] {
   const apresBanque = groupes.findIndex((g) => g.id === 'banque') + 1
   return [
     ...groupes.slice(0, apresBanque),
     { id: 'caisse', label: 'Caisse', labelCourt: 'Caisse', cible: 'caisse' },
     ...groupes.slice(apresBanque),
   ]
+}
+
+// Les écrans des modules fermés retirés, et un groupe vide avec eux. Un groupe dont tout est ouvert revient tel quel : tous
+// les modules ouverts, la liste est celle d'hier, à l'égalité profonde près.
+function sousLesModules(groupes: readonly GroupeParcours[], ouverts: readonly ModuleOptionnel[]): GroupeParcours[] {
+  const restants: GroupeParcours[] = []
+  for (const g of groupes) {
+    if (g.cible) {
+      if (ongletOuvert(g.cible, ouverts)) restants.push(g)
+      continue
+    }
+    const enfants = (g.enfants ?? []).filter((e) => ongletOuvert(e.id, ouverts))
+    if (enfants.length === 0) continue
+    restants.push(enfants.length === (g.enfants ?? []).length ? g : { ...g, enfants })
+  }
+  return restants
 }
 
 // L'onglet Inventaire, juste avant Clôture, où l'exercice se valide.
@@ -95,9 +123,12 @@ function avecLInventaire(groupes: readonly GroupeParcours[]): GroupeParcours[] {
   })
 }
 
-/** Les écrans qu'une adresse `/dossiers/:id/:tab` peut désigner, selon que la caisse est en base et l'inventaire offert. */
-export function ongletsValides(caisseEnBase: boolean, inventaireOffert: boolean): DossierTab[] {
-  return groupesDuParcours(caisseEnBase, inventaireOffert).flatMap((g) => [...(g.cible ? [g.cible] : []), ...(g.enfants ?? []).map((e) => e.id)])
+/** Les écrans qu'une adresse `/dossiers/:id/:tab` peut désigner, selon que la caisse est en base, l'inventaire offert, et
+ *  les modules ouverts du cabinet. */
+export function ongletsValides(
+  caisseEnBase: boolean, inventaireOffert: boolean, modulesOuverts: readonly ModuleOptionnel[],
+): DossierTab[] {
+  return groupesDuParcours(caisseEnBase, inventaireOffert, modulesOuverts).flatMap((g) => [...(g.cible ? [g.cible] : []), ...(g.enfants ?? []).map((e) => e.id)])
 }
 
 const GROUPES_SANS_CAISSE: GroupeParcours[] = [
@@ -145,13 +176,14 @@ const GROUPES_SANS_CAISSE: GroupeParcours[] = [
   },
 ]
 
-export const GROUPES_PARCOURS: GroupeParcours[] = groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE)
+// Tous les modules ouverts : la liste des tests et des renvois qui nomment un écran sans l'offrir.
+export const GROUPES_PARCOURS: GroupeParcours[] = groupesDuParcours(CAISSE_EXPORTEE, INVENTAIRE_EXPORTE, TOUS_LES_MODULES)
 
 // Le libellé d'un écran du dossier, tel que les deux navigations l'affichent : un bouton qui mène à un écran
 // le nomme comme la barre qu'on retrouvera en y arrivant.
 export function libelleDeLOnglet(tab: DossierTab): string {
   // Les deux états du drapeau : un écran se nomme de même qu'il soit offert ou non.
-  for (const groupe of groupesDuParcours(true, true)) {
+  for (const groupe of groupesDuParcours(true, true, TOUS_LES_MODULES)) {
     if (groupe.cible === tab) return groupe.label
     const enfant = groupe.enfants?.find((e) => e.id === tab)
     if (enfant) return enfant.label

@@ -1,5 +1,5 @@
 import type { DossierTab } from './ongletsDossier'
-import type { Domaine } from './droitsAcces'
+import type { DroitsAcces, Domaine } from './droitsAcces'
 
 // LES OPTIONS PAR CABINET : LES MODULES ET CE QUI LEUR APPARTIENT (conception 56, lot OPT2 ; la demande du cabinet du
 // 17/11/2026, « que je puisse choisir quelle option a chaque cabinet », et sa recherche du 19/11/2026 : où régler
@@ -379,4 +379,40 @@ export function modulesEmployes(): ModuleOptionnel[] {
     ...Object.values(MODULE_DE_LA_FONCTION).flatMap((e) => ('module' in e ? [e.module] : 'parUsage' in e ? Object.values(e.parUsage) : [])),
   ]
   return dansLOrdre(employes.filter((m): m is ModuleOptionnel => m !== 'socle'))
+}
+
+
+// ── Les modules affichés (OPT3) ────────────────────────────────────────────────────────────────────────────────────────
+
+/** Tous les modules optionnels ouverts : l'état d'un cabinet existant le jour de la migration, et celui de l'application
+ *  tant que le drapeau est baissé (aucune lecture : tout s'affiche comme hier). */
+export const TOUS_LES_MODULES: readonly ModuleOptionnel[] = MODULES_OPTIONNELS
+
+/** Vrai si l'onglet d'un dossier appartient à un module ouvert. */
+export function ongletOuvert(tab: DossierTab, ouverts: readonly ModuleOptionnel[]): boolean {
+  return estOuvert(MODULE_DE_L_ONGLET[tab], ouverts)
+}
+
+/** Vrai si la route de l'espace client appartient à un module ouvert — son prédicat d'hier (la case, le drapeau) s'y
+ *  ajoute, jamais ne s'y substitue. */
+export function routeDuClientOuverte(route: RouteDeLEspaceClient, ouverts: readonly ModuleOptionnel[]): boolean {
+  return estOuvert(MODULE_DE_LA_ROUTE[route], ouverts)
+}
+
+/** Vrai si la route du cabinet appartient à un module ouvert. */
+export function routeDuCabinetOuverte(route: RouteDuCabinet, ouverts: readonly ModuleOptionnel[]): boolean {
+  return estOuvert(MODULE_DE_LA_ROUTE_DU_CABINET[route], ouverts)
+}
+
+/**
+ * Les droits d'un accès tels que l'écran les lit : chaque case masquée par SON module (`MODULE_DE_LA_CASE`). La case reste
+ * en base (§ 3.3) ; elle n'ouvre plus rien à l'écran tant que son module est fermé. Tous les modules ouverts, les droits
+ * reviennent identiques, champ par champ.
+ */
+export function droitsMasques(droits: DroitsAcces, ouverts: readonly ModuleOptionnel[]): DroitsAcces {
+  const masque = (d: Domaine) => droits[d] && estOuvert(MODULE_DE_LA_CASE[d], ouverts)
+  return {
+    ventes: masque('ventes'), banque: masque('banque'), caisse: masque('caisse'), comptes: masque('comptes'),
+    achats: masque('achats'), frais: masque('frais'), documents: masque('documents'),
+  }
 }

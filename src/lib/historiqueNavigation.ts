@@ -1,4 +1,5 @@
 import { libelleDeLOnglet, ongletsValides, type DossierTab } from './ongletsDossier'
+import { TOUS_LES_MODULES } from './modulesDuCabinet'
 
 // LE BOUTON « RETOUR » DE LA COQUE (demande du cabinet du 16/11/2026) : ramener à l'onglet ou à l'écran d'avant, DANS
 // l'application. L'application installée (PWA) n'a pas de bouton retour du navigateur, d'où ce bouton.
@@ -140,7 +141,7 @@ export function libelleDuRetour(cheminAffiche: string, retour: Retour): string {
   if (ecran) return `Retour à ${ecran}`
   const onglet = ONGLET_D_UN_DOSSIER.exec(cible)
   const ici = ONGLET_D_UN_DOSSIER.exec(cheminSansRequete(cheminAffiche))
-  if (onglet && ici && onglet[1] === ici[1] && ongletsValides(true, true).includes(onglet[2] as DossierTab)) {
+  if (onglet && ici && onglet[1] === ici[1] && ongletsValides(true, true, TOUS_LES_MODULES).includes(onglet[2] as DossierTab)) {
     return `Retour à ${libelleDeLOnglet(onglet[2] as DossierTab)}`
   }
   return 'Retour'

@@ -5,7 +5,8 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../lib/theme'
 import { useCabinetBranding } from '../lib/branding'
 import { useListeDossiers } from '../lib/listeDossiers'
-import { droitsSur } from '../lib/droitsAcces'
+import { useDroitsAffiches, useModulesOuverts } from '../context/OptionsDuCabinetContext'
+import { MOTS_DU_REFUS, routeDuClientOuverte, type RouteDeLEspaceClient } from '../lib/modulesDuCabinet'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import { maBanqueOuverte } from '../lib/banqueClient'
@@ -99,36 +100,41 @@ export default function Layout() {
 }
 
 function Coque() {
-  const { session, role, isSuperAdmin, estChef, mesSocietes, dossierActifId, setDossierActifId, signOut, droitsParDossier } = useAuth()
+  const { session, role, isSuperAdmin, estChef, mesSocietes, dossierActifId, setDossierActifId, signOut } = useAuth()
+  // LES MODULES DU CABINET (conception 56, OPT3) : une entrée d'un module fermé ne s'affiche pas, comme sa route (App.tsx) ;
+  // les cases de l'accès, masquées par leur module, avant les prédicats d'hier. Le drapeau baissé : tout ouvert, sans lecture.
+  const modules = useModulesOuverts()
+  const droits = useDroitsAffiches()
+  const ouverte = (route: RouteDeLEspaceClient) => role === 'client' && routeDuClientOuverte(route, modules.ouverts)
   // « Mes ventes » (espace client, étape P4a) n'existe que si la société AFFICHÉE porte la case « Ventes », comme sa route
   // (App.tsx). `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
-  const mesVentes = role === 'client'
-    && mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).ventes)
+  const mesVentes = ouverte('/mes-ventes')
+    && mesVentesOuvertes(VENTES_DU_CLIENT_EXPORTEES, droits.ventes)
   // « Ma banque » (étape P9) : de même, avec la case « Banque » sur la société affichée, comme sa route.
-  const maBanque = role === 'client'
-    && maBanqueOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).banque)
+  const maBanque = ouverte('/ma-banque')
+    && maBanqueOuverte(COUVERTURE_EXPORTEE, droits.banque)
   // « Ma caisse » (ligne 26.6, étape C12a) : de même, avec la case « Caisse » sur la société affichée, comme sa route.
-  const maCaisse = role === 'client'
-    && maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierActifId).caisse)
+  const maCaisse = ouverte('/ma-caisse')
+    && maCaisseOuverte(CAISSE_DU_CLIENT_EXPORTEE, droits.caisse)
   // « Mes comptes » (ligne 51.5, étape C4b) : de même, avec la case « Comptes » sur la société affichée, comme sa route.
-  const mesComptes = role === 'client'
-    && mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droitsSur(droitsParDossier ?? {}, dossierActifId).comptes)
+  const mesComptes = ouverte('/mes-comptes')
+    && mesComptesOuverts(SITUATIONS_PUBLIEES_EXPORTEES, droits.comptes)
   // « Mes documents » (ligne 51.5, étape B3a) : de même, avec la case « Documents » ; « Mes demandes », à tout accès client.
-  const mesDocuments = role === 'client'
-    && mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).documents)
-  const mesDemandes = role === 'client' && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)
+  const mesDocuments = ouverte('/mes-documents')
+    && mesDocumentsOuverts(DOCUMENTS_ET_DEMANDES_PREVUS, droits.documents)
+  const mesDemandes = ouverte('/mes-demandes') && mesDemandesOuvertes(DOCUMENTS_ET_DEMANDES_PREVUS)
   // « Mes lettres de mission » (ligne 47, étape LM6) : avec sa migration et la case « Documents ».
-  const mesLettres = role === 'client'
-    && lettresDuClientOuvertes(lettresDuClientPrevues(), droitsSur(droitsParDossier ?? {}, dossierActifId).documents)
+  const mesLettres = ouverte('/mes-lettres-de-mission')
+    && lettresDuClientOuvertes(lettresDuClientPrevues(), droits.documents)
   // « Mes achats » (ligne 51.5, étape B5) : de même, avec la case « Achats » sur la société affichée, comme sa route.
-  const mesAchats = role === 'client'
-    && mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droitsSur(droitsParDossier ?? {}, dossierActifId).achats)
+  const mesAchats = ouverte('/mes-achats')
+    && mesAchatsOuverts(ACHATS_DU_CLIENT_PREVUS, droits.achats)
   // « Mes notes de frais » (ligne 51.5, étape B8) : de même, avec la case « Notes de frais » ou « Achats » (B8-Q1) sur la
   // société affichée, comme sa route.
-  const mesNotesDeFrais = role === 'client'
-    && mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droitsSur(droitsParDossier ?? {}, dossierActifId))
+  const mesNotesDeFrais = ouverte('/mes-notes-de-frais')
+    && mesNotesDeFraisOuvertes(NOTES_DE_FRAIS_PREVUES, droits)
   // « Ma trésorerie » (ligne 51.5, étape C8) : derrière son drapeau, quand « Ma banque » s'offre, comme sa route.
-  const maTresorerie = role === 'client' && maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanque)
+  const maTresorerie = ouverte('/ma-tresorerie') && maTresorerieOuverte(TRESORERIE_A_90_JOURS_OFFERTE, maBanque)
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const emplacement = useLocation()
@@ -458,7 +464,7 @@ function Coque() {
                 </NavLink>
               )}
               {/* « Mon analyse » (étape B9a) : avec « Mes ventes » ou « Ma banque », comme sa route (lib/analyseClient.ts). */}
-              {monAnalyseOuverte(mesVentes, maBanque) && (
+              {ouverte('/mon-analyse') && monAnalyseOuverte(mesVentes, maBanque) && (
                 <NavLink to="/mon-analyse" title="Mon analyse" className={({ isActive }) => (isActive ? 'active' : '')}>
                   <IconStatistiques width={18} height={18} />
                   <span className="nav-label-full">Mon analyse</span>
@@ -485,11 +491,13 @@ function Coque() {
                 <span className="nav-label-full">Mes informations</span>
                 <span className="nav-label-court">Infos</span>
               </NavLink>
-              <NavLink to="/ma-simulation" title="Ma simulation" className={({ isActive }) => (isActive ? 'active' : '')}>
-                <IconEstimation width={18} height={18} />
-                <span className="nav-label-full">Ma simulation</span>
-                <span className="nav-label-court">Simu</span>
-              </NavLink>
+              {ouverte('/ma-simulation') && (
+                <NavLink to="/ma-simulation" title="Ma simulation" className={({ isActive }) => (isActive ? 'active' : '')}>
+                  <IconEstimation width={18} height={18} />
+                  <span className="nav-label-full">Ma simulation</span>
+                  <span className="nav-label-court">Simu</span>
+                </NavLink>
+              )}
             </>
           )}
         </nav>
@@ -590,6 +598,8 @@ function Coque() {
               </select>
             </div>
           )}
+          {/* Les options du cabinet illisibles : le socle seul s'affiche, et cette ligne le dit (conception 56, § 2.3). */}
+          {modules.etat === 'illisibles' && <p className="error-text" role="status">{MOTS_DU_REFUS.optionsIllisibles}</p>}
           {/* Une société, un montage. Changer de société ne quitte pas l'écran (même route), et un
               écran client resté monté gardait l'état de la précédente : ses réponses dans le
               formulaire de « Mes informations », qu'« Enregistrer » écrivait dans la nouvelle — ou

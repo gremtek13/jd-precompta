@@ -14,7 +14,7 @@ import {
   JOURNAL_MUET_DU_CLIENT, LIMITE_DU_JOURNAL_DU_CLIENT, ceQueTesCasesNeMontrentPas, debutDeLaFenetre, journalDuClient, phraseDuCompteDuClient,
 } from '../lib/journalDeLEspaceClient'
 import { COUVERTURE_EXPORTEE } from '../lib/couvertureReleve'
-import { droitsSur } from '../lib/droitsAcces'
+import { useDroitsAffiches } from '../context/OptionsDuCabinetContext'
 import { VENTES_DU_CLIENT_EXPORTEES } from '../lib/encaissementsFactures'
 import { mesVentesOuvertes } from '../lib/espaceVentes'
 import { telechargerTexte } from '../lib/fec'
@@ -28,9 +28,11 @@ import { aujourdHuiAParis, formatDate, formatMoney } from '../lib/format'
 // n'est pas lue en entier est MUET, avec son motif en infobulle, jamais « 0 ». « Aujourd'hui » est le jour de Paris, lu au
 // rendu.
 export default function ClientAnalyse() {
-  const { dossierActifId, droitsParDossier, session } = useAuth()
+  const { dossierActifId, session } = useAuth()
+  // Les cases masquées par leur module (conception 56, OPT3) : le drapeau baissé, les droits d'hier.
+  const droits = useDroitsAffiches()
   // `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
-  const cases = droitsSur(droitsParDossier ?? {}, dossierActifId)
+  const cases = droits
   // Le jour de Paris, lu au rendu : la fenêtre du journal se juge à ce jour.
   const aujourdhui = aujourdHuiAParis()
   const lecture = useAnalyseDuClient(dossierActifId, {

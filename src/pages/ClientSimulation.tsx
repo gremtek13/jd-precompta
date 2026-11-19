@@ -20,7 +20,7 @@ import type {
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { messageErreur } from '../lib/messageErreur'
-import { droitsSur } from '../lib/droitsAcces'
+import { useDroitsAffiches } from '../context/OptionsDuCabinetContext'
 import {
   COUVERTURE_EXPORTEE, SIMULATION_BANQUE_INVERIFIABLE, SIMULATION_SANS_BANQUE, lireLeDroitBanque, simulationOuverte,
 } from '../lib/couvertureReleve'
@@ -40,10 +40,12 @@ import {
 // à la base, dans la même vague de lectures (`droits_sur_le_dossier`), parce qu'une application installée reste ouverte
 // des jours et qu'une case retirée entre-temps ne se verrait qu'à la connexion suivante.
 export default function ClientSimulation() {
-  const { dossierActifId, droitsParDossier } = useAuth()
+  const { dossierActifId } = useAuth()
+  // Les cases masquées par leur module (conception 56, OPT3) : le drapeau baissé, les droits d'hier.
+  const droits = useDroitsAffiches()
   const dossierId = dossierActifId
   // `?? {}` : une doublure de contexte sans droits n'en accorde aucun (seul `true` accorde, lib/droitsAcces.ts).
-  const ouverte = simulationOuverte(COUVERTURE_EXPORTEE, droitsSur(droitsParDossier ?? {}, dossierId).banque)
+  const ouverte = simulationOuverte(COUVERTURE_EXPORTEE, droits.banque)
   // Non nul quand la BASE dit que la case manque, ou qu'elle n'a pas pu le dire : la simulation se tait, avec sa raison.
   const [fermee, setFermee] = useState<string | null>(null)
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
