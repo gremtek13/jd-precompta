@@ -333,11 +333,15 @@ describe('les essais de la base, rejoués en production', () => {
     // l’association des paiements de l’assurance maladie) : il retire une association en direct, un mouvement, un paiement, un import
     // et un dossier jetable, sous la garde ESSAI_HORS_REPLIQUE ; son compagnon, associationPaiementsAssuranceMaladie.sql, se
     // joue en production (aucune suppression).
+    // Le trente-septième, optionsDesCabinetsEnCours, le 19/11/2026 (OPT1, migration `options_des_cabinets`) : il pose, sans
+    // leurs gardes (`session_replication_role`), un envoi resté sans issue connue et un paiement de l'assurance maladie associé,
+    // pour éprouver l'extinction gardée ; son compagnon, optionsDesCabinets.sql, se joue en production, et son catalogue
+    // aussi : le bloc OC de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'associationPaiementsAssuranceMaladieSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'ecrituresLibres (son en-tête)', 'exercicesDuDossier (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'hausseDuChiffreDAffairesSuppression (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
-      'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
+      'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'optionsDesCabinetsEnCours (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'provisions (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
       'situationsPublieesMutations (une méta-commande de psql)', 'stocks (son en-tête)', 'traceDesDroitsSuppression (son en-tête)',
@@ -494,7 +498,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Trente-deux le 19/11/2026 : `autresImpotsDesCotisations` (EXP58-Q6, `autres_impots_des_cotisations`) entré dans la famille
     // « apres », après sa migration préparée ; joué sur une copie de la réplique à 241 (27 verdicts sur 27), le banc reste à rejouer.
     // Trente et un le même jour : `autresImpotsDesCotisations` sorti (EXP58-Q6 en production, 20261119120000, collée).
-    expect(cas.length).toBe(31)
+    // Trente-deux le même jour : `optionsDesCabinets` (OPT1, `options_des_cabinets`) entré dans la famille « apres », après sa
+    // migration préparée ; joué sur une copie de la réplique à 242 (12 verdicts sur 12), SÛR au banc.
+    expect(cas.length).toBe(0)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

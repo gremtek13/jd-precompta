@@ -189,6 +189,10 @@
 --      préparée) : le client « Banque » lit les imports et les paiements de son dossier, rien sans la case ; il ne les écrit
 --      pas en direct (la garde) ; le catalogue. Deux mutations ; la section P7 compte les deux tables parmi celles de la
 --      banque ; avant la migration, une ligne « EN ATTENTE ».
+--  16. Les options des cabinets (bloc OC, en fin de fichier ; migration `options_des_cabinets`, OPT1, préparée) : l'équipe
+--      du cabinet lit ses options, chef ou membre, le client d'un dossier du cabinet et l'anonyme rien ; ni le client ni un
+--      chef de cabinet qui n'est pas super-administrateur ne les règle, ni ne les écrit en direct, ni ne change les plafonds de
+--      l'assistant ; le catalogue. Quatre mutations ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -12053,6 +12057,234 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $am$;
+
+-- ══ OC. Les options des cabinets (conception 56, OPT1 ; migration `options_des_cabinets`, PRÉPARÉE) ══════════════════
+-- Une table du CABINET, sans dossier : lue par l'équipe du cabinet (`admin_du_cabinet`, chef ou non), écrite par
+-- `regler_option_du_cabinet` seule, le super-administrateur (aucune policy d'écriture). Le client ne la lit pas, même quand
+-- il a un accès à un dossier du cabinet : il lit ses modules par `modules_ouverts_du_dossier`. La même migration garde les
+-- plafonds de l'assistant (`garder_plafonds_de_l_assistant`, sur `cabinets`). Le reste (les dépendances, l'extinction gardée,
+-- les refus sous leurs mots) : `optionsDesCabinets.sql`, et `optionsDesCabinetsEnCours.sql` sur une réplique.
+--   OC1. Le chef du cabinet du dossier du client lit les options de son cabinet (le contrôle POSITIF) ; un membre de l'équipe
+--        qui n'est pas chef aussi ; le client, qui a un accès au dossier, n'en lit rien ; l'anonyme non plus.
+--   OC2. Le client ne règle pas d'option (42501, sous ses mots), n'en insère pas en direct (42501), n'en réécrit aucune ; un
+--        chef de cabinet qui n'est pas super-administrateur ne règle pas d'option non plus (42501, sous ses mots), ni ne change
+--        les plafonds de l'assistant (42501, sous ses mots).
+--   OC3. Le catalogue : la RLS active, une seule policy permissive, en lecture, à authenticated, `admin_du_cabinet` ; la garde
+--        des plafonds avant l'insertion et la mise à jour de `cabinets`.
+-- Quatre mutations, qui doivent mordre : M-OC1 (la lecture élargie au client d'un dossier du cabinet : il lit les options),
+-- M-OC2 (la policy fermée : le chef ne lit plus rien), M-OC3 (une policy d'insertion ouverte : l'insertion directe du client
+-- passe), M-OC4 (la garde des plafonds désactivée : le chef lève son plafond). Avant la migration, une ligne dit que le bloc
+-- attend.
+do $oc$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  cabinet uuid; chef_lit bigint; membre_lit bigint; du_client bigint; de_l_anon text; par_la_fonction text; en_direct text;
+  reecrites bigint; par_un_chef text; plafond_du_chef text; elargie bigint; fermee bigint; ecrite_elargie text; leve bigint;
+  n bigint; erreur text;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.options_des_cabinets') is null then
+    insert into rls_verdict values ('OC. les options des cabinets : EN ATTENTE de la migration options_des_cabinets',
+      'options_des_cabinets', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    select d.cabinet_id into cabinet from dossiers d where d.id = dossier_du_client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*) into chef_lit from options_des_cabinets where cabinet_id = cabinet;
+    reset role;
+    construit := true;
+
+    -- OC1 : le client, l'anonyme, puis le client rattaché à l'équipe comme comptable, le temps d'une sous-transaction.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*) into du_client from options_des_cabinets;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from options_des_cabinets;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    begin
+      insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into membre_lit from options_des_cabinets where cabinet_id = cabinet;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'OC1. le chef lit les options de son cabinet, un membre de l''équipe aussi (les contrôles positifs) ; le client, qui a un accès à un dossier du cabinet, n''en lit rien, ni l''anonyme',
+      'cible', 'options_des_cabinets',
+      'observe', 'le chef : ' || (chef_lit >= 1)::text || ' | le membre : ' || coalesce((membre_lit = chef_lit)::text, '?') || ' | le client : ' || (du_client = 0)::text || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', chef_lit >= 1 and membre_lit = chef_lit and du_client = 0 and de_l_anon = '0');
+
+    -- OC2 : le client ne règle ni n'écrit ni ne réécrit une option ; un chef de cabinet qui n'est pas super-administrateur
+    -- non plus, ni les plafonds de l'assistant.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform regler_option_du_cabinet(cabinet, 'tenue', false);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into options_des_cabinets (cabinet_id, module, ouverte) values (cabinet, 'tenue', false);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update options_des_cabinets set ouverte = false where cabinet_id = cabinet returning 1)
+      select count(*) into reecrites from t;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    begin
+      insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        perform regler_option_du_cabinet(cabinet, 'tenue', false);
+        par_un_chef := 'ACCEPTÉ';
+      exception when others then par_un_chef := sqlstate || ' ' || sqlerrm;
+      end;
+      begin
+        update cabinets set limite_ia_blocage_usd = coalesce(limite_ia_blocage_usd, 0) + 1000 where id = cabinet;
+        plafond_du_chef := 'ACCEPTÉ';
+      exception when others then plafond_du_chef := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'OC2. le client ne règle pas d''option (la fonction), n''en écrit pas en direct, n''en réécrit aucune ; un chef de cabinet qui n''est pas super-administrateur ne règle pas d''option, ni les plafonds de l''assistant',
+      'cible', 'options_des_cabinets, cabinets',
+      'observe', 'par la fonction : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites
+        || ' | par un chef : ' || coalesce(par_un_chef, '?') || ' | son plafond : ' || coalesce(plafond_du_chef, '?'),
+      'ok', par_la_fonction = '42501 Seul le super-administrateur règle les options d''un cabinet.'
+        and en_direct like '42501 %' and reecrites = 0
+        and par_un_chef = '42501 Seul le super-administrateur règle les options d''un cabinet.'
+        and plafond_du_chef = '42501 Les plafonds de l''assistant ne se règlent que par le super-administrateur.');
+
+    -- M-OC1 : la lecture élargie au client d'un dossier du cabinet.
+    begin
+      alter policy options_des_cabinets_lecture on public.options_des_cabinets
+        using (admin_du_cabinet(cabinet_id) or exists (select 1 from dossiers d join memberships m on m.dossier_id = d.id
+                                                        where d.cabinet_id = options_des_cabinets.cabinet_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from options_des_cabinets where cabinet_id = cabinet;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-OC1 — la lecture des options élargie au client d''un dossier du cabinet',
+      'attendu', 'le client lit les options', 'observe', coalesce((elargie >= 1)::text, '?'), 'mord', coalesce(elargie >= 1, false));
+
+    -- M-OC2 : la policy fermée.
+    begin
+      alter policy options_des_cabinets_lecture on public.options_des_cabinets using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from options_des_cabinets where cabinet_id = cabinet;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-OC2 — la policy des options fermée',
+      'attendu', 'le chef ne lit plus rien', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-OC3 : une policy d'insertion ouverte au client.
+    begin
+      execute 'create policy options_des_cabinets_mutant on public.options_des_cabinets for insert to authenticated with check (true)';
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      -- Sans `on conflict` : sa forme ferait juger la ligne aussi par la policy de lecture. Le cabinet porte déjà la ligne
+      -- du module, et la clé unique ne se juge qu'APRÈS la RLS : 23505 dit que la ligne l'a passée.
+      begin
+        insert into options_des_cabinets (cabinet_id, module, ouverte) values (cabinet, 'tenue', false);
+        ecrite_elargie := 'ACCEPTÉ';
+      exception when others then ecrite_elargie := sqlstate;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-OC3 — une insertion directe ouverte au client',
+      'attendu', 'son insertion passe la RLS (acceptée, ou arrêtée par la clé : 23505)', 'observe', coalesce(ecrite_elargie, '?'),
+      'mord', coalesce(ecrite_elargie in ('ACCEPTÉ', '23505'), false));
+
+    -- M-OC4 : la garde des plafonds désactivée, le chef qui n'est pas super-administrateur lève son plafond.
+    begin
+      alter table public.cabinets disable trigger cabinets_plafonds_de_l_assistant;
+      insert into cabinet_admins (user_id, cabinet_id, role) values (client, cabinet, 'comptable_en_chef');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      with t as (update cabinets set limite_ia_blocage_usd = coalesce(limite_ia_blocage_usd, 0) + 1000 where id = cabinet returning 1)
+        select count(*) into leve from t;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-OC4 — la garde des plafonds de l''assistant désactivée',
+      'attendu', 'le chef lève son plafond', 'observe', coalesce(leve::text, '?') || ' ligne(s)', 'mord', coalesce(leve = 1, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- OC3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'options_des_cabinets' and p.roles = array['authenticated']::name[]
+     and p.policyname = 'options_des_cabinets_lecture' and p.permissive = 'PERMISSIVE' and p.cmd = 'SELECT'
+     and p.qual = 'admin_du_cabinet(cabinet_id)' and p.with_check is null;
+  verdicts := verdicts || jsonb_build_object('controle', 'OC3. la RLS active ; une seule policy, en lecture, à authenticated, l''équipe du cabinet ; la garde des plafonds de l''assistant sur cabinets (lecture du catalogue)',
+    'cible', 'options_des_cabinets',
+    'observe', n || ' sur 1, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'options_des_cabinets' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.options_des_cabinets'::regclass) || ', '
+      || (select count(*) from pg_trigger t where t.tgrelid = 'public.cabinets'::regclass and not t.tgisinternal and t.tgtype = 23
+            and t.tgenabled = 'O' and t.tgfoid = 'public.garder_plafonds_de_l_assistant()'::regprocedure) || ' garde(s)',
+    'ok', n = 1 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'options_des_cabinets' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 1
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.options_des_cabinets'::regclass)
+      and (select count(*) from pg_trigger t where t.tgrelid = 'public.cabinets'::regclass and not t.tgisinternal and t.tgtype = 23
+             and t.tgenabled = 'O' and t.tgfoid = 'public.garder_plafonds_de_l_assistant()'::regprocedure) = 1);
+  verdicts := verdicts || jsonb_build_object('controle', 'OC. le jeu d''essai des options des cabinets s''est construit', 'cible', 'le cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $oc$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

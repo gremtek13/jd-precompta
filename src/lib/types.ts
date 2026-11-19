@@ -1,6 +1,7 @@
 import type { DemandeAcompte } from './acompteDevis'
 import type { CodeStatutRecu, MontantRecu } from './cdarRecu'
 import type { ModeDUnMouvement } from './modeDeReglement'
+import type { ModuleOptionnel } from './modulesDuCabinet'
 
 export type Statut = 'a_valider' | 'validee'
 export type TypePiece = 'achat' | 'vente' | 'note_frais' | 'autre'
@@ -2540,6 +2541,19 @@ export interface PaiementAssuranceMaladie {
   /** Négatif ou nul, en centimes. */
   regularisations_centimes: number
   nombre_de_factures: number
+}
+
+// LES OPTIONS D'UN CABINET (conception 56, OPT1 ; migration `options_des_cabinets`, préparée, pas appliquée —
+// lib/modulesDuCabinet.ts). Une ligne par cabinet et par module ; une ligne absente est un module fermé. Écrite par
+// `regler_option_du_cabinet` seule (le super-administrateur), lue par l'équipe du cabinet ; le client lit ses modules par
+// `modules_ouverts_du_dossier`. Elle ne change ni qui lit quoi ni aucun chiffre.
+export interface OptionDuCabinet {
+  cabinet_id: string
+  module: ModuleOptionnel
+  ouverte: boolean
+  /** Le super-administrateur qui l'a réglée ; nul pour les lignes que la migration a posées. */
+  changee_par: string | null
+  changee_le: string
 }
 
 // L'AFFECTATION DU RÉSULTAT ET L'APPROBATION DES COMPTES (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`,
