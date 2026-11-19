@@ -68,6 +68,13 @@ export default function ModifierEcheanceModal({
           </label>
         </div>
         {/* L'organisme, l'année payée et la nature (TNS-Q2) : seulement sous le drapeau, sur une échéance lue avec ses colonnes. */}
+        {saisie.autresImpots !== undefined && (
+          <div className="field">
+            <label htmlFor="modifier-autres-impots">dont autres impôts (CFP, CURPS)</label>
+            <input id="modifier-autres-impots" type="number" step="0.01" min="0" value={saisie.autresImpots} disabled={figes}
+              onChange={(e) => changer('autresImpots')(e.target.value)} />
+          </div>
+        )}
         {saisie.description && (
           <ChampsDeLaDescription valeur={saisie.description} disabled={enCours} prefixe="modifier"
             onChange={(description) => setSaisie((s) => ({ ...s, description }))} />

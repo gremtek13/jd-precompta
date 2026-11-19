@@ -23,9 +23,10 @@ import {
 } from './champsBncDuFec'
 import { natOpFigee } from './champsBncDesLignes'
 import {
-  categorieDesFraisBancaires, POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS,
-  POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
+  categorieDesFraisBancaires, POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_AUTRES_IMPOTS,
+  POSTE_COTISATIONS, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
 } from './declaration2035'
+import { compteDesAutresImpots } from './autresImpotsDesCotisations'
 import { POSTE_ASSURANCE_EMPRUNT, POSTE_INTERETS_EMPRUNT } from './echeanceEmprunt'
 import { estContrepartieDirigeant, piecesAComptabiliser } from './ecritures'
 import { reglementsDeLaDate, repartirLesLignesPartagees, seRepartit, type ReglementDeLaDate } from './ecritureParReglement'
@@ -457,6 +458,14 @@ interface ContexteDesChamps {
 const AUCUN_POSTE: PosteLu = { de: 'aucun' }
 const posteDuMoteur = (poste: Extract<PosteLu, { de: 'moteur' }>['poste']): PosteLu => ({ de: 'moteur', poste })
 
+// Le poste d'une ligne d'une échéance de cotisation, rapprochée ou payée depuis le compte personnel : la cotisation au compte
+// des cotisations de l'exploitant (BK), sa part « autres impôts » au compte du rôle `autres_impots` (BS, EXP58-Q6) — sa
+// NatOp « Cotisation sociale — Autres impôts » ; aucun ailleurs. Sans part, aucune ligne à ce compte : le FEC d'hier.
+function posteDUneEcheance(compte: string, plan: PlanComptable): PosteLu {
+  if (compte === plan.cotisations_exploitant) return posteDuMoteur(POSTE_COTISATIONS)
+  return compte === compteDesAutresImpots(plan) ? posteDuMoteur(POSTE_AUTRES_IMPOTS) : AUCUN_POSTE
+}
+
 /**
  * D'où vient le poste de la 2035 d'une ligne (FEC22-Q3, (C)), selon la sorte de son écriture : la catégorie que la 2035 lit
  * pour sa source (celle de la pièce, de l'opération de caisse, du mouvement affecté, de la part ventilée sur le compte de la
@@ -481,7 +490,7 @@ function posteDeLaLigne(
         return l.compte === plan.interets_emprunt ? posteDuMoteur(POSTE_INTERETS_EMPRUNT)
           : l.compte === plan.assurance_emprunt ? posteDuMoteur(POSTE_ASSURANCE_EMPRUNT) : AUCUN_POSTE
       }
-      if (m.cotisation_id) return l.compte === plan.cotisations_exploitant ? posteDuMoteur(POSTE_COTISATIONS) : AUCUN_POSTE
+      if (m.cotisation_id) return posteDUneEcheance(l.compte, plan)
       if (m.ventilee) {
         // La part dont la catégorie porte le compte de la ligne ; deux parts de deux postes sur le même compte n'en disent
         // aucun — la ligne n'en porte qu'un, et on ne choisit pas.
@@ -498,7 +507,7 @@ function posteDeLaLigne(
     case 'liquidation':
       return l.compte === plan.arrondi_charge ? posteDuMoteur(POSTE_ARRONDIS_TVA_CHARGE)
         : l.compte === plan.arrondi_produit ? posteDuMoteur(POSTE_ARRONDIS_TVA_PRODUIT) : AUCUN_POSTE
-    case 'paiement-personnel': return l.compte === plan.cotisations_exploitant ? posteDuMoteur(POSTE_COTISATIONS) : AUCUN_POSTE
+    case 'paiement-personnel': return posteDUneEcheance(l.compte, plan)
     case 'facture': return AUCUN_POSTE
     case 'ouverture-eclatee': return AUCUN_POSTE
     case 'inventaire': return AUCUN_POSTE

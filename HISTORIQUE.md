@@ -54057,3 +54057,19 @@ même commit ; l'essai sort de la famille « en attente » (31 essais de product
 empreintes relevées de nouveau — la lecture du registre (deux colonnes de plus) et la phrase de la consigne sur le plan continué.
 La suite entière : 23 411 tests verts. Reste, après la fusion : redéployer `agent-comptable` (v59 ne lit pas le cumul ; aucun
 bien n'en porte encore). Non fait : les essais `cumulReprisDesBiens.sql` et `dotations.sql` rejoués en production.
+
+### 19/11/2026 — EXP58-Q6 ET EXP58-Q7 : LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte, lot L2 point 6, conception 58 § 4.2 et § 12.) La CFP (C. trav., art. L. 6331-48) et la CURPS (CSP, art.
+L. 4031-4) appelées avec les cotisations sortent de BK et de BT et entrent en BS. Migration `autres_impots_des_cotisations` (À
+COLLER : le corps de `rapprocher_cotisation` retire l'écriture qu'il remplace) : `cotisations_declarees.montant_autres_impots`
+(nullable, le patron de la CSG-CRDS) ; le rôle `autres_impots` (racines 635 et 637, défaut 637800 « Taxes diverses » — PCG au
+1er janvier 2026, art. 1121-1 : l'Urssaf est un « autre organisme » —, rang 660) ; `rapprocher_cotisation`,
+`enregistrer_paiement_personnel_cotisation` et `garder_paiement_personnel` reprises de leurs corps de production (empreintes en
+tête) : une ligne de plus, dans les deux modes, deux refus neufs, la part figée par un paiement personnel. Copie de `replique_227`
+à 241 : l'essai neuf 27/27, dix mutations SQL sur dix ; les 162 essais, et 22 sur le jeu de départ, identiques avant et après
+hors des comptes du catalogue (34 puis 35 rôles), une fois adaptés `planComptable.sql`, `laBaseLitLePlan.sql` et
+`sensDesReglesIgnorees.sql` ; banc du leurre SÛR ; le retour rend signature, socle et inventaire ; collée, historique `f2b41e19…`,
+seconde fois refusée ; le socle change d'une ligne. Derrière `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` (baissé, et la constante de
+l'assistant) : écriture, refus, 2035, concordance, FEC, situation, gestes et onglet ; douze mutations TypeScript sur douze. Levé, DD
+baisse de la part (le renvoi 26 rend BK, pas BS). Questions : EXP58Q6-migration, EXP58Q6-Q1 à Q3.

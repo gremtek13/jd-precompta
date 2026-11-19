@@ -283,7 +283,8 @@ describe('agent-comptable / points_a_traiter lit les échéances de cotisation',
 
   it('lit les échéances et ce qui les paie, sous le même refus de lecture partielle', () => {
     // Et le jour d'un paiement depuis le compte personnel (ligne 26.6), qui fait refuser un rapprochement.
-    expect(corps).toMatch(/from\("cotisations_declarees"\)\.select\("id, echeance, montant_appele, montant_verse, montant_csg_crds, paiement_personnel_le"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
+    // Et la part « autres impôts » (EXP58-Q6), la constante levée seulement : sa colonne n'existe qu'avec sa migration.
+    expect(corps).toMatch(/from\("cotisations_declarees"\)\.select\(AUTRES_IMPOTS_DES_COTISATIONS_PREVUS\s*\?\s*"id, echeance, montant_appele, montant_verse, montant_csg_crds, montant_autres_impots, paiement_personnel_le"\s*:\s*"id, echeance, montant_appele, montant_verse, montant_csg_crds, paiement_personnel_le"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     // Le relevé entier porte ce qui décide d'un refus : le lien, et tout autre classement du mouvement.
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, [^"]*ventilee\b[^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/rReleve, rParts, rReglements, rCotisations[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
@@ -297,7 +298,7 @@ describe('agent-comptable / points_a_traiter lit les échéances de cotisation',
   })
 
   it('dit au modèle qu’une échéance rapprochée s’écrit sans pièce, au 646000 et au 108000 en trésorerie', () => {
-    expect(source).toMatch(/Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au \$\{plan\.banque\}, sans pièce : la cotisation au \$\{plan\.cotisations_exploitant\}[^\n]*mode_comptable === "engagement" \? "" : ` et sa CSG-CRDS, quand elle est saisie, au \$\{plan\.exploitant\} Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement[^`]*`\}\. Ce n'est pas une anomalie\./)
+    expect(source).toMatch(/Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au \$\{plan\.banque\}, sans pièce : la cotisation au \$\{plan\.cotisations_exploitant\}[^\n]*mode_comptable === "engagement" \? "" : ` et sa CSG-CRDS, quand elle est saisie, au \$\{plan\.exploitant\} Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement[^`]*`\}(\$\{AUTRES_IMPOTS_DES_COTISATIONS_PREVUS \? `[^`]*` : ""\})?\. Ce n'est pas une anomalie\./)
     // Et la description de l'outil les annonce, pour que le modèle sache les demander.
     expect(source).toMatch(/échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire/)
   })

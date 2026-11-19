@@ -47,13 +47,22 @@ function constanteDuChange(source: string): boolean {
   return trouvees[0][1] === 'true'
 }
 
-/** Le bloc, la constante du change de la source jointe en tête — ou réécrite dans l'état demandé. */
-function extraire(source: string, change: boolean = constanteDuChange(source)): Copie {
+// La constante de la part « autres impôts » de l'assistant (EXP58-Q6) : déclarée en tête du bloc COTISATION, hors des bornes
+// de ce bloc-ci, qui la lit aussi. Une ligne exactement, `true` ou `false`.
+const LIGNE_DES_AUTRES_IMPOTS = /^const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS = (true|false)$/gm
+function constanteDesAutresImpots(source: string): boolean {
+  const trouvees = [...source.matchAll(LIGNE_DES_AUTRES_IMPOTS)]
+  expect(trouvees.length, 'la constante `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` de l’assistant est introuvable, ambiguë ou d’une autre forme').toBe(1)
+  return trouvees[0][1] === 'true'
+}
+
+/** Le bloc, les constantes du change et des autres impôts de la source jointes en tête — ou réécrites dans l'état demandé. */
+function extraire(source: string, change: boolean = constanteDuChange(source), autresImpots: boolean = constanteDesAutresImpots(source)): Copie {
   const debut = source.indexOf('// ── DÉBUT PLAN DU DOSSIER')
   const fin = source.indexOf('// ── FIN PLAN DU DOSSIER')
   expect(debut, 'bornes du bloc PLAN DU DOSSIER introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
   expect(fin).toBeGreaterThan(debut)
-  const bloc = `const ECARTS_DE_REGLEMENT_PREVUS = ${change}\n${source.slice(debut, fin)}`
+  const bloc = `const ECARTS_DE_REGLEMENT_PREVUS = ${change}\nconst AUTRES_IMPOTS_DES_COTISATIONS_PREVUS = ${autresImpots}\n${source.slice(debut, fin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { ROLES_DU_PLAN, ROLES_DU_CHANGE, planDeLaReponse, modeleDuDossier }`)() as Copie
 }

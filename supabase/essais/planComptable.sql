@@ -90,6 +90,11 @@
 -- catalogue (`roles_du_catalogue`), leurs comptes décalés au contrôle 32, et `enregistrer_affectation` parmi les fonctions
 -- qui lisent le compte du dirigeant (contrôle 8) ; rien d'autre.
 --
+-- ADAPTÉ LE 19/11/2026 À LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (lot L2, point 6, EXP58-Q6 ; migration
+-- `autres_impots_des_cotisations`, PRÉPARÉE) : son rôle `autres_impots` (637800, racines 635 et 637, rang 660) jugé À PART
+-- (contrôle 1sexies, son empreinte, que src/lib/autresImpotsDesCotisations.test.ts recalcule), au compte du catalogue
+-- (`roles_du_catalogue`), son compte décalé (637810) au contrôle 32 ; rien d'autre.
+--
 -- SUR UNE RÉPLIQUE, EN UNE TRANSACTION (`psql -1 -f`) : le bloc range ses verdicts par `set_config(…, true)`, local à la
 -- transaction, comme l'appel unique d'`execute_sql` ; joué ligne à ligne par psql sans `-1`, la lecture finale trouve un
 -- réglage vide et lève « invalid input syntax for type json » — un défaut de la façon de le jouer, pas de l'essai.
@@ -148,9 +153,16 @@ declare
     'report_a_nouveau_crediteur', 'report_a_nouveau_debiteur', 'dividendes_a_payer'];
   empreinte_roles_affectation constant text := '647bc1625c4fcd6a849e57094e577b3b';
   a_l_affectation constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'affectation_du_resultat');
+  -- La migration `autres_impots_des_cotisations` (lot L2, point 6, EXP58-Q6, préparée) appliquée : le rôle des autres impôts
+  -- (637800, racines 635 et 637, rang 660) s'y ajoute, jugé À PART (contrôle 1sexies, son empreinte, que
+  -- src/lib/autresImpotsDesCotisations.test.ts recalcule). Son historique en base décide.
+  roles_des_autres_impots constant text[] := array['autres_impots'];
+  empreinte_roles_autres_impots constant text := 'fe86bbbb41ff8802a9559caebbc538d3';
+  aux_autres_impots constant boolean := exists (select 1 from supabase_migrations.schema_migrations m where m.name = 'autres_impots_des_cotisations');
   roles_du_catalogue constant int := 32 + case when au_personnel then 1 else 0 end + case when au_change then 2 else 0 end
     + case when au_inventaire then 6 else 0 end + case when aux_stocks then 10 else 0 end
-    + case when aux_provisions then 6 else 0 end + case when a_l_affectation then 6 else 0 end;
+    + case when aux_provisions then 6 else 0 end + case when a_l_affectation then 6 else 0 end
+    + case when aux_autres_impots then 1 else 0 end;
   -- Le `case` que cinq fonctions recopiaient : le compte du dirigeant, 108000 en trésorerie. Depuis l'étape PC2
   -- (migrations `la_base_lit_le_plan_1` à `_6`), elles lisent `compte_du_dirigeant` à sa place ; la production et
   -- l'export les portent toutes : `pc2_exigee` est vrai, et le `case` recopié est une faute.
@@ -209,10 +221,12 @@ begin
   select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
            || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
     into n, texte from roles_comptables where not (role = any (roles_de_l_inventaire)) and not (role = any (roles_des_stocks))
-      and not (role = any (roles_des_provisions)) and not (role = any (roles_de_l_affectation));
+      and not (role = any (roles_des_provisions)) and not (role = any (roles_de_l_affectation))
+      and not (role = any (roles_des_autres_impots));
   verdicts := verdicts || jsonb_build_object('controle', '1. le catalogue porte les 32 rôles : les 26 des constantes d''aujourd''hui, les 6 de la vente facturée (son empreinte) — 33 avec le personnel (B7), deux de plus avec le change (31)',
     'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '?'), 'ok', coalesce(n = roles_du_catalogue - case when au_inventaire then 6 else 0 end - case when aux_stocks then 10 else 0 end
       - case when aux_provisions then 6 else 0 end - case when a_l_affectation then 6 else 0 end
+      - case when aux_autres_impots then 1 else 0 end
       and texte = case
       when au_change then case
         when au_468 and au_personnel then empreinte_catalogue_468_personnel_change when au_468 then empreinte_catalogue_468_change
@@ -243,6 +257,12 @@ begin
   verdicts := verdicts || jsonb_build_object('controle', '1quinquies. les six rôles de l''affectation du résultat (AFF2) : à leur empreinte si la migration affectation_du_resultat est en base, absents sinon',
     'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '—'),
     'ok', coalesce(case when a_l_affectation then n = 6 and texte = empreinte_roles_affectation else n = 0 end, false));
+  select count(*), md5(string_agg(role || '|' || array_to_string(racines, ',') || '|' || compte_defaut || '|'
+           || coalesce(libelle_defaut, '') || '|' || coalesce(prefixe_auxiliaire_defaut, '') || '|' || ordre, E'\n' order by ordre))
+    into n, texte from roles_comptables where role = any (roles_des_autres_impots);
+  verdicts := verdicts || jsonb_build_object('controle', '1sexies. le rôle des autres impôts (EXP58-Q6) : à son empreinte si la migration autres_impots_des_cotisations est en base, absent sinon',
+    'observe', n || ' rôle(s), empreinte ' || coalesce(texte, '—'),
+    'ok', coalesce(case when aux_autres_impots then n = 1 and texte = empreinte_roles_autres_impots else n = 0 end, false));
 
   select count(*) filter (where compte_defaut !~ '^[0-9]{6}$'
                             or not exists (select 1 from unnest(racines) x(r) where left(compte_defaut, length(x.r)) = x.r)),
@@ -758,6 +778,11 @@ begin
              (dossier_libre, 'autres_reserves', '106810', null), (dossier_libre, 'report_a_nouveau_crediteur', '110100', null),
              (dossier_libre, 'report_a_nouveau_debiteur', '119100', null), (dossier_libre, 'dividendes_a_payer', '457100', null);
       n := n + 6;
+    end if;
+    -- La part « autres impôts » (lot L2, point 6, migration `autres_impots_des_cotisations`, préparée) : son compte décalé.
+    if aux_autres_impots then
+      insert into plan_comptable_dossier (dossier_id, role, compte, prefixe_auxiliaire) values (dossier_libre, 'autres_impots', '637810', null);
+      n := n + 1;
     end if;
     select count(*) filter (where public.compte_du_role(dossier_libre, p.role) is distinct from p.compte),
            count(*) filter (where public.compte_du_role(dossier_client, p.role) is distinct from r.compte_defaut)

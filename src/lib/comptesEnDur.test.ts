@@ -181,6 +181,12 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
       + 'revient au DÉFAUT du catalogue, comme `regler_plan_du_dossier` le fait — elle le nomme dans la confirmation, '
       + 'sans jamais l’écrire.',
   },
+  'src/lib/autresImpotsDesCotisations.ts': {
+    nombre: 1,
+    raison: 'LA PART « AUTRES IMPÔTS » D’UNE ÉCHÉANCE (EXP58-Q6, `compteDesAutresImpots`) : le compte que le plan porte, sinon '
+      + 'le DÉFAUT du catalogue — ce que `compte_du_role` rend pour un rôle que le dossier ne règle pas. Un plan lu le porte '
+      + 'toujours, le drapeau levé (`planDeLaReponse` l’exige) ; seul un plan écrit à la main le prend à son défaut.',
+  },
   'src/lib/compteDeBilan.ts': {
     nombre: 2,
     raison: 'Deux refus recopiés MOT POUR MOT de `refus_compte_de_bilan` (« s’écrit au 580000, virements internes »), que '

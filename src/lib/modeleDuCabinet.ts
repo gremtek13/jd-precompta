@@ -25,6 +25,7 @@ import {
   type RoleDeTiers,
 } from './planComptable'
 import { ROLES_DU_CHANGE, type CleRoleDuChange } from './rolesDuChange'
+import { ROLE_AUTRES_IMPOTS, type CleRoleAutresImpots } from './autresImpotsDesCotisations'
 import type { LigneDuPlanReglee, PlanLu } from './planDepuisLaBalance'
 import { nomDuRole } from './planDepuisLaBalanceVue'
 
@@ -82,13 +83,15 @@ export interface SaisieDUnRole {
 
 /** Un rôle par rôle lu au plan : les deux du change n'y sont que le drapeau de leur migration levé (`rolesLusAuPlan`). */
 export type SaisieDuModele = Readonly<Record<CleRoleComptable, SaisieDUnRole>> & Readonly<Partial<Record<CleRoleDuChange, SaisieDUnRole>>>
+  & Readonly<Partial<Record<CleRoleAutresImpots, SaisieDUnRole>>>
 
 const estDeTiers = (role: CleRoleDuPlan): role is RoleDeTiers =>
   ROLES_COMPTABLES.some((r) => r.role === role && r.prefixeAuxiliaireDefaut !== null)
 
 /** La définition d'un rôle du catalogue de la base, le drapeau du change levé ou non : un refus redit les mots de la base,
- *  qui connaît les deux rôles du change dans tous les cas. */
-const definitionDuRole = (role: CleRoleDuPlan) => [...ROLES_COMPTABLES, ...ROLES_DU_CHANGE].find((r) => r.role === role)!
+ *  qui connaît les deux rôles du change dans tous les cas — et celui des autres impôts (EXP58-Q6), lu le drapeau de sa
+ *  migration levé seulement (`rolesLusAuPlan`). */
+const definitionDuRole = (role: CleRoleDuPlan) => [...ROLES_COMPTABLES, ...ROLES_DU_CHANGE, ROLE_AUTRES_IMPOTS].find((r) => r.role === role)!
 
 /** La saisie de départ : le modèle lu, rôle par rôle. Un compte que le plan lu ne porte pas reste vide : le refus des six
  *  chiffres le dit, jamais un défaut deviné. */

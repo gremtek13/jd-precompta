@@ -13,6 +13,7 @@ import {
 import { centimesParDateSelon, partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
+import { compteDesAutresImpots } from './autresImpotsDesCotisations'
 import type { MouvementBancaire } from './affectationBanque'
 import type { Categorie, CotisationDeclaree, DeclarationTva, Immobilisation, Piece, VehiculeDossier } from './types'
 import {
@@ -33,6 +34,10 @@ import {
 
 export const POSTE_AMORTISSEMENTS = 'Amortissements'
 export const POSTE_COTISATIONS = 'Cotisations sociales personnelles'
+// Ligne 13 du 2035-A (case BS), « Autres impôts » : la part d'une échéance de cotisation que l'Urssaf appelle au titre de la
+// contribution à la formation professionnelle et de la CURPS (EXP58-Q6, lib/autresImpotsDesCotisations.ts), que le moteur
+// sort de la ligne 25. L'intitulé imprimé de la ligne, celui qu'une catégorie peut aussi porter : les deux s'y additionnent.
+export const POSTE_AUTRES_IMPOTS = 'Autres impôts'
 // Ligne 14 du 2035-A (case BV). Un poste À PART de POSTE_COTISATIONS, parce que le formulaire les
 // sépare : la CSG déductible ne transite pas par la ligne 25.
 export const POSTE_CSG_DEDUCTIBLE = 'CSG déductible'
@@ -661,20 +666,27 @@ export function calculerDeclaration2035(
   // versement saisi ou l'appel, à l'échéance (voir `cotisationsComptees`). Chaque échéance porte ce qui va
   // au 646000, sa CSG-CRDS en moins : c'est le montant de son écriture, face à la banque ou au compte du
   // dirigeant.
+  //
+  // SA PART « AUTRES IMPÔTS » (EXP58-Q6 ; lib/autresImpotsDesCotisations.ts) — la contribution à la formation professionnelle
+  // et la CURPS, saisies, le drapeau de leur migration levé — sort aussi de la ligne 25 et entre ligne 13, « Autres impôts »
+  // (BS), au compte du rôle `autres_impots`, où son écriture la porte : une contribution de plus, de la même source. Le
+  // résultat ne change pas ; BK et BT baissent de la part (`partObligatoireDeBK` ne lit que le poste des cotisations), BS monte
+  // d'autant — et le revenu brut social (DD), qui rend BK et non BS (renvoi 26 de la notice), baisse d'autant. Sans part, rien
+  // de plus qu'hier.
   for (const c of cotisations) {
     if (anneeDe(c.date) !== annee) continue
-    const centimes = enCentimes(c.montant) - enCentimes(c.csgCrds ?? 0)
-    if (centimes === 0) continue
-    ajouter({
-      source: {
-        type: 'cotisation', id: c.cotisation.id, cotisation: c.cotisation, ligne: c.ligne, paiementPersonnel: c.paiementPersonnel,
-        refus: c.refus,
-      },
-      poste: POSTE_COTISATIONS,
-      nature: 'depense',
-      compte: plan.cotisations_exploitant,
-      centimes,
-    }, 0)
+    const source: SourceDeclaration = {
+      type: 'cotisation', id: c.cotisation.id, cotisation: c.cotisation, ligne: c.ligne, paiementPersonnel: c.paiementPersonnel,
+      refus: c.refus,
+    }
+    const impots = enCentimes(c.autresImpots ?? 0)
+    const centimes = enCentimes(c.montant) - enCentimes(c.csgCrds ?? 0) - impots
+    if (centimes !== 0) {
+      ajouter({ source, poste: POSTE_COTISATIONS, nature: 'depense', compte: plan.cotisations_exploitant, centimes }, 0)
+    }
+    if (impots !== 0) {
+      ajouter({ source, poste: POSTE_AUTRES_IMPOTS, nature: 'depense', compte: compteDesAutresImpots(plan), centimes: impots }, 0)
+    }
   }
   const csg = partCsgNonDeductible(cotisations, annee)
   if (csg && csg.csgDeductible !== 0) {

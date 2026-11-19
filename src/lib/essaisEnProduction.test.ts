@@ -491,7 +491,9 @@ describe('les essais de la base, rejoués en production', () => {
     // famille « apres », après sa migration préparée ; joué sur une copie de la réplique à 237 (28 verdicts sur 28), SÛR au banc.
     // Trente-deux le 18/11/2026 : `previsionsPubliees` sorti (C8-Q2 en production, 20261118154124).
     // Trente et un le 19/11/2026 : `cumulReprisDesBiens` sorti (EXP58-Q5 en production, 20261119080000, collée).
-    expect(cas.length).toBe(31)
+    // Trente-deux le 19/11/2026 : `autresImpotsDesCotisations` (EXP58-Q6, `autres_impots_des_cotisations`) entré dans la famille
+    // « apres », après sa migration préparée ; joué sur une copie de la réplique à 241 (27 verdicts sur 27), le banc reste à rejouer.
+    expect(cas.length).toBe(32)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

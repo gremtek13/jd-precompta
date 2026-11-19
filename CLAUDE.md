@@ -579,7 +579,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)
-  → « LE LOT L2, POINTS 6 ET 7 ».
+  → « LE LOT L2, POINTS 6 ET 7 ». Le point 6 préparé le 19/11/2026, à coller (`autres_impots_des_cotisations` : la part d'une
+  échéance, le rôle `autres_impots` au 637800, trois fonctions), `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` baissé : la CFP et la
+  CURPS en BS, hors de BK et de BT, le résultat inchangé, DD baissant d'autant → « EXP58-Q6 ET EXP58-Q7 : LA PART « AUTRES IMPÔTS »
+  D'UNE ÉCHÉANCE ».
 - **Le mode de règlement d'un mouvement** (EXP58-Q1 (B)) : en production depuis le 18/11/2026 (240, par l'outil), `MODE_DE_REGLEMENT_PREVU` levé — `lignes_bancaires.mode_reglement` (sept ModeRglt), posé par `poser_modes_de_reglement`
   seule sur un clic, la proposition du libellé jamais écrite ; le FEC remplace « Banque » par lui → « EXP58-Q1 : LE MODE DE RÈGLEMENT D'UN MOUVEMENT, EN BASE », « EXP58-Q1 EN PRODUCTION ».
 - **L'export vers un logiciel comptable** (EXP1, 17/11/2026, `EXPORT_VERS_UN_LOGICIEL_OFFERT` levé le soir même sur la demande du cabinet) : le FEC de l'onglet Écritures

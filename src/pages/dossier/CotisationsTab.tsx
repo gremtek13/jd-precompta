@@ -44,7 +44,8 @@ import ChampsDeLaDescription from './ChampsDeLaDescription'
 import {
   REGULARISATION_DES_COTISATIONS_EXPORTEE, lireLaDescription, saisieDeLaDescription,
 } from '../../lib/regularisationDesCotisations'
-import { lueAvecSaDescription } from '../../lib/gestesDesEcheances'
+import { lueAvecSaDescription, lueAvecSaPart } from '../../lib/gestesDesEcheances'
+import { AIDE_DE_LA_PART, AUTRES_IMPOTS_DES_COTISATIONS_PREVUS, lireLaPartAutresImpots } from '../../lib/autresImpotsDesCotisations'
 import ReunirEcheancesModal from './ReunirEcheancesModal'
 
 // Palier 5, brique 4 — suivi des cotisations sociales. Saisie manuelle des appels et versements
@@ -104,6 +105,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   const [montantAppele, setMontantAppele] = useState('')
   const [montantVerse, setMontantVerse] = useState('')
   const [montantCsgCrds, setMontantCsgCrds] = useState('')
+  // La part « autres impôts » (la CFP et la CURPS, EXP58-Q6), sous `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` seulement.
+  const [montantAutresImpots, setMontantAutresImpots] = useState('')
   const [previsionnel, setPrevisionnel] = useState(false)
   // L'organisme, l'année payée et la nature (TNS-Q2), sous `REGULARISATION_DES_COTISATIONS_EXPORTEE` seulement.
   const [description, setDescription] = useState(() => saisieDeLaDescription({}))
@@ -200,7 +203,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     // Seconde ceinture : le bouton est grisé sur une échéance d'un exercice figé, et la raison déjà dite au-dessus.
-    if (refusAjout || refusDescription) return
+    if (refusAjout || refusDescription || refusPart) return
     // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
     // premier, encore en cours.
     if (saisieEnCours.current) return
@@ -216,9 +219,11 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
         montant_csg_crds: montantCsgCrds ? parseFloat(montantCsgCrds) : null,
         previsionnel,
         ...(descriptionLue && 'valeurs' in descriptionLue ? descriptionLue.valeurs : {}),
+        ...(partLue?.ok && partLue.valeur !== null ? { montant_autres_impots: partLue.valeur } : {}),
       })
       if (insertError) throw insertError
       setDescription(saisieDeLaDescription({}))
+      setMontantAutresImpots('')
       setEcheance('')
       setMontantAppele('')
       setMontantVerse('')
@@ -373,6 +378,12 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
       requete = c.part_regularisation == null
         ? requete.is('part_regularisation', null)
         : requete.eq('part_regularisation', c.part_regularisation)
+    }
+    // La part « autres impôts » lue se retient de même (EXP58-Q6), quand sa colonne est dans la lecture.
+    if (lueAvecSaPart(c)) {
+      requete = c.montant_autres_impots == null
+        ? requete.is('montant_autres_impots', null)
+        : requete.eq('montant_autres_impots', c.montant_autres_impots)
     }
     const { data, error: erreurMaj } = await requete.select('id').maybeSingle()
     if (erreurMaj) return messageErreur(erreurMaj, 'raison inconnue')
@@ -681,6 +692,9 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
     ? lireLaDescription(description, echeance, Number.isFinite(appeleQuiPartirait) ? appeleQuiPartirait : null)
     : null
   const refusDescription = descriptionLue && 'refus' in descriptionLue ? descriptionLue.refus : null
+  // La part « autres impôts » telle qu'elle partirait (EXP58-Q6), jugée avant le clic ; le drapeau baissé, rien.
+  const partLue = AUTRES_IMPOTS_DES_COTISATIONS_PREVUS ? lireLaPartAutresImpots(montantAutresImpots) : null
+  const refusPart = partLue && !partLue.ok ? partLue.message : null
   const refusAjout = echeance && dateFigee(echeance, anneesValidees)
     ? `${dateFigee(echeance, anneesValidees)} : une échéance ne s’y ajoute plus.`
     : null
@@ -772,6 +786,10 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
     { cle: 'verse', libelle: 'Versé', type: 'montant', valeur: (c) => verseDe(c) },
     { cle: 'csgCrds', libelle: 'dont CSG-CRDS', type: 'montant', valeur: (c) => c.montant_csg_crds },
     { cle: 'csgDeductible', libelle: 'CSG déductible', type: 'montant', valeur: (c) => csgDeductible(c) },
+    // La part « autres impôts » (EXP58-Q6), le drapeau levé seulement.
+    ...(AUTRES_IMPOTS_DES_COTISATIONS_PREVUS
+      ? [{ cle: 'autresImpots', libelle: 'dont autres impôts', type: 'montant' as const, valeur: (c: CotisationDeclaree) => c.montant_autres_impots ?? null }]
+      : []),
     { cle: 'paiement', libelle: 'Paiement', type: 'date', valeur: (c) => c.paiement_personnel_le ?? paiementDe.get(c.id)?.date ?? null },
     { cle: 'pieceJointe', libelle: 'Pièce jointe', type: 'texte', valeur: (c) => documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)?.nom_fichier },
   ]
@@ -841,6 +859,16 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
             appelé total — c'est la seule part sur laquelle la déductibilité peut être calculée. Zéro pour un organisme
             qui n'en prélève pas (une caisse de retraite) : laissée vide, elle reste « non saisie », et la Clôture le dit.
           </p>
+          {AUTRES_IMPOTS_DES_COTISATIONS_PREVUS && (
+            <>
+              <div className="field">
+                <label htmlFor="autres-impots">dont autres impôts (CFP, CURPS)</label>
+                <input id="autres-impots" type="number" step="0.01" min="0" value={montantAutresImpots}
+                  onChange={(e) => setMontantAutresImpots(e.target.value)} />
+              </div>
+              <p className="muted" style={{ marginTop: -8 }}>{AIDE_DE_LA_PART}</p>
+            </>
+          )}
           <div className="field">
             <label>
               <input type="checkbox" checked={previsionnel} onChange={(e) => setPrevisionnel(e.target.checked)} style={{ marginRight: 6 }} />
@@ -851,10 +879,11 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
             <ChampsDeLaDescription valeur={description} onChange={setDescription} disabled={saving} prefixe="ajout" />
           )}
           {refusDescription && <p className="error-text">{refusDescription}</p>}
+          {refusPart && <p className="error-text">{refusPart}</p>}
           {refusAjout && <p className="error-text">{refusAjout}</p>}
           {error && <p className="error-text">{error}</p>}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={saving || refusAjout !== null || refusDescription !== null}>
+            <button className="btn btn-primary btn-sm" type="submit" disabled={saving || refusAjout !== null || refusDescription !== null || refusPart !== null}>
               {saving ? 'Enregistrement…' : 'Ajouter'}
             </button>
             <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>
@@ -1094,6 +1123,9 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
                   <EnTeteTriable colonne="verse" etat={tri} onTrier={trierPar}>Versé</EnTeteTriable>
                   <EnTeteTriable colonne="csgCrds" etat={tri} onTrier={trierPar}>dont CSG-CRDS</EnTeteTriable>
                   <EnTeteTriable colonne="csgDeductible" etat={tri} onTrier={trierPar}>CSG déductible</EnTeteTriable>
+                  {AUTRES_IMPOTS_DES_COTISATIONS_PREVUS && (
+                    <EnTeteTriable colonne="autresImpots" etat={tri} onTrier={trierPar}>dont autres impôts</EnTeteTriable>
+                  )}
                   <EnTeteTriable colonne="paiement" etat={tri} onTrier={trierPar}>Paiement</EnTeteTriable>
                   <EnTeteTriable colonne="pieceJointe" etat={tri} onTrier={trierPar}>Pièce jointe</EnTeteTriable>
                   <th></th>
@@ -1136,6 +1168,9 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
                       </td>
                       <td data-libelle="dont CSG-CRDS">{c.montant_csg_crds != null ? formatMoney(c.montant_csg_crds) : '—'}</td>
                       <td data-libelle="CSG déductible">{csgDeductible(c) != null ? formatMoney(csgDeductible(c)) : '—'}</td>
+                      {AUTRES_IMPOTS_DES_COTISATIONS_PREVUS && (
+                        <td data-libelle="dont autres impôts">{c.montant_autres_impots != null ? formatMoney(c.montant_autres_impots) : '—'}</td>
+                      )}
                       <td data-libelle="Paiement">
                         {/* Payée depuis le compte personnel : un fait de la ligne elle-même, dit même sur un relevé lu en
                             partie ; l'état de son écriture, seulement sur un brouillon lu en entier. */}

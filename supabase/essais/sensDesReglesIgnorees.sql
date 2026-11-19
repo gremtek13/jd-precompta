@@ -113,8 +113,12 @@ begin
   from pg_proc p where p.oid = to_regprocedure('public.rapprocher_cotisation(uuid, uuid, jsonb)')$q$, 'OK', 'false:search_path=public:false:true'),
       (19, 'proprietaire', '14b. … son corps à son empreinte (retours chariot écartés)', $q$select md5(replace(p.prosrc, chr(13), '')) from pg_proc p
   where p.oid = to_regprocedure('public.rapprocher_cotisation(uuid, uuid, jsonb)')$q$, 'OK',
-        -- La jambe de banque par compte (MCB5, `jambe_de_banque_par_compte`) remplace son corps : la banque du mouvement.
-        case when exists (select 1 from supabase_migrations.schema_migrations where name = 'jambe_de_banque_par_compte')
+        -- La jambe de banque par compte (MCB5, `jambe_de_banque_par_compte`) remplace son corps : la banque du mouvement ; la
+        -- part « autres impôts » d'une échéance (EXP58-Q6, `autres_impots_des_cotisations`, préparée) le remplace de nouveau :
+        -- une ligne de plus, le refus d'un mouvement ignoré à son rang.
+        case when exists (select 1 from supabase_migrations.schema_migrations where name = 'autres_impots_des_cotisations')
+             then '1335506cd5644999189fb74496a06ea8'
+             when exists (select 1 from supabase_migrations.schema_migrations where name = 'jambe_de_banque_par_compte')
              then '2559833009639c117795ad40d74dc31f' else 'bf920662bc500bc4fcf23aba0ce829e3' end),
       (20, 'proprietaire', '14c. … le refus dit par elle seule', $q$select string_agg(p.proname, ',' order by p.proname) from pg_proc p
   where p.pronamespace = 'public'::regnamespace and p.prosrc like '%Ce mouvement est ignoré : remets-le%'$q$, 'OK', 'rapprocher_cotisation')
