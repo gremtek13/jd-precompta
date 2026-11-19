@@ -35,7 +35,7 @@ import { COPIE_DES_FICHIERS_PREVUE, TABLES_DES_COPIES_DES_FICHIERS } from './cop
 import { EXERCICES_DECALES_PREVUS, TABLES_DES_EXERCICES } from './exercices'
 import { HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE } from './hausseDuChiffreDAffaires'
 import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from './paiementsAssuranceMaladie'
-import { OPTIONS_DES_CABINETS_PREVUES, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
+import { OPTIONS_DES_CABINETS_EN_BASE, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
 import { FACTURES_ASSURANCE_MALADIE_PREVUES } from './importDuFactureAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssuranceMaladie'
 import {
@@ -1328,7 +1328,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLAssociationAMDuJour = ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES
     ? avecLAssociationAssuranceMaladie(avecLeFactureAMDuJour, associationAM) : avecLeFactureAMDuJour
   const options = blocDesOptionsDesCabinets(texteDeLEssai)
-  const courant = OPTIONS_DES_CABINETS_PREVUES
+  const courant = OPTIONS_DES_CABINETS_EN_BASE
     ? avecLesOptionsDesCabinets(avecLAssociationAMDuJour, options) : avecLAssociationAMDuJour
 
   it('le bloc de l’association des paiements de l’assurance maladie : sa table, après `lignes_bancaires`, conditionné, son chemin, joué après le facturé et avant les options (NOE5, NOE8)', () => {

@@ -46,7 +46,7 @@ import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
 import { HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE } from './hausseDuChiffreDAffaires'
 import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from './paiementsAssuranceMaladie'
-import { OPTIONS_DES_CABINETS_PREVUES, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
+import { OPTIONS_DES_CABINETS_EN_BASE, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
 import { FACTURES_ASSURANCE_MALADIE_PREVUES } from './importDuFactureAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssuranceMaladie'
 
@@ -669,7 +669,7 @@ export function auGrapheDeLAffectation(r: Pick<Relation, 'enfant' | 'parent'>, p
 // LES OPTIONS DES CABINETS (conception 56, lot OPT1 ; migration `options_des_cabinets`, PRÉPARÉE le 19/11/2026) : une table
 // de NIVEAU CABINET — les modules que le super-administrateur a ouverts au cabinet —, hors de l'export d'un dossier
 // (conception 56, § 7 : restaurer un dossier dans un autre cabinet ne lui donne pas les options de l'ancien), et hors de
-// l'export d'un cabinet, qui ne porte que ses dossiers. Sous le drapeau de la migration (`OPTIONS_DES_CABINETS_PREVUES`,
+// l'export d'un cabinet, qui ne porte que ses dossiers. Sous le drapeau de la migration (`OPTIONS_DES_CABINETS_EN_BASE`,
 // src/lib/modulesDuCabinet.ts), baissé : la production n'a pas la table. Sa relation (le cabinet, en cascade) ; son rang,
 // après les copies des fichiers, avant les dossiers ; sa clé (cabinet, module) ; aucune vague. La sauvegarde quotidienne de
 // la base la couvre ; après une reprise depuis l'export, le super-administrateur revoit les options (PLAN_DE_REPRISE.md).
@@ -719,7 +719,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesStocks(table, STOCKS_PREVUS)
     && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS)
     && auPlanDeLAffectation(table, AFFECTATION_PREVUE)
-    && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_PREVUES)
+    && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_EN_BASE)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
