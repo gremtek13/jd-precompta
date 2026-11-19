@@ -54029,3 +54029,18 @@ relevé qui suit et rappelle que la publication telle quelle reste possible ; el
 (la ligne teintée `client-signalement`, qui passe à la ligne) et se reprend dans la confirmation. Rien côté client, rien en
 base ; ni la migration exportée ni l'essai SQL ne changent. Tests : `previsionsPubliees.test.ts` (seuil à 31 et 32 jours,
 février, banque à jour, confirmation) et `PrevisionsPubliees.test.tsx` (averti, geste offert, un seul appel ; à jour, rien).
+
+### 19/11/2026 — BOR2 : LE FACTURÉ EN AGRÉGATS
+
+(Agent architecte ; ni base, ni écran, ni drapeau.) `lib/factureAssuranceMaladie.ts`, pur et sans sortie, passe des bordereaux lus
+par BOR1 (un ou plusieurs fichiers d'un même envoi) aux agrégats du facturé, au grain de BOR-Q4 (A) : la date de création du lot,
+la part obligatoire (« Caisse ») sous le régime lu sur le libellé ou choisi par celui qui importe (`regimeChoisi` ; sinon l'état
+`regimes_a_choisir`, avec le résumé) et la caisse au code imprimé, un entier ; la part complémentaire (« Mutuelle ») sous un organisme
+`non_dit` (BORQ5-Q1 (A)) ; « Assuré » ne sert qu'à refermer le total, puis s'oublie. Aucun texte dans un agrégat. Le nombre de factures
+d'un agrégat est celui des lots qui y contribuent (BOR1 ne compte pas les lignes par part) : BOR2-Q1. Le numéro du lot et sa date ne
+sortent que par une fonction, `pourLAppelDImport`, que `JSON.stringify` saute ; aucune empreinte calculée ici (BOR1Q1-Q1 (A) : la base,
+sous la clé du dossier, en BOR3). Refus, tout entiers, sans numéro de lot : envoi vide, jour de référence impossible (un paramètre, pas
+l'horloge), forme d'un lot, date impossible ou après aujourd'hui, montant hors bornes, total qui ne se referme pas, le même numéro deux
+fois dans l'envoi (même sous deux dates), un choix de régime hors liste, double, absent ou inutile. 17 essais (de bout en bout par BOR1 ;
+le canari sur cent envois tirés d'une graine) ; le scanner de BOR1 étendu au module et à la liste des régimes, cinq défauts plantés ;
+10 mutations nommées, toutes mordent. La forme des tables reste à BOR3 ; RGPD.md non touché (BORQ8-Q1, à BOR3/BOR4).

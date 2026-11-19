@@ -573,7 +573,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   ses quatre totaux, chaque ligne comptée et additionnée, jamais rendue ; tout doute refusé ; BOR1-Q1 à Q5 → « BOR0 ET BOR1 ».
   Le 18/11/2026 (conception 59, § 13) : le destinataire du règlement accepté, jamais rendu ; les régimes de l'ANS (`lib/regimesAssuranceMaladie.ts`,
   sinon « à choisir ») ; l'outil local `outils/bordereau/lire.mjs` ; le numéro du lot dans un registre à part, BOR1Q1-Q1, BORQ5-Q1, BORQ8-Q1
-  → « BOR : LES RÉPONSES DU CABINET, LES RÉGIMES, L'OUTIL LOCAL ».
+  → « BOR : LES RÉPONSES DU CABINET, LES RÉGIMES, L'OUTIL LOCAL » ; BOR2 (19/11/2026), `lib/factureAssuranceMaladie.ts`, pur et sans sortie :
+  des bordereaux lus aux agrégats (jour de création, régime lu ou choisi, caisse, part obligatoire, mutuelle « non dit »), « Assuré »
+  oublié, le numéro du lot rendu par une seule fonction pour l'import, jamais sérialisé, aucune empreinte ici → « BOR2 : LE FACTURÉ EN AGRÉGATS ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)
