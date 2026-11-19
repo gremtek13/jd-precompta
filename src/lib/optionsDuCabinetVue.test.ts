@@ -19,7 +19,7 @@ import {
 // des refus eux-mêmes sont ceux de lib/modulesDuCabinet.ts, que modulesDuCabinet.test.ts confronte déjà.
 
 const MIGRATION = readFileSync(new URL('../../supabase/preparees/20261119130000_options_des_cabinets.sql', import.meta.url), 'utf8')
-const REGLER = /create function public\.regler_option_du_cabinet\([\s\S]*?\n\$\$;\n/.exec(MIGRATION)?.[0] ?? ''
+const REGLER = /create function public\.regler_option_du_cabinet\([\s\S]*?\n\$\$;\n/i.exec(MIGRATION)?.[0] ?? ''
 const LECTURE = readFileSync(new URL('./optionsDesCabinetsLecture.ts', import.meta.url), 'utf8')
 
 const TOUS: readonly ModuleOptionnel[] = MODULES_OPTIONNELS
