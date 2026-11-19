@@ -8,7 +8,8 @@ import {
 import type { ModeComptable } from './types'
 import { LIBELLES_PAR_DEFAUT, planLuDe } from '../test/modeles'
 import { ROLES_DU_CHANGE } from './rolesDuChange'
-import { changeAuDefaut } from '../test/rolesDeLaBase'
+import { autresImpotsAuDefaut, changeAuDefaut } from '../test/rolesDeLaBase'
+import { ROLE_AUTRES_IMPOTS } from './autresImpotsDesCotisations'
 
 // Le drapeau du change (ligne 31, lib/rolesDuChange.ts), joué par un accesseur : sans demande, l'état réel.
 const drapeauDuChange = vi.hoisted(() => ({ leve: undefined as boolean | undefined }))
@@ -69,13 +70,17 @@ function extraire(source: string, change: boolean = constanteDuChange(source), a
 
 const deployee = extraire(sourceDeployee())
 
-/** La réponse de `plan_du_dossier` pour un plan : une ligne par rôle du catalogue, dans son ordre, comme la base la rend. */
+/** La réponse de `plan_du_dossier` pour un plan : une ligne par rôle du catalogue, dans son ordre, comme la base la rend —
+ *  et, depuis la migration `autres_impots_des_cotisations` (19/11/2026, EXP58-Q6), le rôle des autres impôts, à son défaut. */
 function reponse(plan: PlanComptable, prefixes: Readonly<Record<string, string>>): { data: unknown; error: unknown } {
   return {
-    data: ROLES_COMPTABLES.map((r) => ({
-      role: r.role, compte: plan[r.role], libelle: r.libelleDefaut,
-      prefixe_auxiliaire: r.prefixeAuxiliaireDefaut === null ? null : prefixes[r.role], origine: 'application',
-    })),
+    data: [
+      ...ROLES_COMPTABLES.map((r) => ({
+        role: r.role, compte: plan[r.role], libelle: r.libelleDefaut,
+        prefixe_auxiliaire: r.prefixeAuxiliaireDefaut === null ? null : prefixes[r.role], origine: 'application',
+      })),
+      { role: ROLE_AUTRES_IMPOTS.role, compte: ROLE_AUTRES_IMPOTS.compteDefaut, libelle: ROLE_AUTRES_IMPOTS.libelleDefaut, prefixe_auxiliaire: null, origine: 'application' },
+    ],
     error: null,
   }
 }
@@ -86,8 +91,8 @@ function reponseDeLaBase(plan: PlanComptable, prefixes: Readonly<Record<string, 
     role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: null, origine: 'application',
   }))], error: null }
 }
-/** Le plan que la lecture rend : le drapeau du change levé, ses deux comptes en plus. */
-const avecLeChange = (plan: PlanComptable): PlanComptable => ({ ...plan, ...changeAuDefaut() })
+/** Le plan que la lecture rend : le drapeau du change levé, ses deux comptes en plus ; celui des autres impôts levé, le sien. */
+const avecLeChange = (plan: PlanComptable): PlanComptable => ({ ...plan, ...changeAuDefaut(), ...autresImpotsAuDefaut() })
 const SANS_CHANGE = reponse(PLAN_PAR_DEFAUT, PREFIXES_DU_CATALOGUE)
 const JUSTE = reponseDeLaBase(PLAN_PAR_DEFAUT, PREFIXES_DU_CATALOGUE)
 const DECALEE = reponseDeLaBase(PLAN_DECALE, PREFIXES_DECALES)

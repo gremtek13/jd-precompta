@@ -10,10 +10,11 @@ import { LIBELLES_PAR_DEFAUT } from '../test/modeles'
 import { ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
 
 // L'ASSISTANT RECOPIE LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (EXP58-Q6) : derrière sa constante
-// `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` (en tête du bloc COTISATION), baissée comme le drapeau de src/lib. La garde
-// d'agentComptableCotisation.test.ts compare la copie à src/lib dans l'état d'aujourd'hui ; celle-ci les compare dans les DEUX
-// états — la constante réécrite dans le texte extrait, le drapeau de src/lib joué par un accesseur —, l'écriture attendue, les
-// refus (des codes, pour l'assistant, à la même place) et la lecture du plan, qui exige le rôle la constante levée.
+// `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` (en tête du bloc COTISATION), levée comme le drapeau de src/lib depuis la migration
+// collée le 19/11/2026 (243). La garde d'agentComptableCotisation.test.ts compare la copie à src/lib dans l'état d'aujourd'hui ;
+// celle-ci les compare dans les DEUX états — la constante réécrite dans le texte extrait, le drapeau de src/lib joué par un
+// accesseur —, l'écriture attendue, les refus (des codes, pour l'assistant, à la même place) et la lecture du plan, qui exige
+// le rôle la constante levée.
 const drapeau = vi.hoisted(() => ({ leve: undefined as boolean | undefined }))
 vi.mock('./autresImpotsDesCotisations', async (original) => {
   const vrai = await original<typeof import('./autresImpotsDesCotisations')>()
@@ -27,7 +28,7 @@ vi.mock('./autresImpotsDesCotisations', async (original) => {
 afterEach(() => { drapeau.leve = undefined })
 
 const SOURCE = readFileSync(new URL('../../supabase/functions/agent-comptable/index.ts', import.meta.url), 'utf8')
-const CONSTANTE = 'const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS = false'
+const CONSTANTE = 'const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS = true'
 
 function bornes(nom: string): string {
   const debut = SOURCE.indexOf(`// ── DÉBUT ${nom}`)
@@ -42,7 +43,7 @@ interface Copie {
 }
 
 function copie(levee: boolean, plan: PlanComptable): Copie {
-  expect(SOURCE.split(CONSTANTE).length - 1, 'la constante de l’assistant, baissée, une fois').toBe(1)
+  expect(SOURCE.split(CONSTANTE).length - 1, 'la constante de l’assistant, levée, une fois').toBe(1)
   const bloc = `${bornes('VALIDATION')}\n${blocDesBanques(SOURCE)}\n${bornes('AFFECTATION')}\n${bornes('COTISATION')}`
     .replace(CONSTANTE, `const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS = ${levee}`)
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
@@ -109,7 +110,10 @@ describe('l’assistant et la part « autres impôts » (EXP58-Q6), dans les deu
   }
 
   it('la lecture du plan de la copie exige le rôle la constante levée, et l’ignore baissée — comme src/lib', () => {
-    const lignes = [...ROLES_DE_LA_BASE, ROLE_AUTRES_IMPOTS].map((r) => ({
+    // La base rend le rôle depuis la migration : il est dans `ROLES_DE_LA_BASE`, une fois (deux fois, la lecture refuserait
+    // des deux côtés, et le test passerait sans rien juger).
+    expect(ROLES_DE_LA_BASE.filter((r) => r.role === 'autres_impots')).toEqual([ROLE_AUTRES_IMPOTS])
+    const lignes = ROLES_DE_LA_BASE.map((r) => ({
       role: r.role, compte: r.compteDefaut, libelle: LIBELLES_PAR_DEFAUT[r.role as keyof typeof LIBELLES_PAR_DEFAUT] ?? r.libelleDefaut,
       prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
     }))
@@ -117,6 +121,8 @@ describe('l’assistant et la part « autres impôts » (EXP58-Q6), dans les deu
     for (const levee of [false, true]) {
       drapeau.leve = levee
       const lire = planDeLaCopie(levee)
+      expect(planDeLaReponse({ data: lignes, error: null }).motif).toBeNull()
+      expect(planDeLaReponse({ data: lignes, error: null }).plan?.autres_impots).toBe(levee ? '637800' : undefined)
       expect(lire({ data: lignes, error: null }).plan?.autres_impots).toBe(planDeLaReponse({ data: lignes, error: null }).plan?.autres_impots)
       expect(lire({ data: sans, error: null }).motif).toBe(planDeLaReponse({ data: sans, error: null }).motif)
     }

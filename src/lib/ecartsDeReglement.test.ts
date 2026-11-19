@@ -23,6 +23,7 @@ import { racinesDuDirigeantNonAssocieSelon } from './dirigeantAu468'
 import { ROLE_DU_PERSONNEL } from './notesDeFrais'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES, planDeLaReponse, type PlanComptable } from './planComptable'
 import { ROLES_DU_CHANGE } from './rolesDuChange'
+import { ROLE_AUTRES_IMPOTS } from './autresImpotsDesCotisations'
 import { estParLeReleve, type PaiementDePiece } from './rattachement'
 import type { Categorie, EcritureBrouillon } from './types'
 import type { ModeleComptable } from './engagement'
@@ -182,7 +183,9 @@ describe('le drapeau baissé, rien ne change ; levé, l’engagement seul change
 describe('la lecture du plan et les deux rôles du change', () => {
   const ligne = (role: string, compte: string, libelle: string | null = 'x', prefixe: string | null = null) =>
     ({ role, compte, libelle, prefixe_auxiliaire: prefixe })
-  const catalogue = ROLES_COMPTABLES.map((r) => ligne(r.role, r.compteDefaut, r.libelleDefaut, r.prefixeAuxiliaireDefaut))
+  // Le catalogue de la base sans les deux rôles du change : celui de l'application et, depuis le 19/11/2026 (EXP58-Q6, en
+  // production, son drapeau levé), le rôle des autres impôts, que la lecture exige.
+  const catalogue = [...ROLES_COMPTABLES, ROLE_AUTRES_IMPOTS].map((r) => ligne(r.role, r.compteDefaut, r.libelleDefaut, r.prefixeAuxiliaireDefaut))
   const avecChange = (pertes = '656000', gains = '756000') => [...catalogue, ligne('pertes_de_change', pertes), ligne('gains_de_change', gains)]
 
   it('drapeau baissé : ignorés, présents ou non — la lecture d’hier', () => {

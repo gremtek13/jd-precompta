@@ -766,8 +766,9 @@ export interface CotisationDeclaree {
   // La part que l'Urssaf appelle au titre de la contribution à la formation professionnelle et de la CURPS (EXP58-Q6 et
   // EXP58-Q7, lib/autresImpotsDesCotisations.ts) : saisie en positif, au centime, son sens celui de l'échéance ; écrite au
   // compte du rôle `autres_impots` et comptée en BS. Nul : aucune. FACULTATIVE dans ce type, comme les quatre colonnes de la
-  // régularisation : la migration `autres_impots_des_cotisations` est préparée, pas appliquée — avant elle, une lecture
-  // `select('*')` ne la porte pas, et une colonne absente n'est pas une colonne nulle.
+  // régularisation : la migration `autres_impots_des_cotisations` (en production depuis le 19/11/2026, 243) l'a posée, mais
+  // l'état baissé du drapeau, gardé tant que son code existe, se lit sans elle — et une colonne absente n'est pas une colonne
+  // nulle.
   montant_autres_impots?: number | null
   created_at: string
   // Le jour où l'exploitant l'a payée DEPUIS SON COMPTE PERSONNEL (ligne 26.6 — voir lib/cotisationPersonnelle.ts) :

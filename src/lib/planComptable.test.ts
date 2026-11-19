@@ -23,15 +23,19 @@ import {
   type ReponseDuPlan,
 } from './planComptable'
 import { derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
-import { changeAuDefaut, libellesDuChange, ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
+import { autresImpotsAuDefaut, changeAuDefaut, libelleDesAutresImpots, libellesDuChange, ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
+import { ROLE_AUTRES_IMPOTS } from './autresImpotsDesCotisations'
 import { ROLES_DU_CHANGE } from './rolesDuChange'
 import { modeleDeTest } from '../test/modeles'
 
 // Les libellés et les préfixes que `plan_du_dossier` rend pour un dossier qui n'en règle aucun : ceux du catalogue — et,
 // depuis la migration `ecarts_de_reglement` (12/11/2026), ceux des deux rôles du change, que la lecture rend son drapeau
-// levé (comme leurs comptes : `avecLeChange`).
-const LIBELLES_DU_CATALOGUE = { ...Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, r.libelleDefaut])), ...libellesDuChange() }
-const avecLeChange = (plan: Readonly<Record<string, string>>) => ({ ...plan, ...changeAuDefaut() })
+// levé (comme leurs comptes : `avecLeChange`) ; depuis la migration `autres_impots_des_cotisations` (19/11/2026, EXP58-Q6),
+// celui du rôle des autres impôts, de même.
+const LIBELLES_DU_CATALOGUE = {
+  ...Object.fromEntries(ROLES_COMPTABLES.map((r) => [r.role, r.libelleDefaut])), ...libellesDuChange(), ...libelleDesAutresImpots(),
+}
+const avecLeChange = (plan: Readonly<Record<string, string>>) => ({ ...plan, ...changeAuDefaut(), ...autresImpotsAuDefaut() })
 const PREFIXES_DU_CATALOGUE = { fournisseurs: 'F', fournisseurs_immobilisations: 'FI', clients: 'C' }
 const LU_PAR_DEFAUT = { libelles: LIBELLES_DU_CATALOGUE, prefixes: PREFIXES_DU_CATALOGUE }
 
@@ -622,8 +626,8 @@ describe('le lecteur des n-uplets', () => {
 // LE PLAN LU AVEC LE DOSSIER (étape PC3) : la réponse de `plan_du_dossier` devient le plan de toute l'application, ENTIER
 // ou rien, avec le motif ; rien n'y est supposé, ni le défaut d'un rôle qui manque, ni un plan sur une requête qui lève.
 describe('le plan lu avec le dossier (`plan_du_dossier`, étape PC3)', () => {
-  // La réponse de la base : un rôle par ligne, dans l'ordre du catalogue — les deux du change compris, depuis leur
-  // migration —, le compte du plan sinon le défaut.
+  // La réponse de la base : un rôle par ligne, dans l'ordre du catalogue — les deux du change et celui des autres impôts
+  // compris, depuis leurs migrations —, le compte du plan sinon le défaut.
   const lignes = (plan: Readonly<Record<string, string>>) => ROLES_DE_LA_BASE.map((r) => ({
     role: r.role, compte: plan[r.role] ?? r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut,
     origine: plan === PLAN_PAR_DEFAUT ? 'application' : 'dossier',
@@ -762,12 +766,12 @@ describe('les six rôles de la vente facturée (étape VF2), au catalogue de la 
       expect(ROLES as readonly string[], r.role).toContain(r.role)
       expect(definitionDuRole(r.role), r.role).toBe(r)
     }
-    // La réponse de la base porte les trente-deux depuis l'étape VF2, et les deux du change depuis le 12/11/2026 : le plan
-    // lu est entier, au défaut de chacun.
-    const lignes = [...CATALOGUE_VIVANT, ...ROLES_DU_CHANGE].map((r) => ({
+    // La réponse de la base porte les trente-deux depuis l'étape VF2, les deux du change depuis le 12/11/2026, et celui des
+    // autres impôts depuis le 19/11/2026 (EXP58-Q6) : le plan lu est entier, au défaut de chacun.
+    const lignes = [...CATALOGUE_VIVANT, ...ROLES_DU_CHANGE, ROLE_AUTRES_IMPOTS].map((r) => ({
       role: r.role, compte: r.compteDefaut, libelle: r.libelleDefaut, prefixe_auxiliaire: r.prefixeAuxiliaireDefaut, origine: 'application',
     }))
-    expect(lignes).toHaveLength(34)
+    expect(lignes).toHaveLength(35)
     expect(planDeLaReponse({ data: lignes, error: null })).toEqual({ plan: avecLeChange(PLAN_PAR_DEFAUT), ...LU_PAR_DEFAUT, motif: null })
     // Une base d'avant VF2, qui ne rendrait que les vingt-six, ne donnerait AUCUN plan : la production les porte depuis le
     // 18/10/2026 (catalogue relu le 19/10/2026 : 32 rôles, l'empreinte que planComptable.sql exige).

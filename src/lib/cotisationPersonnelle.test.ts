@@ -5,6 +5,7 @@ import {
   argumentsDeLaDeclaration, avertissementRetraitPaiementPersonnel, avertissementSuppressionEcheancePayee,
   confirmationPaiementPersonnel, ecritureDuPaiementPersonnel, libelleDuPaiementPersonnel, paiementsPersonnelsAReprendre,
   RAISON_ECRITURE_A_REPRENDRE, REFUS_PAIEMENT_PERSONNEL, RETRAIT_EXPORTE, REFUS_RETRAIT_PAIEMENT_PERSONNEL, refusPaiementPersonnel,
+  refusPaiementPersonnelSelon,
   refusRetraitPaiementPersonnel, type ContextePaiementPersonnel,
 } from './cotisationPersonnelle'
 import { remplirModele } from './encaissementsFactures'
@@ -64,7 +65,13 @@ const ECRITE = [
 
 // ── La migration et l'essai, lus ─────────────────────────────────────────────────────────────────────────────────────
 
+// Depuis le 19/11/2026 (EXP58-Q6, `autres_impots_des_cotisations`, en production, 243), la dernière définition de l'export est
+// celle de la migration de la part « autres impôts » : c'est elle que la base exécute, et la liste du drapeau levé
+// (`refusPaiementPersonnelSelon(true)`) s'y confronte. La définition d'AVANT elle reste celle du drapeau baissé
+// (`REFUS_PAIEMENT_PERSONNEL`), que l'application garde tant que le code du drapeau existe.
 const sqlDeLaDeclaration = () => derniereDefinitionSql('enregistrer_paiement_personnel_cotisation')
+const sqlDAvantLesAutresImpots = () => derniereDefinitionSql('enregistrer_paiement_personnel_cotisation',
+  (f) => !f.chemin.endsWith('_autres_impots_des_cotisations.sql'))
 
 // Les messages des `raise exception` d'une fonction, dans l'ordre du texte, l'apostrophe doublée de SQL rendue simple.
 function messagesSql(sql: string): string[] {
@@ -188,24 +195,34 @@ const multiensemble = (lignes: readonly { compte: string; sens: string; montant:
 
 describe('enregistrer_paiement_personnel_cotisation — le module dit ce que la fonction refuse', () => {
   it('les mêmes messages, dans le même ordre', () => {
-    const sql = sqlDeLaDeclaration()
-    expect(messagesSql(sql)).toHaveLength(17)
-    expect(REFUS_PAIEMENT_PERSONNEL.map((r) => r.modele)).toEqual(messagesSql(sql))
+    const avant = sqlDAvantLesAutresImpots()
+    expect(messagesSql(avant)).toHaveLength(17)
+    expect(REFUS_PAIEMENT_PERSONNEL.map((r) => r.modele)).toEqual(messagesSql(avant))
     expect(new Set(REFUS_PAIEMENT_PERSONNEL.map((r) => r.cle)).size).toBe(REFUS_PAIEMENT_PERSONNEL.length)
+    // Le drapeau levé : les trois refus de la part, à la suite de ceux de la CSG-CRDS, comme la migration.
+    const sql = sqlDeLaDeclaration()
+    expect(messagesSql(sql)).toHaveLength(20)
+    expect(refusPaiementPersonnelSelon(true).map((r) => r.modele)).toEqual(messagesSql(sql))
+    expect(new Set(refusPaiementPersonnelSelon(true).map((r) => r.cle)).size).toBe(20)
   })
 
   // LA BORNE DU HARNAIS : une confrontation qui ne saurait pas virer au rouge ne prouverait rien.
   it('vire au rouge sur une dérive plantée dans le texte de la fonction', () => {
-    const sql = sqlDeLaDeclaration()
-    const attendu = REFUS_PAIEMENT_PERSONNEL.map((r) => r.modele)
-    const mot = sql.replace("'Une échéance de zéro euro n''a rien à payer.'", "'Une échéance nulle n''a rien à payer.'")
-    expect(mot).not.toBe(sql)
-    expect(messagesSql(mot)).not.toEqual(attendu)
-    const a = "raise exception 'La date du paiement depuis le compte personnel est à renseigner.'"
-    const b = "raise exception 'Un paiement ne se date pas avant l''an 2000.'"
-    expect(sql).toContain(a)
-    expect(sql).toContain(b)
-    expect(messagesSql(sql.replace(a, '§').replace(b, a).replace('§', b))).not.toEqual(attendu)
+    // Chaque texte face à sa liste, qu'il égale avant la dérive : sinon le rouge ne prouverait rien.
+    for (const [sql, attendu] of [
+      [sqlDAvantLesAutresImpots(), REFUS_PAIEMENT_PERSONNEL.map((r) => r.modele)],
+      [sqlDeLaDeclaration(), refusPaiementPersonnelSelon(true).map((r) => r.modele)],
+    ] as const) {
+      expect(messagesSql(sql)).toEqual(attendu)
+      const mot = sql.replace("'Une échéance de zéro euro n''a rien à payer.'", "'Une échéance nulle n''a rien à payer.'")
+      expect(mot).not.toBe(sql)
+      expect(messagesSql(mot)).not.toEqual(attendu)
+      const a = "raise exception 'La date du paiement depuis le compte personnel est à renseigner.'"
+      const b = "raise exception 'Un paiement ne se date pas avant l''an 2000.'"
+      expect(sql).toContain(a)
+      expect(sql).toContain(b)
+      expect(messagesSql(sql.replace(a, '§').replace(b, a).replace('§', b))).not.toEqual(attendu)
+    }
   })
 
   it('les valeurs des messages sont écrites comme le module les écrit', () => {
@@ -221,11 +238,24 @@ describe('enregistrer_paiement_personnel_cotisation — le module dit ce que la 
       ecriture_differente: ['v_compte'],
       desequilibre: ['v_debit', 'v_credit'],
     }
-    const args = argumentsSql(sqlDeLaDeclaration())
+    const args = argumentsSql(sqlDAvantLesAutresImpots())
     expect(args).toHaveLength(REFUS_PAIEMENT_PERSONNEL.length)
     REFUS_PAIEMENT_PERSONNEL.forEach((r, i) => {
       expect(args[i], r.cle).toEqual(attendus[r.cle] ?? [])
       expect(r.modele.replace(/%%/g, '').split('%').length - 1, r.cle).toBe(args[i].length)
+    })
+    // Le drapeau levé : les mêmes, et les deux refus de la part qui disent des montants.
+    const attendusLeve: Record<string, string[]> = {
+      ...attendus,
+      part_depasse: [MONTANT('v_impots'), MONTANT('abs(v_montant)')],
+      csg_part_depasse: [MONTANT('v_csg + v_impots'), MONTANT('abs(v_montant)')],
+    }
+    const leve = refusPaiementPersonnelSelon(true)
+    const argsLeve = argumentsSql(sqlDeLaDeclaration())
+    expect(argsLeve).toHaveLength(leve.length)
+    leve.forEach((r, i) => {
+      expect(argsLeve[i], r.cle).toEqual(attendusLeve[r.cle] ?? [])
+      expect(r.modele.replace(/%%/g, '').split('%').length - 1, r.cle).toBe(argsLeve[i].length)
     })
   })
 
@@ -234,24 +264,33 @@ describe('enregistrer_paiement_personnel_cotisation — le module dit ce que la 
   // plan du dossier par la CLÉ de son rôle, et le dirigeant par `compte_du_dirigeant` — le case d'avant, le 108000 lu
   // dans le plan (planComptable.test.ts les confronte).
   it('les comptes, les sens et les bornes sont ceux de la fonction', () => {
-    const sql = sqlDeLaDeclaration()
-    expect(sql).toContain("v_compte_cotisations := public.compte_du_role(p_dossier_id, 'cotisations_exploitant');")
-    expect(PLAN_PAR_DEFAUT.cotisations_exploitant).toBe(COMPTE_COTISATIONS_EXPLOITANT)
-    expect(sql).toContain('(v_compte_cotisations, v_sens_charge, v_net),')
-    expect(sql).toContain('(v_compte, v_sens_dirigeant, v_net)')
-    expect(sql).toContain('where a.centimes > 0')
-    expect(sql).toContain('select d.mode_comptable, public.compte_du_dirigeant(d.id)\n    into v_mode, v_compte from public.dossiers d where d.id = p_dossier_id;')
-    expect(PLAN_PAR_DEFAUT.exploitant).toBe(COMPTE_EXPLOITANT)
-    expect(sql).toContain("v_sens_charge := case when v_montant > 0 then 'debit' else 'credit' end")
-    expect(sql).toContain("v_sens_dirigeant := case when v_montant > 0 then 'credit' else 'debit' end")
-    expect(sql).toContain('v_montant := coalesce(v_cotisation.montant_verse, v_cotisation.montant_appele);')
-    expect(sql).toContain("if v_mode = 'tresorerie' and v_cotisation.montant_csg_crds is not null then")
-    expect(sql).toContain('v_net := (abs(v_montant) * 100)::bigint - (v_csg * 100)::bigint;')
-    expect(sql).toContain("if p_date_paiement < date '2000-01-01' then")
-    expect(sql).toContain("(now() at time zone 'Europe/Paris')::date")
-    expect(sql).toContain('if v_ouverture is not null and p_date_paiement < v_ouverture then')
-    expect(sql).toContain('if v_frontiere is not null and p_date_paiement <= v_frontiere then')
-    expect(sql).toContain('if v_frontiere is not null and v_cotisation.echeance <= v_frontiere then')
+    // Le drapeau baissé : l'écriture à deux lignes d'avant la migration de la part « autres impôts ».
+    const avant = sqlDAvantLesAutresImpots()
+    expect(avant).toContain('(v_compte_cotisations, v_sens_charge, v_net),')
+    expect(avant).toContain('(v_compte, v_sens_dirigeant, v_net)')
+    // Levé, la base qui l'exécute : trois lignes, la part au compte du rôle `autres_impots`, le dirigeant pour le net.
+    const leve = sqlDeLaDeclaration()
+    expect(leve).toContain("v_compte_impots := public.compte_du_role(p_dossier_id, 'autres_impots');")
+    expect(leve).toContain('(v_compte_cotisations, v_sens_charge, v_net - v_part),\n      (v_compte_impots, v_sens_charge, v_part),\n'
+      + '      (v_compte, v_sens_dirigeant, v_net)\n')
+    expect(leve).toContain('v_part := (v_impots * 100)::bigint;')
+    for (const sql of [avant, leve]) {
+      expect(sql).toContain("v_compte_cotisations := public.compte_du_role(p_dossier_id, 'cotisations_exploitant');")
+      expect(PLAN_PAR_DEFAUT.cotisations_exploitant).toBe(COMPTE_COTISATIONS_EXPLOITANT)
+      expect(sql).toContain('where a.centimes > 0')
+      expect(sql).toContain('select d.mode_comptable, public.compte_du_dirigeant(d.id)\n    into v_mode, v_compte from public.dossiers d where d.id = p_dossier_id;')
+      expect(PLAN_PAR_DEFAUT.exploitant).toBe(COMPTE_EXPLOITANT)
+      expect(sql).toContain("v_sens_charge := case when v_montant > 0 then 'debit' else 'credit' end")
+      expect(sql).toContain("v_sens_dirigeant := case when v_montant > 0 then 'credit' else 'debit' end")
+      expect(sql).toContain('v_montant := coalesce(v_cotisation.montant_verse, v_cotisation.montant_appele);')
+      expect(sql).toContain("if v_mode = 'tresorerie' and v_cotisation.montant_csg_crds is not null then")
+      expect(sql).toContain('v_net := (abs(v_montant) * 100)::bigint - (v_csg * 100)::bigint;')
+      expect(sql).toContain("if p_date_paiement < date '2000-01-01' then")
+      expect(sql).toContain("(now() at time zone 'Europe/Paris')::date")
+      expect(sql).toContain('if v_ouverture is not null and p_date_paiement < v_ouverture then')
+      expect(sql).toContain('if v_frontiere is not null and p_date_paiement <= v_frontiere then')
+      expect(sql).toContain('if v_frontiere is not null and v_cotisation.echeance <= v_frontiere then')
+    }
   })
 
   it('l’écran envoie exactement les paramètres de la fonction', () => {

@@ -62,11 +62,21 @@ const consigneDe = (x: Rendu) => {
 // Les quatre relevées de nouveau le 19/11/2026 (EXP58-Q5, `CUMUL_REPRIS_PREVU` levé avec la migration collée) : la différence
 // voulue est la lecture du registre (deux colonnes de plus, `cumul_repris` et `cumul_repris_au`) et la phrase de la consigne sur
 // le plan continué ; les deux états de la constante se jouent dans agentComptableAmortissement.test.ts.
+// Les quatre relevées de nouveau le même jour (EXP58-Q6, `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` levé avec la migration collée,
+// 243) : chaque scénario rejoué sur deux copies hors du dépôt, la constante de l'assistant à `false` puis à `true`, le faux
+// `plan_du_dossier` rendant déjà le rôle `autres_impots` (src/test/rolesDeLaBase.ts). À `false`, les quatre empreintes d'avant
+// (d0f11fae…, f43b6f30…, 987deaac…, 3a1cf12f…), à l'identique : le rôle de plus dans la réponse ne change rien. À `true`, une
+// seule différence, voulue, dans la consigne des 73 demandes au modèle de chaque dossier (40 des 63 scénarios), et nulle part
+// ailleurs (aucun statut, aucun résultat d'outil, aucune réponse) : la phrase de l'échéance de cotisation s'allonge de « ; sa part « autres impôts » — la contribution à la formation
+// professionnelle et la CURPS que l'Urssaf appelle avec elle —, quand elle est saisie, va au 637800 (autres impôts), en BS sur
+// la 2035 et non en BK, en trésorerie comme en engagement, et de même quand l'échéance est payée depuis le compte personnel ».
+// La lecture du plan (le rôle exigé) et la colonne `montant_autres_impots` lue ne changent aucun rendu : aucune échéance du
+// monde fictif ne porte de part. Les deux états de la constante se jouent dans agentComptableAutresImpots.test.ts.
 const EMPREINTES = {
-  bnc: 'd0f11fae4d94d3da4c4c0ce1956a09e4fc1e125bf09b22254f8fa2350fd47505',
-  societe: 'f43b6f30843f28fc110a6f8b5984ffaac6dfaf7aab39fa82960d4bd21070ac33',
-  consigneBnc: '987deaacabb4b3daaa31c6f2995bda7f1dfe272bd6584c11fd87abe815201107',
-  consigneSociete: '3a1cf12f5491a1f159f8f3934aad64d9c75b35d0a170a26309616ff4c18928d7',
+  bnc: 'eec4bec7ce24fbb929f01f966c59de171a8e7456c74e4b5cbe73ed47023b69ef',
+  societe: '0d1cecda7823107d9df961ad49a73a003cd54faf641bc90120b8f13c09675e18',
+  consigneBnc: 'ac601d1bd397717202d3771933f86d2ca1ea017f144670aa20625e3680ac30ab',
+  consigneSociete: '07f8093df2b47cafe09c065927d0af4d0d802de126a30942c749c2b8251c121a',
 }
 
 describe('agent-comptable ferme le dossier dont le plan ne se lit pas, avant toute dépense', () => {
