@@ -383,6 +383,12 @@
 -- (75 tables). Ce que ce script ne voit pas — les déclencheurs de la caisse jamais négative, qu'une table recopiée
 -- n'emporte pas — se prouve par le chemin même de l'application (HISTORIQUE.md, « LA CAISSE : LE MODULE, LA LECTURE ET
 -- LA SAUVEGARDE (C2, LIGNE 26.6) »).
+--
+-- 19/11/2026, NOE8 (une part) : `paiements_assurance_maladie_mouvements` (NOE5, préparée) entre au plan quand sa table existe
+-- (le bloc « L'association des paiements de l'assurance maladie », ci-dessous), juste après `lignes_bancaires`. Sur une copie
+-- de `replique_227` portée à 243 : sans préparée, IDENTIQUE (100 tables, 20 lignes, 200 clés) ; NOE3, NOE5, OPT1 et BOR3
+-- appliquées et trois associations semées par la fonction de NOE5, le script d'avant s'arrêtait sur ses clés, celui-ci rend
+-- IDENTIQUE (107 tables, 30 lignes dont les trois associations, 213 clés) ; ancré avant le mouvement, il s'arrête en 23503.
 \set ON_ERROR_STOP on
 drop schema if exists essai_restauration cascade;
 create schema essai_restauration;
@@ -1191,6 +1197,25 @@ begin
     insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
      ('cles_des_lots_teletransmission','direct',null,null),('imports_factures_assurance_maladie','direct',null,null),
      ('factures_assurance_maladie','direct',null,null),('lots_teletransmission_importes','direct',null,null);
+  end if;
+end $$;
+
+-- ══ L'association des paiements de l'assurance maladie (NOE5, 19/11/2026) ══ Au plan du code quand
+-- `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` est levé — c'est-à-dire quand sa migration est en base (après celle de NOE3) : le
+-- script met sa table juste après `lignes_bancaires` (ORDRE_RESTAURATION_PREVU : après ses deux parents, le mouvement et le
+-- paiement, que le bloc de NOE3 place plus tôt), les tables qui suivent reculant d'un rang ; son chemin. Aucune vague. Ses
+-- trois clés (le dossier, le mouvement, le paiement) se recopient alors comme les autres. Absente de la base, rien n'entre : le
+-- plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.paiements_assurance_maladie_mouvements') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'lignes_bancaires';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'paiements_assurance_maladie_mouvements');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('paiements_assurance_maladie_mouvements','direct',null,null);
   end if;
 end $$;
 

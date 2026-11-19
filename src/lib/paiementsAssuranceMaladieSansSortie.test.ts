@@ -63,6 +63,7 @@ const LECTEURS_PERMIS: Readonly<Record<string, string>> = {
   'src/lib/paiementsAssuranceMaladie.test.ts': 'les essais du module, qui nomment la migration',
   'src/lib/sauvegarde.ts': 'le plan de sauvegarde, derrière le drapeau',
   'src/lib/sauvegardePaiementsAssuranceMaladie.test.ts': 'les essais du plan de sauvegarde',
+  'src/lib/sauvegardeAssociationsAssuranceMaladie.test.ts': 'les essais du plan de sauvegarde de l’association (NOE8)',
   'src/lib/restaurationEssai.test.ts': 'la garde de l’essai de restauration',
   'src/lib/types.ts': 'le type des deux tables',
   'src/lib/paiementsAssuranceMaladieLecture.ts': 'la lecture de l’écran d’import (NOE4), qui montre et ne calcule rien',

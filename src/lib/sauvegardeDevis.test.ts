@@ -20,6 +20,7 @@ import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
 import { HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE } from './hausseDuChiffreDAffaires'
 import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from './paiementsAssuranceMaladie'
 import { FACTURES_ASSURANCE_MALADIE_PREVUES } from './importDuFactureAssuranceMaladie'
+import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssuranceMaladie'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
 import { ORIGINAUX_RETENUS_PREVUS } from './originauxRetenus'
 import { HONORAIRES_FACTURES_PREVUS } from './honorairesAFacturer'
@@ -55,6 +56,7 @@ import {
   auPlanDeLaHausseDuChiffreDAffaires,
   auPlanDesPaiementsAssuranceMaladie,
   auPlanDuFactureAssuranceMaladie,
+  auPlanDeLAssociationAssuranceMaladie,
   auPlanDesSaisies2035,
   auPlanDesParametresDesCotisations,
   auPlanDesComptesBancaires,
@@ -128,7 +130,8 @@ describe('le filtre du plan', () => {
     // (sauvegardePrevisionsPubliees.test.ts) ; depuis le 15/11/2026, celui de l'alerte de hausse du chiffre d'affaires
     // (sauvegardeHausseDuChiffreDAffaires.test.ts) ; depuis P1TQ2-Q1, celui des auteurs des ouvertures d'accès
     // (sauvegardeOuverturesAttestees.test.ts) ; depuis BOR3, celui du facturé à l'assurance maladie
-    // (sauvegardeFacturesAssuranceMaladie.test.ts).
+    // (sauvegardeFacturesAssuranceMaladie.test.ts) ; depuis NOE8, celui de l'association des paiements de l'assurance maladie
+    // (sauvegardeAssociationsAssuranceMaladie.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -142,6 +145,7 @@ describe('le filtre du plan', () => {
         && auPlanDeLaHausseDuChiffreDAffaires(table, HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE)
         && auPlanDesPaiementsAssuranceMaladie(table, PAIEMENTS_ASSURANCE_MALADIE_PREVUS)
         && auPlanDuFactureAssuranceMaladie(table, FACTURES_ASSURANCE_MALADIE_PREVUES)
+        && auPlanDeLAssociationAssuranceMaladie(table, ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES)
         && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
         && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
         && auPlanDeLaPieceDUneFactureReprise(table, PIECE_D_UNE_FACTURE_REPRISE_PREVUE)

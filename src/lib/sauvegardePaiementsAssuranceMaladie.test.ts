@@ -66,6 +66,8 @@ describe('le plan prévu, paiements compris', () => {
       'imports_assurance_maladie.dossier_id → dossiers (cascade)',
       'paiements_assurance_maladie.dossier_id → dossiers (cascade)',
       'paiements_assurance_maladie.import_id → imports_assurance_maladie (cascade)',
+      // La clé entrante de l'association (NOE5, au plan par NOE8) : sans action, elle retient le retrait d'un import associé.
+      'paiements_assurance_maladie_mouvements.paiement_id → paiements_assurance_maladie (bloque)',
     ])
   })
 
