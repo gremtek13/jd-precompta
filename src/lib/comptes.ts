@@ -1,4 +1,5 @@
 import { ECARTS_DE_REGLEMENT_PREVUS, ROLES_DU_CHANGE } from './rolesDuChange'
+import { AUTRES_IMPOTS_DES_COTISATIONS_PREVUS, ROLE_AUTRES_IMPOTS } from './autresImpotsDesCotisations'
 
 // Comptes PCG standard, fixes — partagés entre Écritures (génération de la ligne charge/produit +
 // TVA), Banque (génération de la contrepartie), la balance et l'export FEC, pour n'avoir qu'un seul
@@ -222,9 +223,20 @@ const LIBELLES_DU_CHANGE: Readonly<Record<string, string>> = {
   '766000': 'Gains de change financiers',
 }
 
+// LES COMPTES DE LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (EXP58-Q6 ; lib/autresImpotsDesCotisations.ts) : le défaut de son
+// rôle, 637800, sous le libellé du catalogue (l'intitulé du 6378, « Taxes diverses », PCG consolidé au 1er janvier 2026,
+// art. 1121-1), et le 635800 qu'un dossier peut choisir à sa place, sous l'intitulé du 6358 (« Autres droits »). Tenus le
+// drapeau de sa migration levé SEULEMENT, comme ceux du change : baissé, rien ne les écrit, et une catégorie qui porterait
+// l'un d'eux garde son nom.
+const LIBELLES_DES_AUTRES_IMPOTS: Readonly<Record<string, string>> = {
+  '637800': ROLE_AUTRES_IMPOTS.libelleDefaut,
+  '635800': 'Autres droits',
+}
+
 export function libelleCompteTenu(compte: string): string | null {
   if (LIBELLES_COMPTES[compte]) return LIBELLES_COMPTES[compte]
   if (ECARTS_DE_REGLEMENT_PREVUS && LIBELLES_DU_CHANGE[compte]) return LIBELLES_DU_CHANGE[compte]
+  if (AUTRES_IMPOTS_DES_COTISATIONS_PREVUS && LIBELLES_DES_AUTRES_IMPOTS[compte]) return LIBELLES_DES_AUTRES_IMPOTS[compte]
   if (COMPTE_AMORTISSEMENT_ECRIT.test(compte)) {
     return LIBELLES_AMORTISSEMENTS[compte]
       ?? (compte.startsWith('280') ? 'Amortissements des immobilisations incorporelles' : 'Amortissements des immobilisations corporelles')

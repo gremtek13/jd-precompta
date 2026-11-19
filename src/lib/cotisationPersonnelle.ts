@@ -1,6 +1,8 @@
 import { ecritureConforme, type LigneEcritureMouvement } from './affectationBanque'
+import { compteDesAutresImpots } from './autresImpotsDesCotisations'
 import {
-  csgDeLEcriture, montantDeLEcheance, REFUS_MONTANTS_PAIEMENT_PERSONNEL, refusMontantsDuPaiementPersonnel,
+  autresImpotsDeLEcriture, csgDeLEcriture, montantDeLEcheance, REFUS_MONTANTS_PAIEMENT_PERSONNEL,
+  REFUS_PART_AUTRES_IMPOTS_PAIEMENT_PERSONNEL, refusMontantsDuPaiementPersonnel,
 } from './cotisationRapprochee'
 import type { ModeleComptable } from './engagement'
 import { remplirModele } from './encaissementsFactures'
@@ -67,7 +69,17 @@ export const REFUS_PAIEMENT_PERSONNEL = [
   { cle: 'desequilibre', modele: 'Écriture déséquilibrée : % au débit, % au crédit.' },
 ] as const
 
-export type CleRefusPaiementPersonnel = (typeof REFUS_PAIEMENT_PERSONNEL)[number]['cle']
+export type CleRefusPaiementPersonnel =
+  | (typeof REFUS_PAIEMENT_PERSONNEL)[number]['cle'] | (typeof REFUS_PART_AUTRES_IMPOTS_PAIEMENT_PERSONNEL)[number]['cle']
+
+// LES REFUS SELON LE DRAPEAU DE LA PART « AUTRES IMPÔTS » (EXP58-Q6) : baissé, la liste d'hier, celle que l'export porte ;
+// levé, les trois de la part à la suite de ceux de la CSG-CRDS, ceux de la migration `autres_impots_des_cotisations`
+// (cotisationPersonnelle.test.ts confronte les deux listes aux deux textes).
+export function refusPaiementPersonnelSelon(prevus: boolean): readonly { cle: CleRefusPaiementPersonnel; modele: string }[] {
+  if (!prevus) return REFUS_PAIEMENT_PERSONNEL
+  const rang = REFUS_PAIEMENT_PERSONNEL.findIndex((r) => r.cle === 'csg_depasse') + 1
+  return [...REFUS_PAIEMENT_PERSONNEL.slice(0, rang), ...REFUS_PART_AUTRES_IMPOTS_PAIEMENT_PERSONNEL, ...REFUS_PAIEMENT_PERSONNEL.slice(rang)]
+}
 
 export interface RefusPaiementPersonnel {
   cle: CleRefusPaiementPersonnel
@@ -75,7 +87,7 @@ export interface RefusPaiementPersonnel {
 }
 
 function refus(cle: CleRefusPaiementPersonnel, ...valeurs: string[]): RefusPaiementPersonnel {
-  return { cle, message: remplirModele(REFUS_PAIEMENT_PERSONNEL.find((r) => r.cle === cle)!.modele, valeurs) }
+  return { cle, message: remplirModele(refusPaiementPersonnelSelon(true).find((r) => r.cle === cle)!.modele, valeurs) }
 }
 
 // Ce que l'écran sait du dossier quand il propose de déclarer un paiement.
@@ -99,7 +111,7 @@ const DATE_CIVILE = /^\d{4}-\d{2}-\d{2}$/
 // propose que les échéances qu'il a lues, du dossier qu'il montre), et l'écriture, qu'il compose lui-même
 // (`ecritureDuPaiementPersonnel`). La date est un FAIT que le cabinet saisit : vide, elle est à renseigner.
 export function refusPaiementPersonnel(
-  cotisation: Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'paiement_personnel_le'>,
+  cotisation: Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'montant_autres_impots' | 'paiement_personnel_le'>,
   date: string | null,
   contexte: ContextePaiementPersonnel,
 ): RefusPaiementPersonnel | null {
@@ -131,26 +143,43 @@ export function libelleDuPaiementPersonnel(cotisation: Pick<CotisationDeclaree, 
 // n'attend alors aucune ligne. C'est la composition que la base refait (`enregistrer_paiement_personnel_cotisation`) ;
 // elle refuse toute autre. Les cotisations de l'exploitant et le compte du dirigeant sont ceux du PLAN du dossier, que le
 // modèle porte, et que la base relit au même plan.
+//
+// LA PART « AUTRES IMPÔTS » (EXP58-Q6), saisie le drapeau levé : au compte du rôle `autres_impots` (637800 par défaut), dans
+// le sens de la charge, la cotisation au 646000 baissant d'autant ; le compte du dirigeant porte toujours l'échéance hors
+// CSG-CRDS. Sans elle, l'écriture d'hier, ligne pour ligne. La ligne du dirigeant est toujours la DERNIÈRE.
 export function ecritureDuPaiementPersonnel(
-  cotisation: Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds'>,
+  cotisation: Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'montant_autres_impots'>,
   modele: ModeleComptable,
 ): LigneEcritureMouvement[] {
   const montant = montantDeLEcheance(cotisation)
   const net = centimes(Math.abs(montant)) - centimes(csgDeLEcriture(cotisation, modele.mode))
   if (net <= 0) return []
+  const impots = centimes(autresImpotsDeLEcriture(cotisation))
   const appel = montant > 0
+  const charge = appel ? 'debit' : 'credit'
   const libelle = libelleDuPaiementPersonnel(cotisation)
-  return [
-    { compte: modele.plan.cotisations_exploitant, sens: appel ? 'debit' : 'credit', montant: net / 100, libelle },
+  const lignes: LigneEcritureMouvement[] = [
+    { compte: modele.plan.cotisations_exploitant, sens: charge, montant: (net - impots) / 100, libelle },
+    { compte: compteDesAutresImpots(modele.plan), sens: charge, montant: impots / 100, libelle },
     { compte: compteDuDirigeant(modele), sens: appel ? 'credit' : 'debit', montant: net / 100, libelle },
   ]
+  return lignes.filter((l) => l.montant > 0)
+}
+
+// Les lignes de charge d'une écriture de paiement, dites : « 420,00 € au débit du 646000 et 20,00 € du 637800 ». La
+// dernière ligne, celle du dirigeant, n'en est pas.
+function chargesDites(lignes: readonly LigneEcritureMouvement[]): string {
+  const charges = lignes.slice(0, -1)
+  const sens = charges[0].sens === 'debit' ? 'débit' : 'crédit'
+  return charges.map((l, i) => (i === 0 ? `${formatMoney(l.montant)} au ${sens} du ${l.compte}` : `${formatMoney(l.montant)} du ${l.compte}`))
+    .join(' et ')
 }
 
 // Ce que l'écran envoie à `enregistrer_paiement_personnel_cotisation` : le dossier annoncé (la fonction y contrôle l'accès
 // avant de rien lire), l'échéance, la date saisie et l'écriture composée ici.
 export function argumentsDeLaDeclaration(
   dossierId: string,
-  cotisation: Pick<CotisationDeclaree, 'id' | 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds'>,
+  cotisation: Pick<CotisationDeclaree, 'id' | 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'montant_autres_impots'>,
   date: string,
   modele: ModeleComptable,
 ): { p_dossier_id: string; p_cotisation_id: string; p_date_paiement: string; p_ecritures: LigneEcritureMouvement[] } {
@@ -170,7 +199,7 @@ const QUI_DEFAIT_LE_PAIEMENT = RETRAIT_EXPORTE
 // 2035 de cette année en trésorerie ; en engagement la 2035 n'est pas produite, et la confirmation ne la promet pas —, et
 // ce qui le défera.
 export function confirmationPaiementPersonnel(
-  cotisation: Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds'>,
+  cotisation: Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'montant_autres_impots'>,
   date: string,
   modele: ModeleComptable,
 ): string {
@@ -181,7 +210,7 @@ export function confirmationPaiementPersonnel(
     : `Déclarer l'échéance du ${formatDate(cotisation.echeance)} (${formatMoney(montant)}) payée depuis le compte personnel de l'exploitant, le ${formatDate(date)}.`
   const ecriture = lignes.length === 0
     ? 'Faite toute de CSG-CRDS, elle ne laisse rien à écrire au brouillon.'
-    : `Le brouillon reçoit ${formatMoney(lignes[0].montant)} au ${lignes[0].sens === 'debit' ? 'débit' : 'crédit'} du ${lignes[0].compte}, face au ${lignes[1].compte}, à cette date.`
+    : `Le brouillon reçoit ${chargesDites(lignes)}, face au ${lignes[lignes.length - 1].compte}, à cette date.`
   const ou = modele.mode === 'tresorerie' ? `dans la 2035 de ${date.slice(0, 4)}` : `dans l'exercice ${date.slice(0, 4)}`
   return `${quoi} ${ecriture} L'échéance compte ce jour-là ${ou}. ${QUI_DEFAIT_LE_PAIEMENT}`
 }
@@ -275,7 +304,7 @@ export function refusRetraitPaiementPersonnel(
 // `ecritures` : le brouillon sans pièce du dossier lu EN ENTIER, ou `null` sur une lecture partielle — ce qu'on n'a pas vu
 // ne se détaille pas, et la phrase dit seulement ce que la fonction fait. Sans valeur par défaut.
 export function avertissementRetraitPaiementPersonnel(
-  cotisation: Pick<CotisationDeclaree, 'id' | 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'paiement_personnel_le'>,
+  cotisation: Pick<CotisationDeclaree, 'id' | 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'montant_autres_impots' | 'paiement_personnel_le'>,
   modele: ModeleComptable,
   ecritures: readonly EcritureBrouillon[] | null,
 ): string {
@@ -287,7 +316,7 @@ export function avertissementRetraitPaiementPersonnel(
     if (presentes.length === 0) return 'Il n’a aucune ligne au brouillon : rien n’en est retiré.'
     const lignes = ecritureDuPaiementPersonnel(cotisation, modele)
     if (cotisation.paiement_personnel_le && ecritureConforme(presentes, lignes, cotisation.paiement_personnel_le)) {
-      return `Son écriture (${formatMoney(lignes[0].montant)} au ${lignes[0].compte}, face au ${lignes[1].compte}) est retirée du brouillon.`
+      return `Son écriture (${lignes.slice(0, -1).map((l) => `${formatMoney(l.montant)} au ${l.compte}`).join(' et ')}, face au ${lignes[lignes.length - 1].compte}) est retirée du brouillon.`
     }
     const comptes = [...new Set(presentes.map((e) => e.compte))].sort().join(', ')
     return presentes.length === 1

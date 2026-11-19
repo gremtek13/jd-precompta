@@ -1,4 +1,6 @@
-import { POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES } from './declaration2035'
+import {
+  POSTE_AMORTISSEMENTS, POSTE_AUTRES_IMPOTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
+} from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
 import type { MouvementBancaire } from './affectationBanque'
 import type { Categorie, VentilationBancaire } from './types'
@@ -242,7 +244,9 @@ const RATTACHEMENTS: [poste: string, porteuse: string, aussi?: string][] = [
   ['TVA', 'BD'],
   ['Contribution économique territoriale', 'JY'],
   ['CET', 'JY'],
-  ['Autres impôts', 'BS'],
+  // Poste IMPORTÉ : celui que le moteur donne à la part « autres impôts » d'une échéance (EXP58-Q6), l'intitulé imprimé de
+  // la ligne 13, qu'une catégorie peut aussi porter.
+  [POSTE_AUTRES_IMPOTS, 'BS'],
   ['Impôts et taxes', 'BS'],
   ['Contribution sociale généralisée déductible', 'BV'],
   // Poste IMPORTÉ, jamais réécrit : une chaîne recopiée ici se désynchroniserait d'un renommage
@@ -529,7 +533,8 @@ export function partObligatoireDeBK(declaration: Declaration2035): { centimes: n
   let centimes = 0
   const mouvements = new Set<string>()
   for (const c of declaration.contributions) {
-    if (c.source.type === 'cotisation') {
+    // Le poste des cotisations SEUL : la part « autres impôts » d'une échéance (EXP58-Q6) a la même source, et va en BS.
+    if (c.source.type === 'cotisation' && c.poste === POSTE_COTISATIONS) {
       centimes += c.centimes
       if (c.source.ligne) mouvements.add(c.source.ligne.id)
     }

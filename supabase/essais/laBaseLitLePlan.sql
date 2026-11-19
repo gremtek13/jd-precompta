@@ -55,6 +55,10 @@
 -- migration entre dans l'export — le test y ajoute alors `caisse` de lui-même, comme ce contrôle selon la base —, et
 -- rien ne se retouche ici ce jour-là (HISTORIQUE.md, « LA CAISSE : LE MODULE, LA LECTURE ET LA SAUVEGARDE (C2, LIGNE
 -- 26.6) »).
+-- ADAPTÉ LE 19/11/2026 (lot L2, point 6, EXP58-Q6 : la migration `autres_impots_des_cotisations`, préparée) : elle fait lire à
+-- `rapprocher_cotisation` et à `enregistrer_paiement_personnel_cotisation` le rôle `autres_impots` du plan (la part de la
+-- CFP et de la CURPS). La liste des quatorze dit l'EXPORT ; le contrôle 3 attend ce rôle en plus de la base munie de la
+-- migration (`autres_impots_en_base`, par son nom dans l'historique). Sans elle, rien ne change.
 do $$
 declare
   -- Faux jusqu'à ce que la production porte les six migrations et que l'export les ait reçues ; vrai ensuite.
@@ -65,6 +69,10 @@ declare
   -- mouvement lisent la banque du MOUVEMENT (`compte_de_banque_du_mouvement`), plus le rôle `banque` par son nom.
   banque_du_mouvement constant boolean := exists (select 1 from supabase_migrations.schema_migrations
                                                    where name = 'jambe_de_banque_par_compte'); -- par son nom : collée, sa version est l'heure du collage
+  -- La part « autres impôts » d'une échéance (EXP58-Q6, migration `autres_impots_des_cotisations`, préparée) : les deux
+  -- fonctions d'une échéance lisent aussi le rôle `autres_impots`.
+  autres_impots_en_base constant boolean := exists (select 1 from supabase_migrations.schema_migrations
+                                                     where name = 'autres_impots_des_cotisations');
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   -- Le dossier `test` ne prête que son cabinet aux dossiers jetables.
   dossier_test uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
@@ -223,6 +231,13 @@ begin
       if corps !~ 'v_banque := public\.compte_de_banque_du_mouvement\(v_ligne\.id\);' or corps ~ '''banque''' then
         roles_vus := roles_vus || ' (la banque du mouvement manque)';
       end if;
+    end if;
+    -- EXP58-Q6 en base : les deux fonctions d'une échéance lisent aussi le rôle `autres_impots` — présent, il sort de la liste
+    -- vue, que la liste des quatorze (l'export) juge ensuite ; absent, la liste vue le dit.
+    if autres_impots_en_base and f->>'f' in ('rapprocher_cotisation(uuid, uuid, jsonb)',
+                                             'enregistrer_paiement_personnel_cotisation(uuid, uuid, date, jsonb)') then
+      roles_vus := case when left(roles_vus, length('autres_impots,')) = 'autres_impots,' then substr(roles_vus, length('autres_impots,') + 1)
+                        else roles_vus || ' (le rôle des autres impôts manque)' end;
     end if;
     if roles_vus is distinct from (f->>'roles') || (case when caisse_du_releve and f->>'f' = 'ecrire_mouvement_compte_bilan(uuid, text, jsonb)'
                                                           then ',caisse' else '' end)

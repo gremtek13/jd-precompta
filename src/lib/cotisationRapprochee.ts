@@ -1,6 +1,7 @@
 import { planPourJuger, type BanquesDuDossier } from './banqueDuMouvement'
 import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
 import { libellerLEcritureDuReleve } from './libellesDuReleve'
+import { compteDesAutresImpots, partAutresImpots } from './autresImpotsDesCotisations'
 import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import { euroCommeLaBase, remplirModele } from './encaissementsFactures'
 import { formatDate, formatMoney } from './format'
@@ -48,6 +49,28 @@ export function csgDeLEcriture(c: Pick<CotisationDeclaree, 'montant_csg_crds'>, 
   return mode === 'tresorerie' && c.montant_csg_crds != null ? Math.abs(c.montant_csg_crds) : 0
 }
 
+// LA PART « AUTRES IMPÔTS » QUE L'ÉCRITURE PORTE au compte du rôle `autres_impots` (EXP58-Q6, EXP58-Q7 ;
+// lib/autresImpotsDesCotisations.ts) : la contribution à la formation professionnelle et la CURPS que l'Urssaf appelle avec
+// les cotisations, en valeur absolue, quand elle est saisie — EN TRÉSORERIE COMME EN ENGAGEMENT : ce n'est pas une part de
+// l'exploitant (la CSG-CRDS ne passe à son compte qu'en trésorerie, une règle de la 2035), c'est une charge d'impôt, que le
+// plan comptable range en classe 63 dans les deux modes. Rien tant que le drapeau de sa migration est baissé : l'écriture
+// d'hier.
+export function autresImpotsDeLEcriture(c: Pick<CotisationDeclaree, 'montant_autres_impots'>): number {
+  return partAutresImpots(c) ?? 0
+}
+
+// Les refus que la part ajoute à ceux de la CSG-CRDS, dans l'ordre de la base (`rapprocher_cotisation`,
+// `enregistrer_paiement_personnel_cotisation`, migration `autres_impots_des_cotisations`) : une part qui n'est pas au centime ;
+// une part qui dépasse ce qu'elle partage — seule quand l'écriture ne sépare pas de CSG-CRDS, avec elle sinon.
+export const REFUS_PART_PAS_AU_CENTIME = 'La part « autres impôts » de cette échéance n’est pas au centime.'
+
+function refusDuPartage(csg: number, impots: number, total: number): string | null {
+  if (centimes(csg) + centimes(impots) <= centimes(total)) return null
+  return csg === 0
+    ? `La part « autres impôts » de cette échéance (${formatMoney(impots)}) dépasse le mouvement (${formatMoney(total)}).`
+    : `La CSG-CRDS et la part « autres impôts » de cette échéance (${formatMoney(csg + impots)}) dépassent le mouvement (${formatMoney(total)}).`
+}
+
 export const REFUS_COTISATION_CLASSEE =
   'Ce mouvement est rapproché d’une pièce ou d’un emprunt, affecté à une catégorie, ventilé sur plusieurs comptes ou classé en virement personnel : annule d’abord ce classement.'
 
@@ -68,7 +91,7 @@ export const REFUS_COTISATION_CLASSEE =
 export function refusRapprochementCotisationSelon(
   parSens: boolean,
   ligne: MouvementBancaire,
-  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds' | 'paiement_personnel_le'>,
+  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds' | 'montant_autres_impots' | 'paiement_personnel_le'>,
   mode: ModeComptable,
 ): string | null {
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
@@ -94,6 +117,11 @@ export function refusRapprochementCotisationSelon(
   if (centimes(csg) > centimes(Math.abs(ligne.montant))) {
     return `La CSG-CRDS de cette échéance (${formatMoney(csg)}) dépasse le mouvement (${formatMoney(Math.abs(ligne.montant))}).`
   }
+  // La part, saisie et le drapeau levé seulement : sans elle, rien de plus que les refus de la CSG-CRDS.
+  const impots = autresImpotsDeLEcriture(cotisation)
+  if (impots > 0 && !auCentime(impots)) return REFUS_PART_PAS_AU_CENTIME
+  const partage = impots > 0 ? refusDuPartage(csg, impots, Math.abs(ligne.montant)) : null
+  if (partage) return partage
   if (cotisation.paiement_personnel_le) {
     return `Cette échéance est payée depuis le compte personnel, le ${formatDate(cotisation.paiement_personnel_le)} : un mouvement ne la paie pas aussi.`
   }
@@ -103,7 +131,7 @@ export function refusRapprochementCotisationSelon(
 /** Les refus de `rapprocher_cotisation`, dits avant d'écrire, selon le drapeau du module. */
 export function refusRapprochementCotisation(
   ligne: MouvementBancaire,
-  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds' | 'paiement_personnel_le'>,
+  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds' | 'montant_autres_impots' | 'paiement_personnel_le'>,
   mode: ModeComptable,
 ): string | null {
   return refusRapprochementCotisationSelon(SENS_DES_REGLES_IGNOREES_EXPORTE, ligne, cotisation, mode)
@@ -120,7 +148,21 @@ export const REFUS_MONTANTS_PAIEMENT_PERSONNEL = [
   { cle: 'csg_depasse', modele: 'La CSG-CRDS de cette échéance (% €) dépasse son montant (% €).' },
 ] as const
 
-export type CleRefusMontantsPaiementPersonnel = (typeof REFUS_MONTANTS_PAIEMENT_PERSONNEL)[number]['cle']
+// Les trois que la part « autres impôts » ajoute, à la suite, sous les mots de la migration `autres_impots_des_cotisations`
+// (préparée) : ils n'existent en base qu'avec elle — la liste du drapeau baissé est celle d'hier, que l'export confronte.
+export const REFUS_PART_AUTRES_IMPOTS_PAIEMENT_PERSONNEL = [
+  { cle: 'part_centime', modele: "La part « autres impôts » de cette échéance n'est pas au centime." },
+  { cle: 'part_depasse', modele: 'La part « autres impôts » de cette échéance (% €) dépasse son montant (% €).' },
+  { cle: 'csg_part_depasse', modele: 'La CSG-CRDS et la part « autres impôts » de cette échéance (% €) dépassent son montant (% €).' },
+] as const
+
+export type CleRefusMontantsPaiementPersonnel =
+  | (typeof REFUS_MONTANTS_PAIEMENT_PERSONNEL)[number]['cle'] | (typeof REFUS_PART_AUTRES_IMPOTS_PAIEMENT_PERSONNEL)[number]['cle']
+
+/** Les refus des montants, dans l'ordre de la fonction, selon le drapeau de la part « autres impôts ». */
+export function refusMontantsPaiementPersonnelSelon(prevus: boolean): readonly { cle: CleRefusMontantsPaiementPersonnel; modele: string }[] {
+  return prevus ? [...REFUS_MONTANTS_PAIEMENT_PERSONNEL, ...REFUS_PART_AUTRES_IMPOTS_PAIEMENT_PERSONNEL] : REFUS_MONTANTS_PAIEMENT_PERSONNEL
+}
 
 export interface RefusMontantsPaiementPersonnel {
   cle: CleRefusMontantsPaiementPersonnel
@@ -130,11 +172,11 @@ export interface RefusMontantsPaiementPersonnel {
 // Le montant de l'échéance (le versement saisi, sinon l'appel) ; en trésorerie, sa CSG-CRDS, qui ne peut pas le
 // dépasser — sa part au 646000 serait négative. Les montants se comparent en CENTIMES ENTIERS, comme la base.
 export function refusMontantsDuPaiementPersonnel(
-  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds'>,
+  cotisation: Pick<CotisationDeclaree, 'montant_verse' | 'montant_appele' | 'montant_csg_crds' | 'montant_autres_impots'>,
   mode: ModeComptable,
 ): RefusMontantsPaiementPersonnel | null {
   const refus = (cle: CleRefusMontantsPaiementPersonnel, ...valeurs: string[]): RefusMontantsPaiementPersonnel => ({
-    cle, message: remplirModele(REFUS_MONTANTS_PAIEMENT_PERSONNEL.find((r) => r.cle === cle)!.modele, valeurs),
+    cle, message: remplirModele(refusMontantsPaiementPersonnelSelon(true).find((r) => r.cle === cle)!.modele, valeurs),
   })
   const montant = montantDeLEcheance(cotisation)
   if (montant === 0) return refus('echeance_nulle')
@@ -144,6 +186,14 @@ export function refusMontantsDuPaiementPersonnel(
   if (centimes(csg) > centimes(Math.abs(montant))) {
     return refus('csg_depasse', euroCommeLaBase(centimes(csg)), euroCommeLaBase(centimes(Math.abs(montant))))
   }
+  // La part « autres impôts » (EXP58-Q6) : nulle le drapeau baissé, et rien de plus qu'hier.
+  const impots = autresImpotsDeLEcriture(cotisation)
+  if (impots > 0 && !auCentime(impots)) return refus('part_centime')
+  if (impots > 0 && centimes(csg) + centimes(impots) > centimes(Math.abs(montant))) {
+    return csg === 0
+      ? refus('part_depasse', euroCommeLaBase(centimes(impots)), euroCommeLaBase(centimes(Math.abs(montant))))
+      : refus('csg_part_depasse', euroCommeLaBase(centimes(csg) + centimes(impots)), euroCommeLaBase(centimes(Math.abs(montant))))
+  }
   return null
 }
 
@@ -152,20 +202,24 @@ export function refusMontantsDuPaiementPersonnel(
 // VIENT DU SIGNE DU MOUVEMENT : un prélèvement débite le 646000 et crédite la banque, un remboursement
 // l'inverse. Calculée en centimes, pour que les lignes s'équilibrent exactement. La banque, les cotisations de
 // l'exploitant et son compte (la CSG-CRDS) sont ceux du PLAN du dossier, que `rapprocher_cotisation` relit au même plan.
+// La part « autres impôts » (EXP58-Q6), saisie le drapeau levé, va au compte du rôle `autres_impots` (637800 par défaut), et
+// la cotisation baisse d'autant ; sans elle, sa ligne est à zéro, donc absente : l'écriture d'hier, à l'octet près.
 export function ecritureDeLaCotisation(
   ligne: MouvementBancaire,
-  cotisation: Pick<CotisationDeclaree, 'montant_csg_crds'>,
+  cotisation: Pick<CotisationDeclaree, 'montant_csg_crds' | 'montant_autres_impots'>,
   mode: ModeComptable,
   plan: PlanComptable,
 ): LigneEcritureMouvement[] {
   const total = centimes(Math.abs(ligne.montant))
   const csg = centimes(csgDeLEcriture(cotisation, mode))
+  const impots = centimes(autresImpotsDeLEcriture(cotisation))
   const sortie = ligne.montant < 0
   const sensCompte = sortie ? 'debit' : 'credit'
   const lignes: Omit<LigneEcritureMouvement, 'libelle'>[] = [
     { compte: plan.banque, sens: sortie ? 'credit' : 'debit', montant: total / 100 },
-    { compte: plan.cotisations_exploitant, sens: sensCompte, montant: (total - csg) / 100 },
+    { compte: plan.cotisations_exploitant, sens: sensCompte, montant: (total - csg - impots) / 100 },
     { compte: plan.exploitant, sens: sensCompte, montant: csg / 100 },
+    { compte: compteDesAutresImpots(plan), sens: sensCompte, montant: impots / 100 },
   ]
   // Le libellé, de la règle seule (lib/libellesDuReleve.ts, JJ1-Q1) : un remboursement reçu ne recopie pas la banque.
   return libellerLEcritureDuReleve(ligne, lignes.filter((l) => l.montant > 0))
@@ -180,6 +234,9 @@ export interface CotisationComptee {
   // Sa CSG-CRDS, dans le même sens que `montant` ; nulle quand elle n'est pas saisie — inconnue, surtout
   // pas zéro (voir `partCsgNonDeductible`).
   csgCrds: number | null
+  // Sa part « autres impôts » (la CFP et la CURPS, EXP58-Q6), dans le même sens que `montant` : elle sort de BK et de BT et
+  // entre en BS. Nulle quand elle n'est pas saisie, ou le drapeau de sa migration baissé — toute l'échéance reste en BK.
+  autresImpots: number | null
   // Le mouvement qui la paie, quand le rapprochement le connaît et qu'il s'écrit.
   ligne: MouvementBancaire | null
   // Le jour de son paiement depuis le compte personnel (lib/cotisationPersonnelle.ts), quand c'est lui qui la date —
@@ -230,19 +287,22 @@ export function cotisationsComptees(
     if (ligne && !refus) {
       const montant = -ligne.montant
       const csgCrds = csgDansLeSensDe(montant, cotisation)
-      return { cotisation, date: ligne.date, montant, csgCrds, ligne, paiementPersonnel: null, refus: null }
+      const autresImpots = autresImpotsDansLeSensDe(montant, cotisation)
+      return { cotisation, date: ligne.date, montant, csgCrds, autresImpots, ligne, paiementPersonnel: null, refus: null }
     }
     const paiement = !ligne ? cotisation.paiement_personnel_le ?? null : null
     const refusPersonnel = paiement ? refusMontantsDuPaiementPersonnel(cotisation, mode) : null
     if (paiement && !refusPersonnel) {
       const montant = montantDeLEcheance(cotisation)
       const csgCrds = csgDansLeSensDe(montant, cotisation)
-      return { cotisation, date: paiement, montant, csgCrds, ligne: null, paiementPersonnel: paiement, refus: null }
+      const autresImpots = autresImpotsDansLeSensDe(montant, cotisation)
+      return { cotisation, date: paiement, montant, csgCrds, autresImpots, ligne: null, paiementPersonnel: paiement, refus: null }
     }
     const montant = montantDeLEcheance(cotisation)
     return {
       cotisation, date: cotisation.echeance, montant,
-      csgCrds: csgDansLeSensDe(montant, cotisation), ligne: null, paiementPersonnel: null, refus: refus ?? refusPersonnel?.message ?? null,
+      csgCrds: csgDansLeSensDe(montant, cotisation), autresImpots: autresImpotsDansLeSensDe(montant, cotisation),
+      ligne: null, paiementPersonnel: null, refus: refus ?? refusPersonnel?.message ?? null,
     }
   })
 }
@@ -255,6 +315,13 @@ export function cotisationsComptees(
 // (relecture du 31/10/2026). Inconnue, elle reste inconnue (`null`), surtout pas zéro.
 export function csgDansLeSensDe(montant: number, cotisation: Pick<CotisationDeclaree, 'montant_csg_crds'>): number | null {
   return cotisation.montant_csg_crds == null ? null : Math.sign(montant) * Math.abs(cotisation.montant_csg_crds)
+}
+
+// LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE, DANS LE SENS DE CE QU'ELLE PÈSE — la règle de la CSG-CRDS : saisie en positif, son
+// signe est celui du montant (un remboursement la rend). Nulle sans part, ou le drapeau de sa migration baissé.
+export function autresImpotsDansLeSensDe(montant: number, cotisation: Pick<CotisationDeclaree, 'montant_autres_impots'>): number | null {
+  const part = partAutresImpots(cotisation)
+  return part == null ? null : Math.sign(montant) * part
 }
 
 // L'échéance compte-t-elle à son échéance, faute de paiement connu qui la date ? Ni un prélèvement rapproché qui

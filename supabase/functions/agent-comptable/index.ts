@@ -202,10 +202,18 @@ const ROLES_DU_CHANGE = [
 ] as const
 type CleRoleDuChange = (typeof ROLES_DU_CHANGE)[number]["role"]
 
+// LE RÔLE DES AUTRES IMPÔTS (EXP58-Q6), recopié de src/lib/autresImpotsDesCotisations.ts : la migration
+// `autres_impots_des_cotisations` (préparée) l'ajoute au catalogue. La lecture du plan ne l'exige et ne le lit que la constante
+// `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` levée (déclarée en tête du bloc COTISATION, que ses gardes extraient) ; baissée, elle
+// l'ignore, comme tout rôle qu'elle ne connaît pas.
+const ROLE_AUTRES_IMPOTS = { role: "autres_impots", racines: ["635", "637"] } as const
+
 type CleRoleComptable = (typeof ROLES_DU_PLAN)[number]["role"]
 type PlanComptable = Readonly<Record<CleRoleComptable, string>> & Readonly<Partial<Record<CleRoleDuChange, string>>>
+  & Readonly<Partial<Record<"autres_impots", string>>>
 type RoleDeTiers = "fournisseurs" | "fournisseurs_immobilisations" | "clients"
 type LibellesDuPlan = Readonly<Record<CleRoleComptable, string | null>> & Readonly<Partial<Record<CleRoleDuChange, string | null>>>
+  & Readonly<Partial<Record<"autres_impots", string | null>>>
 type PrefixesDuPlan = Readonly<Record<RoleDeTiers, string>>
 interface PlanLu { plan: PlanComptable; libelles: LibellesDuPlan; prefixes: PrefixesDuPlan }
 type LectureDuPlan =
@@ -298,7 +306,19 @@ function planDeLaReponse(reponse: { data: unknown; error: unknown }): LectureDuP
       return { plan: null, motif: `plan comptable illisible : « ${prefixesLus.get(r.role)} » n’est pas un préfixe d’auxiliaire du rôle « ${r.role} »` }
     }
   }
-  const lusAuPlan = [...ROLES_DU_PLAN, ...duChange]
+  // LE RÔLE DES AUTRES IMPÔTS (EXP58-Q6) : exigé la constante levée, sous une de ses racines et sans préfixe ; ignoré sinon.
+  const desAutresImpots = AUTRES_IMPOTS_DES_COTISATIONS_PREVUS ? [ROLE_AUTRES_IMPOTS] : []
+  for (const r of desAutresImpots) {
+    if (!lus.has(r.role)) return { plan: null, motif: `plan comptable incomplet : le rôle des autres impôts est absent (${r.role})` }
+    const compte = lus.get(r.role)!
+    if (!FORME_COMPTE_DE_ROLE.test(compte) || !r.racines.some((racine) => compte.startsWith(racine))) {
+      return { plan: null, motif: `plan comptable illisible : « ${compte} » n’est pas un compte du rôle « ${r.role} »` }
+    }
+    if ((prefixesLus.get(r.role) ?? null) !== null) {
+      return { plan: null, motif: `plan comptable illisible : « ${prefixesLus.get(r.role)} » n’est pas un préfixe d’auxiliaire du rôle « ${r.role} »` }
+    }
+  }
+  const lusAuPlan = [...ROLES_DU_PLAN, ...duChange, ...desAutresImpots]
   const plan = Object.fromEntries(lusAuPlan.map((r) => [r.role, lus.get(r.role)!])) as PlanComptable
   const libelles = Object.fromEntries(lusAuPlan.map((r) => [r.role, libellesLus.get(r.role)!])) as LibellesDuPlan
   return { plan: Object.freeze(plan), libelles: Object.freeze(libelles), prefixes: Object.freeze(prefixes), motif: null }
@@ -2553,8 +2573,17 @@ function mouvementsVentilesDesynchronises(
 // le mouvement), qui ne datent rien. Une copie restée muette répondrait « rien à signaler » sur un dossier
 // dont le FEC n'a aucune cotisation.
 // Gardé par `agentComptableCotisation.test.ts`, qui extrait ce bloc et le compare à src/lib.
+//
+// LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (EXP58-Q6, lib/autresImpotsDesCotisations.ts) : la contribution à la formation
+// professionnelle et la CURPS, au compte du rôle `autres_impots` du plan, en trésorerie comme en engagement. La constante redit
+// le drapeau de src/lib (`AUTRES_IMPOTS_DES_COTISATIONS_PREVUS`) et se lève avec lui, après la migration
+// `autres_impots_des_cotisations`, l'assistant redéployé : baissée, la colonne ne se lit pas, la part vaut zéro, et le
+// rôle ne s'exige pas du plan (bloc PLAN DU DOSSIER, qui la lit aussi) — l'écriture d'hier. Déclarée ici, en tête du bloc que
+// les gardes extraient.
+const AUTRES_IMPOTS_DES_COTISATIONS_PREVUS = false
 interface CotisationRow {
   id: string; echeance: string; montant_appele: number; montant_verse: number | null; montant_csg_crds: number | null
+  montant_autres_impots?: number | null
   paiement_personnel_le: string | null
 }
 interface MouvementCotisationRow {
@@ -2567,6 +2596,12 @@ interface MouvementCotisationRow {
 
 const centimesCotisation = (n: number) => Math.round(n * 100)
 const auCentimeCotisation = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6
+
+// La part « autres impôts » que l'écriture porte au compte du rôle `autres_impots` : la valeur absolue de la part saisie, la
+// constante levée, dans les deux modes ; rien sinon.
+function autresImpotsDeLEcriture(c: Pick<CotisationRow, "montant_autres_impots">): number {
+  return AUTRES_IMPOTS_DES_COTISATIONS_PREVUS && c.montant_autres_impots != null ? Math.abs(c.montant_autres_impots) : 0
+}
 
 // Le montant d'une échéance : le versement saisi, sinon l'appel. Son SIGNE dit ce qu'elle est.
 function montantDeLEcheance(c: Pick<CotisationRow, "montant_verse" | "montant_appele">): number {
@@ -2596,21 +2631,27 @@ function refusRapprochementCotisation(ligne: MouvementCotisationRow, cotisation:
   const csg = csgDeLEcriture(cotisation, mode)
   if (!auCentimeCotisation(csg)) return "csg_pas_au_centime"
   if (centimesCotisation(csg) > centimesCotisation(Math.abs(ligne.montant))) return "csg_au_dela_du_mouvement"
+  const impots = autresImpotsDeLEcriture(cotisation)
+  if (impots > 0 && !auCentimeCotisation(impots)) return "part_autres_impots_pas_au_centime"
+  if (impots > 0 && centimesCotisation(csg) + centimesCotisation(impots) > centimesCotisation(Math.abs(ligne.montant))) return "part_autres_impots_au_dela_du_mouvement"
   if (cotisation.paiement_personnel_le) return "payee_depuis_le_compte_personnel"
   return null
 }
 
 // L'écriture d'une échéance rapprochée, sans son libellé (le contrôle ne le compare pas) : une ligne par
-// compte non nul, dans le sens du mouvement, calculée en centimes.
-function ecritureDeLaCotisation(ligne: Pick<MouvementCotisationRow, "montant">, cotisation: Pick<CotisationRow, "montant_csg_crds">, mode: ModeComptable, plan: PlanComptable) {
+// compte non nul, dans le sens du mouvement, calculée en centimes. La part « autres impôts » au compte du rôle `autres_impots`
+// du plan — que le plan lu porte toujours la constante levée ; nulle, la constante baissée.
+function ecritureDeLaCotisation(ligne: Pick<MouvementCotisationRow, "montant">, cotisation: Pick<CotisationRow, "montant_csg_crds" | "montant_autres_impots">, mode: ModeComptable, plan: PlanComptable) {
   const total = centimesCotisation(Math.abs(ligne.montant))
   const csg = centimesCotisation(csgDeLEcriture(cotisation, mode))
+  const impots = centimesCotisation(autresImpotsDeLEcriture(cotisation))
   const sortie = ligne.montant < 0
   const sensCompte = sortie ? "debit" : "credit"
   return [
     { compte: plan.banque, sens: sortie ? "credit" : "debit", montant: total / 100 },
-    { compte: plan.cotisations_exploitant, sens: sensCompte, montant: (total - csg) / 100 },
+    { compte: plan.cotisations_exploitant, sens: sensCompte, montant: (total - csg - impots) / 100 },
     { compte: plan.exploitant, sens: sensCompte, montant: csg / 100 },
+    { compte: plan.autres_impots ?? "", sens: sensCompte, montant: impots / 100 },
   ].filter((l) => l.montant > 0)
 }
 
@@ -4995,7 +5036,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les ÉCHÉANCES DE COTISATION (bloc COTISATION) : celle qu'un mouvement rapproché paie doit avoir son
       // écriture, sans quoi elle manque au FEC.
       lireTout<CotisationRow>((d, f) =>
-        admin.from("cotisations_declarees").select("id, echeance, montant_appele, montant_verse, montant_csg_crds, paiement_personnel_le", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+        admin.from("cotisations_declarees").select(AUTRES_IMPOTS_DES_COTISATIONS_PREVUS
+          ? "id, echeance, montant_appele, montant_verse, montant_csg_crds, montant_autres_impots, paiement_personnel_le"
+          : "id, echeance, montant_appele, montant_verse, montant_csg_crds, paiement_personnel_le", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les NATURES (bloc AMORTISSEMENT) : le compte d'immobilisation d'où la dotation tire son compte 28, et sur
       // lequel la facture du bien s'écrit — sans nature, ni l'une ni l'autre ne se compose. Celles du cabinet
       // comprises, comme les catégories.
@@ -5550,7 +5593,7 @@ Règles impératives :
 - Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le ${plan.dotations_amortissements} au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035.${CUMUL_REPRIS_PREVU ? " Celle d'un bien repris qui porte le cumul de son ancien tableau d'amortissement continue depuis lui : la valeur nette restante répartie sur la durée qui reste du plan." : ""} Ce n'est pas une anomalie.
 - Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du ${plan.indemnites_kilometriques}, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : `${plan.exploitant} Compte de l'exploitant`} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
 - Une DÉCLARATION DE TVA enregistrée s'écrit au dernier jour de sa période, sans pièce ni mouvement, au journal des opérations diverses : sa LIQUIDATION retire la TVA collectée (${plan.tva_collectee}) et déductible (${plan.tva_deductible}, ${plan.tva_immobilisations}) de la période, porte la TVA à payer au ${plan.tva_a_decaisser} TVA à décaisser — un crédit reporté au ${plan.credit_tva_a_reporter}, un remboursement demandé au ${plan.remboursement_tva_demande} — et l'arrondi à l'euro de la CA3 au ${plan.arrondi_charge} ou au ${plan.arrondi_produit}. Son PRÉLÈVEMENT, rapproché de la déclaration, débite le ${plan.tva_a_decaisser} face au ${plan.banque} ; le REMBOURSEMENT d'un crédit par le Trésor crédite le ${plan.remboursement_tva_demande} : ni charge ni recette, et rien de cela n'est une anomalie. Une période terminée dont la déclaration n'est pas enregistrée garde sa TVA aux comptes 4457 et 4456 : c'est un point à traiter.
-- Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au ${plan.banque}, sans pièce : la cotisation au ${plan.cotisations_exploitant} (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : ` et sa CSG-CRDS, quand elle est saisie, au ${plan.exploitant} Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance`}. Ce n'est pas une anomalie.
+- Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au ${plan.banque}, sans pièce : la cotisation au ${plan.cotisations_exploitant} (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : ` et sa CSG-CRDS, quand elle est saisie, au ${plan.exploitant} Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance`}${AUTRES_IMPOTS_DES_COTISATIONS_PREVUS ? ` ; sa part « autres impôts » — la contribution à la formation professionnelle et la CURPS que l'Urssaf appelle avec elle —, quand elle est saisie, va au ${plan.autres_impots ?? ""} (autres impôts), en BS sur la 2035 et non en BK, en trésorerie comme en engagement, et de même quand l'échéance est payée depuis le compte personnel` : ""}. Ce n'est pas une anomalie.
 - Une ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant (un apport) s'écrit au jour de ce paiement, sans pièce ni mouvement, au journal des opérations diverses : la cotisation au ${plan.cotisations_exploitant} face au compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais + ", toute l'échéance" : `${plan.exploitant} Compte de l'exploitant, pour l'échéance hors CSG-CRDS : sa CSG-CRDS, qui irait au ${plan.exploitant}, s'y compense avec l'apport`}${dossierRow.mode_comptable === "engagement" ? "" : " ; elle compte dans la 2035 à la date du paiement"}. Une échéance ne se paie que d'une façon : par un mouvement rapproché ou par le compte personnel. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
 - La VALIDATION d'un exercice écrit l'OUVERTURE de l'exercice suivant — ses SOLDES REPORTÉS, au 1er janvier, journal AN, pièce « Exercice AAAA validé » : chaque compte de bilan y reprend son solde ; ${dossierRow.mode_comptable === "engagement" && dossierRow.compte_notes_de_frais !== plan.exploitant ? `le résultat y attend son affectation, au ${plan.resultat_benefice} pour un bénéfice et au ${plan.resultat_perte} pour une perte` : `le compte de l'exploitant et le résultat passent au ${plan.capital_individuel} Capital individuel, et l'exercice repart d'un compte de l'exploitant vide`}. Ce ne sont pas des écritures du brouillon (lister_ecritures ne les montre pas) ; lister_comptes les compte dans l'exercice qu'ils ouvrent. Tant qu'un exercice n'est pas validé, le suivant n'a pas d'ouverture : ses comptes de bilan partent de zéro, et lister_comptes le dit.
 - Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ : ses écritures ne se modifient ni ne se retirent plus, ni les pièces, mouvements, biens, véhicules et échéances qui les ont produites — la base le refuse. Rien de ce qui précède le 31 décembre du dernier exercice validé n'est réclamé par points_a_traiter : une erreur trouvée après la validation se corrige sur l'exercice suivant. Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu'un exercice validé a figé.${repereVentes}

@@ -16,8 +16,9 @@
 import { natureDuCompte } from './affectationBanque'
 import { posteDuFormulaire } from './cases2035'
 import {
-  POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
+  POSTE_AMORTISSEMENTS, POSTE_AUTRES_IMPOTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
 } from './declaration2035'
+import { compteDesAutresImpots } from './autresImpotsDesCotisations'
 import { POSTE_ASSURANCE_EMPRUNT, POSTE_INTERETS_EMPRUNT } from './echeanceEmprunt'
 import type { PlanComptable } from './planComptable'
 import type { Categorie, EcritureBrouillon, LigneBancaire, OperationCaisse, Piece, VentilationBancaire } from './types'
@@ -35,7 +36,15 @@ export interface SourcesDesPostes {
   ventilations: readonly Pick<VentilationBancaire, 'ligne_bancaire_id' | 'categorie_id'>[]
   operationsDeCaisse: readonly Pick<OperationCaisse, 'id' | 'categorie_id'>[]
   plan: Pick<PlanComptable, 'cotisations_exploitant' | 'dotations_amortissements' | 'indemnites_kilometriques'
-    | 'interets_emprunt' | 'assurance_emprunt' | 'prestations_de_services' | 'ventes_de_biens'>
+    | 'interets_emprunt' | 'assurance_emprunt' | 'prestations_de_services' | 'ventes_de_biens' | 'autres_impots'>
+}
+
+// Le poste d'une ligne d'une échéance de cotisation, selon son compte : la cotisation (BK) au compte des cotisations de
+// l'exploitant, sa part « autres impôts » (BS, EXP58-Q6) au compte du rôle `autres_impots` ; rien ailleurs (la banque, la
+// CSG-CRDS au compte de l'exploitant, le compte du dirigeant).
+function posteDUneEcheance(compte: string, plan: SourcesDesPostes['plan']): string[] {
+  if (compte === plan.cotisations_exploitant) return [POSTE_COTISATIONS]
+  return compte === compteDesAutresImpots(plan) ? [POSTE_AUTRES_IMPOTS] : []
 }
 
 export interface CompteSurPlusieursPostes {
@@ -66,7 +75,7 @@ function postesDeLaLigne(l: LigneDuBrouillonPostee, s: SourcesDesPostes, index: 
       return l.compte === plan.interets_emprunt ? [POSTE_INTERETS_EMPRUNT]
         : l.compte === plan.assurance_emprunt ? [POSTE_ASSURANCE_EMPRUNT] : []
     }
-    if (m.cotisation_id) return l.compte === plan.cotisations_exploitant ? [POSTE_COTISATIONS] : []
+    if (m.cotisation_id) return posteDUneEcheance(l.compte, plan)
     if (m.ventilee) {
       // Chaque part dont la catégorie porte le compte de la ligne : deux parts de deux postes sur un même compte sont
       // précisément ce que ce contrôle cherche.
@@ -77,7 +86,7 @@ function postesDeLaLigne(l: LigneDuBrouillonPostee, s: SourcesDesPostes, index: 
     return posteDeCategorie(m.categorie_id)
   }
   // Une échéance payée depuis le compte personnel (ni pièce ni mouvement, sa cotisation seule).
-  if (l.cotisation_id) return l.compte === plan.cotisations_exploitant ? [POSTE_COTISATIONS] : []
+  if (l.cotisation_id) return posteDUneEcheance(l.compte, plan)
   return []
 }
 

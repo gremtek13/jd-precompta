@@ -19,6 +19,7 @@
 
 import { DIRIGEANT_AU_468_PREVU, racinesDuDirigeantNonAssocieSelon } from './dirigeantAu468'
 import { ECARTS_DE_REGLEMENT_PREVUS, ROLES_DU_CHANGE, type CleRoleDuChange } from './rolesDuChange'
+import { AUTRES_IMPOTS_DES_COTISATIONS_PREVUS, ROLE_AUTRES_IMPOTS, type CleRoleAutresImpots } from './autresImpotsDesCotisations'
 import { messageErreur } from './messageErreur'
 
 /** Un rôle du catalogue, tel que `roles_comptables` le porte. */
@@ -100,18 +101,22 @@ export const ROLES_COMPTABLES = [
 
 export type CleRoleComptable = (typeof ROLES_COMPTABLES)[number]['role']
 
-/** Un plan comptable : le compte de chaque rôle. Les deux rôles du change (lib/rolesDuChange.ts) n'y sont que lus, le
- *  drapeau de leur migration levé : jusque-là, aucun plan ne les porte, et rien ne les lit. */
-export type CleRoleDuPlan = CleRoleComptable | CleRoleDuChange
+/** Un plan comptable : le compte de chaque rôle. Les deux rôles du change (lib/rolesDuChange.ts) et celui des autres impôts
+ *  (lib/autresImpotsDesCotisations.ts) n'y sont que lus, le drapeau de leur migration levé : jusque-là, aucun plan ne les
+ *  porte, et rien ne les lit. */
+export type CleRoleDuPlan = CleRoleComptable | CleRoleDuChange | CleRoleAutresImpots
 
 /** Les rôles que la lecture du plan, et le modèle du cabinet, portent AUJOURD'HUI : ceux de l'application, plus les deux
- *  du change (lib/rolesDuChange.ts) le drapeau de leur migration levé — l'ensemble que la base rend (`plan_du_dossier`,
- *  `modele_du_cabinet`). Le drapeau se lit à l'appel, jamais au chargement du module. */
+ *  du change (lib/rolesDuChange.ts) le drapeau de leur migration levé, et celui des autres impôts
+ *  (lib/autresImpotsDesCotisations.ts) le sien levé — l'ensemble que la base rend (`plan_du_dossier`, `modele_du_cabinet`).
+ *  Les drapeaux se lisent à l'appel, jamais au chargement du module. */
 export function rolesLusAuPlan(): readonly (DefinitionRoleComptable & { readonly role: CleRoleDuPlan })[] {
-  return ECARTS_DE_REGLEMENT_PREVUS ? [...ROLES_COMPTABLES, ...ROLES_DU_CHANGE] : ROLES_COMPTABLES
+  if (!AUTRES_IMPOTS_DES_COTISATIONS_PREVUS) return ECARTS_DE_REGLEMENT_PREVUS ? [...ROLES_COMPTABLES, ...ROLES_DU_CHANGE] : ROLES_COMPTABLES
+  return [...ROLES_COMPTABLES, ...(ECARTS_DE_REGLEMENT_PREVUS ? ROLES_DU_CHANGE : []), ROLE_AUTRES_IMPOTS]
 }
 
 export type PlanComptable = Readonly<Record<CleRoleComptable, string>> & Readonly<Partial<Record<CleRoleDuChange, string>>>
+  & Readonly<Partial<Record<CleRoleAutresImpots, string>>>
 
 /** Les trois rôles de tiers, les seuls qui portent un préfixe de comptes auxiliaires. */
 export type RoleDeTiers = Extract<(typeof ROLES_COMPTABLES)[number], { prefixeAuxiliaireDefaut: string }>['role']
@@ -205,6 +210,7 @@ export interface ReponseDuPlan {
 /** Le libellé de chaque rôle dans le plan du dossier, sinon celui du catalogue ; nul quand ni l'un ni l'autre n'en
  *  donne (le capital et les deux comptes du résultat, que le report des soldes nomme lui-même). */
 export type LibellesDuPlan = Readonly<Record<CleRoleComptable, string | null>> & Readonly<Partial<Record<CleRoleDuChange, string | null>>>
+  & Readonly<Partial<Record<CleRoleAutresImpots, string | null>>>
 
 /** Le préfixe des comptes auxiliaires de chaque rôle de tiers dans le plan du dossier, sinon celui du catalogue. */
 export type PrefixesDuPlan = Readonly<Record<RoleDeTiers, string>>
@@ -297,6 +303,19 @@ export function planDeLaReponse(reponse: ReponseDuPlan): LectureDuPlan {
     return { plan: null, motif: `plan comptable incomplet : ${changeAbsents.length} rôle(s) du change absent(s) (${changeAbsents.join(', ')})` }
   }
   for (const r of duChange) {
+    const compte = lus.get(r.role)!
+    if (!FORME_COMPTE_DE_ROLE.test(compte) || !r.racines.some((racine) => compte.startsWith(racine))) {
+      return { plan: null, motif: `plan comptable illisible : « ${compte} » n’est pas un compte du rôle « ${r.role} »` }
+    }
+    if ((prefixesLus.get(r.role) ?? null) !== null) {
+      return { plan: null, motif: `plan comptable illisible : « ${prefixesLus.get(r.role)} » n’est pas un préfixe d’auxiliaire du rôle « ${r.role} »` }
+    }
+  }
+  // LE RÔLE DES AUTRES IMPÔTS (EXP58-Q6, lib/autresImpotsDesCotisations.ts) : exigé le drapeau de sa migration levé, sous une
+  // de ses racines et sans préfixe ; ignoré sinon, comme tout rôle que la lecture ne connaît pas.
+  if (AUTRES_IMPOTS_DES_COTISATIONS_PREVUS) {
+    const r = ROLE_AUTRES_IMPOTS
+    if (!lus.has(r.role)) return { plan: null, motif: `plan comptable incomplet : le rôle des autres impôts est absent (${r.role})` }
     const compte = lus.get(r.role)!
     if (!FORME_COMPTE_DE_ROLE.test(compte) || !r.racines.some((racine) => compte.startsWith(racine))) {
       return { plan: null, motif: `plan comptable illisible : « ${compte} » n’est pas un compte du rôle « ${r.role} »` }

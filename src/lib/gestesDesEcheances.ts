@@ -1,7 +1,8 @@
 import type { LigneEcritureMouvement, MouvementBancaire } from './affectationBanque'
 import { planDuMouvement, type BanquesDuDossier } from './banqueDuMouvement'
+import { AUTRES_IMPOTS_DES_COTISATIONS_PREVUS, compteDesAutresImpots, lireLaPartAutresImpots } from './autresImpotsDesCotisations'
 import {
-  csgDeLEcriture, ecritureDeLaCotisation, montantDeLEcheance, refusRapprochementCotisation,
+  autresImpotsDeLEcriture, csgDeLEcriture, ecritureDeLaCotisation, montantDeLEcheance, refusRapprochementCotisation,
 } from './cotisationRapprochee'
 import { formatDate, formatMoney } from './format'
 import type { PlanComptable } from './planComptable'
@@ -64,6 +65,14 @@ import {
 //     prélèvement les paie, la part reste ce qu'il porte de N − 1), perdue sinon, et la confirmation nomme ce qui se perd.
 //     Ces règles suivent les colonnes LUES (une colonne absente de la lecture ne s'écrit pas), pas le drapeau de l'écran.
 //
+// LA PART « AUTRES IMPÔTS » (EXP58-Q6 ; lib/autresImpotsDesCotisations.ts), le drapeau de sa migration levé, sur une
+// échéance LUE avec sa colonne : « Modifier » la saisit comme la CSG-CRDS — une part changée sur une échéance rapprochée
+// réécrit son écriture dans le même geste, en trésorerie comme en engagement (elle a sa ligne dans les deux modes) ; figée par
+// la validation ou par un paiement personnel, elle ne change plus (la base le refuse, sous les mots de la date ou du
+// paiement). « Réunir » additionne les deux parts — une part absente en vaut zéro : ce n'est pas une inconnue, comme une
+// CSG-CRDS non saisie, mais une échéance dont toute la somme reste en BK. Le drapeau baissé, ou la colonne absente de la
+// lecture, rien ne change.
+//
 // DEUX ÉCRITURES, PAS TOUT OU RIEN — l'ordre : L'ÉCHÉANCE GARDÉE D'ABORD, portée à la somme ; L'AUTRE ENSUITE, retirée.
 // Un échec entre les deux laisse les deux échéances en base, la gardée à la somme : la somme compte deux fois, mais RIEN
 // N'EST PERDU, l'écran le montre (les deux lignes, la seconde marquée « à retirer », et un message qui nomme le seul geste
@@ -75,9 +84,9 @@ const centimes = (n: number) => Math.round(n * 100)
 const auCentime = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6
 const DATE_CIVILE = /^\d{4}-\d{2}-\d{2}$/
 
-/** Ce qu'une modification ou une réunion écrit sur une échéance. */
+/** Ce qu'une modification ou une réunion écrit sur une échéance. La part « autres impôts » n'y est que lue avec sa colonne. */
 export type ValeursDeLEcheance = Pick<CotisationDeclaree, 'echeance' | 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'previsionnel'>
-  & Partial<DescriptionDeLEcheance>
+  & Partial<DescriptionDeLEcheance> & Pick<CotisationDeclaree, 'montant_autres_impots'>
 
 /** La saisie de la fenêtre « Modifier », telle que tapée. */
 export interface SaisieDeLEcheance {
@@ -89,6 +98,9 @@ export interface SaisieDeLEcheance {
   // L'organisme, l'année payée et la nature (TNS-Q2) : présents seulement sous `REGULARISATION_DES_COTISATIONS_EXPORTEE`, sur
   // une échéance lue avec ses colonnes.
   description?: SaisieDeLaDescription
+  // La part « autres impôts » (EXP58-Q6) : présente seulement sous `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS`, sur une échéance lue
+  // avec sa colonne.
+  autresImpots?: string
 }
 
 /** Ce que l'onglet a lu, EN ENTIER, pour juger un geste : sur une lecture partielle, il n'en offre aucun. */
@@ -116,13 +128,21 @@ export interface RefusDuGeste {
 }
 
 /** La saisie pré-remplie d'une échéance, telle qu'elle est en base. */
-export function saisieDe(c: CotisationDeclaree, avecDescription = REGULARISATION_DES_COTISATIONS_EXPORTEE): SaisieDeLEcheance {
+export function saisieDe(
+  c: CotisationDeclaree, avecDescription = REGULARISATION_DES_COTISATIONS_EXPORTEE, avecPart = AUTRES_IMPOTS_DES_COTISATIONS_PREVUS,
+): SaisieDeLEcheance {
   const texte = (n: number | null) => (n == null ? '' : String(n))
   return {
     echeance: c.echeance, appele: texte(c.montant_appele), verse: texte(c.montant_verse), csg: texte(c.montant_csg_crds),
     previsionnel: c.previsionnel,
     ...(avecDescription && lueAvecSaDescription(c) ? { description: saisieDeLaDescription(c) } : {}),
+    ...(avecPart && lueAvecSaPart(c) ? { autresImpots: texte(c.montant_autres_impots ?? null) } : {}),
   }
+}
+
+/** L'échéance a-t-elle été lue avec sa part « autres impôts » ? Absente de la lecture, la colonne ne s'écrit ni ne se retient. */
+export function lueAvecSaPart(c: Pick<CotisationDeclaree, 'montant_autres_impots'>): boolean {
+  return c.montant_autres_impots !== undefined
 }
 
 /** L'échéance a-t-elle été lue avec les quatre colonnes ? Absentes de la lecture, elles ne s'écrivent ni ne se retiennent. */
@@ -160,12 +180,15 @@ export function lireLaSaisie(s: SaisieDeLEcheance): { valeurs: ValeursDeLEcheanc
   if (!verse.ok) return { refus: { message: verse.message } }
   const csg = lireMontant(s.csg, 'La CSG-CRDS')
   if (!csg.ok) return { refus: { message: csg.message } }
+  const part = s.autresImpots !== undefined ? lireLaPartAutresImpots(s.autresImpots) : null
+  if (part && !part.ok) return { refus: { message: part.message } }
   const description = s.description ? lireLaDescription(s.description, s.echeance, appele.valeur) : null
   if (description && 'refus' in description) return { refus: { message: description.refus } }
   return {
     valeurs: {
       echeance: s.echeance, montant_appele: appele.valeur, montant_verse: verse.valeur, montant_csg_crds: csg.valeur,
       previsionnel: s.previsionnel, ...(description ? description.valeurs : {}),
+      ...(part?.ok ? { montant_autres_impots: part.valeur } : {}),
     },
   }
 }
@@ -188,7 +211,11 @@ function ecritureValideeDu(ligne: Pick<MouvementBancaire, 'id'>, ecritures: read
 
 const memesValeurs = (c: CotisationDeclaree, v: ValeursDeLEcheance) =>
   c.echeance === v.echeance && c.montant_appele === v.montant_appele && c.montant_verse === v.montant_verse
-  && c.montant_csg_crds === v.montant_csg_crds && c.previsionnel === v.previsionnel && !descriptionChangee(c, v)
+  && c.montant_csg_crds === v.montant_csg_crds && c.previsionnel === v.previsionnel && !descriptionChangee(c, v) && !partChangee(c, v)
+
+// La part « autres impôts » saisie a-t-elle changé ? Seulement si la saisie la porte (le drapeau levé, la colonne lue).
+const partChangee = (c: CotisationDeclaree, v: ValeursDeLEcheance) =>
+  v.montant_autres_impots !== undefined && !memePart(v.montant_autres_impots, c.montant_autres_impots)
 
 const descriptionChangee = (c: CotisationDeclaree, v: ValeursDeLEcheance) =>
   (v.organisme !== undefined && v.organisme !== c.organisme) || (v.annee_payee !== undefined && v.annee_payee !== c.annee_payee)
@@ -236,11 +263,22 @@ export function jugerLaModification(
       },
     }
   }
+  // La part « autres impôts », avec la CSG-CRDS que l'écriture sépare (en trésorerie), ne dépasse pas l'échéance : la base la
+  // refuserait au paiement, et l'écriture n'aurait plus de cotisation à porter.
+  const apres = { ...c, ...v }
+  const part = autresImpotsDeLEcriture(apres)
+  if (part > 0 && centimes(csgDeLEcriture(apres, ctx.mode)) + centimes(part) > centimes(Math.abs(montant))) {
+    return {
+      refus: {
+        message: `La part « autres impôts » (${formatMoney(part)})${csgDeLEcriture(apres, ctx.mode) > 0 ? ', avec la CSG-CRDS,' : ''} dépasse le montant de l’échéance (${formatMoney(Math.abs(montant))}).`,
+      },
+    }
+  }
 
   const effets: string[] = []
   let reecriture: { ligne: MouvementBancaire; ecritures: LigneEcritureMouvement[] } | null = null
   if (mouvement) {
-    const refus = refusRapprochementCotisation(mouvement, { ...c, ...v }, ctx.mode)
+    const refus = refusRapprochementCotisation(mouvement, apres, ctx.mode)
     if (refus) {
       return {
         refus: {
@@ -251,9 +289,9 @@ export function jugerLaModification(
     const duMouvement = planDuMouvement(ctx.plan, mouvement, ctx.banques)
     if ('refus' in duMouvement) return { refus: { message: duMouvement.refus } }
     const avant = ecritureDeLaCotisation(mouvement, c, ctx.mode, duMouvement.plan)
-    const apres = ecritureDeLaCotisation(mouvement, v, ctx.mode, duMouvement.plan)
+    const ecritureApres = ecritureDeLaCotisation(mouvement, apres, ctx.mode, duMouvement.plan)
     const change = JSON.stringify(avant.map(({ compte, sens, montant: m }) => [compte, sens, m]))
-      !== JSON.stringify(apres.map(({ compte, sens, montant: m }) => [compte, sens, m]))
+      !== JSON.stringify(ecritureApres.map(({ compte, sens, montant: m }) => [compte, sens, m]))
     if (change && ecritureValideeDu(mouvement, ctx.ecritures)) {
       return { refus: { message: 'L’écriture de ce mouvement est validée : elle ne se remplace plus.' } }
     }
@@ -263,13 +301,14 @@ export function jugerLaModification(
     }
     if (change) {
       const csg = csgDeLEcriture(v, ctx.mode)
-      const net = Math.abs(mouvement.montant) - csg
+      const net = (centimes(Math.abs(mouvement.montant)) - centimes(csg) - centimes(part)) / 100
       effets.push(
         `Son écriture est réécrite dans le même geste : ${formatMoney(net)} au ${ctx.plan.cotisations_exploitant}`
         + (csg > 0 ? `, ${formatMoney(csg)} de CSG-CRDS au ${ctx.plan.exploitant}` : '')
+        + (part > 0 ? `, ${formatMoney(part)} d’autres impôts au ${compteDesAutresImpots(ctx.plan)}` : '')
         + ', face à la banque.',
       )
-      reecriture = { ligne: mouvement, ecritures: apres }
+      reecriture = { ligne: mouvement, ecritures: ecritureApres }
     } else if (ctx.mode === 'engagement' && c.montant_csg_crds !== v.montant_csg_crds) {
       effets.push(`Son écriture ne change pas : en engagement, la CSG-CRDS reste au ${ctx.plan.cotisations_exploitant}.`)
     }
@@ -279,6 +318,11 @@ export function jugerLaModification(
 
   if (descriptionChangee(c, v)) {
     effets.push(`Elle se dit désormais : ${descriptionDite({ ...c, ...v })} — l’estimation de la régularisation la lit ainsi.`)
+  }
+  if (partChangee(c, v)) {
+    effets.push(part > 0
+      ? `Sa part « autres impôts » (${formatMoney(part)}) sort de BK et entre en BS, au ${compteDesAutresImpots(ctx.plan)}.`
+      : 'Sans part « autres impôts », toute l’échéance reste en BK.')
   }
   if (c.montant_csg_crds !== v.montant_csg_crds) {
     if (v.montant_csg_crds === null) {
@@ -373,7 +417,7 @@ export function refusDeLaReunion(gardee: CotisationDeclaree, retiree: Cotisation
   }
   if (sens(gardee) !== sens(retiree)) return 'Un appel et un remboursement ne se réunissent pas.'
   for (const c of [gardee, retiree]) {
-    if (![c.montant_appele, c.montant_verse, c.montant_csg_crds].every((m) => m == null || auCentime(m))) {
+    if (![c.montant_appele, c.montant_verse, c.montant_csg_crds, c.montant_autres_impots].every((m) => m == null || auCentime(m))) {
       return `Les montants de l’échéance du ${formatDate(c.echeance)} ne sont pas au centime : corrige-les avec « Modifier ».`
     }
   }
@@ -408,7 +452,18 @@ export function valeursReunies(gardee: CotisationDeclaree, retiree: CotisationDe
       : somme(Math.abs(gardee.montant_csg_crds), Math.abs(retiree.montant_csg_crds)),
     previsionnel: false,
     ...descriptionReunie(gardee, retiree),
+    ...partReunie(gardee, retiree),
   }
+}
+
+/**
+ * La part « autres impôts » de l'échéance réunie (EXP58-Q6) : la somme des deux, une part absente valant zéro (toute la somme
+ * de cette échéance restait en BK) ; nulle quand la somme l'est ; rien si l'une est lue sans la colonne.
+ */
+export function partReunie(gardee: CotisationDeclaree, retiree: CotisationDeclaree): Pick<CotisationDeclaree, 'montant_autres_impots'> {
+  if (!lueAvecSaPart(gardee) || !lueAvecSaPart(retiree)) return {}
+  const somme = centimes(Math.abs(gardee.montant_autres_impots ?? 0)) + centimes(Math.abs(retiree.montant_autres_impots ?? 0))
+  return { montant_autres_impots: somme === 0 ? null : somme / 100 }
 }
 
 /**
@@ -430,10 +485,11 @@ export function descriptionReunie(gardee: CotisationDeclaree, retiree: Cotisatio
   }
 }
 
-function montantsDits(v: Pick<CotisationDeclaree, 'montant_appele' | 'montant_verse' | 'montant_csg_crds'>): string {
+function montantsDits(v: Pick<CotisationDeclaree, 'montant_appele' | 'montant_verse' | 'montant_csg_crds' | 'montant_autres_impots'>): string {
   return `${formatMoney(v.montant_appele)} appelés`
     + (v.montant_verse != null ? `, ${formatMoney(v.montant_verse)} versés` : '')
     + (v.montant_csg_crds != null ? `, dont ${formatMoney(Math.abs(v.montant_csg_crds))} de CSG-CRDS` : ', CSG-CRDS non saisie')
+    + (v.montant_autres_impots != null ? `, et ${formatMoney(Math.abs(v.montant_autres_impots))} d’autres impôts` : '')
 }
 
 /** La confirmation de la réunion : ce qui reste, à quelle date, pour quels montants, et ce qui part. */

@@ -7,7 +7,7 @@ import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rat
 import type { CotisationComptee } from './cotisationRapprochee'
 import type { Categorie, Immobilisation, ModeComptable, Piece } from './types'
 import {
-  POSTE_VENTES_FACTUREES, categorieDesFraisBancaires, type EcrituresDesVentesDeLa2035, type FraisSansPoste,
+  POSTE_AUTRES_IMPOTS, POSTE_VENTES_FACTUREES, categorieDesFraisBancaires, type EcrituresDesVentesDeLa2035, type FraisSansPoste,
 } from './declaration2035'
 import { fraisDesMouvements } from './ecrituresVentesFacturees'
 import type { PlanComptable } from './planComptable'
@@ -242,11 +242,20 @@ export function calculerSituationIntermediaire(
     totauxParPoste.set(POSTE_AMORTISSEMENTS, -Math.round(totalAmortissements * 100) / 100)
   }
 
+  // LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (la CFP et la CURPS, EXP58-Q6 ; lib/autresImpotsDesCotisations.ts) sort des
+  // cotisations et rejoint le poste « Autres impôts » — la ligne 13 de la 2035, que cet état « à ce jour » redit —, ajoutée à
+  // ce qu'une catégorie y porte déjà : le résultat ne change pas. Nulle sans part, ou le drapeau de sa migration baissé : la
+  // ligne d'hier, au centime.
+  let centimesAutresImpots = 0
   const totalCotisations = cotisations.reduce((sum, c) => {
     if (c.date < periodeDebut || c.date > periodeFin) return sum
-    return sum + c.montant
+    centimesAutresImpots += Math.round((c.autresImpots ?? 0) * 100)
+    return sum + c.montant - (c.autresImpots ?? 0)
   }, 0)
   if (totalCotisations > 0) totauxParPoste.set(POSTE_COTISATIONS, -totalCotisations)
+  if (centimesAutresImpots !== 0) {
+    totauxParPoste.set(POSTE_AUTRES_IMPOTS, (totauxParPoste.get(POSTE_AUTRES_IMPOTS) ?? 0) - centimesAutresImpots / 100)
+  }
 
   const entries = [...totauxParPoste.entries()].sort((a, b) => b[1] - a[1])
   // Résultat = simple somme des postes signés (produits positifs, charges déjà négatives) — pas
