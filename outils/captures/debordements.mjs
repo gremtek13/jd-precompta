@@ -2166,6 +2166,17 @@ const VISITES_CAISSE_CLIENT = [
       await page.getByText(/^Ce paiement de 5000,00 € rendrait la caisse négative/).waitFor({ timeout: 10000 })
     },
   },
+  // L'ORIGINAL D'UNE FACTURE REPRISE (A8Q5Q3Q2Q2-Q1) : le geste s'offre encore sur sa ligne, mais le formulaire dit, avant le
+  // clic et aux mots de la base, que le cabinet enregistre lui-même ce paiement — et n'offre ni le montant ni « Enregistrer ».
+  {
+    chemin: '#/mes-pieces', nom: 'client/mes-pieces-caisse-reprise', nav: true,
+    apres: async (page) => {
+      await page.locator('tr', { hasText: 'F2025-0412-RESIDENCE-LES-TILLEULS.pdf' })
+        .getByRole('button', { name: 'Encaissée en espèces dans ta caisse', exact: true }).click()
+      await page.getByText('Le paiement en espèces de cette pièce ne se saisit pas depuis ton espace : ton cabinet l\'enregistre.', { exact: true })
+        .waitFor({ timeout: 10000 })
+    },
+  },
   {
     chemin: '#/ma-caisse', nom: 'client/ma-caisse-paiement', nav: true,
     apres: async (page) => {

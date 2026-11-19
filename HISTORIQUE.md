@@ -54149,3 +54149,16 @@ refusé en 42501. Copie de `replique_227` portée à 243 : sans préparée, IDEN
 OPT1, BOR3 et trois associations semées par la fonction, le script d'avant s'arrête, le nouveau rend IDENTIQUE (107 tables, 30
 lignes, 213 clés) ; ancré avant le mouvement, il s'arrête en 23503 (la section P7 de `rls.sql` et le leurre la connaissaient
 déjà). Reste de NOE8 : la mise en production (les migrations, le drapeau levé, les essais et les trois contrôles de l'export).
+
+### 19/11/2026 — LE BANC DE CAPTURES, PASSE `CLIENT-CAISSE` : LE FAUX SUPABASE NE CONNAISSAIT PAS LA LECTURE D'A8Q5Q3Q2Q2-Q1
+
+(Agent architecte ; outils seulement, aucun écran changé.) `debordements.mjs 390 client-caisse` s'arrêtait sur
+`client/mes-pieces-caisse` : le bouton « Espèces de ta caisse » de `p7.pdf` n'était plus là. Cause exacte : depuis
+A8Q5Q3Q2Q2-Q1 (16/11/2026, drapeau `ESPECES_DU_CLIENT_HORS_DES_REPRISES_PREVUES` levé), « Mes pièces » lit
+`pieces_hors_de_la_caisse_du_client` avant d'offrir tout geste de la caisse, et le faux Supabase répondait à cet appel inconnu par
+`false` : liste « illisible », aucun geste offert et la phrase qui le dit — l'écran faisait ce qu'il doit, le banc était dépassé.
+`fauxSupabase.ts` rend désormais la liste comme la fonction (les pièces citées par un lien actif, triées), et, pour la seule passe
+`client-caisse`, un original de facture reprise (une vente au nom de fichier `F2025-0412-…`, un UUID, la seule forme que le module
+accepte) ; la visite neuve `client/mes-pieces-caisse-reprise` ouvre son geste et attend la phrase de la base (« … ton cabinet
+l'enregistre. »). Mesuré : 13 visites, 0 débordement à 390 px (la passe `client-banque`, qui partage le faux, 0 aussi). En passant :
+le Chromium de l'environnement est sous `chrome-linux64`, que la détection de `vitrine.mjs` ne cherche pas (`CHROMIUM=` le contourne).
