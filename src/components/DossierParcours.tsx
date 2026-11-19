@@ -3,7 +3,7 @@ import { ICONES_PARCOURS, IconChecklist, IconDocuments, IconEcritures, IconInfor
 import { CAISSE_EXPORTEE } from '../lib/caisse'
 import { INVENTAIRE_EXPORTE } from '../lib/inventaire'
 import { groupesDuParcours, type DossierTab, type GroupeParcours, type IdGroupeParcours } from '../lib/ongletsDossier'
-import { useModulesOuverts } from '../context/OptionsDuCabinetContext'
+import { useModulesOuverts } from '../context/ModulesOuverts'
 
 export type { DossierTab } from '../lib/ongletsDossier'
 

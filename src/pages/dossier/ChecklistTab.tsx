@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useModulesOuverts } from '../../context/ModulesOuverts'
 import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
 import type { ModeleComptable } from '../../lib/engagement'
@@ -15,7 +16,7 @@ import MonthlyBars from '../../components/widgets/MonthlyBars'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { reserveCloturesInconnues } from '../../lib/resteAEnvoyer'
 import { lireLaChecklist, type LectureDeLaChecklist } from '../../lib/checklistLecture'
-import { pointsDeLaChecklist, type DocumentAttendu, type PointATraiter } from '../../lib/pointsDeLaChecklist'
+import { pointsDeLaChecklist, pointsSousLesModules, type DocumentAttendu, type PointATraiter } from '../../lib/pointsDeLaChecklist'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import EncartFactureElectronique from './EncartFactureElectronique'
 import CarteEspaceClient from './CarteEspaceClient'
@@ -57,6 +58,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   ventesParLesFactures: boolean
   onNavigate: (tab: DossierTab) => void
 }) {
+  const { ouverts: modulesOuverts } = useModulesOuverts()
   // Ce que les exercices validés ont figé ne se compare plus : la base refuse de le réécrire, et le dire
   // « à régénérer » laisserait un point en erreur que rien ne lève (lib/validationExercice.ts).
   const { frontiere, anneesValidees } = useExercicesValides()
@@ -121,7 +123,8 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // Les relevés incohérents et les doublons de contenu sont BEST-EFFORT ici : illisibles, ils se lisent comme vides —
   // l'échec est journalisé par la lecture —, comme avant que leurs lectures sortent de cet écran.
   const {
-    pointsParametrage, pointsTravail, documentsAttendus, moisManquants, moisRecus, piecesConfianceBasse,
+    pointsParametrage: pointsParametrageCalcules, pointsTravail: pointsTravailCalcules, documentsAttendus, moisManquants, moisRecus,
+    piecesConfianceBasse,
   } = pointsDeLaChecklist(
     { ...lecture, relevesIncoherents: lecture.relevesIncoherents ?? [], doublonsTexte: lecture.doublonsTexte ?? [] },
     {
@@ -129,6 +132,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
       premierJourDuMois: premierJourDuMoisCourant(),
     },
   )
+  // Les points des seuls modules ouverts du cabinet (conception 56, OPT3) : le drapeau baissé, tous ceux d'hier.
+  const pointsParametrage = pointsSousLesModules(pointsParametrageCalcules, modulesOuverts)
+  const pointsTravail = pointsSousLesModules(pointsTravailCalcules, modulesOuverts)
   const items: ItemChecklist[] = documentsAttendus.map((item) => {
     const coche = item.coche
     return coche ? { ...item, onToggle: () => toggleJustificatif(coche) } : item

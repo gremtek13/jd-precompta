@@ -1,4 +1,6 @@
 import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
+import { useModulesOuverts } from '../../context/ModulesOuverts'
+import { estOuvert, LIBELLES_DES_MODULES, MOTS_DU_REFUS } from '../../lib/modulesDuCabinet'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
@@ -260,6 +262,11 @@ export default function TvaTab({
   // Les exercices validés : une déclaration dont la période y tombe est figée avec eux, et ne s'y enregistre plus.
   // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
   const { banques } = useBanquesDuDossier(dossierId, plan)
+  // LES MODULES DU CABINET (conception 56, § 1.5, OPT3) : l'onglet se monte toujours, le statut de TVA du dossier est du socle ;
+  // la CA3 suit la tenue, la facture électronique et l'e-reporting leur module. Le drapeau baissé : tout s'affiche comme hier.
+  const { ouverts: modulesOuverts } = useModulesOuverts()
+  const ca3Offerte = estOuvert('tenue', modulesOuverts)
+  const factureElectroniqueOfferte = estOuvert('facture_electronique', modulesOuverts)
   const { anneesValidees, frontiere } = useExercicesValides()
   // Nul tant que la première lecture n'est pas revenue : l'écran montre alors ses squelettes.
   const [lu, setLu] = useState<Lu | null>(null)
@@ -354,12 +361,12 @@ export default function TvaTab({
       }}
     />
   )
-  const facturationElectronique = (
+  const facturationElectronique = factureElectroniqueOfferte && (
     <FacturationElectroniqueCard statut={statutTva} article={articleExoneration} periodicite={periodicite} surDebits={surDebits} />
   )
   // La carte de l'e-reporting vit dans les DEUX branches : un dossier exonéré ou en franchise y est tenu de ses achats à
   // l'étranger comme un redevable (étape e1).
-  const ereporting = (
+  const ereporting = factureElectroniqueOfferte && (
     <EreportingCard
       dossierId={dossierId} statutChange={statutChange} denomination={denomination}
       dossier={{
@@ -378,6 +385,23 @@ export default function TvaTab({
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 style={{ marginTop: 0 }}>Déclaration de TVA</h3>
           <p className="muted" style={{ marginBottom: 0 }}>{declarationDuNonRedevable(statutTva)}</p>
+        </div>
+        {facturationElectronique}
+        {ereporting}
+      </>
+    )
+  }
+
+  // La CA3 hors des modules du cabinet : le statut, et ce qui le dit (MOTS_DU_REFUS.ecranDuCabinet).
+  if (!ca3Offerte) {
+    return (
+      <>
+        {statut}
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Déclaration de TVA</h3>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            La préparation de la CA3 appartient au module « {LIBELLES_DES_MODULES.tenue} ». {MOTS_DU_REFUS.ecranDuCabinet}
+          </p>
         </div>
         {facturationElectronique}
         {ereporting}

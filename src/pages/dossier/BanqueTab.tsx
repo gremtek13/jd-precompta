@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useModulesOuverts } from '../../context/ModulesOuverts'
+import { estOuvert } from '../../lib/modulesDuCabinet'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
@@ -203,6 +205,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
    *  maladie et leur association ne s'offrent que sur un code de santé (NOE4-Q1 (C)). */
   codeNaf: string | null | undefined
 }) {
+  // LES MODULES DU CABINET (conception 56, OPT3) : la connexion bancaire et les paiements de l'assurance maladie sous le leur.
+  const { ouverts: modulesOuverts } = useModulesOuverts()
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   // Ce que le rapprochement écrit au brouillon, nommé comme le modèle le nomme dans les messages.
   const ecritureDeBanque = modele.mode === 'engagement' ? "l'écriture de règlement" : "l'écriture de contrepartie banque"
@@ -2050,7 +2054,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 
       {/* `lectureEnCours` : pendant la lecture de l'onglet — la première comme chaque relecture —, `lignes` et `regles` sont
           vides ou d'avant la dernière écriture. Un import y dédoublonnerait contre rien : la sœur de la lecture tronquée. */}
-      <ConnexionBancaireCard
+      {/* La connexion bancaire, sous son module (conception 56, OPT3) ; l'import par fichier reste au socle. */}
+      {estOuvert('connexion_bancaire', modulesOuverts) && <ConnexionBancaireCard
         dossierId={dossierId}
         lignes={lignes}
         regles={regles}
@@ -2058,7 +2063,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         lectureEnCours={loading}
         frontiere={frontiere}
         onImported={load}
-      />
+      />}
 
       <ImportCsv
         dossierId={dossierId}
@@ -2825,12 +2830,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       {/* Les paiements de l'assurance maladie (NOE4) : une section à part, sous son drapeau, sur la lecture de l'onglet ; sous
           les imports, l'association au relevé (NOE5b) : ses contrôles et le lot des concordances. Elle ne touche ni au
           classement des crédits ni au rapprochement des pièces. */}
-      <PaiementsAssuranceMaladie espace="cabinet" dossierId={dossierId} codeNaf={codeNaf} partagee={paiementsAssuranceMaladie}>
+      {estOuvert('assurance_maladie', modulesOuverts) && <PaiementsAssuranceMaladie espace="cabinet" dossierId={dossierId} codeNaf={codeNaf} partagee={paiementsAssuranceMaladie}>
         <AssociationDansLaSection
           rapprochement={rapprochementAssuranceMaladie} occupe={associationAssuranceMaladieOccupee}
           erreur={erreurAssuranceMaladie} message={messageAssuranceMaladie} onAssocierLeLot={associerAssuranceMaladie}
         />
-      </PaiementsAssuranceMaladie>
+      </PaiementsAssuranceMaladie>}
     </>
   )
 }

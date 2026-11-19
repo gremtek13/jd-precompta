@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useModulesOuverts } from '../../context/ModulesOuverts'
+import { estOuvert } from '../../lib/modulesDuCabinet'
 import { supabase } from '../../lib/supabase'
 import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
@@ -125,6 +127,8 @@ interface Props {
 
 export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance, exemplaire = null, caisse = null, doublonProbable = null }: Props) {
   const fige = piece !== null && figeePar !== null
+  // « Proposer une catégorie » appartient à l'assistant (conception 56, OPT3) ; la règle apprise reste au socle.
+  const { ouverts: modulesOuverts } = useModulesOuverts()
   // LA PIÈCE DONT LA FICHE EST DÉCLARÉE À L'E-REPORTING ne se supprime plus (hypothèse E5-Q6, `garder_piece_declaree`) : la
   // fiche le dit sous les mots de la base et n'offre pas « Supprimer ». Les fiches ou les déclarations lues en partie ne
   // disent rien d'elle : la confirmation de la suppression le dit (`declaree.sait === false`).
@@ -1098,7 +1102,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
                 Appliquer
               </button>
             </div>
-          ) : !regle && !sansTexteLu && (
+          ) : !regle && !sansTexteLu && estOuvert('assistant', modulesOuverts) && (
             <div className="proposition-categorie">
               {categorieProposee && propositionAffichee ? (
                 <>

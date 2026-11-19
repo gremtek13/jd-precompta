@@ -1,4 +1,5 @@
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
+import { estOuvert, MODULE_DE_L_ONGLET, type Module, type ModuleOptionnel } from './modulesDuCabinet'
 import { banquesDuDossier } from './banqueDuMouvement'
 import { detailDesNotesRapprochees, LIBELLE_NOTES_RAPPROCHEES, notesDeFraisRapprochees } from './noteDeFraisEnTresorerie'
 import { comptesSurPlusieursPostes, detailDesComptesSurPlusieursPostes, LIBELLE_COMPTES_SUR_PLUSIEURS_POSTES } from './unCompteUnPoste'
@@ -216,6 +217,19 @@ export interface PointsDeLaChecklist {
   moisManquants: number[]
   moisRecus: number
   piecesConfianceBasse: Piece[]
+}
+
+// LES POINTS SOUS LES MODULES DU CABINET (conception 56, § 1.5, lot OPT3) : un point ne se dit que si le module de ce qu'il
+// demande est ouvert — celui de l'onglet où il mène (`MODULE_DE_L_ONGLET`), sauf les points nommés ici, dont l'onglet est du
+// socle et l'acte d'un autre module : la déclaration de TVA d'une période (la CA3, de la tenue ; l'onglet TVA porte aussi le
+// statut, du socle). Le calcul ne change pas : le moteur ne lit pas les options, l'écran filtre ce qu'il montre. Tous les
+// modules ouverts, la liste revient identique.
+export const MODULE_DU_POINT_HORS_DE_SON_ONGLET: Readonly<Record<string, Module>> = {
+  'periodes-tva-non-declarees': 'tenue',
+}
+
+export function pointsSousLesModules(points: readonly PointATraiter[], ouverts: readonly ModuleOptionnel[]): PointATraiter[] {
+  return points.filter((p) => estOuvert(MODULE_DU_POINT_HORS_DE_SON_ONGLET[p.id] ?? MODULE_DE_L_ONGLET[p.cible], ouverts))
 }
 
 export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChecklist): PointsDeLaChecklist {
