@@ -325,6 +325,53 @@ async function refusDesDeuxFacteurs(appelant: AppelantDesDeuxFacteurs): Promise<
 }
 // ── FIN DEUX FACTEURS ────────────────────────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT OPTION DU CABINET ──────────────────────────────────────────────────────────────────────────────────────────
+// Les modules du cabinet (conception 56, § 3.2, étage 2 ; OPT5). Une fonction rangée sous un module optionnel
+// (src/lib/modulesDuCabinet.ts, `MODULE_DE_LA_FONCTION`) le refuse en 403 quand le cabinet DU DOSSIER ne l'a pas ouvert,
+// AVANT toute dépense et toute écriture, et APRÈS le contrôle de son appelant : un appelant qui n'est pas admis au dossier
+// garde la réponse d'hier, qui ne dit pas si le dossier existe. Les modules se lisent au jeton de l'APPELANT, par
+// `modules_ouverts_du_dossier` (migration `options_des_cabinets`, security definer : le cabinet du dossier et ses accès
+// client) ; une réponse illisible, d'une autre forme, ou un module inconnu rend 503 — le côté fermé, comme les droits. Le
+// socle ne lit rien. La liste et les mots sont ceux de modulesDuCabinet.ts ; bloc identique dans chaque fonction qui le
+// porte, gardé par optionDuCabinetCopie.test.ts, joué en HTTP par edgeFunctionsOptionDuCabinet.test.ts.
+const MODULES_DU_CABINET = [
+  "tenue", "facturation", "facture_electronique", "assurance_maladie", "espace_client", "assistant", "honoraires",
+  "connexion_bancaire",
+] as const
+type ModuleDuCabinet = typeof MODULES_DU_CABINET[number]
+const REFUS_DU_MODULE_FERME = "Ce module n’est pas ouvert au cabinet de ce dossier."
+const REFUS_DES_OPTIONS_ILLISIBLES = "Les options du cabinet de ce dossier n’ont pas pu être lues."
+
+interface AppelantDesOptions {
+  rpc: (fonction: "modules_ouverts_du_dossier", args: { p_dossier_id: string }) => PromiseLike<{ data: unknown; error: unknown }>
+}
+
+/** Les modules ouverts tels que la base les rend — des textes de la liste fermée, chacun une fois —, sinon nul. */
+function modulesOuvertsLus(valeur: unknown): ModuleDuCabinet[] | null {
+  if (!Array.isArray(valeur)) return null
+  const connus: readonly string[] = MODULES_DU_CABINET
+  if (!valeur.every((v): v is ModuleDuCabinet => typeof v === "string" && connus.includes(v))) return null
+  if (new Set(valeur).size !== valeur.length) return null
+  return valeur
+}
+
+/** Le refus du module que cet appel exige, ou nul : rien n'est lu pour le socle. */
+async function refusDuModule(
+  appelant: AppelantDesOptions, dossierId: string, module: ModuleDuCabinet | "socle",
+): Promise<{ statut: 403 | 503; error: string } | null> {
+  if (module === "socle") return null
+  let ouverts: ModuleDuCabinet[] | null = null
+  try {
+    const { data, error } = await appelant.rpc("modules_ouverts_du_dossier", { p_dossier_id: dossierId })
+    ouverts = error ? null : modulesOuvertsLus(data)
+  } catch {
+    ouverts = null
+  }
+  if (ouverts === null) return { statut: 503, error: REFUS_DES_OPTIONS_ILLISIBLES }
+  return ouverts.includes(module) ? null : { statut: 403, error: REFUS_DU_MODULE_FERME }
+}
+// ── FIN OPTION DU CABINET ────────────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -394,6 +441,9 @@ Deno.serve(async (req: Request) => {
     if (!aAcces) {
       return json({ error: "Pièce introuvable." }, 404)
     }
+    // Le module « Assistant IA » du cabinet du dossier (bloc OPTION DU CABINET) : après l'appelant, avant toute dépense.
+    const refusModule = await refusDuModule(supabaseAsCaller, piece.dossier_id, "assistant")
+    if (refusModule) return json({ error: refusModule.error }, refusModule.statut)
 
     const [lecture, lues] = await Promise.all([
       supabaseAsCaller.from("piece_textes_ocr").select("texte").eq("piece_id", piece.id).maybeSingle(),

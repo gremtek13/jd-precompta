@@ -52,8 +52,9 @@ describe('proposer-categorie — le gestionnaire', () => {
       expect(CODE, `écriture « ${ecriture} » dans proposer-categorie`).not.toContain(ecriture)
     }
     // Les seules fonctions SQL appelées lisent : le second facteur de l'appelant (C7, second temps, préparée), puis le
-    // contrôle d'accès.
-    expect([...CODE.matchAll(/\.rpc\("([^"]+)"/g)].map((m) => m[1])).toEqual(['deux_facteurs_satisfaits', 'admin_du_dossier'])
+    // contrôle d'accès, puis les modules du cabinet du dossier (bloc OPTION DU CABINET, OPT5).
+    expect([...CODE.matchAll(/\.rpc\("([^"]+)"/g)].map((m) => m[1]))
+      .toEqual(['deux_facteurs_satisfaits', 'modules_ouverts_du_dossier', 'admin_du_dossier'])
   })
 
   it('lit avec le jeton de l’appelant, jamais avec la clé secrète', () => {

@@ -625,7 +625,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   à toute l'équipe du cabinet et au super-administrateur, OPT1Q3-Q1 (A)) en production depuis le 20/11/2026 (245, par l'outil),
   `PLAFONDS_HORS_DU_CLIENT_PREVUS` levé : l'écran des cabinets lit les plafonds par la fonction seule, un cabinet qu'elle ne rend
   pas « Illisibles » sans « Plafond IA » → « OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT », « OPT1-Q3 EN
-  PRODUCTION ».
+  PRODUCTION ». OPT5 écrit (20/11/2026, sans migration, le bloc OPTION DU CABINET : 403 module fermé, 503 illisible, après
+  l'appelant), À REDÉPLOYER : `agent-comptable`, `proposer-categorie`, `banque-connexion`, `plateforme-agreee`,
+  `superpdp-credentials`, `superpdp-emit`, `superpdp-sync`, `send-email` → « OPT5 : LES EDGE FUNCTIONS REFUSENT ».
 - **Les exports vers les logiciels comptables** (17/11/2026), recherchés, rien d'écrit (`docs/conceptions/57-exports-vers-les-logiciels-comptables.md`) :
   le FEC avec ses pièces en ZIP est le pivot (ACD d'abord), puis l'ASCII Quadra et le TRA ; EXP-Q1 à Q8, EXP-E1 à E7 → « LES
   EXPORTS VERS LES LOGICIELS COMPTABLES : LA RECHERCHE ».
