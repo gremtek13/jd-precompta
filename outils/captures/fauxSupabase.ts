@@ -3012,6 +3012,13 @@ const FACTEURS_DU_BANC = [
 ]
 const QR_DU_BANC = "data:image/svg+xml;utf-8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'><path d='M0 0h7v7H0zM14 0h7v7h-7zM0 14h7v7H0zM9 9h3v3H9zM15 15h2v2h-2zM9 1h2v5H9zM1 9h5v2H1z'/></svg>"
 
+// LE JOURNAL DES ENVOIS AU STOCKAGE (BOR6, outils/captures/refusDesBordereaux.mjs) : chaque appel à `upload`, quel que soit le
+// seau, y est noté (le seau, le chemin, le poids) AVANT la réponse de la maquette. Le faux client vit dans la page, aucune
+// requête `storage/v1/object` ne part sur le réseau : l'essai compte donc ces appels pour prouver qu'un fichier refusé n'a
+// jamais atteint le stockage.
+const DEPOTS_DU_BANC: { seau: string; chemin: string; taille: number }[] = []
+if (typeof window !== 'undefined') (window as unknown as { __depotsDuBanc: typeof DEPOTS_DU_BANC }).__depotsDuBanc = DEPOTS_DU_BANC
+
 export const supabase = {
   auth: {
     refreshSession: () => Promise.resolve({ data: { session, user: session.user }, error: null }),
@@ -3057,6 +3064,7 @@ export const supabase = {
       },
       list: () => Promise.resolve({ data: [], error: null }),
       upload: (chemin: string, corps: Blob) => {
+        DEPOTS_DU_BANC.push({ seau, chemin, taille: corps.size })
         if (seau !== 'ventes') return Promise.resolve({ data: null, error: { message: 'maquette' } })
         if (SEAU_VENTES.has(chemin)) return Promise.resolve({ data: null, error: erreurDuStockage(409, '409', 'The resource already exists') })
         SEAU_VENTES.set(chemin, corps)

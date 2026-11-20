@@ -54394,3 +54394,18 @@ qui vend « l'impression du bordereau », décompte de mutuelle…) sans un faux
 (chaque préparateur, aucun `borner(` nu, les appels de `preparerContenu` comptés) et le relevé « sans sortie », défauts plantés.
 Hors du lot : `receive-email` (la seconde partie), une image ou un PDF sans texte, un PDF que pdf.js n'ouvre pas (BOR6-Q1), l'état
 des paiements et l'export CSV NOEMIE, de forme inconnue (BOR6-Q2). Non vérifié : le coût de la lecture d'un gros PDF sur un poste réel.
+
+### 20/11/2026 — BOR6 : LE REFUS D'UN BORDEREAU ÉPROUVÉ DANS UN NAVIGATEUR, LE DRAPEAU LEVÉ
+
+`outils/captures/refusDesBordereaux.mjs` (banc des captures, faux Supabase, Chromium) dépose cinq fichiers FICTIFS fabriqués par
+pdf-lib, côté cabinet (« + Ajouter des documents » de Justificatifs) et côté client (« Mes pièces ») : le bordereau d'une page et le
+PDF de trois pages dont la troisième est un bordereau se refusent avec leur phrase, sans aucun appel à `upload` (le faux stockage les
+note dans `window.__depotsDuBanc` : le faux client vit dans la page, aucune requête `storage/v1/object` ne part) ; la facture, le PNG
+et une facture de 5 Mio (3 347 pages de texte) partent, un appel chacun. Issue du choix : 0,2 à 0,9 s pour un petit PDF, ~15 s pour
+celui de 5 Mio, en dev comme sur le build de production (servi par `vite preview` sous la config du banc, le vrai client exigeant la
+base) ; un vrai Worker `pdf.worker.min-….mjs` chargé à chaque lecture, aucune erreur ni avertissement de console. Défaut trouvé :
+pendant ces 15 s, la fenêtre du cabinet ne montrait rien ; elle dit « Vérification de N fichier(s) avant l'envoi… »
+(`AjouterDocumentsModalVerification.test.tsx`). Le drapeau levé, trois tests d'écran (verrous de `AjouterDocumentsModal`,
+`ImportDossierModal`, `FichePiece`) attendaient le bouton dans l'`act` du choix, que le premier chargement de pdf.js sous jsdom
+dépasse : ils simulent la lecture (vert par hasard au premier passage de la suite). L'état baissé reste joué par l'accesseur de
+`bornesStockageBordereaux.test.ts`. Non vérifié : un poste réel lent, Safari, un PDF numérisé lourd.

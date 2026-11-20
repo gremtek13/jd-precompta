@@ -41,13 +41,24 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
 
   // Ce que le seau des pièces refuserait — un format qu'il n'admet pas, un fichier plus lourd que sa borne — est écarté
   // DÈS LE CHOIX, avant tout envoi, et compté avec sa raison (lib/bornesStockage.ts, ligne 22.6).
+  //
+  // LA VÉRIFICATION SE DIT PENDANT QU'ELLE DURE (BOR6, essai du 20/11/2026 dans un vrai navigateur) : un PDF est lu par pdf.js
+  // pour y reconnaître un bordereau de télétransmission, page par page ; une facture fictive de 5 Mio et 3 347 pages de texte
+  // y a demandé 15 secondes, pendant lesquelles la fenêtre ne montrait rien — ni le fichier, ni une raison d'attendre.
+  const [enVerification, setEnVerification] = useState(0)
   async function ajouterFichiers(liste: FileList | File[]) {
+    const choisis = Array.from(liste)
     const acceptes: FichierAjout[] = []
     const refuses: RefusDuDepot[] = []
-    for (const file of Array.from(liste)) {
-      const refus = await refusDUnePiece(file)
-      if (refus) refuses.push(refus)
-      else acceptes.push({ file, statut: 'attente' })
+    setEnVerification((n) => n + choisis.length)
+    try {
+      for (const file of choisis) {
+        const refus = await refusDUnePiece(file)
+        if (refus) refuses.push(refus)
+        else acceptes.push({ file, statut: 'attente' })
+      }
+    } finally {
+      setEnVerification((n) => n - choisis.length)
     }
     setFichiers((prev) => [...prev, ...acceptes])
     if (refuses.length > 0) setIgnores((prev) => [...prev, ...refuses])
@@ -178,6 +189,12 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
             📎 Dépose des fichiers ici, ou clique pour choisir (PDF, JPG, PNG, CSV — {poids(TAILLE_MAX_PIECE)} au plus par fichier)
             <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.csv" style={{ display: 'none' }} onChange={handleFileInput} />
           </label>
+        )}
+
+        {enVerification > 0 && (
+          <p className="muted" role="status" style={{ marginTop: 12, marginBottom: 4 }}>
+            Vérification de {enVerification} fichier(s) avant l’envoi…
+          </p>
         )}
 
         {fichiers.length === 0 && ignores.length > 0 && (

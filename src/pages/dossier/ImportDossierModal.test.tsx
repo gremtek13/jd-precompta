@@ -17,6 +17,11 @@ const faux = vi.hoisted(() => ({
 }))
 
 // Ce que la fenêtre écarte au choix se juge par les VRAIES bornes du seau (lib/bornesStockage.ts, ligne 22.6).
+// Le refus d'un bordereau (BOR6, drapeau levé le 20/11/2026) lirait le PDF choisi par pdf.js, dont le premier chargement sous
+// jsdom dépasse l'`act` du choix : ce test garde un verrou, pas la lecture (bornesStockageBordereaux.test.ts la garde) ;
+// le PDF choisi n'est pas un bordereau.
+vi.mock('../../lib/refusDesBordereauxLecture', () => ({ bordereauDansLeFichier: () => Promise.resolve(false) }))
+
 vi.mock('../../lib/importFichiers', () => ({
   chargerHashsExistants: (...args: unknown[]) => {
     faux.chargerHashs(...args)
