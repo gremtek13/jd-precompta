@@ -54376,3 +54376,21 @@ dans la colonne du justificatif « Paiement de l'assurance maladie du JJ/MM/AAAA
 justifiée par le relevé ; lue en partie, l'export se refuse ; aucun module du FEC ne lit ceci (relevé par un test). Vérifié : 24
 cas du module, 4 du branchement (les deux états du drapeau par un accesseur), 3 d'écran ; huit mutations, toutes tuées. Non
 vérifié : un premier import réel, l'export de la piste sous le drapeau levé dans l'écran (le câblage n'a qu'un test de module).
+
+### 20/11/2026 — BOR6 : LE REFUS D'UN BORDEREAU DE TÉLÉTRANSMISSION AU DÉPÔT (PREMIÈRE PARTIE, DERRIÈRE SON DRAPEAU)
+
+BOR-Q9 (A) et NOE-Q6 (A) tranchées : refuser au dépôt, dans le navigateur, avant tout envoi. La forme se reconnaît par
+`porteLaFormeDUnBordereau` (`lib/bordereauDeTeletransmission.ts`, les deux reconnaissances de BOR1, jamais recopiées) : une ligne
+qui EST le titre, ou qui CONTIENT l'en-tête des colonnes, sur n'importe quelle page. Le texte se lit par `pagesDuPdf`, extraite de
+l'ouverture de BOR1 (`lib/refusDesBordereauxLecture.ts` : toutes les pages, une page illisible sautée, arrêt à la première qui a la
+forme). Le jugement vit dans les quatre préparateurs d'un fichier choisi (`preparerPiece`, `preparerDocumentDuCabinet`,
+`preparerOriginalDImport`, `preparerProcesVerbal`, par `sansBordereau`, après les bornes, sur un PDF seulement), donc à chacun des
+chemins du navigateur : « Mes pièces », l'accueil et « Ma banque » du client (`lib/depot.ts`, la phrase tutoyée), les fenêtres
+d'import et de documents, la fiche d'une pièce, Cotisations, les documents mis à disposition, l'import des factures reprises ; la
+raison `bordereau` de `RefusDuDepot`, comptée à part par `bilanDesRefus`. Derrière `REFUS_DES_BORDEREAUX_PREVU` baissé
+(`lib/refusDesBordereaux.ts`). Vérifié : treize textes ordinaires fictifs (factures, note d'honoraires, relevé, facture du logiciel
+qui vend « l'impression du bordereau », décompte de mutuelle…) sans un faux positif, en lignes et en PDF par pdf.js ; les deux
+états du drapeau aux quatre préparateurs et au dépôt du client (aucun accès au client de la base) ; `refusDesBordereauxAuDepot.test.ts`
+(chaque préparateur, aucun `borner(` nu, les appels de `preparerContenu` comptés) et le relevé « sans sortie », défauts plantés.
+Hors du lot : `receive-email` (la seconde partie), une image ou un PDF sans texte, un PDF que pdf.js n'ouvre pas (BOR6-Q1), l'état
+des paiements et l'export CSV NOEMIE, de forme inconnue (BOR6-Q2). Non vérifié : le coût de la lecture d'un gros PDF sur un poste réel.

@@ -12,6 +12,7 @@ import { messageErreur } from './messageErreur'
 import { ouvrirApercu } from './apercu'
 import { retirerFichiers } from './stockage'
 import { preparerPiece } from './bornesStockage'
+import { REFUS_D_UN_BORDEREAU_AU_CLIENT } from './refusDesBordereaux'
 import { confianceDeLExtraction } from './dateDeduite'
 
 // En cas de succès, la ligne créée est nommée : c'est ce qui permet à l'écran de proposer au client
@@ -65,7 +66,9 @@ export async function deposerFichier(dossierId: string, file: File, hashsEnVol: 
   // l'appareil photo (`image/*`) laissaient partir n'importe quel fichier, de n'importe quel poids. Le refus est dit au
   // client avec le poids et la borne ; le fichier part RÉÉTIQUETÉ du type que le seau admet (voir lib/bornesStockage.ts).
   const pret = await preparerPiece(file)
-  if ('refus' in pret) return { statut: 'erreur', message: pret.refus.message }
+  // Un bordereau de télétransmission (BOR6) : refusé avant tout envoi, aux mots du client — ce dépôt est celui de l'espace
+  // client seul (ClientUpload, ClientHome, ClientBanque).
+  if ('refus' in pret) return { statut: 'erreur', message: pret.refus.raison === 'bordereau' ? REFUS_D_UN_BORDEREAU_AU_CLIENT : pret.refus.message }
   const hash = await hashFichier(file)
   // Ce `return` vient AVANT le `try` : l'empreinte appartient alors à un autre dépôt en vol, que le `finally` plus bas ne
   // doit surtout pas libérer à sa place.

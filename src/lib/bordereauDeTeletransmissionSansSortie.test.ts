@@ -200,3 +200,29 @@ describe('le dû contre le payé n’a aucune sortie, et n’importe rien', () =
       .toEqual(['l’horloge'])
   })
 })
+
+// LE REFUS D'UN BORDEREAU AU DÉPÔT (BOR6, lib/refusDesBordereaux.ts et lib/refusDesBordereauxLecture.ts) : la règle (le drapeau
+// et les deux phrases) n'a aucune sortie et n'importe rien ; la lecture au dépôt n'a aucune sortie, n'importe que la forme
+// (le module pur de BOR1) et l'ouverture de BOR1, et ne charge rien elle-même : pdf.js ne s'ouvre que par `pagesDuPdf`.
+const REGLE_DU_DEPOT = 'src/lib/refusDesBordereaux.ts'
+const LECTURE_AU_DEPOT = 'src/lib/refusDesBordereauxLecture.ts'
+
+describe('le refus d’un bordereau au dépôt n’a aucune sortie', () => {
+  const regle = readFileSync(resolve(process.cwd(), REGLE_DU_DEPOT), 'utf8')
+  const lecture = readFileSync(resolve(process.cwd(), LECTURE_AU_DEPOT), 'utf8')
+  const jugerLaLecture = (t: string) => fautes(t, new Set(['./bordereauDeTeletransmission', './bordereauDeTeletransmissionLecture']), new Set())
+
+  it('la règle : aucune sortie, aucun import ; la lecture : aucune sortie, BOR1 seul importé, aucun chargement', () => {
+    expect(fautes(regle, new Set(), new Set())).toEqual([])
+    expect(jugerLaLecture(lecture)).toEqual([])
+  })
+
+  it('quatre défauts plantés se voient : un journal du fichier, le client de la base, pdf.js chargé à part, un journal de la règle', () => {
+    const essai = '  try {\n    const lu = await pagesDuPdf('
+    expect(lecture).toContain(essai)
+    expect(jugerLaLecture(lecture.replace(essai, `  console.info(fichier)\n${essai}`))).toEqual(['un journal'])
+    expect(jugerLaLecture(`import { supabase } from './supabase'\n${lecture}`)).toEqual(['le client de la base', 'l’import de ./supabase'])
+    expect(jugerLaLecture(lecture.replace(essai, `  await import('pdfjs-dist')\n${essai}`))).toEqual(['l’import dynamique de \'pdfjs-dist\''])
+    expect(fautes(`${regle}\nconsole.log(REFUS_D_UN_BORDEREAU)`, new Set(), new Set())).toEqual(['un journal'])
+  })
+})

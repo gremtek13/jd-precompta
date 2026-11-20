@@ -25,6 +25,14 @@
 // (src/lib/logoDesFacturesEcriture.ts, étape A5c2a), qui passe par `logoPret`.
 //
 // Ce module ne dépose rien : il rend le corps à envoyer, ou le refus à dire. Il n'importe pas le client Supabase.
+//
+// LE BORDEREAU DE TÉLÉTRANSMISSION (BOR6, première partie ; lib/refusDesBordereaux.ts) : un PDF qu'une personne dépose —
+// une pièce, un document mis à disposition, un original de facture reprise, un procès-verbal signé — est lu dans le
+// navigateur, après ses bornes et avant tout envoi, et refusé s'il a la forme d'un bordereau (`sansBordereau`, derrière
+// `REFUS_DES_BORDEREAUX_PREVU`). refusDesBordereauxAuDepot.test.ts exige que chaque préparateur d'un fichier choisi l'appelle.
+
+import { REFUS_D_UN_BORDEREAU, REFUS_DES_BORDEREAUX_PREVU } from './refusDesBordereaux'
+import { bordereauDansLeFichier } from './refusDesBordereauxLecture'
 
 export type Seau = 'pieces' | 'packs' | 'cabinet-logos' | 'ventes'
 
@@ -147,7 +155,8 @@ export const TYPES_DES_LOGOS = TYPES_ADMIS['cabinet-logos']
 
 /** Ce qu'un seau refuse, et pourquoi. */
 export interface RefusDuDepot {
-  raison: 'format' | 'taille'
+  /** `bordereau` : un PDF qui a la forme d'un bordereau de télétransmission (BOR6), refusé quels que soient son type et son poids. */
+  raison: 'format' | 'taille' | 'bordereau'
   /** La phrase, sans majuscule ni point final : l'écran la place après le nom du fichier, ou après un deux-points. */
   message: string
   /** Ce que pèse le fichier, en octets. */
@@ -233,6 +242,17 @@ function refusDeFormat(genre: Genre, taille: number): RefusDuDepot {
   return { raison: 'format', taille, message: `format non pris en charge (${genre.formats})` }
 }
 
+/**
+ * Le refus d'un PDF qui a la forme d'un bordereau de télétransmission (BOR6), ou l'issue telle quelle : le pas qui suit les
+ * bornes, pour ne lire par pdf.js qu'un fichier que le seau accepterait. Drapeau baissé, rien n'est lu. Un fichier qui n'est
+ * pas un PDF n'est pas lu : une image n'a pas de texte, un CSV n'a pas de forme connue (NOE1).
+ */
+async function sansBordereau(issue: IssueDuDepot, fichier: Blob): Promise<IssueDuDepot> {
+  if (!REFUS_DES_BORDEREAUX_PREVU || 'refus' in issue || issue.type !== 'application/pdf') return issue
+  if (!(await bordereauDansLeFichier(fichier))) return issue
+  return { refus: { raison: 'bordereau', taille: issue.taille, message: REFUS_D_UN_BORDEREAU } }
+}
+
 /** Le refus de la taille, ou le corps réétiqueté : le dernier pas de chaque préparation. */
 function borner(genre: Genre, contenu: Blob | Uint8Array<ArrayBuffer>, type: string): IssueDuDepot {
   const taille = contenu instanceof Uint8Array ? contenu.byteLength : contenu.size
@@ -251,7 +271,7 @@ async function premiersOctets(fichier: Blob): Promise<Uint8Array> {
 export async function preparerPiece(fichier: File): Promise<IssueDuDepot> {
   const type = typeDUnePiece(fichier.name, await premiersOctets(fichier))
   if (type === null) return { refus: refusDeFormat(genreDuSeau('pieces'), fichier.size) }
-  return borner(genreDuSeau('pieces'), fichier, type)
+  return sansBordereau(borner(genreDuSeau('pieces'), fichier, type), fichier)
 }
 
 const PROCES_VERBAL: Genre = {
@@ -269,7 +289,7 @@ export async function preparerProcesVerbal(fichier: Blob): Promise<IssueDuDepot>
   const o = await premiersOctets(fichier)
   const pdf = o[0] === 0x25 && o[1] === 0x50 && o[2] === 0x44 && o[3] === 0x46
   if (!pdf) return { refus: refusDeFormat(PROCES_VERBAL, fichier.size) }
-  return borner(PROCES_VERBAL, fichier, 'application/pdf')
+  return sansBordereau(borner(PROCES_VERBAL, fichier, 'application/pdf'), fichier)
 }
 
 /** Le refus d'une pièce, ou null si elle peut partir : ce qu'un écran dit dès le choix du fichier. */
@@ -387,7 +407,7 @@ export function cheminDUnOriginal(dossierId: string, lotId: string, sha256: stri
 export async function preparerOriginalDImport(fichier: File): Promise<IssueDuDepot> {
   const type = typeDUnOriginal(fichier.name, new Uint8Array(await fichier.slice(0, 4096).arrayBuffer()))
   if (type === null) return { refus: refusDeFormat(ORIGINAL_D_IMPORT, fichier.size) }
-  return borner(ORIGINAL_D_IMPORT, fichier, type)
+  return sansBordereau(borner(ORIGINAL_D_IMPORT, fichier, type), fichier)
 }
 
 /** `type/sous-type`, en minuscules, sans paramètres : ce que le stockage compare (RFC 9110, § 8.3.1). */
@@ -414,8 +434,10 @@ export function bilanDesRefus(seau: Seau, refus: readonly RefusDuDepot[]): strin
   if (refus.length === 0) return ''
   const formats = refus.filter((r) => r.raison === 'format').length
   const lourds = refus.filter((r) => r.raison === 'taille')
+  const bordereaux = refus.filter((r) => r.raison === 'bordereau').length
   const parts: string[] = []
   if (formats > 0) parts.push(`${formats} au format non pris en charge`)
+  if (bordereaux > 0) parts.push(`${bordereaux} à la forme d’un bordereau de télétransmission (ses totaux s’importent dans la banque, section « Facturé à l’assurance maladie »)`)
   if (lourds.length > 0) {
     const dits = poidsFaceALaBorne(lourds.map((r) => r.taille), TAILLE_MAX[seau])
     parts.push(`${lourds.length} au-delà de ${dits.borne} (${dits.lus.join(', ')})`)
@@ -475,5 +497,5 @@ export function cheminDUnDocumentDuCabinet(dossierId: string, documentId: string
 export async function preparerDocumentDuCabinet(fichier: Blob): Promise<IssueDuDepot> {
   const type = typeDUnDocumentDuCabinet(await premiersOctets(fichier))
   if (type === null) return { refus: refusDeFormat(DOCUMENT_DU_CABINET, fichier.size) }
-  return borner(DOCUMENT_DU_CABINET, fichier, type)
+  return sansBordereau(borner(DOCUMENT_DU_CABINET, fichier, type), fichier)
 }

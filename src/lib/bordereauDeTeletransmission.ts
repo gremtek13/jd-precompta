@@ -290,6 +290,20 @@ function lignesDuFichier(pages: readonly PageDeTexte[]): LigneDuFichier[] {
   return toutes
 }
 
+/**
+ * LA FORME D'UN BORDEREAU, AU DÉPÔT (lot BOR6, BOR-Q9 (A)) : vrai dès qu'une ligne du fichier, sur n'importe quelle page, EST
+ * le titre « Bordereau de Teletransmission », ou CONTIENT l'en-tête des colonnes (« … Numéro Assuré Nom Bénéficiaire
+ * Naissance … ») — les deux reconnaissances de la lecture ci-dessous, sous la même normalisation, jamais recopiées. Deux
+ * signaux indépendants plutôt qu'un : un titre que pdf.js aurait collé à un autre texte de sa ligne laisse l'en-tête des
+ * colonnes, propre à un état nominatif. Aucun autre contrôle (ni le lot, ni les totaux) : un bordereau que la lecture
+ * refuserait (mal formé, tronqué) porte les mêmes noms, et se refuse au dépôt de même. Le titre n'est cherché qu'en ligne
+ * ENTIÈRE : une facture de logiciel qui vend « l'impression du bordereau de télétransmission » ne se refuse pas
+ * (refusDesBordereaux.test.ts mesure les faux positifs). Rend un booléen, jamais une ligne.
+ */
+export function porteLaFormeDUnBordereau(pages: readonly PageDeTexte[]): boolean {
+  return lignesDuFichier(pages).some((l) => l.normalisee === TITRE || l.normalisee.includes(ENTETE_DES_COLONNES))
+}
+
 function refus(raison: string): LectureDuBordereau {
   return { etat: 'refuse', raison }
 }
