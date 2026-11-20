@@ -54279,3 +54279,20 @@ NOE5 et BOR3 à coller sans seuil de nombre de factures ; la recherche du 19/11/
 HDS v2, CNIL, G29) ne tranche pas le cas d'un total à une seule facture, et le doute reste écrit au § 8.7. BOR3RGPD-Q2 (B) — le
 support remis après l'import laissé au jugement du cabinet, sans consigne. § 8.7 et la ligne « Pas d'hébergement HDS » de
 CLAUDE.md suivent.
+
+### 20/11/2026 — OPT5 : LES EDGE FUNCTIONS REFUSENT CE QU'UN MODULE FERMÉ NE PERMET PAS (À REDÉPLOYER)
+
+Conception 56, § 3.2, étage 2. Sans migration : les huit fonctions d'un module ont toutes un dossier, et
+`modules_ouverts_du_dossier` (en production depuis 244) le juge au jeton de l'appelant. Le bloc `── DÉBUT/FIN OPTION DU CABINET ──`,
+identique dans `agent-comptable` et `proposer-categorie` (assistant), `banque-connexion` (connexion bancaire), `plateforme-agreee`,
+`superpdp-credentials`, `superpdp-emit`, `superpdp-sync` (facture électronique) et `send-email` (le module du modèle,
+`MODULE_DU_MODELE` : la relance de pièces, du socle, ne lit rien ; un modèle sans module refusé comme un type inconnu) : après le
+compte, la double authentification et le contrôle de l'appelant (un appelant non admis garde son 404 d'hier), avant toute dépense
+et toute écriture ; fermé, 403 « Ce module n’est pas ouvert au cabinet de ce dossier. » ; une réponse d'une autre forme, une erreur
+ou un module inconnu, 503 (les mots de `MOTS_DU_REFUS`). `plateforme-agreee` l'appelle deux fois : la porte principale, et la
+réception par l'accès « Achats », après sa case. Les fonctions du socle ne changent pas et ne nomment pas la fonction SQL ;
+`receive-email` (sans session, du socle) non plus. Gardes : `optionDuCabinetCopie.test.ts` (le bloc part de toutes les fonctions,
+compilé seul, exécuté contre `modulesLus`, le module de chaque appel, l'ordre) ; `edgeFunctionsOptionDuCabinet.test.ts` rejoue
+chaque scénario des contrats des huit fonctions tout ouvert, tout fermé, son seul module ouvert et en panne ; le faux PostgREST
+rend un `text[]` comme une valeur, jamais tronquée (`TableauScalaire`). Une mutation du module de `proposer-categorie` mord dans les
+deux. NON fait : le déploiement des huit fonctions (la session) ; un essai réel avec un module fermé.

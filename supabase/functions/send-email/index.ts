@@ -76,6 +76,17 @@ const QUI_PEUT_QUOI: Readonly<Record<string, DroitExige>> = {
   relance_demande: "cabinet",
 }
 
+// LE MODULE DE CHAQUE MODÈLE (conception 56, OPT5 ; `MODULE_DE_LA_FONCTION` de src/lib/modulesDuCabinet.ts, que
+// optionDuCabinetCopie.test.ts confronte à cette table) : la relance de pièces est du socle et ne lit rien ; la facture, le
+// devis et la relance d'une facture, de la facturation ; la relance d'une demande, de l'espace client de gestion.
+const MODULE_DU_MODELE: Readonly<Record<string, ModuleDuCabinet | "socle">> = {
+  facture: "facturation",
+  devis: "facturation",
+  relance_pieces: "socle",
+  relance_facture: "facturation",
+  relance_demande: "espace_client",
+}
+
 // LA RELANCE D'UNE FACTURE EN RETARD (étape C5 ; MEG3-Q3, « oui » du cabinet) : la base n'admet sa ligne de journal,
 // `relance_facture`, qu'avec la migration `relances_des_factures`, en production depuis le 07/11/2026
 // (supabase/schema/20261107163303_relances_des_factures.sql) : la constante est levée. Baissée — l'état d'avant, que
@@ -686,6 +697,53 @@ async function refusDesDeuxFacteurs(appelant: AppelantDesDeuxFacteurs): Promise<
 }
 // ── FIN DEUX FACTEURS ────────────────────────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT OPTION DU CABINET ──────────────────────────────────────────────────────────────────────────────────────────
+// Les modules du cabinet (conception 56, § 3.2, étage 2 ; OPT5). Une fonction rangée sous un module optionnel
+// (src/lib/modulesDuCabinet.ts, `MODULE_DE_LA_FONCTION`) le refuse en 403 quand le cabinet DU DOSSIER ne l'a pas ouvert,
+// AVANT toute dépense et toute écriture, et APRÈS le contrôle de son appelant : un appelant qui n'est pas admis au dossier
+// garde la réponse d'hier, qui ne dit pas si le dossier existe. Les modules se lisent au jeton de l'APPELANT, par
+// `modules_ouverts_du_dossier` (migration `options_des_cabinets`, security definer : le cabinet du dossier et ses accès
+// client) ; une réponse illisible, d'une autre forme, ou un module inconnu rend 503 — le côté fermé, comme les droits. Le
+// socle ne lit rien. La liste et les mots sont ceux de modulesDuCabinet.ts ; bloc identique dans chaque fonction qui le
+// porte, gardé par optionDuCabinetCopie.test.ts, joué en HTTP par edgeFunctionsOptionDuCabinet.test.ts.
+const MODULES_DU_CABINET = [
+  "tenue", "facturation", "facture_electronique", "assurance_maladie", "espace_client", "assistant", "honoraires",
+  "connexion_bancaire",
+] as const
+type ModuleDuCabinet = typeof MODULES_DU_CABINET[number]
+const REFUS_DU_MODULE_FERME = "Ce module n’est pas ouvert au cabinet de ce dossier."
+const REFUS_DES_OPTIONS_ILLISIBLES = "Les options du cabinet de ce dossier n’ont pas pu être lues."
+
+interface AppelantDesOptions {
+  rpc: (fonction: "modules_ouverts_du_dossier", args: { p_dossier_id: string }) => PromiseLike<{ data: unknown; error: unknown }>
+}
+
+/** Les modules ouverts tels que la base les rend — des textes de la liste fermée, chacun une fois —, sinon nul. */
+function modulesOuvertsLus(valeur: unknown): ModuleDuCabinet[] | null {
+  if (!Array.isArray(valeur)) return null
+  const connus: readonly string[] = MODULES_DU_CABINET
+  if (!valeur.every((v): v is ModuleDuCabinet => typeof v === "string" && connus.includes(v))) return null
+  if (new Set(valeur).size !== valeur.length) return null
+  return valeur
+}
+
+/** Le refus du module que cet appel exige, ou nul : rien n'est lu pour le socle. */
+async function refusDuModule(
+  appelant: AppelantDesOptions, dossierId: string, module: ModuleDuCabinet | "socle",
+): Promise<{ statut: 403 | 503; error: string } | null> {
+  if (module === "socle") return null
+  let ouverts: ModuleDuCabinet[] | null = null
+  try {
+    const { data, error } = await appelant.rpc("modules_ouverts_du_dossier", { p_dossier_id: dossierId })
+    ouverts = error ? null : modulesOuvertsLus(data)
+  } catch {
+    ouverts = null
+  }
+  if (ouverts === null) return { statut: 503, error: REFUS_DES_OPTIONS_ILLISIBLES }
+  return ouverts.includes(module) ? null : { statut: 403, error: REFUS_DU_MODULE_FERME }
+}
+// ── FIN OPTION DU CABINET ────────────────────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -786,6 +844,13 @@ Deno.serve(async (req: Request) => {
   if (!actionPermise(QUI_PEUT_QUOI, type, lus.droits)) {
     return json({ error: "Dossier introuvable." }, 404)
   }
+  // Le module du modèle, au cabinet du dossier (bloc OPTION DU CABINET) : après l'appelant, avant toute lecture et tout
+  // envoi ; la relance de pièces, du socle, ne lit rien. Un type sans module se refuse comme un type inconnu (le côté fermé ;
+  // la table les nomme tous, optionDuCabinetCopie.test.ts le garde).
+  const moduleDuModele = MODULE_DU_MODELE[type]
+  if (moduleDuModele === undefined) return json({ error: `dossierId, type (${TYPES_EN_MOTS}) et destinataire sont requis.` }, 400)
+  const refusModule = await refusDuModule(supabaseAsCaller, dossierId, moduleDuModele)
+  if (refusModule) return json({ error: refusModule.error }, refusModule.statut)
 
   const { data: dossierRow } = await admin.from("dossiers").select("nom").eq("id", dossierId).maybeSingle()
   if (!dossierRow) {

@@ -339,7 +339,8 @@ export type ExigenceDUneFonction =
   | { readonly horsDesModules: string }
 
 /**
- * Le module de chaque Edge Function (§ 1.3). Les sept fonctions de modules refuseront en 403 avant toute dépense (OPT5) ;
+ * Le module de chaque Edge Function (§ 1.3). Les sept fonctions de modules refusent en 403 avant toute dépense (OPT5, le
+ * bloc OPTION DU CABINET, optionDuCabinetCopie.test.ts) ;
  * `send-email` juge l'usage : la relance de pièces est du socle, la facture, le devis et la relance d'une facture de la
  * facturation, la relance d'une demande de l'espace client de gestion (« Mes demandes »).
  */

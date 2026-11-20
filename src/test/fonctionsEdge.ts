@@ -302,7 +302,29 @@ export interface Monde {
    * sur un jeton `aal2`. Vides par défaut : personne n'est exigé, rien n'est retiré.
    */
   deuxFacteurs: { exiges: string[]; jetonsAal2: string[]; jetonsAvantRetrait: string[] }
+  /**
+   * Les modules FERMÉS de chaque cabinet (migration `options_des_cabinets`, OPT1 ; OPT5) : `modules_ouverts_du_dossier`
+   * rend les autres. Vide par défaut : un cabinet existant le jour de la migration a tout ouvert, et les fonctions jouent
+   * comme hier.
+   */
+  modulesFermes: Record<string, string[]>
 }
+
+/** Ce qu'une fonction SQL qui rend un tableau (`returns text[]`) rend : UNE valeur, que PostgREST ne pagine ni ne tronque
+ *  — à la différence des lignes d'une fonction qui rend un ensemble. */
+class TableauScalaire {
+  readonly valeurs: readonly unknown[]
+  constructor(valeurs: readonly unknown[]) {
+    this.valeurs = valeurs
+  }
+}
+
+/** Les modules de la liste fermée de la base, dans son ordre (`c_modules` de `modules_ouverts_du_dossier`, que
+ *  edgeFunctionsOptionDuCabinet.test.ts confronte au texte exporté). */
+export const MODULES_DE_LA_BASE = [
+  'tenue', 'facturation', 'facture_electronique', 'assurance_maladie', 'espace_client', 'assistant', 'honoraires',
+  'connexion_bancaire',
+] as const
 
 export function nouveauMonde(): Monde {
   return {
@@ -313,6 +335,7 @@ export function nouveauMonde(): Monde {
     regleDesMotsDePasse: REGLE_D_UN_PROJET_NEUF,
     sessions: {},
     deuxFacteurs: { exiges: [], jetonsAal2: [], jetonsAvantRetrait: [] },
+    modulesFermes: {},
     hotes: {},
     textract: null,
     s3: null,
@@ -595,6 +618,25 @@ const FONCTIONS_SQL: Record<string, (monde: Monde, appelant: Appelant, args: Rec
     return !monde.deuxFacteurs.exiges.includes(utilisateur) || (jeton != null && monde.deuxFacteurs.jetonsAal2.includes(jeton))
   },
   droits_sur_le_dossier: (monde, { utilisateur }, args) => droitsSurLeDossier(monde, utilisateur, args.p_dossier_id),
+  // `modules_ouverts_du_dossier(p_dossier_id)` (migration `options_des_cabinets`, en production, OPT1) : exécutable par
+  // authenticated, jamais par l'anonyme ; security definer ; au cabinet du dossier (`admin_du_dossier`) et à chacun de ses
+  // accès client (`client_du_dossier(…, 'membre')`), sinon 42501 — un dossier inconnu aussi, sous les mêmes mots ; puis
+  // les modules ouverts du cabinet du dossier, dans l'ordre de la liste fermée.
+  modules_ouverts_du_dossier: (monde, { utilisateur, role }, args) => {
+    if (Object.keys(args).join() !== 'p_dossier_id') {
+      throw new Error(`Faux PostgREST : modules_ouverts_du_dossier(${JSON.stringify(args)}) n'est pas modélisé`)
+    }
+    if (role === 'anonyme') {
+      throw new ErreurPostgrest({ code: '42501', message: 'permission denied for function modules_ouverts_du_dossier', status: 403 })
+    }
+    const dossierId = args.p_dossier_id
+    if (dossierId == null || !(adminDuDossier(monde, utilisateur, dossierId) || clientDuDossier(monde, utilisateur, dossierId, 'membre'))) {
+      throw new ErreurPostgrest({ code: '42501', message: 'Accès refusé à ce dossier.', status: 403 })
+    }
+    const dossier = (monde.base.dossiers ?? []).find((d) => d.id === dossierId)
+    const fermes: readonly string[] = dossier ? monde.modulesFermes[String(dossier.cabinet_id)] ?? [] : MODULES_DE_LA_BASE
+    return new TableauScalaire(MODULES_DE_LA_BASE.filter((m) => !fermes.includes(m)))
+  },
   // `ventes_facturees_de_l_exercice(p_dossier_id, p_annee)` (migration `validation_des_ventes_facturees`) : exécutable
   // par le rôle du service SEUL — la migration la retire à `public`, `anon` et `authenticated`, et le relevé du catalogue
   // du 27/10/2026 le confirme —, aux droits de l'appelant. Rien pour une année nulle, ni pour un dossier qui n'a pas
@@ -1162,6 +1204,13 @@ class AppelFactice {
     } catch (e) {
       if (e instanceof ErreurPostgrest) return echec(e.erreur)
       throw e
+    }
+    // Un tableau SCALAIRE (`returns text[]`) est une valeur, pas des lignes : PostgREST ne le tronque pas.
+    if (rendu instanceof TableauScalaire) {
+      if (this.ordres.length > 0 || this.plage || this.limite !== null || this.compte) {
+        throw new Error(`Faux PostgREST : un tri, une tranche ou un compte sur « ${this.nom} », qui ne rend pas de lignes`)
+      }
+      return { data: [...rendu.valeurs], error: null, count: null, status: 200, statusText: 'OK' }
     }
     if (!Array.isArray(rendu)) {
       if (this.ordres.length > 0 || this.plage || this.limite !== null || this.compte) {
