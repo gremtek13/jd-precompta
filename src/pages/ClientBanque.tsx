@@ -38,7 +38,9 @@ import {
 import BarreRecherche from '../components/BarreRecherche'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import PaiementsAssuranceMaladie from '../components/PaiementsAssuranceMaladie'
+import FactureAssuranceMaladie from '../components/FactureAssuranceMaladie'
 import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from '../lib/paiementsAssuranceMaladie'
+import { FACTURES_ASSURANCE_MALADIE_PREVUES } from '../lib/importDuFactureAssuranceMaladie'
 import { useCodeNafDuDossier } from '../lib/codeNafDuDossierLecture'
 
 // « MA BANQUE » (espace client, étape P9 ; conception : HISTORIQUE.md, « L'ESPACE CLIENT DEVIENT LE LOGICIEL DE GESTION DU
@@ -234,7 +236,7 @@ export default function ClientBanque() {
   const [lecture, setLecture] = useState<Etat>({ etat: 'chargement' })
   // Le code NAF du dossier (NOE4-Q1 (C)) : la section des paiements de l'assurance maladie ne s'offre que sur un code de santé ;
   // lu sous le drapeau de la section seulement.
-  const codeNaf = useCodeNafDuDossier(dossierId, PAIEMENTS_ASSURANCE_MALADIE_PREVUS)
+  const codeNaf = useCodeNafDuDossier(dossierId, PAIEMENTS_ASSURANCE_MALADIE_PREVUS || FACTURES_ASSURANCE_MALADIE_PREVUES)
   // La période : une année du relevé, ou toutes. Nulle tant que le client n'a rien choisi : la plus récente.
   const [periode, setPeriode] = useState<number | 'toutes' | null>(null)
   const [filtre, setFiltre] = useState<FiltreEtat>('tous')
@@ -398,6 +400,9 @@ export default function ClientBanque() {
       {/* Les paiements de l'assurance maladie (NOE4), sous « Banque » : la section ne se monte que sous son drapeau, sur un code
           NAF de santé (NOE4-Q1 (C) ; ailleurs, rien ne se dit au client), et relit la case à la base avec ses tables. */}
       {lecture.etat === 'lu' && estOuvert('assurance_maladie', ouverts) && <PaiementsAssuranceMaladie espace="client" dossierId={dossierId} codeNaf={codeNaf} />}
+      {/* Le facturé à l'assurance maladie (BOR4), sous « Banque » : ses bordereaux lus dans le navigateur ; la section relit la case
+          à la base avec ses tables. */}
+      {lecture.etat === 'lu' && estOuvert('assurance_maladie', ouverts) && <FactureAssuranceMaladie espace="client" dossierId={dossierId} codeNaf={codeNaf} />}
     </>
   )
 }

@@ -115,6 +115,11 @@ const LECTEURS_DU_FACTURE_PERMIS: Readonly<Record<string, string>> = {
   'src/lib/restaurationInterrompue.test.ts': 'les essais de ces mots, qui relisent la migration',
   'src/lib/types.ts': 'le type des imports et des totaux',
   'src/lib/paiementsAssuranceMaladieSansSortie.test.ts': 'ce relevé, qui nomme les tables qu’il cherche',
+  'src/lib/factureAssuranceMaladieLecture.ts': 'la lecture de l’écran d’import (BOR4), les imports et leurs totaux, qui montre et ne '
+    + 'calcule rien ; ni le registre ni la clé',
+  'src/lib/factureAssuranceMaladieLecture.test.ts': 'les essais de cette lecture',
+  'src/components/FactureAssuranceMaladie.tsx': 'l’écran d’import (BOR4), qui appelle la fonction d’import et celle du retrait',
+  'src/components/FactureAssuranceMaladie.test.tsx': 'les essais de l’écran d’import',
 }
 
 describe('aucun moteur ne lit les tables du facturé à l’assurance maladie', () => {

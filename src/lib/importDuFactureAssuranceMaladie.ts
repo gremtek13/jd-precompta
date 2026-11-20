@@ -28,8 +28,9 @@ import type { FactureDesBordereaux } from './factureAssuranceMaladie'
  *  nommait pas : une sauvegarde aurait lu des tables absentes et échoué. */
 export const FACTURES_ASSURANCE_MALADIE_EN_BASE = true
 
-/** Le drapeau de l'ÉCRAN d'import du facturé (BOR4, pas encore écrit) : baissé, aucun écran ne lit ni n'écrit les quatre
- *  tables. Il se lève avec l'écran, fini (BOR7). */
+/** Le drapeau de l'ÉCRAN d'import du facturé (BOR4, components/FactureAssuranceMaladie.tsx, écrit le 20/11/2026) : baissé,
+ *  la section ne se monte pas et rien ne lit ni n'écrit les tables ; levé, elle s'offre dans l'onglet Banque et « Ma banque »,
+ *  sous la règle et le module des paiements. La session le lève. */
 export const FACTURES_ASSURANCE_MALADIE_PREVUES = false
 
 /** Un lot, tel qu'il part à l'appel : ses quatre clés, et aucune autre. Le numéro ne s'écrit nulle part en base. */

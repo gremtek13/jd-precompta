@@ -151,3 +151,28 @@ describe('l’import du facturé n’a aucune sortie, et n’importe que le type
       .toEqual(['l’import de ./factureAssuranceMaladie'])
   })
 })
+
+// LA VUE DE L'IMPORT DU FACTURÉ (BOR4, lib/factureAssuranceMaladieVue.ts) : les mots et les règles de l'écran, et le refus de la
+// base jugé avant le clic sur le corps composé et aussitôt oublié. Elle n'a aucune sortie et n'importe que le format des montants
+// et des dates, l'import du facturé (le corps et ses refus) et la liste des régimes ; BOR1 et BOR2 en type seulement. L'écran
+// (components/FactureAssuranceMaladie.tsx), qui appelle la base, n'est pas un module pur : ce relevé ne le juge pas.
+const VUE_DU_FACTURE = 'src/lib/factureAssuranceMaladieVue.ts'
+
+describe('la vue de l’import du facturé n’a aucune sortie', () => {
+  const texte = readFileSync(resolve(process.cwd(), VUE_DU_FACTURE), 'utf8')
+  const juger = (t: string) => fautes(t, new Set(['./format', './importDuFactureAssuranceMaladie', './regimesAssuranceMaladie']), new Set())
+
+  it('aucune sortie ; le format, l’import du facturé et les régimes seuls importés en valeur', () => {
+    expect(juger(texte)).toEqual([])
+    expect(texte).toContain('import type { BordereauLu, LectureDuBordereau } from \'./bordereauDeTeletransmission\'')
+  })
+
+  it('trois défauts plantés se voient : un journal du corps, le client de la base, l’horloge', () => {
+    const refus = '  return refusDeLImportDuFacture(corpsDeLImportDuFacture(facture), jour)'
+    expect(texte).toContain(refus)
+    expect(juger(texte.replace(refus, `  console.log(corpsDeLImportDuFacture(facture))\n${refus}`))).toEqual(['un journal'])
+    expect(juger(`import { supabase } from './supabase'\n${texte}`)).toEqual(['le client de la base', 'l’import de ./supabase'])
+    expect(juger(texte.replace(refus, '  return refusDeLImportDuFacture(corpsDeLImportDuFacture(facture), new Date().toISOString())')))
+      .toEqual(['l’horloge'])
+  })
+})
