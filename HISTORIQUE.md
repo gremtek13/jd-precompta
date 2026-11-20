@@ -54348,3 +54348,15 @@ la fenêtre sans lot ou sans paiement importé se disent. Une batterie tirée d'
 La section du cabinet (`components/DuContrePaye.tsx`, `lib/duContrePayeVue.ts`), en lecture seule, dans l'onglet Banque sous le
 module `assurance_maladie`, derrière `DU_CONTRE_PAYE_PREVU` BAISSÉ. NON établi, dit à l'écran : que la caisse du bordereau soit
 celle du paiement NOEMIE (DU-Q1). NON fait : « Ma banque », les points d'attention (BOR6), le délai en jours ouvrés (DU-Q2).
+
+### 20/11/2026 — OPT5 DÉPLOYÉ, L'ÉCRAN DU FACTURÉ OUVERT
+
+(Session.) Les huit Edge Functions d'OPT5 déployées au commit `6cb1f936` de `main`, chacune par la ligne qui importe son fichier
+du dépôt, `verify_jwt` à la valeur de `config.toml` : `agent-comptable` (v62), `send-email` (v13), `plateforme-agreee` (v15),
+`superpdp-emit` (v18), `banque-connexion` (v5), `proposer-categorie` (v5), `superpdp-credentials` (v8), `superpdp-sync` (v12). Les
+quatre dernières étaient jusque-là recopiées (19 à 58 Ko) : elles rejoignent la liste des fonctions importées, par le même
+mécanisme, rien n'étant transcrit. Vérifié : aucun fichier de `supabase/functions/` ne diffère entre ce commit et la tête ; chaque
+fonction appelée sans session rend 401 (elle démarre et refuse). NON vérifié : un appel réel sous une session, module ouvert puis
+fermé. `FACTURES_ASSURANCE_MALADIE_PREVUES` levé : la section « Facturé à l'assurance maladie » s'offre dans l'onglet Banque et
+« Ma banque » ; son état d'avant reste joué par les accesseurs de ses tests, et le test de l'association dans Banque garde ce
+drapeau baissé par un accesseur à lui. BOR5 intégré derrière `DU_CONTRE_PAYE_PREVU` baissé.
