@@ -221,6 +221,12 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'ventes-hors-factures-a-verifier': 'recettes',
   // Un encaissement de facture qui attend son mouvement (étape VF5f) : le registre des ventes, que le relevé confirme.
   'encaissements-sans-mouvement': 'recettes',
+  // Les paiements de l'assurance maladie (NOE6) : ce que le paiement importé justifie et contrôle des crédits de la recette.
+  'assurance-maladie-credits-sans-paiement': 'recettes',
+  'assurance-maladie-credits-hors-des-imports': 'recettes',
+  'assurance-maladie-paiements-sans-credit': 'recettes',
+  'assurance-maladie-associations-a-revoir': 'recettes',
+  'assurance-maladie-exercices-en-ecart': 'recettes',
   // Les préalables de la validation d'un dossier basculé (étape VF7c) : un chèque, une carte ou un effet en cours au 511, et
   // une vente facturée qui n'est pas écrite à jour — le registre des ventes et ce qu'il écrit.
   'encaissements-en-cours': 'recettes',

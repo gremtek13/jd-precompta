@@ -198,7 +198,7 @@ function rendre(o: { annee?: ValeurAnnee; exercices?: ExerciceValide[]; modele?:
       <ExercicesValidesProvider exercices={o.exercices ?? [exerciceValide(2024)]} relire={async () => {}}>
         <AnneeProvider defaut={o.annee ?? 2025}>
           <RevisionTab
-            dossierId={DOSSIER} modele={o.modele ?? TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere"
+            codeNaf={null} dossierId={DOSSIER} modele={o.modele ?? TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere"
             ventesParLesFactures={o.ventesParLesFactures ?? false} onNavigate={() => {}}
           />
         </AnneeProvider>
@@ -1424,7 +1424,7 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
         <ExercicesValidesProvider exercices={[exerciceValide(2024)]} relire={async () => {}}>
           <AnneeProvider defaut={2025}>
             <RevisionTab
-              dossierId="autre-dossier" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={true}
+              codeNaf={null} dossierId="autre-dossier" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={true}
               onNavigate={() => {}}
             />
           </AnneeProvider>

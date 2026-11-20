@@ -301,6 +301,9 @@ describe('le rangement des contrôles existants', () => {
       // Étape VF6e : la pièce de vente à désigner exemplaire de sa facture, et la vente déclarée dont le montant est celui
       // d'une facture source sans exemplaire.
       'exemplaires-a-designer', 'ventes-hors-factures-a-verifier',
+      // NOE6 : les paiements de l'assurance maladie, qui justifient et contrôlent les crédits de la recette.
+      'assurance-maladie-credits-sans-paiement', 'assurance-maladie-credits-hors-des-imports',
+      'assurance-maladie-paiements-sans-credit', 'assurance-maladie-associations-a-revoir', 'assurance-maladie-exercices-en-ecart',
       // Étape VF7c : les préalables de la validation d'un dossier basculé — le chèque en cours au 511, la vente facturée à
       // écrire.
       'encaissements-en-cours', 'ventes-facturees-a-ecrire',

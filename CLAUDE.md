@@ -591,6 +591,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`components/FactureAssuranceMaladie.tsx`, à côté de NOE4, même règle et même module) → « BOR4 : L'ÉCRAN D'IMPORT DU FACTURÉ ».
   BOR5 (20/11/2026), le dû contre le payé, estimé, en compte courant par organisme (`lib/duContrePaye.ts`, pur ; la section du cabinet sous
   `DU_CONTRE_PAYE_PREVU` baissé) → « BOR5 : CE QUE L'ASSURANCE MALADIE DOIT ».
+  NOE6 (20/11/2026), sans migration, derrière `CONTROLES_ASSURANCE_MALADIE_PREVUS` baissé (`lib/controlesAssuranceMaladie.ts`, pur) :
+  cinq attentions de la Vue d'ensemble et de la Révision (cycle recettes), jamais préalables, sous la règle de la section et le module ;
+  le contrôle de l'exercice à la date du CRÉDIT ; le SNIR jamais comparé (NOE-E1) ; la piste d'audit cite le paiement associé
+  (journée, factures ; lue en partie, l'export se refuse), le FEC inchangé → « NOE6 : LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)

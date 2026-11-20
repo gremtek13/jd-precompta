@@ -444,7 +444,7 @@ function PageDuDossier() {
 
             {modules.etat === 'illisibles' && <p className="error-text" role="status">{MOTS_DU_REFUS.optionsDuDossierIllisibles}</p>}
             {ongletFerme && <p className="error-text" role="status">{MOTS_DU_REFUS.ecranDuDossier}</p>}
-            {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} statutTva={dossier?.statut_tva ?? null} modele={modele} ventesParLesFactures={dossier?.ventes_par_les_factures === true} onNavigate={allerA} />}
+            {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} periodiciteTva={dossier?.tva_periodicite ?? 'trimestrielle'} statutTva={dossier?.statut_tva ?? null} modele={modele} ventesParLesFactures={dossier?.ventes_par_les_factures === true} codeNaf={dossier ? dossier.code_naf : undefined} onNavigate={allerA} />}
             {tab === 'pieces' && (
               <PiecesTab
                 dossierId={id} dossierSiret={dossier?.siret ?? null} ventesParLesFactures={dossier?.ventes_par_les_factures === true}
@@ -511,6 +511,7 @@ function PageDuDossier() {
                 periodiciteTva={dossier.tva_periodicite}
                 statutTva={dossier.statut_tva}
                 ventesParLesFactures={dossier.ventes_par_les_factures === true}
+                codeNaf={dossier.code_naf}
                 onNavigate={allerA}
               />
             )}

@@ -431,11 +431,11 @@ const ECRANS: Ecran[] = [
     <Dossier1><BilanTab dossierId="d1" modele={{ mode: 'engagement', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ChecklistTab', fichier: 'pages/dossier/ChecklistTab.tsx', rendre: () => (
-    <Dossier1><ChecklistTab ventesParLesFactures={false} dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
+    <Dossier1><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
   // Étape VF5f : basculée, la Vue d'ensemble lit aussi les ventes facturées — rien ne s'affirme avant leur retour non plus.
   { nom: 'ChecklistTab (basculé)', fichier: 'pages/dossier/ChecklistTab.tsx', rendre: () => (
-    <Dossier1><ChecklistTab ventesParLesFactures dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
+    <Dossier1><ChecklistTab codeNaf={null} ventesParLesFactures dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ClotureTab', fichier: 'pages/dossier/ClotureTab.tsx', rendre: () => (
     <Dossier1><ClotureTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures={false} modele={TRESORERIE} onNavigate={rien} /></Dossier1>
@@ -581,7 +581,7 @@ const ECRANS: Ecran[] = [
   ) },
   { nom: 'RevisionTab', fichier: 'pages/dossier/RevisionTab.tsx', rendre: () => (
     <Dossier1>
-      <RevisionTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} ventesParLesFactures={false} onNavigate={rien} />
+      <RevisionTab codeNaf={null} dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} ventesParLesFactures={false} onNavigate={rien} />
     </Dossier1>
   ) },
   { nom: 'StatistiquesTab (trésorerie)', fichier: 'pages/dossier/StatistiquesTab.tsx', rendre: () => (
@@ -1061,7 +1061,7 @@ describe('le dossier permanent n’offre aucun geste avant que sa lecture soit r
           <FournisseurPanneauDroit>
             <ExercicesValidesProvider exercices={[]} relire={async () => {}}>
               <AnneeProvider defaut="toutes">
-                <RevisionTab dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} ventesParLesFactures={false} onNavigate={rien} />
+                <RevisionTab codeNaf={null} dossierId="d1" modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva={null} ventesParLesFactures={false} onNavigate={rien} />
               </AnneeProvider>
             </ExercicesValidesProvider>
             <EmplacementPanneauDroit />

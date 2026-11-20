@@ -68,6 +68,12 @@ import {
   operationsDeCaisseAReprendre, operationsDeCaisseDuDossier, paiementsDePiecesAValider, paiementsParLaCaisseARetirer, piecesDeVenteDe,
   recettesDeCaisseARevoir, versementsDEspecesEnRecette, type EspecesDesFactures,
 } from './controlesDeLaCaisse'
+import {
+  CONTROLES_ASSURANCE_MALADIE_PREVUS, LIBELLE_ASSOCIATIONS_A_REVOIR, LIBELLE_CREDITS_HORS_DES_IMPORTS, LIBELLE_CREDITS_SANS_PAIEMENT, LIBELLE_EXERCICES_EN_ECART,
+  LIBELLE_PAIEMENTS_SANS_CREDIT, controlesDeLAssuranceMaladie, detailDesAssociationsARevoir, detailDesCreditsHorsDesImports,
+  detailDesCreditsSansPaiement, detailDesExercicesEnEcart, detailDesPaiementsSansCredit, nombresDesControles, retenusDeLaChecklist,
+  type ControlesDeLAssuranceMaladie, type LectureDesControles, type OffreDeLAssuranceMaladie,
+} from './controlesAssuranceMaladie'
 
 // LES POINTS DE LA VUE D'ENSEMBLE (pages/dossier/ChecklistTab.tsx) : les points à traiter, rangés en paramétrage et en
 // travail, et les documents attendus du client. Ils étaient calculés DANS l'écran, et l'onglet de la révision (ligne 41,
@@ -185,6 +191,10 @@ export interface DonneesDeLaChecklist {
   // (aucun point de plus, la liste est celle d'hier) ou lu en partie — la lecture le dit alors dans `lectureIncomplete` —, ou lu
   // EN ENTIER. En trésorerie, il est sans objet quoi qu'on lise (§ 3.6). Sans valeur par défaut.
   inventaire: { etat: 'sans_objet' } | Extract<InventaireDesControles, { etat: 'lu' }>
+  // LES PAIEMENTS DE L'ASSURANCE MALADIE ET LEURS ASSOCIATIONS AU RELEVÉ (conception 53, NOE6 ; lib/controlesAssuranceMaladie.ts),
+  // tels que lus, et si le relevé l'est en entier : NULS le drapeau `CONTROLES_ASSURANCE_MALADIE_PREVUS` baissé (aucun point de
+  // plus, la liste est celle d'hier). Sans valeur par défaut.
+  assuranceMaladie: { lu: LectureDesControles; releveComplet: boolean } | null
 }
 
 /** Ce que l'écran sait du dossier et du moment, lu au rendu. */
@@ -204,6 +214,9 @@ export interface ContexteDeLaChecklist {
   moisEcoules: number
   // `premierJourDuMoisCourant()`, lu au rendu : il dit quelles périodes de TVA sont échues.
   premierJourDuMois: string
+  // Ce que l'écran sait de l'offre des paiements de l'assurance maladie (NOE6) : le code NAF du dossier, lu au rendu
+  // (`undefined` tant qu'il ne l'est pas), et le module du cabinet. Les points ne se disent que là où la section s'offre.
+  offreAssuranceMaladie: OffreDeLAssuranceMaladie
 }
 
 export interface PointsDeLaChecklist {
@@ -217,6 +230,9 @@ export interface PointsDeLaChecklist {
   moisManquants: number[]
   moisRecus: number
   piecesConfianceBasse: Piece[]
+  // Les contrôles des paiements de l'assurance maladie (NOE6), tels que calculés : la Vue d'ensemble dit le motif d'un calcul
+  // muet sous sa lecture partielle.
+  assuranceMaladie: ControlesDeLAssuranceMaladie
 }
 
 // LES POINTS SOUS LES MODULES DU CABINET (conception 56, § 1.5, lot OPT3) : un point ne se dit que si le module de ce qu'il
@@ -226,6 +242,12 @@ export interface PointsDeLaChecklist {
 // modules ouverts, la liste revient identique.
 export const MODULE_DU_POINT_HORS_DE_SON_ONGLET: Readonly<Record<string, Module>> = {
   'periodes-tva-non-declarees': 'tenue',
+  // Les contrôles des paiements de l'assurance maladie (NOE6) : l'onglet Banque est du socle, l'import et l'association non.
+  'assurance-maladie-credits-sans-paiement': 'assurance_maladie',
+  'assurance-maladie-credits-hors-des-imports': 'assurance_maladie',
+  'assurance-maladie-paiements-sans-credit': 'assurance_maladie',
+  'assurance-maladie-associations-a-revoir': 'assurance_maladie',
+  'assurance-maladie-exercices-en-ecart': 'assurance_maladie',
 }
 
 export function pointsSousLesModules(points: readonly PointATraiter[], ouverts: readonly ModuleOptionnel[]): PointATraiter[] {
@@ -241,6 +263,18 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     entreesDeLOuvertureIncompletes, caisse, entreesDeLaCaisseIncompletes, entreesDeLaRepriseDesBiensIncompletes,
   } = d
   const { assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHui, anneeCourante, moisEcoules, premierJourDuMois } = c
+
+  // LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, NOE6 ; lib/controlesAssuranceMaladie.ts) : cinq
+  // attentions, jamais bloquantes, sous la règle de la section et le module du cabinet. Le drapeau baissé (`assuranceMaladie`
+  // nul), rien n'est calculé ; une lecture partielle, ils se taisent.
+  const assuranceMaladie = controlesDeLAssuranceMaladie({
+    drapeau: CONTROLES_ASSURANCE_MALADIE_PREVUS && d.assuranceMaladie !== null, offre: c.offreAssuranceMaladie, lu: d.assuranceMaladie?.lu ?? null,
+    releve: { lignes, complete: d.assuranceMaladie?.releveComplet ?? false },
+    retenusParLesVentes: retenusDeLaChecklist(ventesFacturees), categories,
+    ventilations: { lignes: ventilations, complete: !ventilationsPartielles }, anneesValidees, jour: aujourdHui,
+  })
+  const nombresAssuranceMaladie = nombresDesControles(assuranceMaladie)
+  const controlesAM = assuranceMaladie.etat === 'calcules' ? assuranceMaladie : null
 
   // L'ARITHMÉTIQUE D'EXERCICE VIT DANS `lib/resteAEnvoyer.ts`, partagée avec les deux écrans client :
   // elle était écrite trois fois et avait déjà divergé deux fois. Ce qui reste ici est ce qui diffère
@@ -1045,6 +1079,33 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     },
     // À part, et sans être pris pour un écart : un compte 28 de la reprise sous un autre numéro que celui que l'application écrit
     // (un 28183 pour le 281830) — le comparer au registre n'aurait pas de sens, et le compte repris ne se soldera jamais.
+    // LES PAIEMENTS DE L'ASSURANCE MALADIE (NOE6) : des attentions — un crédit sans paiement importé, un paiement sans crédit,
+    // une association qui ne se tient plus, un exercice dont les totaux se séparent. Aucun n'est un préalable de la validation.
+    {
+      id: 'assurance-maladie-credits-sans-paiement', label: LIBELLE_CREDITS_SANS_PAIEMENT, action: 'Voir ces crédits',
+      nb: nombresAssuranceMaladie.creditsSansPaiement, cible: 'banque', severite: 'attention',
+      detail: controlesAM ? detailDesCreditsSansPaiement(controlesAM) : undefined,
+    },
+    {
+      id: 'assurance-maladie-credits-hors-des-imports', label: LIBELLE_CREDITS_HORS_DES_IMPORTS, action: 'Importer ces paiements',
+      nb: nombresAssuranceMaladie.creditsHorsDesImports, cible: 'banque', severite: 'attention',
+      detail: controlesAM ? detailDesCreditsHorsDesImports(controlesAM) : undefined,
+    },
+    {
+      id: 'assurance-maladie-paiements-sans-credit', label: LIBELLE_PAIEMENTS_SANS_CREDIT, action: 'Voir le relevé',
+      nb: nombresAssuranceMaladie.paiementsSansCredit, cible: 'banque', severite: 'attention',
+      detail: controlesAM ? detailDesPaiementsSansCredit(controlesAM) : undefined,
+    },
+    {
+      id: 'assurance-maladie-associations-a-revoir', label: LIBELLE_ASSOCIATIONS_A_REVOIR, action: 'Revoir ces associations',
+      nb: nombresAssuranceMaladie.associationsARevoir, cible: 'banque', severite: 'attention',
+      detail: controlesAM ? detailDesAssociationsARevoir(controlesAM) : undefined,
+    },
+    {
+      id: 'assurance-maladie-exercices-en-ecart', label: LIBELLE_EXERCICES_EN_ECART, action: 'Voir ces crédits',
+      nb: nombresAssuranceMaladie.exercicesEnEcart, cible: 'banque', severite: 'attention',
+      detail: controlesAM ? detailDesExercicesEnEcart(controlesAM) : undefined,
+    },
     {
       id: 'amortissements-repris-sous-un-autre-numero', label: 'compte(s) d’amortissement de la balance reprise sous un autre numéro que celui de l’application — non confronté(s) au registre',
       action: 'Voir le registre', nb: repriseDesBiens?.sousUnAutreNumero.length ?? 0, cible: 'immobilisations', severite: 'attention',
@@ -1175,6 +1236,6 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
 
   return {
     tousLesPointsATraiter, pointsATraiter, pointsParametrage, pointsTravail, documentsAttendus: items, exerciceCourant,
-    moisManquants, moisRecus, piecesConfianceBasse,
+    moisManquants, moisRecus, piecesConfianceBasse, assuranceMaladie,
   }
 }
