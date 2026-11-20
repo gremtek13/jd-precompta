@@ -176,3 +176,27 @@ describe('la vue de l’import du facturé n’a aucune sortie', () => {
       .toEqual(['l’horloge'])
   })
 })
+
+// LE DÛ CONTRE LE PAYÉ (BOR5, lib/duContrePaye.ts) : il reçoit les deux côtés tels que l'écran les a lus et rend des agrégats ;
+// pur, il n'a aucune sortie et n'importe rien (les types des quatre tables seuls). Le jour est un paramètre : le calendrier se
+// compte en entiers, sans `Date`.
+const DU_CONTRE_PAYE = 'src/lib/duContrePaye.ts'
+
+describe('le dû contre le payé n’a aucune sortie, et n’importe rien', () => {
+  const texte = readFileSync(resolve(process.cwd(), DU_CONTRE_PAYE), 'utf8')
+  const juger = (t: string) => fautes(t, new Set(), new Set())
+
+  it('aucune sortie, aucun import en valeur ; les types seuls', () => {
+    expect(juger(texte)).toEqual([])
+    expect(texte).toMatch(/import type \{[\s\S]*?\} from '\.\/types'/)
+  })
+
+  it('trois défauts plantés se voient : un journal des lignes, le client de la base, l’horloge', () => {
+    const debut = '  const { facture, paye, fenetre, aujourdHui } = entrees'
+    expect(texte).toContain(debut)
+    expect(juger(texte.replace(debut, `${debut}\n  console.debug(facture)`))).toEqual(['un journal'])
+    expect(juger(`import { supabase } from './supabase'\n${texte}`)).toEqual(['le client de la base', 'l’import de ./supabase'])
+    expect(juger(texte.replace(debut, '  const { facture, paye, fenetre } = entrees\n  const aujourdHui = new Date().toISOString().slice(0, 10)')))
+      .toEqual(['l’horloge'])
+  })
+})

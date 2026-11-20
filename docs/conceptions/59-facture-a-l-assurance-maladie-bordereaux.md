@@ -786,7 +786,7 @@ garde-fou change ce que le cabinet a décidé (« le numéro gardé »), il lui 
 | BOR2 | **Fait le 19/11/2026** (HISTORIQUE.md, « BOR2 : LE FACTURÉ EN AGRÉGATS »). `lib/factureAssuranceMaladie.ts`, pur et sans sortie : des bordereaux lus aux agrégats (la date de création du lot ; le régime reconnu ou choisi, la caisse au code imprimé ; la part obligatoire = « Caisse », la part complémentaire = « Mutuelle » sous un organisme non dit ; « Assuré » non gardé) ; l'identification des lots pour le registre ; le scanner « sans sortie » étendu, le canari | moyen (un module, ses tests) | BOR1Q1-Q1, BORQ5-Q1 |
 | BOR3 | **Préparé le 19/11/2026 (§ 14)** : la migration `factures_assurance_maladie` (à coller : son retrait supprime), drapeau `FACTURES_ASSURANCE_MALADIE_PREVUES` baissé ; NOE3 amendée avant son collage (l'organisme complémentaire) ; RGPD.md § 8.7 proposé. Le plan d'origine : l'import, le facturé sous son import, le registre des lots et la clé du dossier, la fonction d'import tout ou rien, la RLS (le cabinet et le client « Banque »), la restrictive `deux_facteurs` sous condition, l'essai SQL, le plan de sauvegarde derrière le drapeau | fait | — |
 | BOR4 | L'écran, dans la section NOEMIE de l'onglet Banque et de « Ma banque » : le fichier lu dans le navigateur, le régime « à choisir » quand le libellé ne le dit pas, les agrégats avant le clic, « lot déjà importé le … » | moyen | BOR3, BORQ8-Q1 |
-| BOR5 | `lib/duContrePaye.ts` et la section « Facturé à l'assurance maladie » : le niveau 1 (estimé) seul tant qu'aucun suivi tiers payant n'est lu, par organisme et par part (par mutuelle quand elle est connue) | moyen | BOR3, NOE3 |
+| BOR5 | **Fait le 20/11/2026 (§ 16)** : `lib/duContrePaye.ts` et la section du cabinet, derrière `DU_CONTRE_PAYE_PREVU` baissé. Le plan : le niveau 1 (estimé) seul tant qu'aucun suivi tiers payant n'est lu, par organisme et par part (par mutuelle quand elle est connue) | moyen | BOR3, NOE3 |
 | BOR6 | Les points d'attention (avec NOE6) ; le refus au dépôt (le titre, dans le navigateur) ; l'écart à la réception par e-mail, après la mesure de sa faisabilité dans `receive-email` | moyen à grand (une Edge Function) | BOR5, BOR-Q9 |
 | BOR7 | La mise en production, avec NOE3 et NOE5 : les migrations, les drapeaux, les essais, les trois contrôles de l'export | petit | tout, et les PDF rendus anonymes (NOE3-quand) |
 
@@ -973,3 +973,19 @@ partagent une journée et une caisse.
   et la fiche de BORQ8-Q1 restent tels qu'ils ont été posés ; ce paragraphe les clôt. Deux questions suivent : BOR3RGPD-Q1 (les
   agrégats et les empreintes, données pseudonymisées concernant la santé, au regard de l'article L. 1111-8) et BOR3RGPD-Q2 (le
   support remis, après l'import). L'écran d'import (BOR4) dira la consigne : rien n'y est encore écrit.
+
+## 16. BOR5, fait le 20/11/2026 : ce qui se compare, et ce qui ne se compare pas
+
+Le récit : HISTORIQUE.md, « BOR5 : CE QUE L'ASSURANCE MALADIE DOIT ». Le module : `src/lib/duContrePaye.ts` (son en-tête dit la
+règle entière) ; la section : `src/components/DuContrePaye.tsx`, au cabinet seul, en lecture seule, `DU_CONTRE_PAYE_PREVU` baissé.
+
+- **Se compare, sous réserve** : la part obligatoire, par régime et caisse, en compte courant depuis une origine commune (le plus
+  tardif des deux premiers jours importés) ; le payé (son brut) imputé aux lots les plus anciens, jamais à un lot créé après la
+  journée qui le paie ; les anciennetés à la dernière journée comptable importée. **La réserve** : que le code de caisse du bordereau
+  soit celui du paiement NOEMIE n'est pas vérifié (§ 13.2) ; l'écran le dit, et un organisme d'un seul côté se dit tel (DU-Q1).
+- **Ne se compare pas** : la part complémentaire (le bordereau ne nomme aucun organisme, et rien n'établit que toutes passent par
+  NOEMIE) ; un organisme dont le facturé porte un lot d'avoirs ; un paiement sans régime ou sans caisse. Les forfaits et les
+  régularisations se comptent à part ; le nombre de factures se montre, ordre de grandeur, jamais soustrait.
+- **Muet, jamais 0** : une lecture partielle, un côté sans import, une donnée illisible, une fenêtre à l'envers, à venir ou hors de
+  l'étendue d'un côté. Dans l'étendue, un lot non importé ne se voit pas : les mois sans lot ou sans paiement importé se disent.
+- **Pas fait** : « Ma banque » (DU-Q3), les points d'attention (BOR6), le délai de D. 161-13-3 en jours ouvrés (DU-Q2).
