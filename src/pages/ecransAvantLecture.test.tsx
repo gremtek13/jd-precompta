@@ -1181,13 +1181,15 @@ const LECTURES_PAR_FONCTION = new Set([
 // `lettres_du_client`, préparée), que « Mes lettres de mission » lit : une lecture (`stable`), qui n'écrit rien.
 // Et les modules du cabinet d'un dossier (`modules_ouverts_du_dossier`, OPT1, en production depuis le 19/11/2026), que la page
 // d'un dossier et la coque lisent (ModulesDuDossier.tsx) : une lecture (`stable`), qui n'écrit rien.
+// Et les plafonds de l'assistant (`plafonds_de_l_assistant`, OPT1-Q3, en production depuis le 20/11/2026), que l'écran des cabinets
+// du super-administrateur lit au chargement : une lecture (`stable`), qui n'écrit rien.
 const LECTURES_PAR_RPC = new Set([
   'rpc:couverture_du_releve', 'rpc:droits_sur_le_dossier', 'rpc:plan_du_dossier', 'rpc:pieces_jointes_ecartees_du_client',
   'rpc:etat_facture_electronique', 'rpc:dernier_changement_de_rib', 'rpc:dossiers_au_rib_a_confirmer',
   'rpc:ventes_facturees_de_la_simulation', 'rpc:admin_du_dossier', 'rpc:caisse_du_client',
   'rpc:depots_des_honoraires', 'rpc:honoraires_deposes_au_dossier', 'rpc:pieces_citees_de_la_simulation',
   'rpc:modele_du_cabinet',
-  'rpc:lettres_de_mission_du_client', 'rpc:modules_ouverts_du_dossier',
+  'rpc:lettres_de_mission_du_client', 'rpc:modules_ouverts_du_dossier', 'rpc:plafonds_de_l_assistant',
 ])
 
 // Ce qui referme ce qu'un geste a ouvert : tenté en dernier, sinon le formulaire disparaît avant d'être soumis.

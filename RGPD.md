@@ -743,8 +743,10 @@ la santé, comme un agrégat d'un jour où une seule facture est partie. Ni le c
 (aucune policy), la sauvegarde d'un dossier ne les porte pas, et rien hors de la base ne relie une empreinte à un numéro.
 **Ce qui est hébergé, et ce qui ne l'est pas** : aucun fichier, ni aucune ligne par patient — en base, des agrégats et des
 empreintes seulement. Que ces agrégats et ces empreintes, données pseudonymisées concernant la santé, sortent du champ de
-l'article L. 1111-8 du code de la santé publique n'est pas établi ici : c'est la question BOR3RGPD-Q1, à trancher avant
-d'appliquer NOE3 et BOR3.
+l'article L. 1111-8 du code de la santé publique n'est pas établi ici. **Décision du cabinet, le 20/11/2026 (BOR3RGPD-Q1 (C),
+contre la recommandation)** : accepter ce paragraphe tel qu'il est, et coller NOE3, NOE5 et BOR3 sans seuil de nombre de
+factures. La recherche du 19/11/2026 dans les sources publiques (Agence du Numérique en Santé, référentiel HDS v2, CNIL, groupe
+de l'article 29) ne tranche pas le cas d'un total d'un jour où une seule facture est partie : le doute reste, écrit ici.
 **Qui lit le fichier, et d'où il vient** (NOE-Q1, BOR-Q8 (A), BORQ8-Q1 (A), BOR3-RGPD (B)) : le praticien, depuis son espace
 client, sous sa case « Banque » — la voie que la consigne aux clients recommande, le fichier ne quittant pas son poste ; le
 cabinet, quand c'est lui qui importe, sur place (sur l'ordinateur du praticien) ou d'un fichier que le praticien lui remet de la
@@ -757,7 +759,8 @@ répond. Pour ce seul cas, elle revient sur la réponse du 24/09/2026 ci-dessus 
 ses bordereaux de télétransmission à son expert-comptable ») : le cabinet l'a choisi le 19/11/2026, contre la recommandation,
 qui était l'import sur place seulement. Ce que l'application tient : le fichier remis n'entre ni au stockage, ni dans un
 journal, ni dans une Edge Function, ni dans la base. Ce qu'elle ne tient pas : le support remis et sa copie chez le cabinet,
-hors de l'application — ce qu'ils deviennent après l'import est la question BOR3RGPD-Q2. **La consigne aux clients** : un
+hors de l'application — ce qu'ils deviennent après l'import est laissé au jugement du cabinet, sans consigne (BOR3RGPD-Q2 (B),
+décision du cabinet du 20/11/2026, contre la recommandation). **La consigne aux clients** : un
 bordereau ne se dépose jamais comme pièce et ne s'envoie jamais par e-mail ; il s'importe depuis l'espace du praticien, ou par
 le cabinet, sur place ou remis de la main à la main.
 

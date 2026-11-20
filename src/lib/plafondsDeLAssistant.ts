@@ -1,22 +1,22 @@
 // LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT (OPT1-Q3 (B), tranchée par le cabinet le 19/11/2026). Le relevé
 // du 19/11/2026 sur la réplique : la policy `cabinets_select` ouvre à tout accès client d'un dossier la ligne ENTIÈRE de son
 // cabinet, donc `limite_ia_alerte_usd` et `limite_ia_blocage_usd` — ce que le cabinet paie d'assistant, que son client n'a
-// pas à lire. La RLS ne cache que des lignes ; une colonne se ferme par les droits de PostgreSQL. La migration préparée
-// `plafonds_hors_du_client` (supabase/schema/20261120101707_plafonds_hors_du_client.sql) retire la lecture de la TABLE aux
-// deux rôles de l'API et leur rend chaque colonne, les deux plafonds exceptés ; l'équipe du cabinet et le super-administrateur
-// les lisent par `plafonds_de_l_assistant()` (security definer, `admin_du_cabinet`). Le récit : HISTORIQUE.md, « 19/11/2026 —
-// OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT ».
+// pas à lire. La RLS ne cache que des lignes ; une colonne se ferme par les droits de PostgreSQL. La migration
+// `plafonds_hors_du_client` (supabase/schema/20261120101707_plafonds_hors_du_client.sql), EN PRODUCTION depuis le 20/11/2026
+// (245, par l'outil), retire la lecture de la TABLE aux deux rôles de l'API et leur rend chaque colonne, les deux plafonds
+// exceptés ; l'équipe du cabinet et le super-administrateur les lisent par `plafonds_de_l_assistant()` (security definer,
+// `admin_du_cabinet` ; OPT1Q3-Q1 (A)). Le récit : HISTORIQUE.md, « 19/11/2026 — OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE
+// LA LECTURE DU CLIENT », puis « OPT1-Q3 EN PRODUCTION ».
 //
-// UN RESSERREMENT VIENT EN DERNIER. D'abord l'application : aucune lecture de `cabinets` qu'un connecté fait ne demande plus
-// `*` ni un plafond — `lecturesDesCabinets.test.ts` le garde, sur tout le dépôt —, l'écran du super-administrateur excepté,
-// qui lit les plafonds de la table tant que ce drapeau est baissé et par la fonction quand il est levé. Puis la migration,
-// puis ce drapeau levé dans le même commit que le fichier de la migration posé dans l'export. Entre les deux, l'écran du
-// super-administrateur dit sa lecture refusée (aucun plafond n'est offert à la modification sur une lecture ratée) ;
-// l'assistant, qui lit les plafonds avec la clé du service, n'en voit rien.
+// UN RESSERREMENT VIENT EN DERNIER, et il est venu : l'application d'abord — aucune lecture de `cabinets` qu'un connecté fait
+// ne demande `*` ni un plafond, `lecturesDesCabinets.test.ts` le garde sur tout le dépôt, sans exception pour l'écran du
+// super-administrateur —, puis la migration, puis ce drapeau levé. L'écran du super-administrateur ne lit plus les plafonds que
+// par la fonction : la lecture par la table, refusée par la base depuis la migration, est retirée. L'assistant, qui lit les
+// plafonds avec la clé du service, n'en voit rien.
 
-/** Vrai quand la migration `plafonds_hors_du_client` est en base : l'écran du super-administrateur lit alors les plafonds par
- *  `plafonds_de_l_assistant()`, jamais par la table, que les rôles de l'API ne lisent plus sur ces deux colonnes. */
-export const PLAFONDS_HORS_DU_CLIENT_PREVUS: boolean = false
+/** Vrai depuis le 20/11/2026 : la migration `plafonds_hors_du_client` est en base, et l'écran du super-administrateur lit les
+ *  plafonds par `plafonds_de_l_assistant()`, jamais par la table, que les rôles de l'API ne lisent plus sur ces deux colonnes. */
+export const PLAFONDS_HORS_DU_CLIENT_PREVUS: boolean = true
 
 /** Les deux colonnes fermées aux rôles de l'API par la migration. */
 export const COLONNES_DES_PLAFONDS = ['limite_ia_alerte_usd', 'limite_ia_blocage_usd'] as const

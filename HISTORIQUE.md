@@ -54262,3 +54262,20 @@ les faux clients qui montent un fournisseur répondent par `src/test/modulesDuCa
 `autres_impots`, qui manquait au plan du banc depuis 243 : chaque visite d'un dossier n'y mesurait plus que le refus du plan).
 `optionsDesCabinets` sort de la famille « apres » du leurre (34). Réponses du cabinet : OPT1-Q1 (A), OPT1-Q2 (A), OPT1-Q3 (B, le
 resserrement préparé par un autre agent).
+
+### 20/11/2026 — OPT1-Q3 EN PRODUCTION : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT, LE DRAPEAU LEVÉ
+
+`plafonds_hors_du_client` appliquée par l'outil (245), sur l'accord du cabinet (OPT1Q3-migration (A)) ; OPT1Q3-Q1 (A) : toute
+l'équipe du cabinet et le super-administrateur lisent les plafonds par `plafonds_de_l_assistant()`, comme la migration le fait.
+Contrôles de l'export, égaux des deux côtés : empreinte de l'historique `ff0521c7…`, dérive `ee23b519…` à 245, inventaire 3 284
+`b08b7584…` ; le socle se rejouera après les trois collages de l'assurance maladie. `PLAFONDS_HORS_DU_CLIENT_PREVUS` levé : l'écran
+des cabinets ne lit plus les plafonds que par la fonction, la branche qui les lisait dans la table (refusée par la base depuis
+245) retirée, et avec elle l'exception de `lecturesDesCabinets.test.ts` ; un cabinet que la fonction ne rend pas, ou rend
+illisible, se dit « Illisibles » sans « Plafond IA » (`SuperAdminPage.test.tsx`, une mutation mord) ; le banc de captures répond à la fonction. `plafondsHorsDuClient` sort
+de la famille « apres » du leurre (34). NON fait : `plafondsHorsDuClient.sql` et `rls.sql` rejoués en production ; un premier
+essai réel de l'écran des plafonds.
+Deux réponses du cabinet du même jour, contre la recommandation : BOR3RGPD-Q1 (C) — RGPD.md § 8.7 accepté tel qu'il est, NOE3,
+NOE5 et BOR3 à coller sans seuil de nombre de factures ; la recherche du 19/11/2026 dans les sources publiques (ANS, référentiel
+HDS v2, CNIL, G29) ne tranche pas le cas d'un total à une seule facture, et le doute reste écrit au § 8.7. BOR3RGPD-Q2 (B) — le
+support remis après l'import laissé au jugement du cabinet, sans consigne. § 8.7 et la ligne « Pas d'hébergement HDS » de
+CLAUDE.md suivent.

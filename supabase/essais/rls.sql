@@ -194,7 +194,7 @@
 --      chef de cabinet qui n'est pas super-administrateur ne les règle, ni ne les écrit en direct, ni ne change les plafonds de
 --      l'assistant ; le catalogue. Quatre mutations ; avant la migration, une ligne « EN ATTENTE ».
 --  18. Les plafonds de l'assistant hors de la lecture du client (bloc PL, en fin de fichier ; migration
---      `plafonds_hors_du_client`, OPT1-Q3, préparée) : le client lit la charte de son cabinet, jamais un plafond — ni par la
+--      `plafonds_hors_du_client`, OPT1-Q3, en production depuis le 20/11/2026) : le client lit la charte de son cabinet, jamais un plafond — ni par la
 --      table, ni par un filtre, ni par la fonction ; l'anonyme n'exécute pas la fonction ; le catalogue (et HR5, la lecture
 --      par colonne). Trois mutations ; avant la migration, une ligne « EN ATTENTE ».
 --  17. Le facturé à l'assurance maladie (bloc FM, en fin de fichier ; migration `factures_assurance_maladie`, BOR3,
@@ -12592,7 +12592,7 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $fm$;
--- ══ PL. Les plafonds de l'assistant hors de la lecture du client (OPT1-Q3 ; migration `plafonds_hors_du_client`, PRÉPARÉE) ══
+-- ══ PL. Les plafonds de l'assistant hors de la lecture du client (OPT1-Q3 ; migration `plafonds_hors_du_client`, EN PRODUCTION) ══
 -- La RLS de `cabinets` ouvre la ligne d'un cabinet à tout accès client d'un de ses dossiers ; la migration ferme aux deux rôles
 -- de l'API la lecture des deux plafonds (droits par colonne), que l'équipe du cabinet et le super-administrateur lisent par
 -- `plafonds_de_l_assistant()`. Le reste (le chef, le membre, le super-administrateur, l'écriture) : `plafondsHorsDuClient.sql`.

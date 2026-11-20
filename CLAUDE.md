@@ -312,7 +312,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Pas d'hébergement HDS** (24/09/2026, RGPD.md §8.7) : un praticien ne dépose pas ses bordereaux de télétransmission
   (secret médical), le relevé SNIR justifie les recettes ; un import NOEMIE ou BOR ne garde que des agrégats et des empreintes,
   le fichier lu dans le navigateur — du praticien, ou du cabinet sur place ou remis de la main à la main, jamais par e-mail : une
-  transmission que le praticien décide sous son secret (BOR3-RGPD (B), 19/11/2026 ; BOR3RGPD-Q1 et Q2 ouvertes). Décision du cabinet : la condition tient à la consigne aux
+  transmission que le praticien décide sous son secret (BOR3-RGPD (B), 19/11/2026) ; § 8.7 accepté tel quel, NOE3, NOE5 et BOR3 à
+  coller sans seuil de factures, le doute sur un total à une seule facture écrit (BOR3RGPD-Q1 (C)), le support remis laissé au
+  jugement du cabinet (BOR3RGPD-Q2 (B)), le 20/11/2026, contre la recommandation. Décision du cabinet : la condition tient à la consigne aux
   clients ; ne rien changer au code, ne pas réenquêter.
 - **Où partent les données** : `edgeFunctionsRegions.test.ts` (toute région AWS dans l'UE ; `AWS_REGION` relu par
   `evaluer-extraction` avec `limite: 0`). **Les droits chez AWS** : `edgeFunctionsIam.test.ts` (la policy vit chez AWS).
@@ -618,9 +620,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   OPT4, l'écran du super-administrateur, dans sa page (`pages/OptionsDesCabinets.tsx`, `lib/optionsDuCabinetVue.ts` : huit cases par
   cabinet lues en entier, les refus de la base dits avant le clic, la confirmation qui nomme ; OPT4-Q1 et OPT4-Q2 (A) : la phrase de
   rappel reste, rien à la création d'un cabinet) → « OPT4 : L'ÉCRAN DES MODULES DES CABINETS ». OPT1-Q3 (B) : les plafonds de l'assistant fermés au client —
-  aucune lecture de `cabinets` d'un connecté ne demande plus `*` ni un plafond (`lecturesDesCabinets.test.ts`), la migration
-  `plafonds_hors_du_client` préparée, par l'outil (droits par colonne, `plafonds_de_l_assistant()` à l'équipe du cabinet),
-  `PLAFONDS_HORS_DU_CLIENT_PREVUS` baissé → « OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT ».
+  aucune lecture de `cabinets` d'un connecté ne demande plus `*` ni un plafond (`lecturesDesCabinets.test.ts`, sans exception
+  pour l'écran du super-administrateur), la migration `plafonds_hors_du_client` (droits par colonne, `plafonds_de_l_assistant()`
+  à toute l'équipe du cabinet et au super-administrateur, OPT1Q3-Q1 (A)) en production depuis le 20/11/2026 (245, par l'outil),
+  `PLAFONDS_HORS_DU_CLIENT_PREVUS` levé : l'écran des cabinets lit les plafonds par la fonction seule, un cabinet qu'elle ne rend
+  pas « Illisibles » sans « Plafond IA » → « OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT », « OPT1-Q3 EN
+  PRODUCTION ».
 - **Les exports vers les logiciels comptables** (17/11/2026), recherchés, rien d'écrit (`docs/conceptions/57-exports-vers-les-logiciels-comptables.md`) :
   le FEC avec ses pièces en ZIP est le pivot (ACD d'abord), puis l'ASCII Quadra et le TRA ; EXP-Q1 à Q8, EXP-E1 à E7 → « LES
   EXPORTS VERS LES LOGICIELS COMPTABLES : LA RECHERCHE ».
