@@ -239,7 +239,7 @@ describe('les refus de la base, dits avant le clic, dans son ordre', () => {
   })
 
   it('les mots sont ceux de la migration préparée, au caractère près, et le drapeau est baissé', () => {
-    const sql = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261117160000_association_paiements_assurance_maladie.sql'), 'utf8')
+    const sql = readFileSync(resolve(process.cwd(), 'supabase/schema/20261120110100_association_paiements_assurance_maladie.sql'), 'utf8')
     const enSql = (t: string) => t.replace(/'/g, "''")
     for (const mots of [...Object.values(REFUS_DE_L_ASSOCIATION), ...Object.values(REFUS_DU_RETRAIT_D_ASSOCIATION), REFUS_DU_RETRAIT_D_UN_IMPORT_ASSOCIE]) {
       expect(sql).toContain(enSql(mots))

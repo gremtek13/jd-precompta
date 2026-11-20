@@ -22,7 +22,7 @@ import {
 } from './sauvegarde'
 
 // LES PAIEMENTS DE L'ASSURANCE MALADIE AU PLAN DE SAUVEGARDE (conception 53, NOE3). Leur migration,
-// `paiements_assurance_maladie`, est préparée (supabase/preparees/20261116191000_paiements_assurance_maladie.sql) et le
+// `paiements_assurance_maladie`, est préparée (supabase/schema/20261120110000_paiements_assurance_maladie.sql) et le
 // drapeau baissé : le plan effectif ne dit RIEN des deux tables — une sauvegarde lirait des tables absentes et échouerait ; le
 // plan PRÉVU les porte, et les deux états du drapeau se jouent (`vi.doMock`, plus bas).
 

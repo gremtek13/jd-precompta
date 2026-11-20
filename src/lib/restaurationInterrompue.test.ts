@@ -64,7 +64,7 @@ describe('ce que la sauvegarde ne porte pas (RESTAU-Q3)', () => {
     expect(FACTURE_HORS_PERIMETRE).toMatch(/`lots_teletransmission_importes`, `cles_des_lots_teletransmission`/)
     expect(FACTURE_HORS_PERIMETRE).toMatch(/Après une restauration, /)
     // Ce que la phrase promet, la migration préparée le tient : le refus d'un lot dans la période d'un import restauré.
-    const migration = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261119140000_factures_assurance_maladie.sql'), 'utf8')
+    const migration = readFileSync(resolve(process.cwd(), 'supabase/schema/20261120110200_factures_assurance_maladie.sql'), 'utf8')
     expect(migration).toContain('Un import restauré, dont la sauvegarde ne porte pas le registre des lots, couvre le %')
   })
 

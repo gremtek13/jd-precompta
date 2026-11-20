@@ -25,7 +25,7 @@ import {
 // que des agrégats ne sort ; les refus de la base, confrontés au texte de la migration préparée et redits sous ses mots ;
 // l'essai de la base : supabase/essais/paiementsAssuranceMaladie.sql, sur une réplique.
 
-const MIGRATION = 'supabase/preparees/20261116191000_paiements_assurance_maladie.sql'
+const MIGRATION = 'supabase/schema/20261120110000_paiements_assurance_maladie.sql'
 const RETOUR = 'supabase/preparees/retour/20261116191100_retour_paiements_assurance_maladie.sql'
 const ESSAI = 'supabase/essais/paiementsAssuranceMaladie.sql'
 const texteDeLaMigration = readFileSync(resolve(process.cwd(), MIGRATION), 'utf8')

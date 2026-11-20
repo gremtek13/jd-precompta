@@ -1,6 +1,6 @@
 -- RETOUR ARRIÈRE DE `factures_assurance_maladie` (conception 59, BOR3) — DESTRUCTIF, À ACCORDER PAR LE CABINET, À COLLER dans
 -- l'éditeur SQL de Supabase, dans une transaction, avec sa ligne d'historique (le texte retire quatre tables, leur garde et
--- quatre fonctions). La migration : supabase/preparees/20261119140000_factures_assurance_maladie.sql (préparée le 19/11/2026,
+-- quatre fonctions). La migration : supabase/schema/20261120110200_factures_assurance_maladie.sql (préparée le 19/11/2026,
 -- sous une version provisoire) ; le récit : HISTORIQUE.md, « 19/11/2026 — BOR3 : LE FACTURÉ À L'ASSURANCE MALADIE, EN BASE
 -- (PRÉPARÉE, PAS APPLIQUÉE) ».
 --

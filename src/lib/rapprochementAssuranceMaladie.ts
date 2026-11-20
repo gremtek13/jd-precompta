@@ -7,7 +7,7 @@
 // CONTRÔLE le crédit du relevé qui le verse ; il ne compte dans aucun moteur. La recette reste le crédit, classé, à sa date
 // (CGI, art. 93, 1 ; l'expert-comptable, le 17/11/2026 : « date de valeur si on l'a, ou date d'encaissement ») : l'association
 // ne change rien à la 2035, à la CA3 ni au FEC, et elle ne remplace pas le classement du crédit — elle vit dans sa propre table
-// (`paiements_assurance_maladie_mouvements`, supabase/preparees/20261117160000_association_paiements_assurance_maladie.sql),
+// (`paiements_assurance_maladie_mouvements`, supabase/schema/20261120110100_association_paiements_assurance_maladie.sql),
 // hors de la contrainte du seul rapprochement d'un mouvement (`lignes_bancaires_un_seul_rapprochement`).
 //
 // LES CANDIDATS d'un mouvement : un groupe de paiements non associés dont la somme fait son montant AU CENTIME — un paiement

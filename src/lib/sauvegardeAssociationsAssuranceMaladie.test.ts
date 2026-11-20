@@ -24,14 +24,14 @@ import {
 
 // L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AU PLAN DE SAUVEGARDE (conception 53, NOE5 ; au plan par NOE8). Sa
 // migration, `association_paiements_assurance_maladie`, est préparée
-// (supabase/preparees/20261117160000_association_paiements_assurance_maladie.sql) et le drapeau baissé : le plan effectif ne
+// (supabase/schema/20261120110100_association_paiements_assurance_maladie.sql) et le drapeau baissé : le plan effectif ne
 // dit RIEN de la table — une sauvegarde lirait une table absente et échouerait ; le plan PRÉVU la porte, et les deux états du
 // drapeau se jouent (`vi.doMock`, plus bas). Les relations ne se filtrent pas (RELATIONS = RELATIONS_PREVUES, comme pour les
 // tables de NOE3 et de BOR3) : seuls l'ordre, les chemins et les clés suivent le drapeau.
 
 const TABLE = 'paiements_assurance_maladie_mouvements'
 const MIGRATION = readFileSync(
-  resolve(process.cwd(), 'supabase/preparees/20261117160000_association_paiements_assurance_maladie.sql'), 'utf8')
+  resolve(process.cwd(), 'supabase/schema/20261120110100_association_paiements_assurance_maladie.sql'), 'utf8')
 
 describe('le filtre du plan, côté association des paiements de l’assurance maladie', () => {
   it('la table n’est au plan que le drapeau levé ; toute autre l’est toujours ; le filtre du jour suit le drapeau', () => {
