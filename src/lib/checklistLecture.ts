@@ -18,6 +18,8 @@ import { lireLesSoldesReportes } from './soldesReportesLecture'
 import { lireLaCaisse, type LectureDeLaCaisse } from './caisseLecture'
 import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from './paiementParLaCaisse'
 import { lireLInventaireDesControles } from './inventaireLecture'
+import { CONTROLES_ASSURANCE_MALADIE_PREVUS, controlesOfferts } from './controlesAssuranceMaladie'
+import { lireLesPaiementsAssuranceMaladie } from './paiementsAssuranceMaladieLecture'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, FactureEmise, Immobilisation,
   LigneBancaire, LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
@@ -60,6 +62,14 @@ export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'releve
   caisse: LectureDeLaCaisse
 }
 
+/** Le motif d'une lecture des paiements de l'assurance maladie qui n'est pas entière, ou nul. */
+function motifDesPaiements(lu: Awaited<ReturnType<typeof lireLesPaiementsAssuranceMaladie>> | null): string | null {
+  if (lu === null || lu.etat === 'sans_banque') return null
+  if (lu.etat === 'echec') return `les paiements de l’assurance maladie : ${lu.motif}`
+  const partielle = [lu.imports, lu.paiements, ...(lu.associations ? [lu.associations] : [])].find((l) => !l.complete)
+  return partielle ? `les paiements de l’assurance maladie : ${partielle.motif ?? 'lecture incomplète'}` : null
+}
+
 // `ventesParLesFactures` : le réglage du dossier, sans valeur par défaut — un dossier qui a basculé lit aussi ses ventes
 // facturées (étape VF5f) ; un autre, rien de plus. `plan` : le plan du dossier (ligne 43, conception § 2.4), obligatoire —
 // l'ouverture de la banque se cherche au compte de SA banque.
@@ -92,6 +102,7 @@ export async function lireLaChecklist(
     ventesFacturees,
     lectureCaisse,
     lectureInventaire,
+    lectureAssuranceMaladie,
   ] = await Promise.all([
     // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
     // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -184,6 +195,8 @@ export async function lireLaChecklist(
     lireLaCaisse(dossierId),
     // L'inventaire (ligne 35, INV6) : ne rejette jamais ; le drapeau `INVENTAIRE_EXPORTE` baissé, sans objet, sans un appel.
     lireLInventaireDesControles(dossierId),
+    // Les paiements de l'assurance maladie et leurs associations (NOE6) : ne rejette jamais ; les drapeaux baissés, sans un appel.
+    controlesOfferts(CONTROLES_ASSURANCE_MALADIE_PREVUS) ? lireLesPaiementsAssuranceMaladie(dossierId, 'cabinet') : Promise.resolve(null),
   ])
   // Best-effort, comme dans BanqueTab : l'échec est journalisé, et rendu NUL — jamais lu ici comme « aucun écart ».
   // TOUS les contrôles, lus une fois (RELEVE-Q1) : ceux qui ne bouclent pas s'en tirent, et la suite des soldes d'un relevé à
@@ -225,9 +238,13 @@ export async function lireLaChecklist(
       // Les comptes bancaires illisibles (MCB4) : les mois manquants suivent la règle du dossier, les ruptures se taisent.
       ?? (comptesBancaires.etat === 'illisible' ? `les comptes bancaires du dossier : ${comptesBancaires.motif}` : null)
       // L'inventaire lu en partie (INV6) : ses points se taisent, la révision n'en propose aucune preuve, et la liste le dit.
-      ?? (lectureInventaire.etat === 'incomplete' ? `l’inventaire du dossier : ${lectureInventaire.motif}` : null),
+      ?? (lectureInventaire.etat === 'incomplete' ? `l’inventaire du dossier : ${lectureInventaire.motif}` : null)
+      // Les paiements de l'assurance maladie (NOE6) : refusés ou lus en partie, leurs contrôles se taisent, et la liste le dit.
+      ?? motifDesPaiements(lectureAssuranceMaladie),
     // L'inventaire lu en entier, ou sans objet (le drapeau baissé, ou lu en partie : le motif est dit au-dessus).
     inventaire: lectureInventaire.etat === 'lu' ? lectureInventaire.inventaire : { etat: 'sans_objet' },
+    // Nuls les drapeaux baissés : aucun point de plus. Le relevé lu en entier, ou le rapprochement se tait.
+    assuranceMaladie: lectureAssuranceMaladie === null ? null : { lu: lectureAssuranceMaladie, releveComplet: lectureLignes.complete },
     inventaireIncomplet: lectureInventaire.etat === 'incomplete' ? lectureInventaire.motif : null,
     piecesIncompletes: (() => {
       const partielle = [lectureValidees, lectureAValider].find((l) => !l.complete)

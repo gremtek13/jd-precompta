@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useModulesOuverts } from '../../context/ModulesOuverts'
+import { estOuvert } from '../../lib/modulesDuCabinet'
 import { supabase } from '../../lib/supabase'
 import { messageErreur } from '../../lib/messageErreur'
 import type { ModeleComptable } from '../../lib/engagement'
@@ -46,11 +47,14 @@ type ItemChecklist = DocumentAttendu & { onToggle?: () => void }
 // `statutTva` : son statut de TVA (lib/statutTva.ts) — nul, il est à préciser, et c'est un paramétrage à finir.
 // `ventesParLesFactures` : le réglage du dossier (ligne 28.65, étape VF5f) — basculé, la Vue d'ensemble lit aussi ses ventes
 // facturées et dit les mouvements réservés à leurs encaissements et les encaissements qui attendent leur mouvement.
+// `codeNaf` : le code NAF du dossier tel que lu (`undefined` tant qu'il ne l'est pas) — les contrôles des paiements de
+// l'assurance maladie (NOE6) ne se disent que là où leur section s'offre (lib/sectionAssuranceMaladie.ts).
 //
 // SES POINTS SE CALCULENT DANS lib/pointsDeLaChecklist.ts, ET SE LISENT PAR lib/checklistLecture.ts : l'onglet de la
 // révision (ligne 41, étape R3) range les mêmes points dans ses cycles, et deux copies auraient divergé.
-export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, statutTva, modele, ventesParLesFactures, onNavigate }: {
+export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, statutTva, modele, ventesParLesFactures, codeNaf, onNavigate }: {
   dossierId: string
+  codeNaf: string | null | undefined
   assujettiTva: boolean
   periodiciteTva: PeriodiciteTva
   statutTva: StatutTva | null
@@ -130,6 +134,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     {
       assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHui: aujourdHuiFiscal, anneeCourante, moisEcoules,
       premierJourDuMois: premierJourDuMoisCourant(),
+      offreAssuranceMaladie: { codeNaf, moduleOuvert: estOuvert('assurance_maladie', modulesOuverts) },
     },
   )
   // Les points des seuls modules ouverts du cabinet (conception 56, OPT3) : le drapeau baissé, tous ceux d'hier.

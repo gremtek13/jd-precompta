@@ -42,6 +42,19 @@ vi.mock('../../lib/caisseLecture', async (original) => {
 })
 afterEach(() => { caisseDuTest.lecture = null })
 
+// LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE (NOE6) : leur drapeau joué par un accesseur (baissé par défaut, l'état
+// d'aujourd'hui) et leur lecture remplacée — rien d'autre de l'écran ne la lit.
+const assuranceMaladieDuTest = vi.hoisted(() => ({ leve: false, lecture: null as unknown }))
+vi.mock('../../lib/controlesAssuranceMaladie', async (original) => {
+  const vrai = await original<typeof import('../../lib/controlesAssuranceMaladie')>()
+  return { ...vrai, get CONTROLES_ASSURANCE_MALADIE_PREVUS() { return assuranceMaladieDuTest.leve } }
+})
+vi.mock('../../lib/paiementsAssuranceMaladieLecture', async (original) => {
+  const vrai = await original<typeof import('../../lib/paiementsAssuranceMaladieLecture')>()
+  return { ...vrai, lireLesPaiementsAssuranceMaladie: () => Promise.resolve(assuranceMaladieDuTest.lecture) }
+})
+afterEach(() => { assuranceMaladieDuTest.leve = false; assuranceMaladieDuTest.lecture = null })
+
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
   // Tables dont la lecture est REFUSÉE. Sans ce levier, « la liste des clôtures est inconnue »
@@ -279,7 +292,7 @@ function monter(
 ) {
   return render(
     <AvecExercicesValides annees={valides}>
-      <ChecklistTab ventesParLesFactures={ventesParLesFactures} dossierId="dossier-de-test" assujettiTva={assujettiTva} periodiciteTva={periodiciteTva} statutTva={statutTva} modele={modele} onNavigate={onNavigate} />
+      <ChecklistTab codeNaf={null} ventesParLesFactures={ventesParLesFactures} dossierId="dossier-de-test" assujettiTva={assujettiTva} periodiciteTva={periodiciteTva} statutTva={statutTva} modele={modele} onNavigate={onNavigate} />
     </AvecExercicesValides>,
   )
 }
@@ -741,7 +754,7 @@ describe('ChecklistTab — les forfaits kilométriques', () => {
   it('mène à l’onglet Informations, où vit la carte qui écrit les forfaits', async () => {
     const onNavigate = vi.fn()
     poser({ vehicules: [vehicule()] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
     await screen.findByText(POINT)
     screen.getByRole('button', { name: 'Écrire les forfaits' }).click()
     expect(onNavigate).toHaveBeenCalledWith('informations')
@@ -1304,7 +1317,7 @@ describe('ChecklistTab — en engagement', () => {
       validees: [{ ...facture, tiers: 'Garage Martin' }, avoir], categories: [categorie],
       ecritures: [...ecrituresDeFacture, ...ecrituresAvoir], lettrages: lettrage,
     })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={ENGAGEMENT} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={ENGAGEMENT} onNavigate={onNavigate} /></AvecExercicesValides>)
 
     const point = await screen.findByText(/lettrage\(s\) fait\(s\) à la main qui ne se solde\(nt\) plus/)
     expect(point.textContent).toMatch(/^1 /)
@@ -1516,7 +1529,7 @@ describe('ChecklistTab — les virements personnels', () => {
   it('compte le virement classé sans son écriture, et mène à l’onglet Virements', async () => {
     const onNavigate = vi.fn()
     poser({ lignes: [perso()] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
 
     const point = await screen.findByText(/virement\(s\) personnel\(s\) sans écriture/)
     expect(point.textContent).toMatch(/^1 /)
@@ -1586,7 +1599,7 @@ describe('ChecklistTab — les échéances de cotisation payées', () => {
   it('compte l’échéance rapprochée sans son écriture, et mène à l’onglet Cotisations', async () => {
     const onNavigate = vi.fn()
     poser({ lignes: [prelevement()], cotisations: [echeance()] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
 
     const point = await screen.findByText(/échéance\(s\) de cotisation payée\(s\) dont l’écriture manque/)
     expect(point.textContent).toMatch(/^1 /)
@@ -1635,7 +1648,7 @@ describe('ChecklistTab — les échéances de cotisation payées', () => {
   it('compte le rapprochement qui ne peut pas s’écrire, et mène à Banque', async () => {
     const onNavigate = vi.fn()
     poser({ lignes: [prelevement({ montant: 100 })], cotisations: [echeance()] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
 
     const point = await screen.findByText(/rapprochement\(s\) d’une échéance de cotisation qui ne peuvent pas s’écrire/)
     expect(point.textContent).toMatch(/^1 /)
@@ -1729,7 +1742,7 @@ describe('ChecklistTab — les échéances d’emprunt', () => {
     const onNavigate = vi.fn()
     // Échéances 1 (5 février), 2 (5 mars, payée) et 3 (5 avril) dans la fenêtre : deux manquent.
     poser({ lignes: [...bornes(), echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2 })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
     const point = await screen.findByText(/échéance\(s\) d’emprunt couverte\(s\) par le relevé sans mouvement rapproché/)
     expect(point.textContent).toMatch(/^2 /)
     screen.getByRole('button', { name: 'Rapprocher ces prélèvements' }).click()
@@ -1849,7 +1862,7 @@ describe('ChecklistTab — les mouvements ventilés sur plusieurs comptes', () =
   it('compte le mouvement dont l’écriture ne suit plus les parts, et mène à Écritures', async () => {
     const onNavigate = vi.fn()
     poser({ lignes: [ventile()], categories: [{ ...TELEPHONE, compte_comptable: '626100' }], ecritures: ECRITURE, ventilations: PARTS })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
     const point = await screen.findByText(/ventilé\(s\) dont l’écriture ne suit plus les parts/)
     expect(point.textContent).toMatch(/^1 /)
     screen.getByRole('button', { name: 'Réécrire ces ventilations' }).click()
@@ -1859,7 +1872,7 @@ describe('ChecklistTab — les mouvements ventilés sur plusieurs comptes', () =
   it('compte le mouvement dont les parts ne font plus le mouvement, et mène à Banque', async () => {
     const onNavigate = vi.fn()
     poser({ lignes: [ventile()], categories: [TELEPHONE], ecritures: ECRITURE, ventilations: [part('v1', 'cat-tel', -84), part('v2', null, -30)] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
     const point = await screen.findByText(/ventilé\(s\) dont les parts ne font plus le mouvement/)
     expect(point.textContent).toMatch(/^1 /)
     screen.getByRole('button', { name: 'Modifier ou annuler ces ventilations' }).click()
@@ -1976,7 +1989,7 @@ describe('ChecklistTab — les virements qui règlent plusieurs pièces', () => 
   it('compte le virement dont une part ne justifie plus rien, et mène à Banque', async () => {
     const onNavigate = vi.fn()
     poser({ validees: [A], lignes: [groupe()], categories: [ACHATS], reglements: [part('g1', 'pa', -300), part('g2', null, -200)] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
     const point = await screen.findByText(/virement\(s\) groupé\(s\) dont une part ne justifie plus rien/)
     expect(point.textContent).toMatch(/^1 /)
     screen.getByRole('button', { name: 'Régler de nouveau ou annuler ces virements' }).click()
@@ -2041,7 +2054,7 @@ describe('ChecklistTab — les mouvements ignorés et les comptes de bilan', () 
   it('compte les mouvements ignorés, dit ce qu’ils emportent, et mène à Banque', async () => {
     const onNavigate = vi.fn()
     poser({ lignes: [ignore(), ignore({ id: 'ig2', montant: 300 })] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
 
     const point = await screen.findByText(POINT)
     expect(point.textContent).toMatch(/^2 /)
@@ -2085,7 +2098,7 @@ describe('ChecklistTab — les mouvements ignorés et les comptes de bilan', () 
   it('un mouvement écrit sur un compte de bilan sans son écriture est une erreur, qui mène à Écritures', async () => {
     const onNavigate = vi.fn()
     poser({ lignes: [surBilan()] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
 
     const point = await screen.findByText(/écrit\(s\) sur un compte de bilan dont l’écriture ne suit plus le compte/)
     expect(point.textContent).toMatch(/^1 /)
@@ -2183,7 +2196,7 @@ describe('ChecklistTab — la TVA liquidée et payée', () => {
   it('une liquidation qui ne suit plus sa déclaration est une erreur, qui mène à Écritures', async () => {
     const onNavigate = vi.fn()
     poser({ lignes: [ANCRE], declarations: [declaration(), ...SUIVANTES], ecritures: LIQUIDATION.slice(0, 3) })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
     const point = await screen.findByText(/déclaration\(s\) de TVA dont l’écriture de liquidation manque ou ne suit plus la déclaration/)
     expect(point.textContent).toMatch(/^1 /)
     expect(point.closest('.check-ligne')!.querySelector('.check-dot')!.className).toContain('check-manque')
@@ -2194,7 +2207,7 @@ describe('ChecklistTab — la TVA liquidée et payée', () => {
   it('un paiement dont l’écriture ne suit plus le mouvement est une erreur, qui mène à Écritures', async () => {
     const onNavigate = vi.fn()
     poser({ lignes: [ANCRE, prelevement()], declarations: [declaration(), ...SUIVANTES], ecritures: [...LIQUIDATION, ...PAIEMENT.map((e) => ({ ...e, montant: 70 }))] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
     const point = await screen.findByText(/paiement\(s\) ou remboursement\(s\) de TVA dont l’écriture ne suit plus le mouvement/)
     expect(point.textContent).toMatch(/^1 /)
     screen.getByRole('button', { name: 'Réécrire ces paiements' }).click()
@@ -2220,7 +2233,7 @@ describe('ChecklistTab — la TVA liquidée et payée', () => {
     const onNavigate = vi.fn()
     // Ni le troisième trimestre, fini le 30 septembre : sa CA3 se dépose en octobre.
     poser({ lignes: [ANCRE], declarations: [declaration()] })
-    render(<AvecExercicesValides><ChecklistTab ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+    render(<AvecExercicesValides><ChecklistTab codeNaf={null} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
     const point = await screen.findByText(RETARD)
     expect(point.textContent).toMatch(/^1 /)
     expect(point.closest('.check-ligne')!.querySelector('.check-dot')!.className).toContain('check-attention')
@@ -2893,7 +2906,7 @@ describe('ChecklistTab — les ventes facturées d’un dossier qui a basculé (
     expect((await screen.findByText(NON_RAPPROCHEES)).textContent).toMatch(/^2 /)
     vue.rerender(
       <AvecExercicesValides annees={[]}>
-        <ChecklistTab ventesParLesFactures dossierId={D} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={() => {}} />
+        <ChecklistTab codeNaf={null} ventesParLesFactures dossierId={D} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={() => {}} />
       </AvecExercicesValides>,
     )
     expect((await screen.findByText(RESERVES)).textContent).toMatch(/^1 /)
@@ -3208,5 +3221,46 @@ describe('ChecklistTab — les saisies du client dans sa caisse', () => {
     monter()
     await screen.findByText(ANCRE)
     expect(screen.queryByText(POINT)).toBeNull()
+  })
+})
+
+// NOE6 : le câblage de l'écran — le code NAF du dossier et le module du cabinet passent aux points ; le drapeau baissé, rien.
+describe('les contrôles des paiements de l’assurance maladie (NOE6)', () => {
+  const POINT = /dans la période d’un import, qu’aucun paiement importé ne justifie/
+  const ANCRE = /non rapprochée\(s\)/
+  function monterAvec(codeNaf: string | null, imports = [{ id: 'i1', dossier_id: 'dossier-de-test', periode_du: '2026-03-01', periode_au: '2026-03-31' }]) {
+    poser({ lignes: [ligne({ id: 'cpam', date: '2026-03-04', libelle: 'VIR CPAM FICTIF', montant: 123.45, statut: 'non_rapprochee', piece_id: null })] })
+    assuranceMaladieDuTest.lecture = {
+      dossierId: 'dossier-de-test', etat: 'lus',
+      imports: { lignes: imports, complete: true },
+      paiements: { lignes: [], complete: true }, associations: { lignes: [], complete: true },
+    }
+    return render(
+      <AvecExercicesValides annees={[]}>
+        <ChecklistTab codeNaf={codeNaf} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={() => {}} />
+      </AvecExercicesValides>,
+    )
+  }
+
+  it('le drapeau levé, un dossier de santé : le crédit de l’assurance maladie sans paiement se dit, sans son libellé', async () => {
+    assuranceMaladieDuTest.leve = true
+    monterAvec('86.90E')
+    const point = await screen.findByText(POINT)
+    expect(point.closest('.check-ligne')?.textContent).not.toContain('FICTIF')
+    expect(point.closest('.check-ligne')?.textContent).toContain('04/03/2026')
+  })
+
+  it('le drapeau baissé : rien, comme hier', async () => {
+    monterAvec('86.90E')
+    await screen.findByText(ANCRE)
+    expect(screen.queryByText(POINT)).toBeNull()
+  })
+
+  it('le drapeau levé, mais un dossier hors de la santé sans import : rien (la règle de la section)', async () => {
+    assuranceMaladieDuTest.leve = true
+    monterAvec('62.01Z', [])
+    await screen.findByText(ANCRE)
+    expect(screen.queryByText(POINT)).toBeNull()
+    expect(screen.queryByText(/hors des périodes importées/)).toBeNull()
   })
 })

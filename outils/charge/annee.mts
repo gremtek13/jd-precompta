@@ -368,10 +368,10 @@ function mesurer(k: number): Map<string, number | string> {
         declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,
         facturesSources: ventes.sources, info: null, infoInconnue: null, anneesCloturees: [], ouverture: null, ouvertureIncomplete: null,
         aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null, ventesFacturees: lectureDuReleve, caisse: caisseLue,
-        entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' },
+        entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' }, assuranceMaladie: null,
       }, {
         assujettiTva: assujetti, periodiciteTva: 'mensuelle', statutTva: null, modele: MODELE, frontiere: null, anneesValidees: [],
-        aujourdHui: `${ANNEE}-11-07`, anneeCourante: ANNEE, moisEcoules: 10, premierJourDuMois: `${ANNEE}-11-01`,
+        aujourdHui: `${ANNEE}-11-07`, anneeCourante: ANNEE, moisEcoules: 10, premierJourDuMois: `${ANNEE}-11-01`, offreAssuranceMaladie: { codeNaf: null, moduleOuvert: false },
       }), (r) => `${r.tousLesPointsATraiter.length} points : ${r.tousLesPointsATraiter.map((x) => x.id).join(', ')}`)
       t('préalables de la validation', () => prealablesDeValidation({
         annee: ANNEE, anneeCourante: ANNEE + 1, aujourdHui: `${ANNEE + 1}-01-15`, modele: MODELE, assujettiTva: assujetti, anneesValidees: [],

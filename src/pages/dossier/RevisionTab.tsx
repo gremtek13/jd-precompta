@@ -45,6 +45,8 @@ import type { DossierTab } from '../../lib/ongletsDossier'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { useAuth } from '../../context/AuthContext'
+import { useModulesOuverts } from '../../context/ModulesOuverts'
+import { estOuvert } from '../../lib/modulesDuCabinet'
 import { useGardePanneau, usePanneauDroit } from '../../lib/panneauDroit'
 import PanneauDroit from '../../components/PanneauDroit'
 import BandeauLecturePartielle, { type AccordLecture } from '../../components/BandeauLecturePartielle'
@@ -308,8 +310,11 @@ function resumeDeLAvancement(avancement: Record<EtatDuSolde, number>): string {
   return `${total} solde${total > 1 ? 's' : ''} de bilan : ${parts.join(', ')}.`
 }
 
-export default function RevisionTab({ dossierId, modele, assujettiTva, periodiciteTva, statutTva, ventesParLesFactures, onNavigate }: {
+export default function RevisionTab({ dossierId, modele, assujettiTva, periodiciteTva, statutTva, ventesParLesFactures, codeNaf, onNavigate }: {
   dossierId: string
+  // Le code NAF du dossier tel que lu (`undefined` tant qu'il ne l'est pas) : les contrôles des paiements de l'assurance maladie
+  // (NOE6) ne se rangent que là où leur section s'offre, sous le module du cabinet.
+  codeNaf: string | null | undefined
   // Le modèle ENTIER, sans valeur par défaut : il décide des cycles du dossier (les tiers en engagement) et de ses
   // preuves, comme de ses points de contrôle.
   modele: ModeleComptable
@@ -326,6 +331,8 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   const { annee } = useAnnee()
   const { exercices, frontiere } = useExercicesValides()
   const { session, estChef } = useAuth()
+  // Le module des paiements de l'assurance maladie (NOE6) : ses contrôles ne se rangent que s'il est ouvert au cabinet.
+  const { ouverts: modulesOuverts } = useModulesOuverts()
   const [lecture, setLecture] = useState<LectureDeLaRevision | null>(null)
 
   // La décision : un verrou d'exécution, posé avant le `try`, relâché après la relecture — un second clic du même
@@ -785,6 +792,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   const points = pointsDeLaChecklist(lecture.checklist, {
     assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees: exercices.map((e) => e.annee),
     aujourdHui, anneeCourante: anneeDesPoints, moisEcoules, premierJourDuMois: premierJourDuMoisCourant(),
+    offreAssuranceMaladie: { codeNaf, moduleOuvert: estOuvert('assurance_maladie', modulesOuverts) },
   })
   const donnees: DonneesDeLaRevision = {
     annee, anneeCourante, modele, assujettiTva, periodiciteTva,

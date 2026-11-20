@@ -54360,3 +54360,19 @@ fonction appelée sans session rend 401 (elle démarre et refuse). NON vérifié
 fermé. `FACTURES_ASSURANCE_MALADIE_PREVUES` levé : la section « Facturé à l'assurance maladie » s'offre dans l'onglet Banque et
 « Ma banque » ; son état d'avant reste joué par les accesseurs de ses tests, et le test de l'association dans Banque garde ce
 drapeau baissé par un accesseur à lui. BOR5 intégré derrière `DU_CONTRE_PAYE_PREVU` baissé.
+
+### 20/11/2026 — NOE6 : LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE ET LA PISTE D'AUDIT
+
+Conception 53, § 5 et § 10 (NOE-Q7, NOE-E1, NOE-E2, NOE-E3). Sans migration ; `CONTROLES_ASSURANCE_MALADIE_PREVUS` baissé, que la
+session lève. `lib/controlesAssuranceMaladie.ts`, pur, reprend les contrôles déjà calculés par le rapprochement (NOE5) et en tire
+cinq ATTENTIONS (Vue d'ensemble, Révision au cycle recettes, jamais un préalable de la validation) : le crédit de l'assurance
+maladie sans paiement — dans la période d'un import (jusqu'à cinq jours après sa fin) ou hors de toute période importée —, le
+paiement sans crédit quand le relevé va au-delà de sa date (jamais dans un exercice validé), l'association qui ne tient plus, et
+l'exercice dont les paiements associés ne font pas les crédits de l'assurance maladie classés en recette, à l'année du CRÉDIT ; un
+crédit associé pas encore classé reste hors de la confrontation (compté) ; le SNIR n'est pas comparé (NOE-E1). Offerts sous la règle
+de la section (code NAF de santé ou import en base), le module du cabinet ouvert (ChecklistTab et RevisionTab reçoivent `codeNaf`) ;
+muets sur une lecture partielle, le motif dans `lectureIncomplete`. La piste d'audit (EcrituresTab, donc le paquet d'archive) cite
+dans la colonne du justificatif « Paiement de l'assurance maladie du JJ/MM/AAAA, N factures » pour l'écriture d'un crédit associé
+justifiée par le relevé ; lue en partie, l'export se refuse ; aucun module du FEC ne lit ceci (relevé par un test). Vérifié : 24
+cas du module, 4 du branchement (les deux états du drapeau par un accesseur), 3 d'écran ; huit mutations, toutes tuées. Non
+vérifié : un premier import réel, l'export de la piste sous le drapeau levé dans l'écran (le câblage n'a qu'un test de module).

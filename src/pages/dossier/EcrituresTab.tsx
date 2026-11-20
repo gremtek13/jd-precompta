@@ -79,6 +79,10 @@ import {
 } from '../../lib/controlesDeLaCaisse'
 import { rattachementDesVentes, type VentesFactureesDesExports } from '../../lib/ventesFactureesDesExports'
 import { lireLesJustificatifsDesVentes } from '../../lib/justificatifsDesVentesLecture'
+import { CONTROLES_ASSURANCE_MALADIE_PREVUS, citationsDeLaPiste, citerLesPaiementsDansLaPiste, controlesOfferts } from '../../lib/controlesAssuranceMaladie'
+import { lireLesPaiementsAssuranceMaladie } from '../../lib/paiementsAssuranceMaladieLecture'
+import { useModulesOuverts } from '../../context/ModulesOuverts'
+import { estOuvert } from '../../lib/modulesDuCabinet'
 import VentesFactureesEcritures from './VentesFactureesEcritures'
 import {
   AUCUNE_PIECE_CITEE, exemplairesDesSources, facturesSourcesDe, horsDesExemplairesDesSources, marquerLesPiecesCitees,
@@ -180,6 +184,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   ventesParLesFactures: boolean
   onModeleUpdated: (modification: { mode_comptable?: ModeComptable; compte_notes_de_frais?: CompteNotesDeFrais }) => void
 }) {
+  // Le module des paiements de l'assurance maladie (NOE6) : ouvert, la piste d'audit cite le paiement associé à un crédit.
+  const { ouverts: modulesOuverts } = useModulesOuverts()
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
@@ -855,7 +861,21 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         "L'export est annulé : une piste d'audit dirait introuvable le paiement en espèces d'une pièce.",
       )
     }
-    return genererPisteAuditCsv(pisteAudit(
+    // LE PAIEMENT DE L'ASSURANCE MALADIE ASSOCIÉ À UN CRÉDIT (conception 53, NOE6 ; NOE-Q7, NOE-E3) : la colonne du justificatif
+    // de son écriture le cite — la journée comptable et le nombre de factures, aucun nom, aucune référence. Lu sur ce clic ; lu en
+    // partie ou refusé, l'export se refuse (deux exports du même brouillon diraient autre chose). Les drapeaux baissés ou le
+    // module fermé, aucune lecture : la piste d'hier. Le FEC ne lit rien de ceci.
+    const moduleAssuranceMaladie = estOuvert('assurance_maladie', modulesOuverts)
+    const citations = citationsDeLaPiste(CONTROLES_ASSURANCE_MALADIE_PREVUS, moduleAssuranceMaladie,
+      controlesOfferts(CONTROLES_ASSURANCE_MALADIE_PREVUS) && moduleAssuranceMaladie
+        ? await lireLesPaiementsAssuranceMaladie(dossierId, 'cabinet') : null)
+    if (citations.etat === 'refusee') {
+      throw new Error(
+        `Les paiements de l'assurance maladie n'ont pas pu être lus en entier (${citations.motif}). ` +
+        "L'export est annulé : la piste d'audit tairait le paiement qui justifie un crédit du relevé.",
+      )
+    }
+    return genererPisteAuditCsv(citerLesPaiementsDansLaPiste(pisteAudit(
       ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice,
       {
         immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
@@ -863,7 +883,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         caisse: operationsDuFec ?? OPERATIONS_DE_CAISSE_ABSENTES,
         plan: modele.plan, banques,
       },
-    ))
+    ), ecrituresFiltrees, citations))
   }
 
   // La piste d'audit du paquet d'archive : son refus est un état, jamais une exception (le bouton du paquet le dit).

@@ -197,12 +197,12 @@ function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
     declarationsPartielles: false, facturesEmises: [], transmissions: [], jumellesPartielles: false, info: null, infoInconnue: null,
     anneesCloturees: [], ouverture: null, ouvertureIncomplete: null, aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null,
     ventesFacturees: null, facturesSources: SANS_FACTURE_SOURCE, caisse: CAISSE_PAS_EN_BASE, entreesDeLaCaisseIncompletes: null,
-    entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' }, ...o,
+    entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' }, assuranceMaladie: null, ...o,
   }
 }
 const CONTEXTE: ContexteDeLaChecklist = {
   assujettiTva: true, periodiciteTva: 'trimestrielle', statutTva: 'redevable', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT },
-  frontiere: null, anneesValidees: [], aujourdHui: '2026-10-24', anneeCourante: 2026, moisEcoules: 9, premierJourDuMois: '2026-10-01',
+  frontiere: null, anneesValidees: [], aujourdHui: '2026-10-24', anneeCourante: 2026, moisEcoules: 9, premierJourDuMois: '2026-10-01', offreAssuranceMaladie: { codeNaf: null, moduleOuvert: false },
 }
 const point = (d: DonneesDeLaChecklist, id: string, frontiere: string | null = null) =>
   pointsDeLaChecklist(d, { ...CONTEXTE, frontiere }).tousLesPointsATraiter.find((p) => p.id === id)

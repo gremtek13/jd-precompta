@@ -197,7 +197,7 @@ function rendre(o: { annee?: ValeurAnnee; valides?: number[]; onNavigate?: (t: D
     <FournisseurPanneauDroit>
       <ContexteDossier annee={o.annee ?? 2025} valides={o.valides ?? []}>
         <RevisionTab
-          dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false}
+          codeNaf={null} dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false}
           onNavigate={o.onNavigate ?? (() => {})}
         />
       </ContexteDossier>
@@ -564,7 +564,7 @@ describe('RevisionTab — décider d’un solde', () => {
     render(
       <FournisseurPanneauDroit>
         <ContexteDossier annee={2025} valides={[]}>
-          <RevisionTab dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false} onNavigate={() => {}} />
+          <RevisionTab codeNaf={null} dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false} onNavigate={() => {}} />
           <AutreContenu />
         </ContexteDossier>
         <EmplacementPanneauDroit />
@@ -647,7 +647,7 @@ describe('RevisionTab — la mémoire d’un exercice à l’autre', () => {
     render(
       <FournisseurPanneauDroit>
         <ContexteDossier annee={2025} valides={[2024, 2025]}>
-          <RevisionTab dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false} onNavigate={() => {}} />
+          <RevisionTab codeNaf={null} dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false} onNavigate={() => {}} />
           <ChoisirExercice annee={2026} />
         </ContexteDossier>
         <EmplacementPanneauDroit />

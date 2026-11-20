@@ -97,6 +97,12 @@ describe('les points de la Vue d’ensemble sous les modules', () => {
   it('la tenue seule rend la déclaration de TVA ; la facturation seule, le registre des encaissements', () => {
     expect(pointsSousLesModules(points, ['tenue']).map((p) => p.id)).toContain('periodes-tva-non-declarees')
     expect(pointsSousLesModules(points, ['facturation']).map((p) => p.id)).toContain('encaissements-sans-mouvement')
-    expect(Object.keys(MODULE_DU_POINT_HORS_DE_SON_ONGLET)).toEqual(['periodes-tva-non-declarees'])
+    // Et les cinq contrôles des paiements de l'assurance maladie (NOE6), sous leur module, l'onglet Banque étant du socle.
+    expect(Object.entries(MODULE_DU_POINT_HORS_DE_SON_ONGLET)).toEqual([
+      ['periodes-tva-non-declarees', 'tenue'],
+      ['assurance-maladie-credits-sans-paiement', 'assurance_maladie'], ['assurance-maladie-credits-hors-des-imports', 'assurance_maladie'],
+      ['assurance-maladie-paiements-sans-credit', 'assurance_maladie'], ['assurance-maladie-associations-a-revoir', 'assurance_maladie'],
+      ['assurance-maladie-exercices-en-ecart', 'assurance_maladie'],
+    ])
   })
 })
