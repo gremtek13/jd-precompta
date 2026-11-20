@@ -2,7 +2,7 @@
 // du 19/11/2026 sur la réplique : la policy `cabinets_select` ouvre à tout accès client d'un dossier la ligne ENTIÈRE de son
 // cabinet, donc `limite_ia_alerte_usd` et `limite_ia_blocage_usd` — ce que le cabinet paie d'assistant, que son client n'a
 // pas à lire. La RLS ne cache que des lignes ; une colonne se ferme par les droits de PostgreSQL. La migration préparée
-// `plafonds_hors_du_client` (supabase/preparees/20261119150000_plafonds_hors_du_client.sql) retire la lecture de la TABLE aux
+// `plafonds_hors_du_client` (supabase/schema/20261120101707_plafonds_hors_du_client.sql) retire la lecture de la TABLE aux
 // deux rôles de l'API et leur rend chaque colonne, les deux plafonds exceptés ; l'équipe du cabinet et le super-administrateur
 // les lisent par `plafonds_de_l_assistant()` (security definer, `admin_du_cabinet`). Le récit : HISTORIQUE.md, « 19/11/2026 —
 // OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT ».
