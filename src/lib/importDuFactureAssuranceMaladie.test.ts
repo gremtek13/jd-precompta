@@ -49,9 +49,9 @@ const avec = (chemin: (string | number)[], valeur: unknown): unknown => {
 }
 
 describe('le drapeau et les fichiers de la migration', () => {
-  it('la base levée, l’écran (BOR4) baissé ; la migration dans l’export (en production depuis le 20/11/2026), son retour et ses essais à côté', () => {
+  it('la base levée, l’écran (BOR4) ouvert depuis le 20/11/2026 ; la migration dans l’export (en production depuis le 20/11/2026), son retour et ses essais à côté', () => {
     expect(FACTURES_ASSURANCE_MALADIE_EN_BASE).toBe(true)
-    expect(FACTURES_ASSURANCE_MALADIE_PREVUES).toBe(false)
+    expect(FACTURES_ASSURANCE_MALADIE_PREVUES).toBe(true)
     for (const f of [MIGRATION, RETOUR, ...ESSAIS]) expect(existsSync(resolve(process.cwd(), f))).toBe(true)
     expect(existsSync(resolve(process.cwd(), 'supabase/preparees/20261119140000_factures_assurance_maladie.sql'))).toBe(false)
   })

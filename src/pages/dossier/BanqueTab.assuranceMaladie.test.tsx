@@ -18,7 +18,7 @@ import { MUET } from '../../lib/rapprochementAssuranceMaladie'
 
 const D = 'dossier-de-test'
 
-const drapeaux = vi.hoisted(() => ({ paiements: false, associations: false }))
+const drapeaux = vi.hoisted(() => ({ paiements: false, associations: false, facture: false }))
 vi.mock('../../lib/paiementsAssuranceMaladie', async (original) => ({
   ...await original<typeof import('../../lib/paiementsAssuranceMaladie')>(),
   get PAIEMENTS_ASSURANCE_MALADIE_PREVUS() { return drapeaux.paiements },
@@ -26,6 +26,11 @@ vi.mock('../../lib/paiementsAssuranceMaladie', async (original) => ({
 vi.mock('../../lib/rapprochementAssuranceMaladie', async (original) => ({
   ...await original<typeof import('../../lib/rapprochementAssuranceMaladie')>(),
   get ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES() { return drapeaux.associations },
+}))
+// L'écran du facturé (BOR4) a son test à lui : ici son drapeau reste baissé, pour que ce fichier ne juge que l'association.
+vi.mock('../../lib/importDuFactureAssuranceMaladie', async (original) => ({
+  ...await original<typeof import('../../lib/importDuFactureAssuranceMaladie')>(),
+  get FACTURES_ASSURANCE_MALADIE_PREVUES() { return drapeaux.facture },
 }))
 
 const faux = vi.hoisted(() => ({

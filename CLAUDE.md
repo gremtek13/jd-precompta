@@ -117,7 +117,7 @@ L'expert-comptable ne se sollicite plus : ce qui manque se cherche dans les sour
   toute migration : y ajouter son fichier et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle,
   inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock), v59 depuis le 12/11/2026, plafond de coût mensuel par cabinet ; aucun
+  - `agent-comptable` — assistant IA (Bedrock), v62 depuis le 20/11/2026, plafond de coût mensuel par cabinet ; aucun
     nom de cabinet (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant
     un dossier basculé, une garde provisoire (VF9a), que VF9c a levée — elle ne ferme plus qu'une source des ventes
     illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES OUTILS
@@ -561,9 +561,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   l'export CSV par un réglage des colonnes ; le fichier brut 576/580 ARRÊTÉ (le cahier public n'en cède aucun droit,
   NOE2-Q1). **NOE3, NOE5 et BOR3 en production depuis le 20/11/2026 (246 à 248, collées ; BOR3-migration (A), BOR3RGPD-Q1 (C)),
   `PAIEMENTS_ASSURANCE_MALADIE_PREVUS` et `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` levés (les écrans NOE4 et NOE5b ouverts), le
-  facturé au plan de sauvegarde seul (`FACTURES_ASSURANCE_MALADIE_EN_BASE` levé, l'écran BOR4 sous `FACTURES_ASSURANCE_MALADIE_PREVUES`
-  baissé) ; l'écran des modules dit avant le clic le refus de fermer « Paiements de l'assurance maladie » qu'un paiement associé retient ; restent
-  BOR4 à BOR7, NOE6 à NOE8, le lecteur du PDF des paiements, les essais et `rls.sql` rejoués en production, un premier import
+  facturé au plan de sauvegarde seul (`FACTURES_ASSURANCE_MALADIE_EN_BASE` levé, l'écran BOR4 ouvert le même jour, `FACTURES_ASSURANCE_MALADIE_PREVUES`
+  levé) ; l'écran des modules dit avant le clic le refus de fermer « Paiements de l'assurance maladie » qu'un paiement associé retient ; restent
+  BOR6 et BOR7, NOE6 à NOE8, le lecteur du PDF des paiements, les essais et `rls.sql` rejoués en production, un premier import
   réel** → « NOE3, NOE5 ET BOR3 EN PRODUCTION ». NOE3 (`paiements_assurance_maladie`) ; NOE4, l'écran (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
   section de l'onglet Banque et de « Ma banque » : en-têtes et genres seuls, réglage vide, agrégats avant le clic, la phrase de
   NOE3-Q1 ; offerte, avec l'association de NOE5b, sur un code NAF de la division 86 ou de la liste fermée
@@ -587,7 +587,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   BOR3 (19/11/2026, `factures_assurance_maladie`) : quatre tables
   sans texte, le numéro d'un lot jamais gardé — son empreinte HMAC sous une clé du dossier qu'aucun rôle de l'API ne lit, hors de la
   sauvegarde ; NOE3 amendée avant collage (`organisme_complementaire`) ; BOR3-Q1 et Q2 (A), BOR3-RGPD (B) tranchées le 19/11/2026 → « BOR3 : LE FACTURÉ À
-  L'ASSURANCE MALADIE, EN BASE ». BOR4 (20/11/2026), l'écran derrière `FACTURES_ASSURANCE_MALADIE_PREVUES` baissé
+  L'ASSURANCE MALADIE, EN BASE ». BOR4 (20/11/2026), l'écran, `FACTURES_ASSURANCE_MALADIE_PREVUES` levé
   (`components/FactureAssuranceMaladie.tsx`, à côté de NOE4, même règle et même module) → « BOR4 : L'ÉCRAN D'IMPORT DU FACTURÉ ».
   BOR5 (20/11/2026), le dû contre le payé, estimé, en compte courant par organisme (`lib/duContrePaye.ts`, pur ; la section du cabinet sous
   `DU_CONTRE_PAYE_PREVU` baissé) → « BOR5 : CE QUE L'ASSURANCE MALADIE DOIT ».
@@ -596,7 +596,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)
   → « LE LOT L2, POINTS 6 ET 7 ». Le point 6 en production depuis le 19/11/2026 (243, collée ; `autres_impots_des_cotisations` :
   la part d'une échéance, le rôle `autres_impots` au 637800, trois fonctions), `AUTRES_IMPOTS_DES_COTISATIONS_PREVUS` levé (l'assistant
-  à redéployer) : la CFP et la CURPS en BS, hors de BK et de BT, le résultat inchangé, DD baissant d'autant → « EXP58-Q6 ET
+  redéployé le 20/11/2026, v62) : la CFP et la CURPS en BS, hors de BK et de BT, le résultat inchangé, DD baissant d'autant → « EXP58-Q6 ET
   EXP58-Q7 : LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE », « EXP58-Q6 EN PRODUCTION ».
 - **Le mode de règlement d'un mouvement** (EXP58-Q1 (B)) : en production depuis le 18/11/2026 (240, par l'outil), `MODE_DE_REGLEMENT_PREVU` levé — `lignes_bancaires.mode_reglement` (sept ModeRglt), posé par `poser_modes_de_reglement`
   seule sur un clic, la proposition du libellé jamais écrite ; le FEC remplace « Banque » par lui → « EXP58-Q1 : LE MODE DE RÈGLEMENT D'UN MOUVEMENT, EN BASE », « EXP58-Q1 EN PRODUCTION ».
@@ -633,8 +633,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `PLAFONDS_HORS_DU_CLIENT_PREVUS` levé : l'écran des cabinets lit les plafonds par la fonction seule, un cabinet qu'elle ne rend
   pas « Illisibles » sans « Plafond IA » → « OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT », « OPT1-Q3 EN
   PRODUCTION ». OPT5 écrit (20/11/2026, sans migration, le bloc OPTION DU CABINET : 403 module fermé, 503 illisible, après
-  l'appelant), À REDÉPLOYER : `agent-comptable`, `proposer-categorie`, `banque-connexion`, `plateforme-agreee`,
-  `superpdp-credentials`, `superpdp-emit`, `superpdp-sync`, `send-email` → « OPT5 : LES EDGE FUNCTIONS REFUSENT ».
+  l'appelant), les huit fonctions déployées le 20/11/2026 au commit `6cb1f936` (`agent-comptable`, `proposer-categorie`,
+  `banque-connexion`, `plateforme-agreee`, `superpdp-credentials`, `superpdp-emit`, `superpdp-sync`, `send-email`) → « OPT5 : LES EDGE FUNCTIONS REFUSENT ».
 - **Les exports vers les logiciels comptables** (17/11/2026), recherchés, rien d'écrit (`docs/conceptions/57-exports-vers-les-logiciels-comptables.md`) :
   le FEC avec ses pièces en ZIP est le pivot (ACD d'abord), puis l'ASCII Quadra et le TRA ; EXP-Q1 à Q8, EXP-E1 à E7 → « LES
   EXPORTS VERS LES LOGICIELS COMPTABLES : LA RECHERCHE ».
@@ -1130,7 +1130,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   décode les `\uXXXX` → « Déployer une Edge Function via l'outil MCP décode les échappements » ; les bordures `─`
   répétées d'abord par `bordures.py`, le texte ENVOYÉ relu dans le journal → « LES BORDURES SE RECOPIENT ».
   `agent-comptable`, `extract-piece`, depuis le 02/11/2026 `send-email`, `plateforme-agreee` et `superpdp-emit`, depuis
-  le 04/11/2026 `receive-email` et `delete-cabinet`, depuis le 11/11/2026 `create-client-access`, depuis le 12/11/2026 `taux-change-bce` ne se recopient plus (de 10 à 300 Ko ; la recopie de l'assistant
+  le 04/11/2026 `receive-email` et `delete-cabinet`, depuis le 11/11/2026 `create-client-access`, depuis le 12/11/2026 `taux-change-bce`, depuis le 20/11/2026 `banque-connexion`, `proposer-categorie`, `superpdp-credentials` et `superpdp-sync` ne se recopient plus (de 10 à 300 Ko ; la recopie de l'assistant
   est refusée ou coupée, celle des autres coûtait le fichier entier à chaque fois) : une ligne IMPORTE leur fichier du
   dépôt public à un commit écrit en entier, `allerretour.py` compare le fichier de ce commit au dépôt, et revenir en
   arrière ne change que le commit → « L'ASSISTANT SE DÉPLOIE PAR UNE LIGNE QUI IMPORTE LE DÉPÔT », « L'ASSISTANT ET EXTRACT-PIECE REDÉPLOYÉS

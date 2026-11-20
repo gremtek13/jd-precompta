@@ -30,8 +30,8 @@ export const FACTURES_ASSURANCE_MALADIE_EN_BASE = true
 
 /** Le drapeau de l'ÉCRAN d'import du facturé (BOR4, components/FactureAssuranceMaladie.tsx, écrit le 20/11/2026) : baissé,
  *  la section ne se monte pas et rien ne lit ni n'écrit les tables ; levé, elle s'offre dans l'onglet Banque et « Ma banque »,
- *  sous la règle et le module des paiements. La session le lève. */
-export const FACTURES_ASSURANCE_MALADIE_PREVUES = false
+ *  sous la règle et le module des paiements. Levé le 20/11/2026 ; son état d'avant reste joué par les tests de l'écran. */
+export const FACTURES_ASSURANCE_MALADIE_PREVUES = true
 
 /** Un lot, tel qu'il part à l'appel : ses quatre clés, et aucune autre. Le numéro ne s'écrit nulle part en base. */
 export interface LotAEnvoyer {
