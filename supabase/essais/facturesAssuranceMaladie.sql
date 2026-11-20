@@ -1,5 +1,5 @@
 -- LE FACTURÉ À L'ASSURANCE MALADIE (conception 59, BOR3 ; la migration `factures_assurance_maladie`, PRÉPARÉE le 19/11/2026,
--- supabase/preparees/20261119140000_factures_assurance_maladie.sql). Le récit : HISTORIQUE.md, « 19/11/2026 — BOR3 : LE
+-- supabase/schema/20261120110200_factures_assurance_maladie.sql). Le récit : HISTORIQUE.md, « 19/11/2026 — BOR3 : LE
 -- FACTURÉ À L'ASSURANCE MALADIE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après toute migration qui
 -- touche `memberships`, `client_du_dossier`, `admin_du_dossier`, les quatre tables ou leurs fonctions. Le retrait d'une ligne
 -- en direct ne se joue pas ici (l'outil d'exécution de la production retient une suppression) : la garde le refuse, ce que

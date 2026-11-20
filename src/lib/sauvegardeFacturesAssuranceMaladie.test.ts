@@ -24,14 +24,14 @@ import {
 } from './sauvegarde'
 
 // LE FACTURÉ À L'ASSURANCE MALADIE AU PLAN DE SAUVEGARDE (conception 59, BOR3). Sa migration, `factures_assurance_maladie`,
-// est préparée (supabase/preparees/20261119140000_factures_assurance_maladie.sql) et le drapeau baissé : le plan effectif ne
+// est préparée (supabase/schema/20261120110200_factures_assurance_maladie.sql) et le drapeau baissé : le plan effectif ne
 // dit RIEN des quatre tables — une sauvegarde lirait des tables absentes et échouerait ; le plan PRÉVU les porte, et les deux
 // états du drapeau se jouent (`vi.doMock`, plus bas). La clé et le registre n'ont aucune policy : leur lecture rend zéro
 // ligne, et ni la sauvegarde ni la restauration n'en portent jamais rien.
 
 const TABLES = ['cles_des_lots_teletransmission', 'imports_factures_assurance_maladie', 'factures_assurance_maladie',
   'lots_teletransmission_importes'] as const
-const MIGRATION = readFileSync(resolve(process.cwd(), 'supabase/preparees/20261119140000_factures_assurance_maladie.sql'), 'utf8')
+const MIGRATION = readFileSync(resolve(process.cwd(), 'supabase/schema/20261120110200_factures_assurance_maladie.sql'), 'utf8')
 
 describe('le filtre du plan, côté facturé à l’assurance maladie', () => {
   it('les tables ne sont au plan que le drapeau levé ; toute autre l’est toujours ; le filtre du jour suit le drapeau', () => {

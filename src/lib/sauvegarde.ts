@@ -250,7 +250,7 @@ export function auPlanDeLaHausseDuChiffreDAffaires(table: string, prevue: boolea
 }
 
 // LES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, NOE3 ; migration `paiements_assurance_maladie`, PRÉPARÉE le
-// 16/11/2026, supabase/preparees/20261116191000_paiements_assurance_maladie.sql) : les imports d'un dossier et les paiements
+// 16/11/2026, supabase/schema/20261120110000_paiements_assurance_maladie.sql) : les imports d'un dossier et les paiements
 // agrégés qu'ils ont apportés, sans aucune donnée de patient. Sous le drapeau de la migration
 // (`PAIEMENTS_ASSURANCE_MALADIE_PREVUS`, src/lib/paiementsAssuranceMaladie.ts), baissé : la production n'a pas les tables, et
 // les lire ferait échouer toute sauvegarde. Leurs relations (au dossier, en cascade ; le paiement à son import, en cascade,
@@ -268,7 +268,7 @@ export function auPlanDesPaiementsAssuranceMaladie(table: string, prevus: boolea
 
 // L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX MOUVEMENTS DU RELEVÉ (conception 53, NOE5 ; migration
 // `association_paiements_assurance_maladie`, PRÉPARÉE le 17/11/2026, à coller APRÈS NOE3,
-// supabase/preparees/20261117160000_association_paiements_assurance_maladie.sql ; au plan depuis NOE8, le 19/11/2026) : un
+// supabase/schema/20261120110100_association_paiements_assurance_maladie.sql ; au plan depuis NOE8, le 19/11/2026) : un
 // paiement associé au crédit qui le verse, sans aucune colonne de texte. Sous le drapeau de la migration
 // (`ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES`, src/lib/rapprochementAssuranceMaladie.ts), baissé : la production n'a pas la
 // table, et la lire ferait échouer toute sauvegarde. Ses trois relations (au dossier et au mouvement, en cascade ; au
@@ -287,7 +287,7 @@ export function auPlanDeLAssociationAssuranceMaladie(table: string, prevues: boo
 }
 
 // LE FACTURÉ À L'ASSURANCE MALADIE (conception 59, BOR3 ; migration `factures_assurance_maladie`, PRÉPARÉE le 19/11/2026,
-// supabase/preparees/20261119140000_factures_assurance_maladie.sql) : la clé des lots d'un dossier, ses imports de
+// supabase/schema/20261120110200_factures_assurance_maladie.sql) : la clé des lots d'un dossier, ses imports de
 // bordereaux, les totaux qu'ils ont apportés et le registre des empreintes de leurs lots, sans aucune donnée de patient. Sous
 // le drapeau de la migration (`FACTURES_ASSURANCE_MALADIE_PREVUES`, src/lib/importDuFactureAssuranceMaladie.ts), baissé : la
 // production n'a pas les tables, et les lire ferait échouer toute sauvegarde. Leurs relations (au dossier, en cascade ; le

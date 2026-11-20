@@ -837,7 +837,7 @@ Ordre : BOR0 (le cabinet) en parallèle de BOR2, puis BOR3 → BOR4 → BOR5 →
 
 ## 14. BOR3, préparé le 19/11/2026 : ce que la base garde
 
-Rien n'est appliqué. La migration : `supabase/preparees/20261119140000_factures_assurance_maladie.sql` ; son retour, son essai
+Rien n'est appliqué. La migration : `supabase/schema/20261120110200_factures_assurance_maladie.sql` ; son retour, son essai
 (`facturesAssuranceMaladie.sql`, et `facturesAssuranceMaladieSuppression.sql` sur une réplique) ; le module qui redit ses refus et
 compose le corps de l'appel : `src/lib/importDuFactureAssuranceMaladie.ts`. Le récit : HISTORIQUE.md, « 19/11/2026 — BOR3 ».
 
@@ -920,7 +920,7 @@ partagent une journée et une caisse.
     "recommandation": "(A) : l'appliquer telle quelle, avec NOE3 et NOE5, après les PDF rendus anonymes (NOE3-quand) — c'est la lecture de la banque que la case « Banque » ouvre déjà.",
     "options": ["(A) L'appliquer telle quelle : le client « Banque » lit, importe et retire", "(B) Le client lit et importe, le cabinet seul retire un import", "(C) Le cabinet seul : revenir sur BOR-Q8 (A)"],
     "option_recommandee": "(A) L'appliquer telle quelle : le client « Banque » lit, importe et retire",
-    "source": "supabase/preparees/20261119140000_factures_assurance_maladie.sql ; docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 14.2 ; CLAUDE.md, « Trois domaines font exception »",
+    "source": "supabase/schema/20261120110200_factures_assurance_maladie.sql ; docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 14.2 ; CLAUDE.md, « Trois domaines font exception »",
     "pose": "2026-11-19"
   },
   {
@@ -944,7 +944,7 @@ partagent une journée et une caisse.
     "recommandation": "(A) : jamais figé — il ne compte nulle part, et le contrôle « dû contre payé » enjambe le 31 décembre.",
     "options": ["(A) Jamais figé : importable et retirable quelle que soit l'année validée", "(B) Figé comme les paiements, par l'année de création du lot"],
     "option_recommandee": "(A) Jamais figé : importable et retirable quelle que soit l'année validée",
-    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 14.5 ; supabase/preparees/20261116191000_paiements_assurance_maladie.sql",
+    "source": "docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md § 14.5 ; supabase/schema/20261120110000_paiements_assurance_maladie.sql",
     "pose": "2026-11-19"
   },
   {

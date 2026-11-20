@@ -20,7 +20,7 @@ import { entierTire, tirage } from '../test/encaissementsBatterie'
 // base accepte. L'essai de la base : supabase/essais/facturesAssuranceMaladie.sql, sur une réplique. Des numéros de lot faits
 // de 9, des caisses « VILLE FICTIVE », des montants inventés.
 
-const MIGRATION = 'supabase/preparees/20261119140000_factures_assurance_maladie.sql'
+const MIGRATION = 'supabase/schema/20261120110200_factures_assurance_maladie.sql'
 const RETOUR = 'supabase/preparees/retour/20261119140100_retour_factures_assurance_maladie.sql'
 const ESSAIS = ['supabase/essais/facturesAssuranceMaladie.sql', 'supabase/essais/facturesAssuranceMaladieSuppression.sql']
 const texteDeLaMigration = readFileSync(resolve(process.cwd(), MIGRATION), 'utf8')

@@ -2,7 +2,7 @@ import type { FactureDesBordereaux } from './factureAssuranceMaladie'
 
 // L'IMPORT DU FACTURÉ À L'ASSURANCE MALADIE, CE QUI PART EN BASE ET CE QUE LA BASE REFUSE (conception 59, lot BOR3 ;
 // docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md, § 14 ; la migration :
-// supabase/preparees/20261119140000_factures_assurance_maladie.sql, PRÉPARÉE, pas appliquée). La décision du cabinet du
+// supabase/schema/20261120110200_factures_assurance_maladie.sql, PRÉPARÉE, pas appliquée). La décision du cabinet du
 // 16/11/2026 : « on récupère que les chiffres et on stocke pas de données patients ».
 //
 // UN MODULE PUR, ET SANS SORTIE (bordereauDeTeletransmissionSansSortie.test.ts le garde, défauts plantés compris) : il ne lit

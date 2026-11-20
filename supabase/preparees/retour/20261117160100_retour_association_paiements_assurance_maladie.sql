@@ -1,6 +1,6 @@
 -- RETOUR ARRIÈRE DE `association_paiements_assurance_maladie` (conception 53, NOE5) — DESTRUCTIF, À ACCORDER PAR LE CABINET,
 -- À COLLER dans l'éditeur SQL de Supabase, dans une transaction, avec sa ligne d'historique (le texte retire une table, deux
--- déclencheurs et quatre fonctions). La migration : supabase/preparees/20261117160000_association_paiements_assurance_maladie.sql
+-- déclencheurs et quatre fonctions). La migration : supabase/schema/20261120110100_association_paiements_assurance_maladie.sql
 -- (préparée le 17/11/2026, sous une version provisoire) ; le récit : HISTORIQUE.md, « 17/11/2026 — NOE5 : L'ASSOCIATION DES
 -- PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
