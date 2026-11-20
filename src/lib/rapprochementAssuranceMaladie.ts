@@ -38,8 +38,10 @@ import { formatDate } from './format'
 import { LIBELLES_DES_PARTS, montantDit, organismeDit } from './paiementsAssuranceMaladieVue'
 import type { LigneBancaire, PaiementAssuranceMaladie } from './types'
 
-/** La migration de l'association (NOE5) est PRÉPARÉE, pas appliquée : rien ne lit ni n'écrit la table tant qu'il est baissé. */
-export const ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES = false
+/** La migration de l'association (NOE5) est en production depuis le 20/11/2026 (collée, 247) : levé, le plan de sauvegarde
+ *  porte la table et l'onglet Banque (NOE5b) la lit et l'écrit. Baissé (son état d'avant, que les tests jouent encore), rien
+ *  ne la lisait ni ne l'écrivait. */
+export const ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES = true
 
 /** La journée comptable précède le crédit de zéro à cinq jours (conception 53, § 5 : à mesurer au premier relevé réel). */
 export const JOURS_APRES_LA_JOURNEE = JOURS_TOLERANCE_RAPPROCHEMENT

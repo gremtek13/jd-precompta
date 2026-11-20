@@ -10,6 +10,8 @@ import SuperAdminPage from './SuperAdminPage'
 
 const faux = vi.hoisted(() => ({
   prevues: false,
+  /** Le drapeau de l'association des paiements de l'assurance maladie (NOE5, en production depuis le 20/11/2026). */
+  associations: true,
   tables: {} as Record<string, Record<string, unknown>[]>,
   /** Une table dont la lecture annonce plus de lignes qu'elle n'en rend : lue en partie. */
   tronquee: null as string | null,
@@ -22,6 +24,11 @@ const faux = vi.hoisted(() => ({
 vi.mock('../lib/modulesDuCabinet', async (original) => {
   const m = await original<typeof import('../lib/modulesDuCabinet')>()
   return { ...m, get OPTIONS_DES_CABINETS_PREVUES() { return faux.prevues } }
+})
+
+vi.mock('../lib/rapprochementAssuranceMaladie', async (original) => {
+  const m = await original<typeof import('../lib/rapprochementAssuranceMaladie')>()
+  return { ...m, get ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES() { return faux.associations } }
 })
 
 vi.mock('../lib/supabase', () => ({
@@ -75,6 +82,7 @@ const TOUS = ['tenue', 'facturation', 'facture_electronique', 'assurance_maladie
 
 beforeEach(() => {
   faux.prevues = true
+  faux.associations = true
   faux.tronquee = null
   faux.lectures = []
   faux.reglages = []
@@ -90,6 +98,8 @@ beforeEach(() => {
     dossiers: [{ id: 'd1', cabinet_id: 'c1', nom: 'Dossier Envoyé', ventes_par_les_factures: false }],
     transmissions_factures: [{ id: 't1', dossier_id: 'd1', etat: 'envoi' }, { id: 't2', dossier_id: 'autre', etat: 'accepte' }],
     transmissions_encaissements: [],
+    // Un paiement de l'assurance maladie associé dans le dossier du premier cabinet, un autre hors de lui.
+    paiements_assurance_maladie_mouvements: [{ id: 'a1', dossier_id: 'd1' }, { id: 'a2', dossier_id: 'autre' }],
   }
 })
 
@@ -191,6 +201,32 @@ describe('OptionsDesCabinets — levé', () => {
     await afficher()
     expect(screen.getByText(/Les cabinets, leurs options et ce qui retient une fermeture n'ont pas pu être lus en entier/)).toBeTruthy()
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+  })
+
+  it('l’assurance maladie : un paiement associé d’un dossier du cabinet retient la fermeture, dite avant le clic', async () => {
+    await afficher()
+    expect(faux.lectures).toContain('paiements_assurance_maladie_mouvements')
+    const assurance = caseDe('Cabinet Fictif', 'Paiements de l\'assurance maladie')
+    expect(assurance.disabled).toBe(true)
+    expect(document.getElementById(assurance.getAttribute('aria-describedby')!)?.textContent)
+      .toContain('un paiement de l\'assurance maladie de ces dossiers est associé à un crédit du relevé : « Dossier Envoyé »')
+  })
+
+  it('l’assurance maladie, les associations lues en partie : aucune case', async () => {
+    faux.tronquee = 'paiements_assurance_maladie_mouvements'
+    await afficher()
+    expect(screen.getByText(/Les cabinets, leurs options et ce qui retient une fermeture n'ont pas pu être lus en entier/)).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+  })
+
+  it('l’état d’avant (le drapeau de NOE5 baissé) : la table n’est pas lue, la case s’offre et la confirmation dit que la base jugera', async () => {
+    faux.associations = false
+    await afficher()
+    expect(faux.lectures).not.toContain('paiements_assurance_maladie_mouvements')
+    const assurance = caseDe('Cabinet Fictif', 'Paiements de l\'assurance maladie')
+    expect(assurance.disabled).toBe(false)
+    await act(async () => { fireEvent.click(assurance) })
+    expect(screen.getByRole('dialog').textContent).toContain('la fermeture sera refusée, et le refus nommera les dossiers')
   })
 
   it('un cabinet aux options illisibles le dit, sans case ; les autres gardent les leurs', async () => {

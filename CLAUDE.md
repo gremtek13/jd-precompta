@@ -559,14 +559,18 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   lot ; le paiement justifie et contrôle le crédit du relevé, il ne compte dans aucun moteur ; rien d'associé sans clic.
   NOE1-NOE2 en module (`lib/paiementsAssuranceMaladie.ts`, sans sortie : `paiementsAssuranceMaladieSansSortie.test.ts`) :
   l'export CSV par un réglage des colonnes ; le fichier brut 576/580 ARRÊTÉ (le cahier public n'en cède aucun droit,
-  NOE2-Q1). NOE3 préparée, par l'outil, son drapeau baissé (`paiements_assurance_maladie`, `PAIEMENTS_ASSURANCE_MALADIE_PREVUS`,
-  NOE-migration, à appliquer avec l'écran) ; NOE4, l'écran, derrière le même drapeau (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
+  NOE2-Q1). **NOE3, NOE5 et BOR3 en production depuis le 20/11/2026 (246 à 248, collées ; BOR3-migration (A), BOR3RGPD-Q1 (C)),
+  `PAIEMENTS_ASSURANCE_MALADIE_PREVUS` et `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` levés (les écrans NOE4 et NOE5b ouverts), le
+  facturé au plan de sauvegarde seul (`FACTURES_ASSURANCE_MALADIE_EN_BASE` levé, l'écran BOR4 sous `FACTURES_ASSURANCE_MALADIE_PREVUES`
+  baissé) ; l'écran des modules dit avant le clic la fermeture d'« Assurance maladie » que retient un paiement associé ; restent
+  BOR4 à BOR7, NOE6 à NOE8, le lecteur du PDF des paiements, les essais et `rls.sql` rejoués en production, un premier import
+  réel** → « NOE3, NOE5 ET BOR3 EN PRODUCTION ». NOE3 (`paiements_assurance_maladie`) ; NOE4, l'écran (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
   section de l'onglet Banque et de « Ma banque » : en-têtes et genres seuls, réglage vide, agrégats avant le clic, la phrase de
   NOE3-Q1 ; offerte, avec l'association de NOE5b, sur un code NAF de la division 86 ou de la liste fermée
   (47.73Z, 47.74Z, 47.78A, 49.32Z ; NOE4Q1-Q1 (B)), et, gestes compris, dès qu'un import du dossier est lu, quel que soit
   le code (NOE4Q1-Q2 (A) ; une lecture partielle sans ligne ne prouve rien), l'onglet Informations disant pourquoi au cabinet,
-  `lib/sectionAssuranceMaladie.ts`, NOE4-Q1 (C)) ; l'association au relevé, NOE5 (module et migration préparée) puis NOE5b, l'écran (17/11/2026, derrière
-  `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` : la fiche d'un crédit, la section NOEMIE et son lot, un crédit associé hors des
+  `lib/sectionAssuranceMaladie.ts`, NOE4-Q1 (C)) ; l'association au relevé, NOE5 (module et migration) puis NOE5b, l'écran (17/11/2026 :
+  la fiche d'un crédit, la section NOEMIE et son lot, un crédit associé hors des
   candidats d'une vente, `lib/associationsAssuranceMaladieVue.ts` ; la fiche d'un crédit associé propose la catégorie la plus fréquente des autres crédits associés, choisie au clic, écrite par « Affecter » seul, `lib/categorieHabituelleAssuranceMaladie.ts`, NOE5B-Q1 (B)) → « NOE5 : L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ », « NOE5B : L'ÉCRAN DE L'ASSOCIATION », « L'IMPORT DES RETOURS NOEMIE ET LE RAPPROCHEMENT DES PAIEMENTS
   DE L'ASSURANCE MALADIE : LA CONCEPTION », « NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE »,
   « NOE4 : L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE ». Le facturé (BOR, 17/11/2026), recherché, rien d'écrit
@@ -580,9 +584,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   → « BOR : LES RÉPONSES DU CABINET, LES RÉGIMES, L'OUTIL LOCAL » ; BOR2 (19/11/2026), `lib/factureAssuranceMaladie.ts`, pur et sans sortie :
   des bordereaux lus aux agrégats (jour de création, régime lu ou choisi, caisse, part obligatoire, mutuelle « non dit »), « Assuré »
   oublié, le numéro du lot rendu par une seule fonction pour l'import, jamais sérialisé, aucune empreinte ici → « BOR2 : LE FACTURÉ EN AGRÉGATS ».
-  BOR3 (19/11/2026), préparée, à coller (`factures_assurance_maladie`, `FACTURES_ASSURANCE_MALADIE_PREVUES` baissé) : quatre tables
+  BOR3 (19/11/2026, `factures_assurance_maladie`) : quatre tables
   sans texte, le numéro d'un lot jamais gardé — son empreinte HMAC sous une clé du dossier qu'aucun rôle de l'API ne lit, hors de la
-  sauvegarde ; NOE3 amendée avant collage (`organisme_complementaire`) ; BOR3-Q1 et Q2 (A), BOR3-RGPD (B) tranchées le 19/11/2026, BOR3-migration ouverte → « BOR3 : LE FACTURÉ À
+  sauvegarde ; NOE3 amendée avant collage (`organisme_complementaire`) ; BOR3-Q1 et Q2 (A), BOR3-RGPD (B) tranchées le 19/11/2026 → « BOR3 : LE FACTURÉ À
   L'ASSURANCE MALADIE, EN BASE ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en

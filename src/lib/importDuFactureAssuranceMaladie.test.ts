@@ -5,6 +5,7 @@ import type { BordereauLu } from './bordereauDeTeletransmission'
 import { factureDesBordereaux } from './factureAssuranceMaladie'
 import {
   corpsDeLImportDuFacture,
+  FACTURES_ASSURANCE_MALADIE_EN_BASE,
   FACTURES_ASSURANCE_MALADIE_PREVUES,
   REFUS_DE_LA_FONCTION_DU_FACTURE,
   REFUS_DE_L_IMPORT_DU_FACTURE,
@@ -48,10 +49,11 @@ const avec = (chemin: (string | number)[], valeur: unknown): unknown => {
 }
 
 describe('le drapeau et les fichiers de la migration', () => {
-  it('baissé, la migration préparée, son retour et ses essais à côté, hors de l’export', () => {
+  it('la base levée, l’écran (BOR4) baissé ; la migration dans l’export (en production depuis le 20/11/2026), son retour et ses essais à côté', () => {
+    expect(FACTURES_ASSURANCE_MALADIE_EN_BASE).toBe(true)
     expect(FACTURES_ASSURANCE_MALADIE_PREVUES).toBe(false)
     for (const f of [MIGRATION, RETOUR, ...ESSAIS]) expect(existsSync(resolve(process.cwd(), f))).toBe(true)
-    expect(existsSync(resolve(process.cwd(), 'supabase/schema/20261119140000_factures_assurance_maladie.sql'))).toBe(false)
+    expect(existsSync(resolve(process.cwd(), 'supabase/preparees/20261119140000_factures_assurance_maladie.sql'))).toBe(false)
   })
 })
 

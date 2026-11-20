@@ -206,8 +206,8 @@ export const PRESENTATION_AU_CLIENT = 'L’export des paiements de ton logiciel 
 
 export const PRESENTATION_AU_CABINET = 'L’export des paiements du logiciel de facturation du praticien (un fichier CSV) se lit ici : '
   + 'ses colonnes se choisissent, l’aperçu donne les paiements par journée comptable, organisme et part, puis l’import ne fait '
-  + 'partir que ces chiffres. Ils justifient et contrôlent les crédits du relevé ; ils ne comptent dans aucun calcul (ni 2035, '
-  + 'ni CA3, ni FEC). L’association au relevé viendra ensuite.'
+  + 'partir que ces chiffres. Ils justifient et contrôlent les crédits du relevé ; ils n’entrent ni dans la 2035, ni dans la '
+  + 'CA3, ni dans le FEC. Chacun s’associe au crédit qui le verse : dans la fiche du crédit, ou en lot sous les imports.'
 
 /** La confirmation d'un retrait, qui nomme ce qui part. */
 export function confirmationDuRetrait(imp: ImportAssuranceMaladie, paiements: readonly PaiementAssuranceMaladie[], espace: EspaceVentes): string {

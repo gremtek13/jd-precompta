@@ -2,7 +2,7 @@ import type { FactureDesBordereaux } from './factureAssuranceMaladie'
 
 // L'IMPORT DU FACTURÉ À L'ASSURANCE MALADIE, CE QUI PART EN BASE ET CE QUE LA BASE REFUSE (conception 59, lot BOR3 ;
 // docs/conceptions/59-facture-a-l-assurance-maladie-bordereaux.md, § 14 ; la migration :
-// supabase/schema/20261120110200_factures_assurance_maladie.sql, PRÉPARÉE, pas appliquée). La décision du cabinet du
+// supabase/schema/20261120110200_factures_assurance_maladie.sql, en production depuis le 20/11/2026). La décision du cabinet du
 // 16/11/2026 : « on récupère que les chiffres et on stocke pas de données patients ».
 //
 // UN MODULE PUR, ET SANS SORTIE (bordereauDeTeletransmissionSansSortie.test.ts le garde, défauts plantés compris) : il ne lit
@@ -21,9 +21,15 @@ import type { FactureDesBordereaux } from './factureAssuranceMaladie'
 //     refus que la fonction d'import seule peut dire — le registre ne se lit par aucun rôle de l'API : un lot déjà importé,
 //     un lot dans la période d'un import restauré — composés à ses mots (`refusDuLotDejaImporte`, `refusDuLotDUnImportRestaure`).
 
-/** Le drapeau de la migration `factures_assurance_maladie` (BOR3, préparée le 19/11/2026, pas appliquée) : baissé, aucun
- *  écran ne lit ni n'écrit ses quatre tables, et le plan de sauvegarde ne les nomme pas (une sauvegarde lirait des tables
- *  absentes et échouerait). Il se lève le jour de la migration (BOR7), avec l'écran (BOR4). */
+/** Le drapeau de la BASE, à part de celui de l'écran (le patron de `COMPTES_BANCAIRES_EN_BASE`) : la migration
+ *  `factures_assurance_maladie` (BOR3) est en production depuis le 20/11/2026 (collée, 248). Levé, le plan de sauvegarde
+ *  porte ses quatre tables (la clé et le registre lus vides : aucune policy) et l'écran de la restauration dit ce que la
+ *  sauvegarde tait (lib/restaurationInterrompue.ts). Baissé (son état d'avant, que les tests jouent encore), le plan ne les
+ *  nommait pas : une sauvegarde aurait lu des tables absentes et échoué. */
+export const FACTURES_ASSURANCE_MALADIE_EN_BASE = true
+
+/** Le drapeau de l'ÉCRAN d'import du facturé (BOR4, pas encore écrit) : baissé, aucun écran ne lit ni n'écrit les quatre
+ *  tables. Il se lève avec l'écran, fini (BOR7). */
 export const FACTURES_ASSURANCE_MALADIE_PREVUES = false
 
 /** Un lot, tel qu'il part à l'appel : ses quatre clés, et aucune autre. Le numéro ne s'écrit nulle part en base. */

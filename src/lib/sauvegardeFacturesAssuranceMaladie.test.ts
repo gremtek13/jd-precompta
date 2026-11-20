@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FACTURES_ASSURANCE_MALADIE_PREVUES } from './importDuFactureAssuranceMaladie'
+import { FACTURES_ASSURANCE_MALADIE_EN_BASE } from './importDuFactureAssuranceMaladie'
 import {
   auPlanAujourdHui,
   auPlanDuFactureAssuranceMaladie,
@@ -24,9 +24,10 @@ import {
 } from './sauvegarde'
 
 // LE FACTURÉ À L'ASSURANCE MALADIE AU PLAN DE SAUVEGARDE (conception 59, BOR3). Sa migration, `factures_assurance_maladie`,
-// est préparée (supabase/schema/20261120110200_factures_assurance_maladie.sql) et le drapeau baissé : le plan effectif ne
-// dit RIEN des quatre tables — une sauvegarde lirait des tables absentes et échouerait ; le plan PRÉVU les porte, et les deux
-// états du drapeau se jouent (`vi.doMock`, plus bas). La clé et le registre n'ont aucune policy : leur lecture rend zéro
+// est en production depuis le 20/11/2026 (collée, 248 ; supabase/schema/20261120110200_factures_assurance_maladie.sql) et
+// le drapeau de la BASE levé (`FACTURES_ASSURANCE_MALADIE_EN_BASE` ; celui de l'écran, BOR4, reste baissé) : le plan
+// effectif porte les quatre tables. Son état d'avant — baissé, le plan ne disait RIEN d'elles, une sauvegarde aurait lu des
+// tables absentes et échoué — se joue encore, avec l'autre (`vi.doMock`, plus bas). La clé et le registre n'ont aucune policy : leur lecture rend zéro
 // ligne, et ni la sauvegarde ni la restauration n'en portent jamais rien.
 
 const TABLES = ['cles_des_lots_teletransmission', 'imports_factures_assurance_maladie', 'factures_assurance_maladie',
@@ -39,18 +40,19 @@ describe('le filtre du plan, côté facturé à l’assurance maladie', () => {
     for (const t of TABLES) {
       expect(auPlanDuFactureAssuranceMaladie(t, false)).toBe(false)
       expect(auPlanDuFactureAssuranceMaladie(t, true)).toBe(true)
-      expect(auPlanAujourdHui(t)).toBe(FACTURES_ASSURANCE_MALADIE_PREVUES)
+      expect(auPlanAujourdHui(t)).toBe(FACTURES_ASSURANCE_MALADIE_EN_BASE)
     }
     expect(auPlanDuFactureAssuranceMaladie('memberships', false)).toBe(true)
   })
 
-  it('drapeau baissé, le plan effectif ne nomme pas les tables ; leur clé est la commune', () => {
+  it('le plan effectif nomme les tables selon le drapeau de la base (levé : la migration est en base) ; leur clé est la commune', () => {
+    expect(FACTURES_ASSURANCE_MALADIE_EN_BASE).toBe(true)
     const nommees = new Set([
       ...RELATIONS.flatMap((r) => [r.enfant, r.parent]), ...ORDRE_RESTAURATION, ...Object.keys(CHEMINS_DOSSIER),
       ...TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((a) => a.table), ...Object.keys(CLES_PRIMAIRES),
     ])
     for (const t of TABLES) {
-      expect(nommees.has(t)).toBe(FACTURES_ASSURANCE_MALADIE_PREVUES)
+      expect(nommees.has(t)).toBe(FACTURES_ASSURANCE_MALADIE_EN_BASE)
       expect(Object.keys(CLES_PRIMAIRES_PREVUES)).not.toContain(t)
       expect(clePrimaire(t)).toEqual(['id'])
     }
@@ -105,7 +107,7 @@ describe('le facturé dans les deux états du drapeau : la réinsertion', () => 
   async function sauvegardeSous(drapeau: boolean) {
     vi.resetModules()
     vi.doMock('./importDuFactureAssuranceMaladie', async (original) => ({
-      ...(await original<typeof import('./importDuFactureAssuranceMaladie')>()), FACTURES_ASSURANCE_MALADIE_PREVUES: drapeau,
+      ...(await original<typeof import('./importDuFactureAssuranceMaladie')>()), FACTURES_ASSURANCE_MALADIE_EN_BASE: drapeau,
     }))
     return import('./sauvegarde')
   }

@@ -22,9 +22,10 @@ import {
 } from './sauvegarde'
 
 // LES PAIEMENTS DE L'ASSURANCE MALADIE AU PLAN DE SAUVEGARDE (conception 53, NOE3). Leur migration,
-// `paiements_assurance_maladie`, est préparée (supabase/schema/20261120110000_paiements_assurance_maladie.sql) et le
-// drapeau baissé : le plan effectif ne dit RIEN des deux tables — une sauvegarde lirait des tables absentes et échouerait ; le
-// plan PRÉVU les porte, et les deux états du drapeau se jouent (`vi.doMock`, plus bas).
+// `paiements_assurance_maladie`, est en production depuis le 20/11/2026 (collée, 246 ;
+// supabase/schema/20261120110000_paiements_assurance_maladie.sql) et le drapeau levé : le plan effectif porte les deux
+// tables. Son état d'avant — baissé, le plan ne disait RIEN d'elles, une sauvegarde aurait lu des tables absentes et échoué
+// — se joue encore, avec l'autre (`vi.doMock`, plus bas).
 
 const TABLES = ['imports_assurance_maladie', 'paiements_assurance_maladie'] as const
 
@@ -39,7 +40,8 @@ describe('le filtre du plan, côté paiements de l’assurance maladie', () => {
     expect(auPlanDesPaiementsAssuranceMaladie('memberships', false)).toBe(true)
   })
 
-  it('drapeau baissé, le plan effectif ne nomme pas les tables ; leur clé est la commune', () => {
+  it('le plan effectif nomme les tables selon le drapeau (levé : la migration est en base) ; leur clé est la commune', () => {
+    expect(PAIEMENTS_ASSURANCE_MALADIE_PREVUS).toBe(true)
     const nommees = new Set([
       ...RELATIONS.flatMap((r) => [r.enfant, r.parent]), ...ORDRE_RESTAURATION, ...Object.keys(CHEMINS_DOSSIER),
       ...TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((a) => a.table), ...Object.keys(CLES_PRIMAIRES),

@@ -75,10 +75,10 @@ const importDe = (paiements: PaiementAgrege[], rejets: ImportAEnvoyer['rejets'] 
 const JOUR = '2026-11-16'
 
 describe('le drapeau et les fichiers de la migration', () => {
-  it('baissé, la migration préparée, son retour et son essai à côté, hors de l’export', () => {
-    expect(PAIEMENTS_ASSURANCE_MALADIE_PREVUS).toBe(false)
+  it('levé, la migration dans l’export (en production depuis le 20/11/2026), son retour et son essai à côté, plus rien de préparé', () => {
+    expect(PAIEMENTS_ASSURANCE_MALADIE_PREVUS).toBe(true)
     for (const f of [MIGRATION, RETOUR, ESSAI]) expect(existsSync(resolve(process.cwd(), f))).toBe(true)
-    expect(existsSync(resolve(process.cwd(), 'supabase/schema/20261116191000_paiements_assurance_maladie.sql'))).toBe(false)
+    expect(existsSync(resolve(process.cwd(), 'supabase/preparees/20261116191000_paiements_assurance_maladie.sql'))).toBe(false)
   })
 })
 

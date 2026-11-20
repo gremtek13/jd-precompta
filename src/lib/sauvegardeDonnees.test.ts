@@ -239,10 +239,13 @@ describe('export d’un dossier', () => {
     // fichiers, les comptes, la ligne du cabinet et le catalogue des rôles comptables (ligne 43, PC1).
     // Le logo des factures (A5c1) s'y ajoute le jour où sa migration est en base : le manifeste suit le drapeau.
     expect(manifeste.horsPerimetre).toEqual(horsPerimetre(LOGO_DES_FACTURES_EXPORTE, ORIGINAUX_DES_IMPORTS_PREVUS))
-    expect(manifeste.horsPerimetre).toHaveLength(8 + (LOGO_DES_FACTURES_EXPORTE ? 1 : 0) + (ORIGINAUX_DES_IMPORTS_PREVUS ? 1 : 0))
+    // Les secrets que la sauvegarde tait : les connexions et les compteurs (quatre), et, la migration du facturé à l'assurance
+    // maladie en base (BOR3, en production depuis le 20/11/2026), son registre et sa clé (un cinquième).
+    expect(HORS_PERIMETRE_DES_SECRETS).toHaveLength(5)
+    expect(manifeste.horsPerimetre).toHaveLength(4 + HORS_PERIMETRE_DES_SECRETS.length + (LOGO_DES_FACTURES_EXPORTE ? 1 : 0) + (ORIGINAUX_DES_IMPORTS_PREVUS ? 1 : 0))
     expect(manifeste.horsPerimetre[3]).toMatch(/catalogue des rôles comptables/)
     // RESTAU-Q3 : les connexions et les compteurs de numérotation, que leurs tables sans policy rendent vides.
-    expect(manifeste.horsPerimetre.slice(4, 8)).toEqual([...HORS_PERIMETRE_DES_SECRETS])
+    expect(manifeste.horsPerimetre.slice(4, 4 + HORS_PERIMETRE_DES_SECRETS.length)).toEqual([...HORS_PERIMETRE_DES_SECRETS])
     expect(manifeste.comptes.facultatifs).toEqual(['u1'])
     expect(manifeste.referencesExternes).toEqual([
       { table: 'dossiers', colonne: 'cabinet_id', parent: 'cabinets', valeurs: [CABINET] },
@@ -252,7 +255,7 @@ describe('export d’un dossier', () => {
   it('dit ce qu’elle ne porte pas du seau des ventes dès que la migration du logo est en base, et seulement alors', () => {
     // Le seau `ventes` (A5c1) n'est ni une pièce ni un pack : l'export de pack ne le porte pas. Depuis le format 2 (A5c2b),
     // la sauvegarde porte le logo que les versions désignent ; le manifeste dit ce qu'elle ne porte pas du seau.
-    expect(horsPerimetre(false, false)).toHaveLength(8)
+    expect(horsPerimetre(false, false)).toHaveLength(4 + HORS_PERIMETRE_DES_SECRETS.length)
     expect(horsPerimetre(false, false).some((ligne) => /logo/i.test(ligne))).toBe(false)
     expect(horsPerimetre(true, false)).toEqual([...horsPerimetre(false, false), LOGO_HORS_PERIMETRE])
     expect(LOGO_HORS_PERIMETRE).toMatch(/seau `ventes`/)

@@ -36,10 +36,11 @@ import { parseDateBancaire, parseMontantBancaire } from './csv'
 // ou nul) n'est pas un paiement. Les refus de la base (`refus_de_l_import_assurance_maladie` et la fonction d'import) sont
 // redits ici, sous les mêmes mots et dans le même ordre, avant le clic (`refusDeLImport`, `refusAvantLEnvoi`).
 
-/** Le drapeau de la migration `paiements_assurance_maladie` (NOE3, préparée le 16/11/2026, pas appliquée) : baissé, aucun
- *  écran ne lit ni n'écrit les deux tables, et le plan de sauvegarde ne les nomme pas (une sauvegarde lirait des tables
- *  absentes et échouerait). Il se lève le jour de la migration (NOE8). */
-export const PAIEMENTS_ASSURANCE_MALADIE_PREVUS = false
+/** Le drapeau de la migration `paiements_assurance_maladie` (NOE3, en production depuis le 20/11/2026, collée, 246) : levé,
+ *  le plan de sauvegarde porte les deux tables et l'écran d'import (NOE4) les lit et les écrit. Baissé (son état d'avant,
+ *  que les tests jouent encore), aucun écran ne les lisait et le plan ne les nommait pas : une sauvegarde aurait lu des
+ *  tables absentes et échoué. Un seul drapeau porte la base et l'écran : l'écran était fini quand la migration est entrée. */
+export const PAIEMENTS_ASSURANCE_MALADIE_PREVUS = true
 
 /** Les parts d'un paiement, la liste fermée de la base (`paiements_assurance_maladie_part`). */
 export type PartDuPaiement = 'obligatoire' | 'complementaire' | 'forfait'

@@ -109,7 +109,7 @@ export default function OptionsDesCabinets({ relecture }: { relecture: number })
                   <>
                     {options.neuf && <p className="muted">{CABINET_NEUF}</p>}
                     <div style={styleCases}>
-                      {casesDuCabinet(options.ouverts, (m) => dossiersQuiRetiennent(m, cabinet.id, lu.dossiers, lu.dossiersEnEnvoi))
+                      {casesDuCabinet(options.ouverts, (m) => dossiersQuiRetiennent(m, cabinet.id, lu.dossiers, lu.dossiersEnEnvoi, lu.dossiersAssocies))
                         .map((c) => {
                           const idCase = `module-${cabinet.id}-${c.module}`
                           const dependance = phraseDeLaDependance(c)

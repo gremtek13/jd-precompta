@@ -16,10 +16,11 @@ import {
 // applique à un cabinet et à ses lignes lues. Il porte en plus :
 //   - l'état des options d'un cabinet, lu de ses lignes : une ligne absente est un module FERMÉ (OPT-Q3 (B) : un cabinet neuf
 //     n'a que le socle), une ligne d'une forme inconnue ou rendue deux fois rend le cabinet ILLISIBLE (aucun geste) ;
-//   - les dossiers qui retiennent une extinction, sur le critère de la base pour les deux modules que l'écran peut lire
-//     (la facturation d'un dossier basculé ; la facture électronique d'un envoi parti sans issue connue, `etat = 'envoi'`),
-//     confronté au texte de la migration par optionsDuCabinetVue.test.ts ; les paiements de l'assurance maladie associés,
-//     la base seule les juge (la table de NOE5 n'est pas en base, l'écran ne la lit pas) ;
+//   - les dossiers qui retiennent une extinction, sur le critère de la base pour les trois modules qu'elle garde (la
+//     facturation d'un dossier basculé ; la facture électronique d'un envoi parti sans issue connue, `etat = 'envoi'` ;
+//     l'assurance maladie d'un paiement associé à un crédit du relevé, la table de NOE5, en production depuis le
+//     20/11/2026), confronté au texte de la migration par optionsDuCabinetVue.test.ts. Sans la lecture des associations
+//     (son drapeau baissé, l'état d'avant), l'écran ne juge pas l'assurance maladie : la base seule, et la confirmation le dit ;
 //   - les mots de la confirmation, qui NOMMENT le cabinet, le module et ce qui disparaît des écrans.
 // Une option ne change ni qui lit quoi ni aucun chiffre (§ 3.1, § 4) : la confirmation le dit.
 
@@ -90,20 +91,23 @@ function ordreDeLaBase(a: { nom: string; id: string }, b: { nom: string; id: str
  * Les dossiers du cabinet qui retiennent la fermeture du module, dans l'ordre que la base leur donne (leur nom en
  * `collate "C"`, puis leur identifiant) : la facturation, les dossiers basculés ; la facture électronique, ceux dont une
  * facture ou une déclaration d'encaissement est partie sans issue connue (`dossiersEnEnvoi`, lus des deux tables de
- * transmissions à l'état `envoi`). Nul quand l'écran ne peut pas le savoir : les paiements de l'assurance maladie associés,
- * la base seule les juge. Vide pour un module que rien ne retient.
+ * transmissions à l'état `envoi`) ; l'assurance maladie, ceux dont un paiement est associé à un crédit du relevé
+ * (`dossiersAssocies`, lus de la table de l’association, NOE5). Nul quand l'écran ne peut pas le savoir : les
+ * associations non lues (`dossiersAssocies` nul), la base seule les juge. Vide pour un module que rien ne retient.
  */
 export function dossiersQuiRetiennent(
   module: ModuleOptionnel,
   cabinetId: string,
   dossiers: readonly DossierDuParc[],
   dossiersEnEnvoi: ReadonlySet<string>,
+  dossiersAssocies: ReadonlySet<string> | null,
 ): string[] | null {
   if (EXTINCTIONS_GARDEES[module] === undefined) return []
   const siens = dossiers.filter((d) => d.cabinet_id === cabinetId)
   let retenants: DossierDuParc[]
   if (module === 'facturation') retenants = siens.filter((d) => d.ventes_par_les_factures)
   else if (module === 'facture_electronique') retenants = siens.filter((d) => dossiersEnEnvoi.has(d.id))
+  else if (module === 'assurance_maladie' && dossiersAssocies !== null) retenants = siens.filter((d) => dossiersAssocies.has(d.id))
   else return null
   return [...retenants].sort(ordreDeLaBase).map((d) => d.nom)
 }
@@ -122,6 +126,8 @@ export type CaseDUnModule = {
   readonly ouvreAussi: readonly ModuleOptionnel[]
   /** Ce que le module suppose, dit sous la case. */
   readonly suppose: readonly ModuleOptionnel[]
+  /** Les dossiers qui retiennent l'extinction n'ont pas pu être jugés par l'écran (`retenants` nul) : la base seule. */
+  readonly jugeParLaBaseSeule: boolean
 }
 
 /**
@@ -135,7 +141,8 @@ export function casesDuCabinet(
 ): CaseDUnModule[] {
   return MODULES_OPTIONNELS.map((module) => {
     const ouverte = ouverts.includes(module)
-    const refus = ouverte ? (refusDeFermeture(module, ouverts) ?? refusDExtinction(module, retenants(module) ?? [])) : null
+    const retenus = retenants(module)
+    const refus = ouverte ? (refusDeFermeture(module, ouverts) ?? refusDExtinction(module, retenus ?? [])) : null
     return {
       module,
       libelle: LIBELLES_DES_MODULES[module],
@@ -144,6 +151,7 @@ export function casesDuCabinet(
       refus,
       ouvreAussi: ouverte ? [] : modulesAOuvrir(module).filter((m) => m !== module && !ouverts.includes(m)),
       suppose: DEPENDANCES[module],
+      jugeParLaBaseSeule: retenus === null,
     }
   })
 }
@@ -176,7 +184,7 @@ export const ENCAISSEMENTS_A_DECLARER =
   'Avant de fermer, vérifie qu’aucun encaissement des dossiers de ce cabinet ne reste à déclarer sur une plateforme : '
   + 'cet écran ne les compte pas, et la fermeture ne les retient pas.'
 
-/** Ce que la base juge seule, avant de fermer les paiements de l'assurance maladie. */
+/** Ce que la base juge seule, avant de fermer les paiements de l'assurance maladie, quand l'écran n'a pas lu les associations. */
 export const ASSURANCE_MALADIE_JUGEE_PAR_LA_BASE =
   'Si un paiement de l’assurance maladie d’un dossier de ce cabinet est associé à un crédit du relevé, la fermeture sera refusée, '
   + 'et le refus nommera les dossiers.'
@@ -196,6 +204,6 @@ export function motsDeLaConfirmation(cabinet: string, c: CaseDUnModule): MotsDeL
     RIEN_N_EST_SUPPRIME,
   ]
   if (c.module === 'facture_electronique') phrases.push(ENCAISSEMENTS_A_DECLARER)
-  if (c.module === 'assurance_maladie') phrases.push(ASSURANCE_MALADIE_JUGEE_PAR_LA_BASE)
+  if (c.module === 'assurance_maladie' && c.jugeParLaBaseSeule) phrases.push(ASSURANCE_MALADIE_JUGEE_PAR_LA_BASE)
   return { titre: `Fermer le module ${module} au cabinet « ${cabinet} » ?`, phrases, bouton: 'Fermer le module' }
 }

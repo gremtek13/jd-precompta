@@ -513,7 +513,10 @@ describe('les essais de la base, rejoués en production', () => {
     // aucun semis, il se joue comme un essai de la production).
     // Trente-quatre le 20/11/2026 : `plafondsHorsDuClient` sorti (OPT1-Q3 en production, 20261120101707, par l'outil ; il ne
     // cherche aucun semis, il se joue comme un essai de la production).
-    expect(cas.length).toBe(34)
+    // Trente et un le même jour : `paiementsAssuranceMaladie`, `associationPaiementsAssuranceMaladie` et
+    // `facturesAssuranceMaladie` sortis (NOE3, NOE5 et BOR3 en production, 20261120110000, 110100 et 110200, collées ; ils ne
+    // cherchent aucun semis, ils se jouent comme des essais de la production).
+    expect(cas.length).toBe(31)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
