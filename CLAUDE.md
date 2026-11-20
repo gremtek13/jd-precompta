@@ -595,6 +595,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   cinq attentions de la Vue d'ensemble et de la Révision (cycle recettes), jamais préalables, sous la règle de la section et le module ;
   le contrôle de l'exercice à la date du CRÉDIT ; le SNIR jamais comparé (NOE-E1) ; la piste d'audit cite le paiement associé
   (journée, factures ; lue en partie, l'export se refuse), le FEC inchangé → « NOE6 : LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE ».
+  BOR6, première partie (20/11/2026, BOR-Q9 (A)), derrière `REFUS_DES_BORDEREAUX_PREVU` baissé : un PDF qui a la forme d'un
+  bordereau de télétransmission (`porteLaFormeDUnBordereau`, BOR1) se refuse dans les quatre préparateurs d'un fichier choisi
+  (`sansBordereau`, `refusDesBordereauxAuDepot.test.ts`), avant tout envoi ; restent `receive-email`, l'état des paiements, une
+  image → « BOR6 : LE REFUS D'UN BORDEREAU DE TÉLÉTRANSMISSION AU DÉPÔT ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)

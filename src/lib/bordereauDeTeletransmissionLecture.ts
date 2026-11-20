@@ -69,11 +69,26 @@ export function fragmentsDeLaPage(items: readonly unknown[]): FragmentDeTexte[] 
   return fragments
 }
 
+/** Le texte des pages d'un PDF, ou le refus de l'ouvrir, sous une raison fixe (jamais le message de pdf.js). */
+export type PagesDuPdf = { etat: 'lu'; pages: PageDeTexte[] } | { etat: 'refuse'; raison: string }
+
 /**
- * Lit un bordereau de télétransmission depuis le fichier choisi. Ne rejette jamais. Le fichier n'est lu qu'ici ; il n'est
- * gardé nulle part, et la tâche de pdf.js est détruite avant le retour.
+ * Les options de la lecture des pages : `pagesMax`, la borne du nombre de pages (nulle : toutes) ; `arreterApres`, une page
+ * après laquelle la lecture s'arrête (le dépôt, BOR6 : dès qu'une page a la forme d'un bordereau, la suite n'apprend rien).
  */
-export async function lireLeBordereauDeTeletransmission(fichier: Blob, ouvrir: OuvrirLeBordereau = ouvrirAvecPdfJs): Promise<LectureDuBordereau> {
+export interface OptionsDesPages {
+  pagesMax: number | null
+  arreterApres?: (page: PageDeTexte) => boolean
+  /** Vrai : une page qui ne se lit pas est sautée, les autres lues (le dépôt) ; sinon elle refuse le fichier (l'import). */
+  sauterLesPagesIllisibles?: boolean
+}
+
+/**
+ * Le texte des pages d'un PDF, par pdf.js, sur des octets locaux : la lecture partagée par l'import d'un bordereau (BOR1)
+ * et par le refus d'un bordereau au dépôt (BOR6, lib/refusDesBordereauxLecture.ts). Ne rejette jamais ; la tâche de pdf.js
+ * est détruite avant le retour.
+ */
+export async function pagesDuPdf(fichier: Blob, ouvrir: OuvrirLeBordereau, options: OptionsDesPages): Promise<PagesDuPdf> {
   let octets: Uint8Array
   try {
     // Des octets à elle : pdf.js vide (transfère à son ouvrier) le tampon qu'on lui passe.
@@ -95,23 +110,46 @@ export async function lireLeBordereauDeTeletransmission(fichier: Blob, ouvrir: O
       return { etat: 'refuse', raison: 'le fichier ne s’ouvre pas comme un PDF' }
     }
     if (!Number.isInteger(document.numPages) || document.numPages < 1) return { etat: 'refuse', raison: 'le PDF n’a aucune page' }
-    if (document.numPages > PAGES_MAX) return { etat: 'refuse', raison: `le PDF a plus de ${PAGES_MAX} pages : ce n’est pas un bordereau de lot` }
+    if (options.pagesMax !== null && document.numPages > options.pagesMax) {
+      return { etat: 'refuse', raison: `le PDF a plus de ${options.pagesMax} pages : ce n’est pas un bordereau de lot` }
+    }
     const pages: PageDeTexte[] = []
     for (let numero = 1; numero <= document.numPages; numero++) {
+      let page: PageDeTexte
       try {
         const contenu = await (await document.getPage(numero)).getTextContent()
-        pages.push({ fragments: fragmentsDeLaPage(contenu.items) })
+        page = { fragments: fragmentsDeLaPage(contenu.items) }
       } catch {
+        if (options.sauterLesPagesIllisibles === true) continue
         return { etat: 'refuse', raison: `la page ${numero} du PDF ne se lit pas` }
       }
+      pages.push(page)
+      if (options.arreterApres?.(page) === true) break
     }
-    if (pages.every((p) => 'fragments' in p && p.fragments.every((f) => f.texte.trim() === ''))) {
-      return { etat: 'refuse', raison: 'le PDF n’a aucun texte (une image ou un document numérisé) : rien ne se lit sans OCR, et aucun OCR ne s’applique à ce fichier' }
-    }
-    return lireBordereauxDeTeletransmission(pages)
+    return { etat: 'lu', pages }
   } catch {
-    return { etat: 'refuse', raison: 'le bordereau n’a pas pu être lu' }
+    return { etat: 'refuse', raison: 'le fichier n’a pas pu être lu' }
   } finally {
     try { await tache.destroy() } catch { /* rien à libérer */ }
+  }
+}
+
+/** L'ouverture par défaut : pdf.js du navigateur, son ouvrier servi par l'application. */
+export const OUVRIR_AVEC_PDF_JS: OuvrirLeBordereau = ouvrirAvecPdfJs
+
+/**
+ * Lit un bordereau de télétransmission depuis le fichier choisi. Ne rejette jamais. Le fichier n'est lu qu'ici ; il n'est
+ * gardé nulle part, et la tâche de pdf.js est détruite avant le retour.
+ */
+export async function lireLeBordereauDeTeletransmission(fichier: Blob, ouvrir: OuvrirLeBordereau = ouvrirAvecPdfJs): Promise<LectureDuBordereau> {
+  try {
+    const lu = await pagesDuPdf(fichier, ouvrir, { pagesMax: PAGES_MAX })
+    if (lu.etat === 'refuse') return lu
+    if (lu.pages.every((p) => 'fragments' in p && p.fragments.every((f) => f.texte.trim() === ''))) {
+      return { etat: 'refuse', raison: 'le PDF n’a aucun texte (une image ou un document numérisé) : rien ne se lit sans OCR, et aucun OCR ne s’applique à ce fichier' }
+    }
+    return lireBordereauxDeTeletransmission(lu.pages)
+  } catch {
+    return { etat: 'refuse', raison: 'le bordereau n’a pas pu être lu' }
   }
 }
