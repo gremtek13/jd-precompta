@@ -22,7 +22,10 @@ const RACINE_NAVIGATEURS = '/opt/pw-browsers'
 const revision = existsSync(RACINE_NAVIGATEURS)
   ? readdirSync(RACINE_NAVIGATEURS).filter((d) => /^chromium-\d+$/.test(d)).sort().pop()
   : undefined
-const executable = process.env.CHROMIUM ?? (revision ? `${RACINE_NAVIGATEURS}/${revision}/chrome-linux/chrome` : undefined)
+const executable = process.env.CHROMIUM ?? (revision
+  // La révision préinstallée range son exécutable sous `chrome-linux` ou, plus récente, sous `chrome-linux64`.
+  ? ['chrome-linux', 'chrome-linux64'].map((d) => `${RACINE_NAVIGATEURS}/${revision}/${d}/chrome`).find((f) => existsSync(f))
+  : undefined)
 
 // Le Chromium du banc se présente comme « HeadlessChrome », que la barre latérale ne reconnaît pas
 // (voir lib/installation.ts) : sans une signature ordinaire, les captures ne montreraient pas l'entrée

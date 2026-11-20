@@ -16,7 +16,10 @@ const SORTIE = new URL('./sorties/', import.meta.url).pathname
 mkdirSync(SORTIE, { recursive: true })
 const RACINE = '/opt/pw-browsers'
 const revision = existsSync(RACINE) ? readdirSync(RACINE).filter((d) => /^chromium-\d+$/.test(d)).sort().pop() : undefined
-const executable = process.env.CHROMIUM ?? (revision ? `${RACINE}/${revision}/chrome-linux/chrome` : undefined)
+const executable = process.env.CHROMIUM ?? (revision
+  // La révision préinstallée range son exécutable sous `chrome-linux` ou, plus récente, sous `chrome-linux64`.
+  ? ['chrome-linux', 'chrome-linux64'].map((d) => `${RACINE}/${revision}/${d}/chrome`).find((f) => existsSync(f))
+  : undefined)
 
 const numero = process.argv[2] ?? 'D2026-0001'
 const dossier = process.argv[3] ?? 'd1'

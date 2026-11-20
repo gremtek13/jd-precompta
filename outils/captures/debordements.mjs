@@ -2463,7 +2463,10 @@ const RACINE_NAVIGATEURS = '/opt/pw-browsers'
 const revision = existsSync(RACINE_NAVIGATEURS)
   ? readdirSync(RACINE_NAVIGATEURS).filter((d) => /^chromium-\d+$/.test(d)).sort().pop()
   : undefined
-const executable = process.env.CHROMIUM ?? (revision ? `${RACINE_NAVIGATEURS}/${revision}/chrome-linux/chrome` : undefined)
+const executable = process.env.CHROMIUM ?? (revision
+  // La révision préinstallée range son exécutable sous `chrome-linux` ou, plus récente, sous `chrome-linux64`.
+  ? ['chrome-linux', 'chrome-linux64'].map((d) => `${RACINE_NAVIGATEURS}/${revision}/${d}/chrome`).find((f) => existsSync(f))
+  : undefined)
 
 const BASE = 'http://127.0.0.1:5199/'
 const navigateur = await chromium.launch({ executablePath: executable })
