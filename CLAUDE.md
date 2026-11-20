@@ -562,7 +562,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   NOE2-Q1). **NOE3, NOE5 et BOR3 en production depuis le 20/11/2026 (246 à 248, collées ; BOR3-migration (A), BOR3RGPD-Q1 (C)),
   `PAIEMENTS_ASSURANCE_MALADIE_PREVUS` et `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` levés (les écrans NOE4 et NOE5b ouverts), le
   facturé au plan de sauvegarde seul (`FACTURES_ASSURANCE_MALADIE_EN_BASE` levé, l'écran BOR4 sous `FACTURES_ASSURANCE_MALADIE_PREVUES`
-  baissé) ; l'écran des modules dit avant le clic la fermeture d'« Assurance maladie » que retient un paiement associé ; restent
+  baissé) ; l'écran des modules dit avant le clic le refus de fermer « Paiements de l'assurance maladie » qu'un paiement associé retient ; restent
   BOR4 à BOR7, NOE6 à NOE8, le lecteur du PDF des paiements, les essais et `rls.sql` rejoués en production, un premier import
   réel** → « NOE3, NOE5 ET BOR3 EN PRODUCTION ». NOE3 (`paiements_assurance_maladie`) ; NOE4, l'écran (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
   section de l'onglet Banque et de « Ma banque » : en-têtes et genres seuls, réglage vide, agrégats avant le clic, la phrase de
