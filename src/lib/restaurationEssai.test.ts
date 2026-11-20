@@ -36,7 +36,7 @@ import { EXERCICES_DECALES_PREVUS, TABLES_DES_EXERCICES } from './exercices'
 import { HAUSSE_DU_CHIFFRE_D_AFFAIRES_PREVUE } from './hausseDuChiffreDAffaires'
 import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from './paiementsAssuranceMaladie'
 import { OPTIONS_DES_CABINETS_EN_BASE, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
-import { FACTURES_ASSURANCE_MALADIE_PREVUES } from './importDuFactureAssuranceMaladie'
+import { FACTURES_ASSURANCE_MALADIE_EN_BASE } from './importDuFactureAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssuranceMaladie'
 import {
   CHEMINS_DOSSIER,
@@ -1322,7 +1322,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const avecLesPaiementsAMDuJour = PAIEMENTS_ASSURANCE_MALADIE_PREVUS
     ? avecLesPaiementsAssuranceMaladie(avecLaHausseDuJour, paiementsAM) : avecLaHausseDuJour
   const factureAM = blocDuFactureAssuranceMaladie(texteDeLEssai)
-  const avecLeFactureAMDuJour = FACTURES_ASSURANCE_MALADIE_PREVUES
+  const avecLeFactureAMDuJour = FACTURES_ASSURANCE_MALADIE_EN_BASE
     ? avecLeFactureAssuranceMaladie(avecLesPaiementsAMDuJour, factureAM) : avecLesPaiementsAMDuJour
   const associationAM = blocDeLAssociationAssuranceMaladie(texteDeLEssai)
   const avecLAssociationAMDuJour = ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES

@@ -23,10 +23,10 @@ import {
 } from './sauvegarde'
 
 // L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AU PLAN DE SAUVEGARDE (conception 53, NOE5 ; au plan par NOE8). Sa
-// migration, `association_paiements_assurance_maladie`, est préparée
-// (supabase/schema/20261120110100_association_paiements_assurance_maladie.sql) et le drapeau baissé : le plan effectif ne
-// dit RIEN de la table — une sauvegarde lirait une table absente et échouerait ; le plan PRÉVU la porte, et les deux états du
-// drapeau se jouent (`vi.doMock`, plus bas). Les relations ne se filtrent pas (RELATIONS = RELATIONS_PREVUES, comme pour les
+// migration, `association_paiements_assurance_maladie`, est en production depuis le 20/11/2026 (collée, 247 ;
+// supabase/schema/20261120110100_association_paiements_assurance_maladie.sql) et le drapeau levé : le plan effectif porte la
+// table. Son état d'avant — baissé, le plan ne disait RIEN d'elle, une sauvegarde aurait lu une table absente et échoué — se
+// joue encore, avec l'autre (`vi.doMock`, plus bas). Les relations ne se filtrent pas (RELATIONS = RELATIONS_PREVUES, comme pour les
 // tables de NOE3 et de BOR3) : seuls l'ordre, les chemins et les clés suivent le drapeau.
 
 const TABLE = 'paiements_assurance_maladie_mouvements'
@@ -42,7 +42,8 @@ describe('le filtre du plan, côté association des paiements de l’assurance m
     expect(auPlanDeLAssociationAssuranceMaladie('paiements_assurance_maladie', false)).toBe(true)
   })
 
-  it('drapeau baissé, le plan effectif ne nomme pas la table ; sa clé est la commune', () => {
+  it('le plan effectif nomme la table selon le drapeau (levé : la migration est en base) ; sa clé est la commune', () => {
+    expect(ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES).toBe(true)
     const nommees = new Set([
       ...ORDRE_RESTAURATION, ...Object.keys(CHEMINS_DOSSIER),
       ...TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((a) => a.table), ...Object.keys(CLES_PRIMAIRES),

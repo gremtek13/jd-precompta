@@ -75,6 +75,10 @@ const LECTEURS_PERMIS: Readonly<Record<string, string>> = {
   'src/pages/dossier/BanqueTab.tsx': 'l’onglet Banque (NOE5b), qui appelle les deux fonctions de l’association, au cabinet seul ; '
     + 'il ne compte rien des paiements : la fiche et la section les montrent, les candidats d’une vente écartent un crédit associé',
   'src/pages/dossier/BanqueTab.assuranceMaladie.test.tsx': 'les essais de l’association dans l’onglet Banque',
+  'src/lib/optionsDesCabinetsLecture.ts': 'l’écran des modules des cabinets (OPT4), qui lit le seul dossier des associations pour '
+    + 'dire avant le clic la fermeture de l’assurance maladie que la base refuserait ; aucun montant, rien de compté',
+  'src/lib/optionsDuCabinetVue.test.ts': 'les essais de l’écran des modules, qui confrontent cette lecture au critère de la migration',
+  'src/pages/OptionsDesCabinets.test.tsx': 'les essais de l’écran des modules, dont le faux client rend les associations',
 }
 
 function fichiers(dossier: string): string[] {

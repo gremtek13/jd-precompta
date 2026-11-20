@@ -186,7 +186,7 @@
 --      préparée) : le client « Banque » ne lit que la prévision EN COURS de son dossier, ni celle qu'elle remplace ni sans
 --      la case ; il ne l'écrit pas en direct ; le catalogue. Deux mutations ; avant la migration, une ligne « EN ATTENTE ».
 --  15. Les paiements de l'assurance maladie (bloc AM, en fin de fichier ; migration `paiements_assurance_maladie`, NOE3,
---      préparée) : le client « Banque » lit les imports et les paiements de son dossier, rien sans la case ; il ne les écrit
+--      en production depuis le 20/11/2026) : le client « Banque » lit les imports et les paiements de son dossier, rien sans la case ; il ne les écrit
 --      pas en direct (la garde) ; le catalogue. Deux mutations ; la section P7 compte les deux tables parmi celles de la
 --      banque ; avant la migration, une ligne « EN ATTENTE ».
 --  16. Les options des cabinets (bloc OC, en fin de fichier ; migration `options_des_cabinets`, OPT1, en production) : l'équipe
@@ -198,7 +198,7 @@
 --      table, ni par un filtre, ni par la fonction ; l'anonyme n'exécute pas la fonction ; le catalogue (et HR5, la lecture
 --      par colonne). Trois mutations ; avant la migration, une ligne « EN ATTENTE ».
 --  17. Le facturé à l'assurance maladie (bloc FM, en fin de fichier ; migration `factures_assurance_maladie`, BOR3,
---      préparée) : le client « Banque » lit les imports et les totaux de son dossier, rien sans la case ; il ne les écrit pas
+--      en production depuis le 20/11/2026) : le client « Banque » lit les imports et les totaux de son dossier, rien sans la case ; il ne les écrit pas
 --      en direct (la garde) ; personne — ni le cabinet, ni le client, ni l'anonyme — ne lit le registre des lots ni la clé du
 --      dossier ; le catalogue. Trois mutations ; la section P7 compte les imports et les totaux parmi les tables de la banque ;
 --      avant la migration, une ligne « EN ATTENTE ».
@@ -830,20 +830,20 @@
 -- `prevision_publiee_en_cours`) ; EN ATTENTE sans la migration. Ce qu'il rend : HISTORIQUE.md, « 15/11/2026 — C8-Q2 : LA
 -- PRÉVISION DE TRÉSORERIE PUBLIÉE AU CLIENT ».
 --
--- 16/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (NOE3 : migration `paiements_assurance_maladie`, PRÉPARÉE, pas appliquée),
+-- 16/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (NOE3 : migration `paiements_assurance_maladie`, alors préparée ; en production depuis le 20/11/2026),
 -- qui crée `imports_assurance_maladie` et `paiements_assurance_maladie` — la lecture du cabinet du dossier, celle d'un accès
 -- « Banque », l'insertion de restauration du super-administrateur, une garde aux droits de l'appelant. Le bloc AM (AM1 à
 -- AM3, M-AM1, M-AM2) ; la section P7 les compte parmi les tables de la banque (3bis, 3bis+, 4bis, M3bis, M4bis) ; EN ATTENTE
 -- sans la migration. Ce qu'il rend : HISTORIQUE.md, « 16/11/2026 — NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE
 -- MALADIE ET LEUR TABLE (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
--- 19/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (BOR3 : migration `factures_assurance_maladie`, PRÉPARÉE, pas appliquée),
+-- 19/11/2026 — SUR UNE RÉPLIQUE, PAS EN PRODUCTION (BOR3 : migration `factures_assurance_maladie`, alors préparée ; en production depuis le 20/11/2026),
 -- qui crée `imports_factures_assurance_maladie`, `factures_assurance_maladie`, `lots_teletransmission_importes` et
 -- `cles_des_lots_teletransmission` — la lecture du cabinet du dossier et d'un accès « Banque » sur les deux premières, aucune
 -- policy sur le registre et la clé, l'insertion de restauration du super-administrateur sur les deux premières, une garde aux
 -- droits de l'appelant. Le bloc FM (FM1 à FM4, M-FM1 à M-FM3) ; la section P7 compte les imports et les totaux parmi les
 -- tables de la banque (3bis, 3bis+, 4bis, M3bis, M4bis) ; EN ATTENTE sans la migration. Le même jour, la section P7 prend
--- aussi la table de l'association (NOE5, `association_paiements_assurance_maladie`, préparée) : une association par dossier,
+-- aussi la table de l'association (NOE5, `association_paiements_assurance_maladie`, alors préparée) : une association par dossier,
 -- une écriture directe en 4bis — sans elle, NOE5 appliquée mettait 3bis+ en faute (0 ligne vue sur 0) et M3bis-b ne mordait
 -- pas. Joué ENTIER, en une transaction, sur une copie de la réplique au niveau de la production (242 migrations) : sans les
 -- trois migrations, 270 lignes d'invariants, 0 en faute, 157 mutations sur 157 ; NOE3 et NOE5, 273, 0, 159 sur 159 ; NOE3 et
@@ -1663,16 +1663,16 @@ declare
     -- La prévision de trésorerie publiée (C8-Q2 ; migration `previsions_publiees`, PRÉPARÉE) : le client « Banque » lit celle
     -- EN COURS de son dossier, dès que la migration est en base.
     || case when to_regclass('public.previsions_publiees') is not null then array['previsions_publiees'] else '{}'::text[] end
-    -- Les paiements de l'assurance maladie (NOE3 ; migration `paiements_assurance_maladie`, PRÉPARÉE) : le client « Banque »
+    -- Les paiements de l'assurance maladie (NOE3 ; migration `paiements_assurance_maladie`, EN PRODUCTION) : le client « Banque »
     -- lit les imports et les paiements de son dossier, dès que la migration est en base.
     || case when to_regclass('public.paiements_assurance_maladie') is not null
             then array['imports_assurance_maladie', 'paiements_assurance_maladie'] else '{}'::text[] end
-    -- Le facturé à l'assurance maladie (BOR3 ; migration `factures_assurance_maladie`, PRÉPARÉE) : le client « Banque » lit
+    -- Le facturé à l'assurance maladie (BOR3 ; migration `factures_assurance_maladie`, EN PRODUCTION) : le client « Banque » lit
     -- les imports et les totaux de son dossier, dès que la migration est en base (jamais le registre ni la clé).
     || case when to_regclass('public.factures_assurance_maladie') is not null
             then array['factures_assurance_maladie', 'imports_factures_assurance_maladie'] else '{}'::text[] end
     -- L'association des paiements aux crédits du relevé (NOE5 ; migration `association_paiements_assurance_maladie`,
-    -- PRÉPARÉE) : le client « Banque » lit les associations de son dossier (NOE5-Q1), dès que la migration est en base.
+    -- EN PRODUCTION) : le client « Banque » lit les associations de son dossier (NOE5-Q1), dès que la migration est en base.
     || case when to_regclass('public.paiements_assurance_maladie_mouvements') is not null
             then array['paiements_assurance_maladie_mouvements'] else '{}'::text[] end;
   banque_lues text[];
@@ -11989,7 +11989,7 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $hc$;
 
--- ══ AM. Les paiements de l'assurance maladie (NOE3 ; migration `paiements_assurance_maladie`, PRÉPARÉE) ═══════════
+-- ══ AM. Les paiements de l'assurance maladie (NOE3 ; migration `paiements_assurance_maladie`, EN PRODUCTION) ══════
 -- Deux tables que le client LIT sous sa case « Banque » — les imports et les paiements de son dossier —, que le cabinet du
 -- dossier lit entières, et que personne n'écrit en direct : leurs deux fonctions, ou la restauration. La section P7 les
 -- compte parmi les tables de la banque (3bis, 3bis+, 4bis, M3bis, M4bis) ; ce bloc juge ce qui leur est propre.
@@ -12375,7 +12375,7 @@ begin
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $oc$;
 
--- ══ FM. Le facturé à l'assurance maladie (BOR3 ; migration `factures_assurance_maladie`, PRÉPARÉE) ════════════════
+-- ══ FM. Le facturé à l'assurance maladie (BOR3 ; migration `factures_assurance_maladie`, EN PRODUCTION) ═══════════
 -- Quatre tables : les imports et les totaux, que le client LIT sous sa case « Banque » et que le cabinet du dossier lit
 -- entiers ; le registre des empreintes des lots et la clé du dossier, qu'AUCUN rôle de l'API ne lit — personne n'écrit l'une
 -- ou l'autre en direct : leurs deux fonctions, ou la restauration (les imports et les totaux seuls). La section P7 compte les

@@ -6786,7 +6786,9 @@ describe('BanqueTab — « Toujours ignorer ce type… »', () => {
     faux.reglesIgnorees = [{ id: 'r1', dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'decaissement', created_at: '2025-06-01T09:00:00Z' }]
     rendre()
     expect(await screen.findByText('cpam')).toBeTruthy()
-    expect(screen.queryByText(/paiements/)).toBeNull()
+    // Le sens de la règle, jamais dit (la section des paiements de l'assurance maladie, ouverte sur ce code NAF de santé, nomme
+    // aussi des « paiements » : la recherche vise la seule ligne de la règle).
+    expect(screen.queryByText(/^cpam · /)).toBeNull()
   })
 })
 

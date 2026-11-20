@@ -2512,8 +2512,8 @@ export interface StockDeCloture {
   modifie_le: string
 }
 
-// LES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, NOE3 ; migration `paiements_assurance_maladie`, préparée, pas
-// appliquée — lib/paiementsAssuranceMaladie.ts). Un import et les paiements agrégés qu'il a apportés : des dates, des
+// LES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, NOE3 ; migration `paiements_assurance_maladie`, en production depuis
+// le 20/11/2026 — lib/paiementsAssuranceMaladie.ts). Un import et les paiements agrégés qu'il a apportés : des dates, des
 // entiers, une part de la liste, AUCUN texte, aucune donnée de patient. Écrits par `importer_paiements_assurance_maladie`,
 // retirés ensemble par `retirer_import_assurance_maladie` ; aucune mise à jour. Ils ne comptent dans aucun moteur.
 export interface ImportAssuranceMaladie {
@@ -2559,7 +2559,7 @@ export interface OptionDuCabinet {
   changee_le: string
 }
 
-// LE FACTURÉ À L'ASSURANCE MALADIE (conception 59, BOR3 ; migration `factures_assurance_maladie`, préparée, pas appliquée —
+// LE FACTURÉ À L'ASSURANCE MALADIE (conception 59, BOR3 ; migration `factures_assurance_maladie`, en production depuis le 20/11/2026 —
 // lib/importDuFactureAssuranceMaladie.ts). Un import de bordereaux de télétransmission et les totaux qu'il a apportés : des
 // dates, des entiers, une part de la liste, AUCUN texte, aucune donnée de patient. Écrits par
 // `importer_factures_assurance_maladie`, retirés ensemble par `retirer_import_factures_assurance_maladie` ; aucune mise à jour.

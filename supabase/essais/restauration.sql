@@ -1158,7 +1158,7 @@ begin
 end $$;
 
 -- ══ Les paiements de l'assurance maladie (NOE3, 16/11/2026) ══ Au plan du code quand `PAIEMENTS_ASSURANCE_MALADIE_PREVUS`
--- est levé — c'est-à-dire quand leur migration est en base : le script met leurs deux tables juste après
+-- est levé — c'est-à-dire quand leur migration est en base (en production depuis le 20/11/2026, le drapeau levé) : le script met leurs deux tables juste après
 -- `controles_releves_bancaires` (ORDRE_RESTAURATION_PREVU : une place qu'aucun voisin ne fixe, après une table que toute
 -- base porte), l'import puis ses paiements ; les tables qui suivent reculent de deux rangs ; leurs chemins. Aucune vague.
 -- Absentes de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du
@@ -1177,8 +1177,8 @@ begin
   end if;
 end $$;
 
--- ══ Le facturé à l'assurance maladie (BOR3, 19/11/2026) ══ Au plan du code quand `FACTURES_ASSURANCE_MALADIE_PREVUES` est
--- levé — c'est-à-dire quand sa migration est en base : le script met ses quatre tables juste après `cotisations_declarees`
+-- ══ Le facturé à l'assurance maladie (BOR3, 19/11/2026) ══ Au plan du code quand `FACTURES_ASSURANCE_MALADIE_EN_BASE` est
+-- levé — c'est-à-dire quand sa migration est en base (en production depuis le 20/11/2026, le drapeau levé) : le script met ses quatre tables juste après `cotisations_declarees`
 -- (ORDRE_RESTAURATION_PREVU : une place qu'aucun voisin ne fixe, après une table que toute base porte), la clé, puis l'import,
 -- ses totaux et ses empreintes ; les tables qui suivent reculent de quatre rangs ; leurs chemins. Aucune vague. La clé et le
 -- registre n'ont aucune policy : la sauvegarde n'en porte aucune ligne. Absentes de la base, rien n'entre : le plan est celui
@@ -1201,7 +1201,8 @@ begin
 end $$;
 
 -- ══ L'association des paiements de l'assurance maladie (NOE5, 19/11/2026) ══ Au plan du code quand
--- `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` est levé — c'est-à-dire quand sa migration est en base (après celle de NOE3) : le
+-- `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` est levé — c'est-à-dire quand sa migration est en base (après celle de NOE3 ; en
+-- production depuis le 20/11/2026, le drapeau levé) : le
 -- script met sa table juste après `lignes_bancaires` (ORDRE_RESTAURATION_PREVU : après ses deux parents, le mouvement et le
 -- paiement, que le bloc de NOE3 place plus tôt), les tables qui suivent reculant d'un rang ; son chemin. Aucune vague. Ses
 -- trois clés (le dossier, le mouvement, le paiement) se recopient alors comme les autres. Absente de la base, rien n'entre : le

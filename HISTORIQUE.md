@@ -54296,3 +54296,20 @@ compilé seul, exécuté contre `modulesLus`, le module de chaque appel, l'ordre
 chaque scénario des contrats des huit fonctions tout ouvert, tout fermé, son seul module ouvert et en panne ; le faux PostgREST
 rend un `text[]` comme une valeur, jamais tronquée (`TableauScalaire`). Une mutation du module de `proposer-categorie` mord dans les
 deux. NON fait : le déploiement des huit fonctions (la session) ; un essai réel avec un module fermé.
+
+### 20/11/2026 — NOE3, NOE5 ET BOR3 EN PRODUCTION
+
+(Agent architecte ; aucun outil de la base, aucune migration, aucun déploiement.) Sur BOR3-migration (A) et BOR3RGPD-Q1 (C) — qui
+lève de fait NOE3-quand : collées sans attendre les PDF rendus anonymes —, le cabinet a collé les trois migrations de l'assurance
+maladie, textes inchangés : `paiements_assurance_maladie` (20261120110000, 246), `association_paiements_assurance_maladie`
+(110100, 247), `factures_assurance_maladie` (110200, 248) ; empreintes de l'historique `c99f735d…`, `da805bc7…`, `95ced4ac…` ;
+dérive `cbb64e97…` à 248, socle 83 `a9f83f2d…`, inventaire 3 425 `c2df1569…`, égaux des deux côtés. Les fichiers passent dans
+l'export. Les drapeaux, lus un par un : `PAIEMENTS_ASSURANCE_MALADIE_PREVUS` et `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` portent
+chacun la base ET un écran fini (NOE4, NOE5b : lectures par `lireTout`, gestes sous verrou relâché après la relecture) : levés,
+la section s'ouvre dans l'onglet Banque et « Ma banque » sur un code NAF de santé, la phrase du cabinet qui promettait
+l'association « ensuite » récrite. `FACTURES_ASSURANCE_MALADIE_PREVUES` gardait la base sans écran (BOR4 n'existe pas) : séparé,
+`FACTURES_ASSURANCE_MALADIE_EN_BASE` levé (le plan de sauvegarde, le registre et la clé dits hors périmètre à la restauration),
+celui de l'écran baissé. L'écran des modules (OPT4) lit le dossier des associations, en entier, et dit avant le clic le refus de
+fermer « Paiements de l'assurance maladie » ; non lues (l'état d'avant), la phrase « la base jugera » reste. Les états d'avant
+restent joués (accesseurs, `vi.doMock`) ; le leurre passe de 34 à 31 cas. NON fait : les essais des trois migrations et
+`rls.sql` rejoués en production (blocs AM, FM, P7), un premier import réel, et la suite (BOR4 à BOR7, NOE6 à NOE8, le PDF).

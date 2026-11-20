@@ -238,14 +238,14 @@ describe('les refus de la base, dits avant le clic, dans son ordre', () => {
       .toEqual([null, REFUS_DU_RETRAIT_D_ASSOCIATION.rien, REFUS_DE_L_ASSOCIATION.mouvementInconnu])
   })
 
-  it('les mots sont ceux de la migration préparée, au caractère près, et le drapeau est baissé', () => {
+  it('les mots sont ceux de la migration, au caractère près, et le drapeau est levé (en production depuis le 20/11/2026)', () => {
     const sql = readFileSync(resolve(process.cwd(), 'supabase/schema/20261120110100_association_paiements_assurance_maladie.sql'), 'utf8')
     const enSql = (t: string) => t.replace(/'/g, "''")
     for (const mots of [...Object.values(REFUS_DE_L_ASSOCIATION), ...Object.values(REFUS_DU_RETRAIT_D_ASSOCIATION), REFUS_DU_RETRAIT_D_UN_IMPORT_ASSOCIE]) {
       expect(sql).toContain(enSql(mots))
     }
     expect(sql).toContain("'Les paiements associés au mouvement du % ne font pas son montant au centime.'")
-    expect(ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES).toBe(false)
+    expect(ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES).toBe(true)
   })
 })
 

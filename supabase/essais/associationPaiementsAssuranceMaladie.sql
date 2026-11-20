@@ -1,7 +1,8 @@
 -- L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX MOUVEMENTS DU RELEVÉ (conception 53, NOE5 ; la migration
--- `association_paiements_assurance_maladie`, PRÉPARÉE le 17/11/2026,
+-- `association_paiements_assurance_maladie`, préparée le 17/11/2026, EN PRODUCTION depuis le 20/11/2026, 247, collée :
 -- supabase/schema/20261120110100_association_paiements_assurance_maladie.sql). Le récit : HISTORIQUE.md, « 17/11/2026 —
--- NOE5 : L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer après
+-- NOE5 : L'ASSOCIATION DES PAIEMENTS DE L'ASSURANCE MALADIE AUX CRÉDITS DU RELEVÉ (PRÉPARÉE, PAS APPLIQUÉE) », puis « NOE3,
+-- NOE5 ET BOR3 EN PRODUCTION ». À rejouer après
 -- toute migration qui touche `admin_du_dossier`, `client_du_dossier`, `exercices_valides`, `lignes_bancaires`, les
 -- encaissements des factures, les tables des paiements de l'assurance maladie ou leurs fonctions.
 --

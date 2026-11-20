@@ -1,6 +1,7 @@
--- LES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, NOE3 ; la migration `paiements_assurance_maladie`, PRÉPARÉE le
--- 16/11/2026, supabase/schema/20261120110000_paiements_assurance_maladie.sql). Le récit : HISTORIQUE.md, « 16/11/2026 —
--- NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par
+-- LES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, NOE3 ; la migration `paiements_assurance_maladie`, préparée le
+-- 16/11/2026, EN PRODUCTION depuis le 20/11/2026, 246, collée : supabase/schema/20261120110000_paiements_assurance_maladie.sql).
+-- Le récit : HISTORIQUE.md, « 16/11/2026 — NOE1 ET NOE3 : LA LECTURE DES PAIEMENTS DE L'ASSURANCE MALADIE ET LEUR TABLE
+-- (PRÉPARÉE, PAS APPLIQUÉE) », puis « NOE3, NOE5 ET BOR3 EN PRODUCTION ». À rejouer par
 -- `execute_sql` après toute migration qui touche `memberships`, `client_du_dossier`, `admin_du_dossier`, `exercices_valides`,
 -- les deux tables ou leurs fonctions. Le retrait d'une ligne en direct ne se joue pas ici (l'outil d'exécution de la
 -- production retient une suppression) : la garde le refuse, ce que la réplique de l'étape a éprouvé.
