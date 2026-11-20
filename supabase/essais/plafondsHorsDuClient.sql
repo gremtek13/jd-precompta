@@ -1,5 +1,5 @@
 -- LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT (OPT1-Q3 (B) ; la migration `plafonds_hors_du_client`, préparée le
--- 19/11/2026, pas appliquée : supabase/preparees/20261119150000_plafonds_hors_du_client.sql). Le récit : HISTORIQUE.md,
+-- 19/11/2026, pas appliquée : supabase/schema/20261120101707_plafonds_hors_du_client.sql). Le récit : HISTORIQUE.md,
 -- « 19/11/2026 — OPT1-Q3 : LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT ». À rejouer par `execute_sql` après toute
 -- migration qui touche `cabinets` (une colonne de plus, surtout), `plafonds_de_l_assistant`, `admin_du_cabinet`,
 -- `mon_cabinet_id` ou `is_super_admin`.

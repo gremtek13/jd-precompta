@@ -1,4 +1,4 @@
--- LE RETOUR DE `plafonds_hors_du_client` (OPT1-Q3, préparée le 19/11/2026 : supabase/preparees/20261119150000_plafonds_hors_du_client.sql).
+-- LE RETOUR DE `plafonds_hors_du_client` (OPT1-Q3, préparée le 19/11/2026 : supabase/schema/20261120101707_plafonds_hors_du_client.sql).
 -- Il rend aux deux rôles de l'API la lecture de la table entière, plafonds compris, et retire la fonction de lecture des
 -- plafonds. À COLLER (il retire une fonction : l'outil d'application attendrait une confirmation), dans une transaction, avec
 -- sa ligne d'historique ; `PLAFONDS_HORS_DU_CLIENT_PREVUS` rebaissé dans le même commit que le retrait du fichier de l'export.
