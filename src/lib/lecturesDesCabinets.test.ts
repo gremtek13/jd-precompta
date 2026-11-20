@@ -129,8 +129,6 @@ const EXCEPTIONS: readonly { fichier: string; nombre: number; raison: string }[]
     raison: '`*` lu avec la clé du service (le dossier du cabinet, une colonne que la fonction ne nomme pas tant qu’elle peut manquer)' },
   { fichier: 'supabase/functions/delete-cabinet/index.ts', nombre: 1,
     raison: '`*` lu avec la clé du service, par le super-administrateur seul, avant de retirer le cabinet' },
-  { fichier: 'src/pages/SuperAdminPage.tsx', nombre: PLAFONDS_HORS_DU_CLIENT_PREVUS ? 0 : 1,
-    raison: 'l’écran du super-administrateur lit les plafonds de la table tant que la migration n’est pas en base ; le drapeau levé, par la fonction' },
 ]
 
 const LECTURES = [join(RACINE, 'src'), join(RACINE, 'supabase', 'functions')]
@@ -175,6 +173,12 @@ describe('les lectures de `cabinets` (OPT1-Q3)', () => {
       }
     }
     expect(embarques).toEqual([])
+  })
+
+  it('le drapeau est levé : la migration est en base depuis le 20/11/2026, et aucune exception ne couvre plus l’écran du super-administrateur', () => {
+    expect(PLAFONDS_HORS_DU_CLIENT_PREVUS).toBe(true)
+    expect(EXCEPTIONS.map((e) => e.fichier)).not.toContain('src/pages/SuperAdminPage.tsx')
+    expect(LECTURES.some((l) => l.fichier === 'src/pages/SuperAdminPage.tsx')).toBe(true)
   })
 
   it('la sauvegarde ne lit pas `cabinets` par son lecteur générique (`*`)', () => {

@@ -2987,6 +2987,22 @@ function caisseDuClientDuBanc(args?: Ligne) {
   return chaine
 }
 
+// `plafonds_de_l_assistant` (OPT1-Q3, migration `plafonds_hors_du_client`, en production depuis le 20/11/2026), que l'écran des
+// cabinets du super-administrateur lit : les rôles de l'API ne lisent plus les deux plafonds dans `cabinets`. Une ligne par
+// cabinet du banc, aucun plafond posé ; une requête qui se pagine et annonce son compte, comme une fonction qui rend une table.
+function plafondsDuBanc() {
+  const lignes = (TABLES.cabinets ?? []).map((c) => ({ cabinet_id: c.id, limite_ia_alerte_usd: null, limite_ia_blocage_usd: null }))
+  let debut = 0
+  let fin = Number.MAX_SAFE_INTEGER
+  const chaine: Record<string, unknown> = {
+    order: () => chaine,
+    range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+    then: (ok: (r: unknown) => unknown, ko?: (e: unknown) => unknown) =>
+      Promise.resolve({ data: lignes.slice(debut, fin + 1), error: null, count: lignes.length }).then(ok, ko),
+  }
+  return chaine
+}
+
 // Le second facteur (« Sécurité du compte », ligne 51.5, étape C7) : un téléphone confirmé et une tablette dont l'inscription
 // est restée inachevée ; « Ajouter l'appareil » rend une clé et un code QR fictifs, et tout code se refuse. La session du banc
 // n'en porte aucun : la porte de l'application reste ouverte.
@@ -3023,7 +3039,9 @@ export const supabase = {
   // l'appelant (espace client, étape P7), comme leurs fonctions en base ; tout autre appel, faux.
   rpc: (nom: string, args?: { p_dossier_id?: string } & Ligne) => (nom === 'caisse_du_client'
     ? caisseDuClientDuBanc(args)
-    : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDuBanc(nom, args?.p_dossier_id))),
+    : nom === 'plafonds_de_l_assistant'
+      ? plafondsDuBanc()
+      : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDuBanc(nom, args?.p_dossier_id))),
   from: (table: string) => requete(table),
   storage: {
     // Le seau `ventes` (étape A5c2a) rend et range les logos ; les autres seaux restent une maquette.

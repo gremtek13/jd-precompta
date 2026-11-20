@@ -511,7 +511,9 @@ describe('les essais de la base, rejoués en production', () => {
     // après sa migration préparée ; joué sur une copie de la réplique à 243 (8 verdicts sur 8, dans les deux ordres avec OPT1).
     // Trente-cinq le même jour : `optionsDesCabinets` sorti (OPT1 en production, 20261119140325, par l'outil ; il ne cherche
     // aucun semis, il se joue comme un essai de la production).
-    expect(cas.length).toBe(35)
+    // Trente-quatre le 20/11/2026 : `plafondsHorsDuClient` sorti (OPT1-Q3 en production, 20261120101707, par l'outil ; il ne
+    // cherche aucun semis, il se joue comme un essai de la production).
+    expect(cas.length).toBe(34)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

@@ -146,10 +146,9 @@ export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: st
   },
   plafonds_de_l_assistant: {
     colonnes: ['cabinet_id'],
-    preparee: 'supabase/schema/20261120101707_plafonds_hors_du_client.sql',
     raison: 'une ligne par cabinet : `from cabinets c` filtré par `admin_du_cabinet(c.id)`, sans jointure '
-      + '(supabase/schema/20261120101707_plafonds_hors_du_client.sql) — l’écran du super-administrateur la lit, le '
-      + 'drapeau `PLAFONDS_HORS_DU_CLIENT_PREVUS` levé (OPT1-Q3).',
+      + '(supabase/schema/20261120101707_plafonds_hors_du_client.sql, en production depuis le 20/11/2026) — l’écran du '
+      + 'super-administrateur la lit (OPT1-Q3).',
   },
   identites_des_fiches_liees: {
     colonnes: ['contact_id'],

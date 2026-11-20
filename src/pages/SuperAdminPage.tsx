@@ -12,8 +12,8 @@ import { LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, refusDeLaRegle }
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { OPTIONS_DES_CABINETS_PREVUES } from '../lib/modulesDuCabinet'
 import OptionsDesCabinets from './OptionsDesCabinets'
-import { PLAFONDS_HORS_DU_CLIENT_PREVUS, plafondsParCabinet, type LignePlafonds } from '../lib/plafondsDeLAssistant'
-import type { LectureComplete, TrancheLue } from '../lib/lectureComplete'
+import { plafondsParCabinet, type LignePlafonds } from '../lib/plafondsDeLAssistant'
+import type { TrancheLue } from '../lib/lectureComplete'
 
 interface CabinetApercu {
   id: string
@@ -94,17 +94,13 @@ export default function SuperAdminPage() {
     // SOUS-ESTIME, ce qui est précisément la façon dont un plafond cesse de protéger.
     // `cabinet_admins` et `memberships` n'ont pas toutes deux de colonne `id` : on trie sur une
     // colonne réellement présente, et `id` là où elle existe (voir CLES_PRIMAIRES).
-    // LES PLAFONDS DE L'ASSISTANT (OPT1-Q3) : de la table tant que la migration `plafonds_hors_du_client` n'est pas en base ;
-    // après elle, les rôles de l'API ne lisent plus ces deux colonnes, et `plafonds_de_l_assistant()` les rend au
-    // super-administrateur, cabinet par cabinet, lue en entier comme le reste.
+    // LES PLAFONDS DE L'ASSISTANT (OPT1-Q3, en production depuis le 20/11/2026) : les rôles de l'API ne lisent plus ces deux
+    // colonnes de la table ; `plafonds_de_l_assistant()` les rend au super-administrateur, cabinet par cabinet, lue en entier
+    // comme le reste.
     const [lectureCabinets, lectureDossiers, lectureAdmins, lectureMemberships, lectureUsage, lecturePlafonds] = await Promise.all([
-      lireTout<{ id: string; nom: string; couleur_primaire: string | null; logo_storage_path: string | null; created_at: string; limite_ia_alerte_usd?: number | null; limite_ia_blocage_usd?: number | null }>((debut, fin) =>
-        PLAFONDS_HORS_DU_CLIENT_PREVUS
-          ? supabase.from('cabinets').select('id, nom, couleur_primaire, logo_storage_path, created_at', { count: 'exact' })
-            .order('created_at').order('id').range(debut, fin)
-          // Le drapeau levé, cette branche se retire : lecturesDesCabinets.test.ts ne l'admet plus.
-          : supabase.from('cabinets').select('id, nom, couleur_primaire, logo_storage_path, created_at, limite_ia_alerte_usd, limite_ia_blocage_usd', { count: 'exact' })
-            .order('created_at').order('id').range(debut, fin),
+      lireTout<{ id: string; nom: string; couleur_primaire: string | null; logo_storage_path: string | null; created_at: string }>((debut, fin) =>
+        supabase.from('cabinets').select('id, nom, couleur_primaire, logo_storage_path, created_at', { count: 'exact' })
+          .order('created_at').order('id').range(debut, fin),
       ),
       lireTout<{ id: string; cabinet_id: string }>((debut, fin) =>
         supabase.from('dossiers').select('id, cabinet_id', { count: 'exact' }).order('id').range(debut, fin),
@@ -123,17 +119,14 @@ export default function SuperAdminPage() {
         supabase.from('agent_conversations').select('dossier_id, tokens_entree, tokens_sortie, created_at, id', { count: 'exact' })
           .eq('role', 'assistant').order('id').range(debut, fin),
       ),
-      PLAFONDS_HORS_DU_CLIENT_PREVUS
-        ? lireTout<LignePlafonds>(async (debut, fin) => {
-          const r: TrancheLue<LignePlafonds> = await supabase.rpc('plafonds_de_l_assistant', undefined, { count: 'exact' })
-            .order('cabinet_id').range(debut, fin)
-          if (r.error) return { data: null, error: r.error, count: r.count }
-          return { data: r.data ?? [], error: null, count: r.count }
-        })
-        // Le drapeau baissé, les plafonds viennent de la table, avec les cabinets : rien d'autre à lire.
-        : Promise.resolve<LectureComplete<LignePlafonds>>({ lignes: [], complete: true, motif: null }),
+      lireTout<LignePlafonds>(async (debut, fin) => {
+        const r: TrancheLue<LignePlafonds> = await supabase.rpc('plafonds_de_l_assistant', undefined, { count: 'exact' })
+          .order('cabinet_id').range(debut, fin)
+        if (r.error) return { data: null, error: r.error, count: r.count }
+        return { data: r.data ?? [], error: null, count: r.count }
+      }),
     ])
-    const plafonds = PLAFONDS_HORS_DU_CLIENT_PREVUS ? plafondsParCabinet(lecturePlafonds.lignes) : null
+    const plafonds = plafondsParCabinet(lecturePlafonds.lignes)
 
     const cabinetParDossier = new Map((lectureDossiers.lignes as { id: string; cabinet_id: string }[]).map((d) => [d.id, d.cabinet_id]))
 
@@ -176,12 +169,11 @@ export default function SuperAdminPage() {
 
     setCabinets((lectureCabinets.lignes as {
       id: string; nom: string; couleur_primaire: string | null; logo_storage_path: string | null; created_at: string
-      limite_ia_alerte_usd?: number | null; limite_ia_blocage_usd?: number | null
     }[]).map((c) => ({
       ...c,
-      limite_ia_alerte_usd: plafonds ? plafonds.get(c.id)?.limite_ia_alerte_usd ?? null : c.limite_ia_alerte_usd ?? null,
-      limite_ia_blocage_usd: plafonds ? plafonds.get(c.id)?.limite_ia_blocage_usd ?? null : c.limite_ia_blocage_usd ?? null,
-      plafonds_lus: plafonds ? plafonds.has(c.id) : true,
+      limite_ia_alerte_usd: plafonds.get(c.id)?.limite_ia_alerte_usd ?? null,
+      limite_ia_blocage_usd: plafonds.get(c.id)?.limite_ia_blocage_usd ?? null,
+      plafonds_lus: plafonds.has(c.id),
       nb_dossiers: nbDossiers.get(c.id) ?? 0,
       nb_admins: nbAdmins.get(c.id) ?? 0,
       nb_clients: nbClients.get(c.id) ?? 0,

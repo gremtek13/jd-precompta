@@ -24,13 +24,20 @@ const faux = vi.hoisted(() => ({
   refus: null as string | null,
   // L'erreur que supabase-js rend sur un statut non-2xx (`FunctionsHttpError`, le corps sur son contexte), quand elle est posée.
   erreur: null as unknown,
+  // Le parc que lisent les tests des plafonds (OPT1-Q3) : vide ailleurs.
+  cabinets: [] as Record<string, unknown>[],
+  // Ce que rend `plafonds_de_l_assistant()` ; `refusPlafonds` posé, la fonction refuse.
+  plafonds: [] as Record<string, unknown>[],
+  refusPlafonds: null as { message: string; code: string } | null,
+  rpcs: [] as string[],
 }))
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
     // Les lectures du parc — cabinets, dossiers, membres, accès, usage de l'assistant — rendent un parc vide, lu en
     // entier : rien de ce que ce test garde n'en dépend.
-    from: () => {
+    from: (table: string) => {
+      const lignes = table === 'cabinets' ? faux.cabinets : []
       const chaine: Record<string, unknown> = {}
       Object.assign(chaine, {
         select: () => chaine,
@@ -38,7 +45,21 @@ vi.mock('../lib/supabase', () => ({
         order: () => chaine,
         range: () => chaine,
         then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) =>
-          Promise.resolve({ data: [], error: null, count: 0 }).then(suite),
+          Promise.resolve({ data: lignes, error: null, count: lignes.length }).then(suite),
+      })
+      return chaine
+    },
+    // Les plafonds de l'assistant (OPT1-Q3, en production depuis le 20/11/2026) : une fonction qui rend une table, paginée.
+    rpc: (nom: string) => {
+      faux.rpcs.push(nom)
+      const rendu = nom === 'plafonds_de_l_assistant'
+        ? (faux.refusPlafonds ? { data: null, error: faux.refusPlafonds, count: null } : { data: faux.plafonds, error: null, count: faux.plafonds.length })
+        : { data: null, error: { message: `fonction inconnue : ${nom}`, code: 'PGRST202' }, count: null }
+      const chaine: Record<string, unknown> = {}
+      Object.assign(chaine, {
+        order: () => chaine,
+        range: () => chaine,
+        then: (suite: (r: unknown) => unknown) => Promise.resolve(rendu).then(suite),
       })
       return chaine
     },
@@ -61,6 +82,10 @@ beforeEach(() => {
   faux.porte = null
   faux.refus = null
   faux.erreur = null
+  faux.cabinets = []
+  faux.plafonds = []
+  faux.refusPlafonds = null
+  faux.rpcs = []
 })
 
 // Une porte laissée par un test qui échoue ne doit pas faire échouer les suivants.
@@ -189,5 +214,46 @@ describe('SuperAdminPage — la règle des mots de passe du projet', () => {
     expect(await screen.findByText(refus as string)).toBeTruthy()
     expect(screen.queryAllByText(/Un compte existe déjà/)).toHaveLength(0)
     expect(screen.getByRole('heading', { name: 'Nouveau cabinet' })).toBeTruthy()
+  })
+})
+
+// LES PLAFONDS DE L'ASSISTANT HORS DE LA LECTURE DU CLIENT (OPT1-Q3, en production depuis le 20/11/2026). Les rôles de l'API ne
+// lisent plus les deux colonnes des plafonds dans `cabinets` : l'écran les lit par `plafonds_de_l_assistant()`. Un cabinet que
+// la fonction ne rend pas, ou rend illisible, se dit « Illisibles » et n'offre pas « Plafond IA » — un formulaire prérempli de
+// vide effacerait le plafond.
+describe('SuperAdminPage — les plafonds de l’assistant, lus par la fonction', () => {
+  const cabinet = (id: string, nom: string) => ({ id, nom, couleur_primaire: null, logo_storage_path: null, created_at: '2026-11-01T10:00:00Z' })
+  // La ligne du parc : le nom d'un cabinet paraît aussi dans la carte de ses modules (OPT4), sans « Exporter ».
+  const ligne = (nom: string) => {
+    const lignes = screen.getAllByText(nom).map((e) => e.closest('tr')).filter((tr) => tr?.textContent?.includes('Exporter'))
+    expect(lignes).toHaveLength(1)
+    return lignes[0] as HTMLElement
+  }
+  const boutons = (nom: string) => [...ligne(nom).querySelectorAll('button')].map((b) => b.textContent)
+
+  it('lit les plafonds par la fonction ; un cabinet rendu offre « Plafond IA », un cabinet absent ou illisible non', async () => {
+    faux.cabinets = [cabinet('a', 'Cabinet Alpha'), cabinet('b', 'Cabinet Bêta'), cabinet('c', 'Cabinet Gamma')]
+    faux.plafonds = [
+      { cabinet_id: 'a', limite_ia_alerte_usd: '10', limite_ia_blocage_usd: 20 },
+      { cabinet_id: 'c', limite_ia_alerte_usd: 'beaucoup', limite_ia_blocage_usd: null },
+    ]
+    await act(async () => { render(<SuperAdminPage />) })
+
+    expect(faux.rpcs).toContain('plafonds_de_l_assistant')
+    expect(ligne('Cabinet Alpha').textContent).toMatch(/alerte .*10.*blocage .*20/)
+    expect(boutons('Cabinet Alpha')).toContain('Plafond IA')
+    for (const nom of ['Cabinet Bêta', 'Cabinet Gamma']) {
+      expect(ligne(nom).textContent).toContain('Illisibles')
+      expect(boutons(nom)).not.toContain('Plafond IA')
+    }
+  })
+
+  it('la fonction refusée : chaque cabinet « Illisibles », aucun « Plafond IA »', async () => {
+    faux.cabinets = [cabinet('a', 'Cabinet Alpha')]
+    faux.refusPlafonds = { message: 'permission denied for function plafonds_de_l_assistant', code: '42501' }
+    await act(async () => { render(<SuperAdminPage />) })
+
+    expect(ligne('Cabinet Alpha').textContent).toContain('Illisibles')
+    expect(boutons('Cabinet Alpha')).not.toContain('Plafond IA')
   })
 })

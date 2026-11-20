@@ -46,10 +46,24 @@ vi.mock('../lib/supabase', () => ({
       })
       return chaine
     },
-    rpc: async (nom: string, params: Record<string, unknown>) => {
-      faux.reglages.push({ nom, ...params })
-      await faux.porte
-      return faux.erreurDuReglage ? { data: null, error: faux.erreurDuReglage } : { data: [], error: null }
+    rpc: (nom: string, params: Record<string, unknown>) => {
+      // Les plafonds de l'assistant (OPT1-Q3, en production depuis le 20/11/2026), que l'écran des cabinets lit au chargement :
+      // une lecture paginée, hors des réglages que ces tests comptent ; aucun plafond posé.
+      if (nom === 'plafonds_de_l_assistant') {
+        const lignes = (faux.tables.cabinets ?? []).map((c) => ({ cabinet_id: c.id, limite_ia_alerte_usd: null, limite_ia_blocage_usd: null }))
+        const chaine: Record<string, unknown> = {}
+        Object.assign(chaine, {
+          order: () => chaine,
+          range: () => chaine,
+          then: (suite: (r: unknown) => unknown) => Promise.resolve({ data: lignes, error: null, count: lignes.length }).then(suite),
+        })
+        return chaine
+      }
+      return (async () => {
+        faux.reglages.push({ nom, ...params })
+        await faux.porte
+        return faux.erreurDuReglage ? { data: null, error: faux.erreurDuReglage } : { data: [], error: null }
+      })()
     },
     functions: { invoke: async () => ({ data: { ok: true }, error: null }) },
   },
