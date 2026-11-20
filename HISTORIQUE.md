@@ -54313,3 +54313,21 @@ celui de l'écran baissé. L'écran des modules (OPT4) lit le dossier des associ
 fermer « Paiements de l'assurance maladie » ; non lues (l'état d'avant), la phrase « la base jugera » reste. Les états d'avant
 restent joués (accesseurs, `vi.doMock`) ; le leurre passe de 34 à 31 cas. NON fait : les essais des trois migrations et
 `rls.sql` rejoués en production (blocs AM, FM, P7), un premier import réel, et la suite (BOR4 à BOR7, NOE6 à NOE8, le PDF).
+
+### 20/11/2026 — BOR4 : L'ÉCRAN D'IMPORT DU FACTURÉ À L'ASSURANCE MALADIE (DERRIÈRE SON DRAPEAU)
+
+(Agent dev ; aucun outil de la base, aucune migration, aucun déploiement.) Conception 59, § 5.4, § 13.5 et § 15. La section
+« Facturé à l'assurance maladie » (`components/FactureAssuranceMaladie.tsx`), montée à côté de celle des paiements (NOE4) dans
+l'onglet Banque et « Ma banque », sous le module `assurance_maladie` et la même règle d'offre (`sectionAssuranceMaladie` : un code
+NAF de santé ou de la liste fermée, ou un import du facturé déjà lu) ; `FACTURES_ASSURANCE_MALADIE_PREVUES` reste BAISSÉ (la
+session le lève). Un ou plusieurs PDF choisis, chacun ouvert dans le navigateur par BOR1 ; l'écran dit chaque fichier (son nom,
+à celui qui l'a choisi, et le rang de ses bordereaux dans l'envoi, celui que citent BOR2 et la base), un fichier refusé retient
+tout l'envoi jusqu'à « Retirer de l'envoi » ; un organisme dont le libellé ne dit pas le régime se choisit dans la liste de l'ANS ;
+l'aperçu montre le résumé et les agrégats de BOR2 (jour, organisme, part, montant, lots, factures « ≈ »), jamais un numéro de lot.
+Le refus de la base se juge avant le clic sur l'envoi tel qu'il partira (`refusAvantLEnvoiDuFacture` : le corps composé, jugé,
+oublié) ; le lot déjà importé, la base seule le dit, et l'écran rend son message. Import et retrait par les deux fonctions, sous un
+verrou relâché après la relecture ; la confirmation nomme ce qui part, numéros des lots compris (pour l'empreinte seule). Au
+cabinet, la consigne de BORQ8-Q1 (A) et BOR3-RGPD (B), sans rien sur le support (BOR3RGPD-Q2 (B)). Modules : la vue
+(`lib/factureAssuranceMaladieVue.ts`, au relevé « sans sortie »), la lecture (`lib/factureAssuranceMaladieLecture.ts`) ; le
+scanner des tables du facturé reçoit leurs quatre fichiers. Le banc de captures n'a pas de visite pour NOE4 : aucune ajoutée. NON
+fait : la levée du drapeau, un premier import réel, BOR5 (le dû contre le payé).

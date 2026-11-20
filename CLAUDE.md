@@ -587,7 +587,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   BOR3 (19/11/2026, `factures_assurance_maladie`) : quatre tables
   sans texte, le numéro d'un lot jamais gardé — son empreinte HMAC sous une clé du dossier qu'aucun rôle de l'API ne lit, hors de la
   sauvegarde ; NOE3 amendée avant collage (`organisme_complementaire`) ; BOR3-Q1 et Q2 (A), BOR3-RGPD (B) tranchées le 19/11/2026 → « BOR3 : LE FACTURÉ À
-  L'ASSURANCE MALADIE, EN BASE ».
+  L'ASSURANCE MALADIE, EN BASE ». BOR4 (20/11/2026), l'écran derrière `FACTURES_ASSURANCE_MALADIE_PREVUES` baissé
+  (`components/FactureAssuranceMaladie.tsx`, à côté de NOE4, même règle et même module) → « BOR4 : L'ÉCRAN D'IMPORT DU FACTURÉ ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)

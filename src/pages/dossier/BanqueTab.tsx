@@ -86,6 +86,7 @@ import { autreSensReconnu, ignoresParLaRegle, phraseDesIgnores, regleOperante, s
 import { motsDuSens, refusDeLaRegleNeuveSelon, SENS_DES_REGLES_IGNOREES_EXPORTE, sensDeLaRegleSelon } from '../../lib/sensDesReglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import PaiementsAssuranceMaladie from '../../components/PaiementsAssuranceMaladie'
+import FactureAssuranceMaladie from '../../components/FactureAssuranceMaladie'
 import { AssociationDansLaSection } from '../../components/AssociationsAssuranceMaladie'
 import { useLesPaiementsAssuranceMaladie } from '../../lib/lecturePaiementsAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, type GroupeAAssocier } from '../../lib/rapprochementAssuranceMaladie'
@@ -2836,6 +2837,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
           erreur={erreurAssuranceMaladie} message={messageAssuranceMaladie} onAssocierLeLot={associerAssuranceMaladie}
         />
       </PaiementsAssuranceMaladie>}
+      {/* Le facturé à l'assurance maladie (BOR4) : les bordereaux de télétransmission lus dans ce navigateur, sous son drapeau, sous
+          le même module et la même règle d'offre que les paiements ; il ne compte dans aucun moteur. */}
+      {estOuvert('assurance_maladie', modulesOuverts) && <FactureAssuranceMaladie espace="cabinet" dossierId={dossierId} codeNaf={codeNaf} />}
     </>
   )
 }

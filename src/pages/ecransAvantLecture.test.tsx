@@ -735,6 +735,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
     + 'lecture partielle (les associations de NOE5b comprises), et un seul envoi pour deux clics ; dans l’onglet Banque, elle reçoit '
     + 'la lecture de l’onglet (BanqueTab, monté ici), et BanqueTab.assuranceMaladie.test.tsx éprouve l’association : rien de lu ni de '
     + 'monté sous les drapeaux baissés, aucun geste sur une lecture partielle, un appel pour deux clics',
+  'components/FactureAssuranceMaladie.tsx': 'drapeau `FACTURES_ASSURANCE_MALADIE_PREVUES` baissé : ne rend ni ne lit rien ; '
+    + 'levé, son propre test (FactureAssuranceMaladie.test.tsx) éprouve « Chargement… » avant la lecture, aucun geste sur une '
+    + 'lecture partielle, et un seul envoi pour deux clics',
   'components/CopieDesFichiers.tsx': 'drapeau `COPIE_DES_FICHIERS_PREVUE` baissé : ne rend ni ne lit rien ; levé, son propre test '
     + '(CopieDesFichiers.test.tsx) éprouve la lecture avant le rappel, et le geste sur une lecture partielle (aucun ZIP)',
   'components/DeuxFacteursDesComptes.tsx': 'drapeau `DEUX_FACTEURS_EXIGES_EXPORTE` baissé : ne rend ni ne lit rien ; levé, '
