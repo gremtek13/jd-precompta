@@ -54331,3 +54331,20 @@ cabinet, la consigne de BORQ8-Q1 (A) et BOR3-RGPD (B), sans rien sur le support 
 (`lib/factureAssuranceMaladieVue.ts`, au relevé « sans sortie »), la lecture (`lib/factureAssuranceMaladieLecture.ts`) ; le
 scanner des tables du facturé reçoit leurs quatre fichiers. Le banc de captures n'a pas de visite pour NOE4 : aucune ajoutée. NON
 fait : la levée du drapeau, un premier import réel, BOR5 (le dû contre le payé).
+
+### 20/11/2026 — BOR5 : CE QUE L'ASSURANCE MALADIE DOIT (LE FACTURÉ CONFRONTÉ AU PAYÉ, ESTIMÉ)
+
+(Agent architecte ; aucun outil de la base, aucune migration, aucun déploiement.) Conception 59, § 6 et § 13.4 (BOR-Q6 (A) : le
+niveau 1, estimé, seul). `lib/duContrePaye.ts`, pur, sans sortie ni import (types seuls ; le calendrier civil en entiers, sans
+`Date` ; au relevé `bordereauDeTeletransmissionSansSortie.test.ts`, défauts plantés) : des deux côtés lus EN ENTIER, une fenêtre et
+le jour, il rend par organisme de la part obligatoire (régime, caisse) le facturé des lots créés dans la fenêtre, le brut des
+journées de la fenêtre, un reste ESTIMÉ et ses tranches en jours civils, le payé sans lot en face. Compte courant depuis une
+origine commune (le plus tardif des deux premiers jours importés), le payé imputé aux lots les plus anciens et jamais à un lot créé
+après la journée qui le paie ; les anciennetés mesurées à la dernière journée comptable importée, jamais au jour. Non comparables,
+leur raison dite : la part complémentaire (aucun organisme sur le bordereau), un organisme qui porte un lot d'avoirs, un paiement
+sans régime ou sans caisse ; forfaits et régularisations à part ; le nombre de factures montré, jamais soustrait. Muet sous un état
+nommé (lecture partielle, rien importé, donnée illisible, fenêtre à l'envers, à venir ou hors de l'étendue d'un côté) ; les mois de
+la fenêtre sans lot ou sans paiement importé se disent. Une batterie tirée d'une graine tient les égalités ; dix mutations tuées.
+La section du cabinet (`components/DuContrePaye.tsx`, `lib/duContrePayeVue.ts`), en lecture seule, dans l'onglet Banque sous le
+module `assurance_maladie`, derrière `DU_CONTRE_PAYE_PREVU` BAISSÉ. NON établi, dit à l'écran : que la caisse du bordereau soit
+celle du paiement NOEMIE (DU-Q1). NON fait : « Ma banque », les points d'attention (BOR6), le délai en jours ouvrés (DU-Q2).

@@ -87,6 +87,7 @@ import { motsDuSens, refusDeLaRegleNeuveSelon, SENS_DES_REGLES_IGNOREES_EXPORTE,
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import PaiementsAssuranceMaladie from '../../components/PaiementsAssuranceMaladie'
 import FactureAssuranceMaladie from '../../components/FactureAssuranceMaladie'
+import DuContrePaye from '../../components/DuContrePaye'
 import { AssociationDansLaSection } from '../../components/AssociationsAssuranceMaladie'
 import { useLesPaiementsAssuranceMaladie } from '../../lib/lecturePaiementsAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, type GroupeAAssocier } from '../../lib/rapprochementAssuranceMaladie'
@@ -2840,6 +2841,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       {/* Le facturé à l'assurance maladie (BOR4) : les bordereaux de télétransmission lus dans ce navigateur, sous son drapeau, sous
           le même module et la même règle d'offre que les paiements ; il ne compte dans aucun moteur. */}
       {estOuvert('assurance_maladie', modulesOuverts) && <FactureAssuranceMaladie espace="cabinet" dossierId={dossierId} codeNaf={codeNaf} />}
+      {/* Ce que l'assurance maladie doit (BOR5) : le facturé confronté au payé, estimé, en lecture seule, au cabinet seul, sous son
+          drapeau baissé et le même module ; il ne compte dans aucun moteur. */}
+      {estOuvert('assurance_maladie', modulesOuverts) && <DuContrePaye dossierId={dossierId} />}
     </>
   )
 }
