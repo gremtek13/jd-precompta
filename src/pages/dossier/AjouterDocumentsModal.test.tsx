@@ -45,6 +45,11 @@ vi.mock('../../lib/importFichiers', () => ({
   },
 }))
 
+// Le refus d'un bordereau (BOR6, drapeau levé le 20/11/2026) lirait le PDF choisi par pdf.js, dont le premier chargement sous
+// jsdom dépasse l'`act` du choix : le bouton « Importer » n'était pas encore là. Ce test garde le verrou d'import, pas la
+// lecture (AjouterDocumentsModalVerification.test.tsx la garde) : le PDF choisi n'est pas un bordereau.
+vi.mock('../../lib/refusDesBordereauxLecture', () => ({ bordereauDansLeFichier: () => Promise.resolve(false) }))
+
 vi.mock('../../lib/supabase', () => ({
   supabase: { auth: { getUser: () => Promise.resolve({ data: { user: { id: 'utilisateur-de-test' } } }) } },
 }))

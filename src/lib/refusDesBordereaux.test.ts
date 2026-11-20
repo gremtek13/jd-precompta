@@ -80,8 +80,8 @@ describe('les deux phrases du refus', () => {
     expect(REFUS_D_UN_BORDEREAU).not.toMatch(/\b(tu|ton|ta|tes)\b/)
   })
 
-  it('le drapeau est baissé, jusqu’à l’essai sur un vrai poste', () => {
-    expect(REFUS_DES_BORDEREAUX_PREVU).toBe(false)
+  it('le drapeau est levé depuis l’essai dans un vrai navigateur (outils/captures/refusDesBordereaux.mjs) ; l’état d’avant reste joué par l’accesseur de bornesStockageBordereaux.test.ts', () => {
+    expect(REFUS_DES_BORDEREAUX_PREVU).toBe(true)
   })
 })
 

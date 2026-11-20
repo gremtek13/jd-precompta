@@ -27,11 +27,12 @@
 /**
  * Le drapeau du refus (BOR6, première partie) : BAISSÉ, les préparateurs ne lisent aucun PDF et laissent partir un
  * bordereau comme hier ; LEVÉ, tout PDF déposé est lu par pdf.js avant l'envoi, et celui qui a la forme d'un bordereau de
- * télétransmission se refuse. Aucune migration : le drapeau garde le temps de l'essai sur un vrai poste (le coût de la
- * lecture d'un gros PDF, l'ouvrier de pdf.js chargé au premier dépôt). Ses deux états se jouent par un accesseur
+ * télétransmission se refuse. Aucune migration : le drapeau a gardé le temps de l'essai dans un vrai navigateur (le coût de
+ * la lecture d'un gros PDF, l'ouvrier de pdf.js chargé au premier dépôt, en dev et sur le build de production :
+ * outils/captures/refusDesBordereaux.mjs), levé le 20/11/2026. Ses deux états se jouent par un accesseur
  * (bornesStockageBordereaux.test.ts).
  */
-export const REFUS_DES_BORDEREAUX_PREVU: boolean = false
+export const REFUS_DES_BORDEREAUX_PREVU: boolean = true
 
 /**
  * Le refus, dit au cabinet — sans majuscule ni point final, comme les autres refus d'un seau : l'écran le place après le nom

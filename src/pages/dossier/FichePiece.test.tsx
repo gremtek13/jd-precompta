@@ -65,6 +65,11 @@ const faux = vi.hoisted(() => ({
   ordre: [] as string[],
 }))
 
+// Le refus d'un bordereau (BOR6, drapeau levé le 20/11/2026) lirait le PDF choisi par pdf.js, dont le premier chargement sous
+// jsdom dépasse l'`act` du choix : ce test garde un verrou, pas la lecture (bornesStockageBordereaux.test.ts la garde) ;
+// le PDF choisi n'est pas un bordereau.
+vi.mock('../../lib/refusDesBordereauxLecture', () => ({ bordereauDansLeFichier: () => Promise.resolve(false) }))
+
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
