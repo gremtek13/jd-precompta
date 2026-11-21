@@ -54476,3 +54476,14 @@ dans l'export. Les trois contrôles : dérive 249 = 249, `7ecacfa81a077580c625ea
 `a9f83f2d95146e3b239f17654d61ba3f` ; inventaire 3 425 objets, `c2df15696f8799d8c291545e13eee8ee`. Rien n'écrit encore la raison :
 la constante `BORDEREAUX_ECARTES_A_LA_RECEPTION` reste baissée jusqu'à l'essai d'un vrai bordereau ; restent aussi la phrase de
 l'onglet Accès et le redéploiement de `receive-email`. DUQ3-Q1 reste ouverte.
+
+### BOR6R-Q1 : L'OUTIL LOCAL QUI DIT SI LA RÉCEPTION RECONNAÎTRAIT UN BORDEREAU (21/11/2026)
+
+Réponse du cabinet : oui. `node outils/bordereau/reception.mjs "chemin.pdf"` (mode d'emploi en tête, comme `lire.mjs`) juge un
+vrai bordereau sur l'ordinateur du cabinet par le même enchaînement que `formeDUnBordereauDansLePdf` de `receive-email`, sur
+les modules de `src/lib` (`lireLeTexteDUnPdf`, `porteLaFormeDUnBordereau`, chaque page seule) et sous ses bornes (20 Mio,
+48 Mio décompressés, une seconde ; leurs valeurs confrontées au texte de la fonction). Une conclusion : reconnu, non reconnu ou
+illisible (le code du lecteur dit en mots), avec les pages lues, l'arrêt à une borne, le poids et la durée ; non reconnu, les
+fragments comptés par page (0 = pas de couche de texte lisible) — les deux signes de la forme manquent alors toujours, un seul
+suffisant. Rien du contenu ne s'affiche (`outils/bordereau/jugementReception.mts`, gardé par
+`src/lib/bordereauReceptionOutilLocal.test.ts` sur le bordereau fictif et un PDF ordinaire, dans un processus à part).
