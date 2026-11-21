@@ -692,7 +692,7 @@ function journalise(m: Monde, motif: RegExp, quoi: string): string[] {
  * 22.91) porte le poids zéro, et lui seul.
  */
 function ecartsConsignes(
-  m: Monde, attendus: { raison: 'format' | 'taille' | 'depot' | 'vide'; octets: number | null }[], interdits: readonly string[],
+  m: Monde, attendus: { raison: 'format' | 'taille' | 'depot' | 'vide' | 'bordereau'; octets: number | null }[], interdits: readonly string[],
 ): string[] {
   const traces = lignes(m, 'pieces_jointes_ecartees')
   const fautes: string[] = []
@@ -6731,6 +6731,144 @@ export const SCENARIOS_ACOMPTES_EN_BASE: Readonly<Record<'superpdp-emit' | 'plat
 }
 
 // ── LE TOUT ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// ── LE BORDEREAU DE TÉLÉTRANSMISSION À LA RÉCEPTION (BOR6, seconde partie) ──────────────────────────────────────────────
+// Joués par src/lib/bordereauxALaReceptionHttp.test.ts, sur la source servie (`BORDEREAUX_ECARTES_A_LA_RECEPTION` baissée)
+// et sur la même, levée en mémoire. Les PDF sont FICTIFS, fabriqués par le test (pdf-lib) : leurs octets arrivent ici.
+
+/** Les PDF fictifs des scénarios : le bordereau, une facture ordinaire, un PDF qui ne se lit pas. */
+export interface PdfDesBordereaux { bordereau: Uint8Array<ArrayBuffer>; facture: Uint8Array<ArrayBuffer>; illisible: Uint8Array<ArrayBuffer> }
+
+/** Un nom de pièce jointe inventé pour le bordereau, qu'aucun journal ni aucune trace ne doit porter. */
+const NOM_DU_BORDEREAU = 'Quervaldine-Ostrumbel.pdf'
+/** Les cellules nominatives du bordereau fictif (`src/test/bordereauFictif.ts`) : jamais au journal. */
+const NOMINATIFS_DU_BORDEREAU = ['BENEFICIAIRE UN', 'BENEFICIAIRE DEUX', '1999999999999']
+
+/** La constante levée : receive-email écarte le bordereau (la source servie la porte baissée). */
+export const BORDEREAUX_ECARTES_LEVES = 'const BORDEREAUX_ECARTES_A_LA_RECEPTION = true'
+export const BORDEREAUX_ECARTES_BAISSES = 'const BORDEREAUX_ECARTES_A_LA_RECEPTION = false'
+
+// Un PDF déposé de bout en bout : comme `deposee`, Textract en lecture asynchrone (le PDF passe par S3).
+const deposeePdf = (pj: string) => [
+  'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/${pj}`, 'stockage upload pieces',
+  `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`, 'AWS s3 PutObject', 'AWS textract StartDocumentTextDetection',
+  'AWS textract GetDocumentTextDetection', 'AWS s3 DeleteObject', 'modèle', 'écriture insert pieces',
+]
+
+const sansExtractPiece = (m: Monde): string[] =>
+  ((m.notes.appelsExtractPiece ?? []) as unknown[]).length === 0 ? [] : ['extract-piece a lu le bordereau']
+
+/** Les scénarios de la constante LEVÉE : le bordereau écarté avant tout dépôt ; le reste comme avant. */
+export function scenariosDesBordereauxLeves(pdf: PdfDesBordereaux): Scenario[] {
+  return [
+    {
+      nom: 'un bordereau de télétransmission en PDF : écarté avant tout dépôt — ni stockage, ni Textract —, consigné « bordereau » au poids lu, journalisé sans nom ni contenu',
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: pdf.bordereau }); m.sensibles.push(NOM_DU_BORDEREAU, ...NOMINATIFS_DU_BORDEREAU) },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_DU_BORDEREAU, type: 'application/pdf' } })),
+      attendu: {
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...journalise(m, /^Pièce jointe écartée, forme d'un bordereau de télétransmission : pj-0$/, 'le bordereau écarté'),
+          ...ecartsConsignes(m, [{ raison: 'bordereau', octets: pdf.bordereau.length }], [NOM_DU_BORDEREAU, ...NOMINATIFS_DU_BORDEREAU]),
+          ...(m.fichiers.size === 0 ? [] : ['un fichier est arrivé au stockage']),
+          ...sansExtractPiece(m),
+          ...bilanAuJournal(m, 0, 1),
+        ],
+      },
+    },
+    {
+      nom: 'un bordereau déclaré « application/octet-stream », sans extension : reconnu par sa signature, écarté',
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: pdf.bordereau }); m.sensibles.push(...NOMINATIFS_DU_BORDEREAU) },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: 'piece-sans-extension', type: 'application/octet-stream' } })),
+      attendu: {
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...ecartsConsignes(m, [{ raison: 'bordereau', octets: pdf.bordereau.length }], NOMINATIFS_DU_BORDEREAU),
+          ...(m.fichiers.size === 0 ? [] : ['un fichier est arrivé au stockage']),
+        ],
+      },
+    },
+    {
+      nom: 'une facture ordinaire en PDF : lue, puis déposée et posée « à valider » comme avant',
+      preparer: (m, voisine) => boiteAuxLettres(m, voisine, { octets: pdf.facture }),
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: 'facture-0.pdf', type: 'application/pdf' } })),
+      attendu: {
+        statut: 200, depenses: deposeePdf('pj-0'),
+        verifier: (_r, m) => [
+          ...(lignes(m, 'pieces_jointes_ecartees').length === 0 ? [] : ['une trace pour une facture']),
+          ...(lignes(m, 'pieces').length === 1 ? [] : ['la facture n’est pas posée']),
+          ...(m.journaux.some((j) => /texte du PDF non lu|bordereau/.test(j.texte)) ? ['le journal parle d’un bordereau'] : []),
+        ],
+      },
+    },
+    {
+      nom: 'un PDF qui ne se lit pas : déposé comme avant (BOR6-Q1 (A)), le journal n’en dit que le code',
+      preparer: (m, voisine) => boiteAuxLettres(m, voisine, { octets: pdf.illisible }),
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: 'facture-0.pdf', type: 'application/pdf' } })),
+      attendu: {
+        statut: 200, depenses: deposeePdf('pj-0'),
+        verifier: (_r, m) => [
+          ...journalise(m, /^\[receive-email\] texte du PDF non lu \(sans-page\), pièce jointe déposée comme avant : pj-0$/, 'le PDF illisible'),
+          ...(lignes(m, 'pieces_jointes_ecartees').length === 0 ? [] : ['une trace pour un PDF illisible']),
+        ],
+      },
+    },
+    {
+      nom: 'un bordereau et une image dans le même e-mail : le bordereau écarté, l’image déposée',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine, { octetsPar: { 'pj-0': pdf.bordereau } })
+        m.sensibles.push(NOM_DU_BORDEREAU, ...NOMINATIFS_DU_BORDEREAU)
+      },
+      requete: requeteWebhook(evenementRecu({ fichiers: [{ nom: NOM_DU_BORDEREAU, type: 'application/pdf' }, { nom: 'facture-1.png', type: 'image/png' }] })),
+      attendu: {
+        statut: 200, depenses: [...ecartee('pj-0'), ...deposee('pj-1')],
+        verifier: (_r, m) => [
+          ...ecartsConsignes(m, [{ raison: 'bordereau', octets: pdf.bordereau.length }], [NOM_DU_BORDEREAU, ...NOMINATIFS_DU_BORDEREAU]),
+          ...(lignes(m, 'pieces').length === 1 ? [] : ['l’image n’est pas posée']),
+          ...bilanAuJournal(m, 1, 2),
+        ],
+      },
+    },
+    {
+      nom: 'la base refuse la trace (sa migration pas encore collée) : le bordereau reste écarté, le refus journalisé sans nom',
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine, { octets: pdf.bordereau })
+        m.sensibles.push(NOM_DU_BORDEREAU, ...NOMINATIFS_DU_BORDEREAU)
+        m.pannes.push({
+          table: 'pieces_jointes_ecartees', operation: 'upsert', fois: 1,
+          erreur: { code: '23514', message: 'new row for relation "pieces_jointes_ecartees" violates check constraint "pieces_jointes_ecartees_raison"' },
+        })
+      },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_DU_BORDEREAU, type: 'application/pdf' } })),
+      attendu: {
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...journalise(m, /^\[receive-email\] pièce jointe écartée NON consignée \(bordereau, \d+ octets\) : /, 'la trace refusée'),
+          ...(m.fichiers.size === 0 ? [] : ['un fichier est arrivé au stockage']),
+          ...sansExtractPiece(m),
+        ],
+      },
+    },
+  ]
+}
+
+/** La constante BAISSÉE (la source servie) : le bordereau part comme avant, sans lecture de son texte. */
+export function scenariosDesBordereauxBaisses(pdf: PdfDesBordereaux): Scenario[] {
+  return [
+    {
+      nom: 'constante baissée : le bordereau se dépose comme avant, rien ne se consigne, le journal ne dit rien du texte',
+      preparer: (m, voisine) => boiteAuxLettres(m, voisine, { octets: pdf.bordereau }),
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: 'facture-0.pdf', type: 'application/pdf' } })),
+      attendu: {
+        statut: 200, depenses: deposeePdf('pj-0'),
+        verifier: (_r, m) => [
+          ...(lignes(m, 'pieces_jointes_ecartees').length === 0 ? [] : ['une trace sous la constante baissée']),
+          ...(m.journaux.some((j) => /texte du PDF|bordereau/.test(j.texte)) ? ['le journal parle du texte'] : []),
+        ],
+      },
+    },
+  ]
+}
 
 export const CONTRATS: readonly ContratFonction[] = [
   AGENT_COMPTABLE, BANQUE_CONNEXION, CREATE_CABINET, CREATE_CLIENT_ACCESS, CREATE_TEAM_MEMBER, DELETE_CABINET,

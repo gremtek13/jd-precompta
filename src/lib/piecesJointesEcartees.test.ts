@@ -33,6 +33,7 @@ if (NOMS_DU_VIDE.length !== 1) {
   throw new Error(`la migration pieces_jointes_ecartees_vide doit être UNE dans l'export : ${NOMS_DU_VIDE.length} trouvée(s)`)
 }
 const MIGRATION_VIDE = readFileSync(new URL(NOMS_DU_VIDE[0], SCHEMA), 'utf8')
+const MIGRATION_BORDEREAU = readFileSync(new URL('../../supabase/preparees/20261121120000_pieces_jointes_ecartees_bordereau.sql', import.meta.url), 'utf8')
 const RECEIVE_EMAIL = readFileSync(new URL('../../supabase/functions/receive-email/index.ts', import.meta.url), 'utf8')
 
 const D = 'd1'
@@ -236,7 +237,11 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
     const raisonsDeLaBase = [...(enVigueur?.[1] ?? '').matchAll(/'(\w+)'/g)].map((m) => m[1])
     expect(raisonsDeLaBase).toEqual(['format', 'taille', 'depot', 'vide'])
     const appels = [...RECEIVE_EMAIL.matchAll(/noterLaPieceJointeEcartee\(supabase, dossier\.id, email_id, fichier\.id, "(\w+)", ([\w.]+)\)/g)]
-    expect([...new Set(appels.map((m) => m[1]))].sort()).toEqual([...raisonsDeLaBase].sort())
+    // La fonction en écrit une de plus, derrière sa constante baissée : `bordereau` (BOR6), que la migration PRÉPARÉE
+    // `pieces_jointes_ecartees_bordereau` ajoute ; les écrans l'apprendront avant que la constante se lève.
+    expect([...new Set(appels.map((m) => m[1]))].sort()).toEqual([...raisonsDeLaBase, 'bordereau'].sort())
+    expect(MIGRATION_BORDEREAU).toMatch(/add constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille', 'depot', 'vide', 'bordereau'\)\)/)
+    expect(RECEIVE_EMAIL).toContain('const BORDEREAUX_ECARTES_A_LA_RECEPTION = false')
     // Chaque raison de la base a sa phrase, et une consigne à elle.
     for (const r of raisonsDeLaBase) {
       expect(phraseDeLaRaison({ raison: r as PieceJointeEcartee['raison'], octets: r === 'vide' ? 0 : TAILLE_MAX_PIECE + 1024 })).not.toBe('')
@@ -263,7 +268,7 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
     // poids lu (l'exception aussi : inconnu si elle est venue avant).
     const appels = [...RECEIVE_EMAIL.matchAll(/noterLaPieceJointeEcartee\(supabase, dossier\.id, email_id, fichier\.id, "(\w+)", ([\w.]+)\)/g)]
     expect(appels.map((m) => `${m[1]}:${m[2]}`)).toEqual([
-      'depot:null', 'depot:null', 'vide:0', 'format:bytes.byteLength', 'taille:bytes.byteLength',
+      'depot:null', 'depot:null', 'vide:0', 'format:bytes.byteLength', 'taille:bytes.byteLength', 'bordereau:bytes.byteLength',
       'depot:octets', 'depot:octets', 'depot:octets', 'depot:octets',
     ])
     const lu = RECEIVE_EMAIL.indexOf('      octets = bytes.byteLength\n')
