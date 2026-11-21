@@ -63,6 +63,19 @@ describe('la carte du client : l’attente, la lecture partielle, le vide, la li
     expect(texte()).not.toMatch(/\bclients?\b/i)
   })
 
+  it('un bordereau de télétransmission (BOR6) : sa raison dite, et l’import dans « Ma banque », jamais renvoyé par e-mail', () => {
+    render(<PiecesJointesEcarteesClient lecture={lue([ligne({ raison: 'bordereau', octets: 4120 })])} adresse={null} />)
+    expect(screen.getByRole('heading').textContent).toBe('1 pièce jointe reçue par e-mail n’a pas été déposée')
+    expect(screen.getAllByRole('listitem').map((li) => li.textContent)[0])
+      .toMatch(/^le 12\/10\/2026 — a la forme d’un bordereau de télétransmission, qui porte des noms de patients : il ne se dépose pas/)
+    expect(texte()).toContain('ne la renvoie pas par e-mail, elle porte des noms de patients. Pour en importer les totaux, ouvre « Ma banque », '
+      + 'section « Facturé à l’assurance maladie »')
+    expect(texte()).not.toMatch(/renvoie-la|Déposer des fichiers|Cette liste ne sait pas/)
+    expect(document.querySelectorAll('button, input, select, textarea, a')).toHaveLength(0)
+    expect(motsDuCabinet(texte())).toEqual([])
+    expect(texte()).not.toMatch(/\bclients?\b/i)
+  })
+
   it('une seule : au singulier, d’un bout à l’autre', () => {
     render(<PiecesJointesEcarteesClient lecture={lue([ligne({ raison: 'taille', octets: 27_000_000 })])} adresse={null} />)
     expect(screen.getByRole('heading').textContent).toBe('1 pièce jointe reçue par e-mail n’a pas été déposée')

@@ -214,13 +214,14 @@ describe('ce que le client peut faire : chaque raison garde sa consigne', () => 
   })
 
   it('aucun texte montré au client ne parle comme le cabinet : ni onglet, ni « le client », ni vouvoiement', () => {
-    const raisons: PieceJointeEcarteeDuClient['raison'][] = ['format', 'taille', 'depot', 'vide']
+    const raisons: PieceJointeEcarteeDuClient['raison'][] = ['format', 'taille', 'depot', 'vide', 'bordereau']
     const textes = [ECARTEES_EN_LECTURE, SI_LA_LECTURE_MANQUE, dOuEllesViennent(1), dOuEllesViennent(2), quandPourLeClient('2026-10-12'),
       titreDuSignalement(1), titreDuSignalement(2),
       ...raisons.flatMap((r) => [phraseDeLaRaison({ raison: r, octets: r === 'vide' ? 0 : 4120 }), phraseDeLaRaison({ raison: r, octets: null })])]
     // Toutes les combinaisons de zéro, une ou deux lignes de chaque raison.
-    for (const n of [0, 1, 2]) for (const t of [0, 1, 2]) for (const d of [0, 1, 2]) for (const v of [0, 1, 2]) {
+    for (const n of [0, 1, 2]) for (const t of [0, 1, 2]) for (const d of [0, 1, 2]) for (const v of [0, 1, 2]) for (const b of [0, 1, 2]) {
       const lignes = [
+        ...Array.from({ length: b }, () => ligne({ raison: 'bordereau' })),
         ...Array.from({ length: n }, () => ligne()), ...Array.from({ length: t }, () => ligne({ raison: 'taille' })),
         ...Array.from({ length: d }, () => ligne({ raison: 'depot', octets: null })),
         ...Array.from({ length: v }, () => ligne({ raison: 'vide', octets: 0 })),
@@ -319,5 +320,33 @@ describe('le drapeau dit ce que porte l’export', () => {
     expect(migration).toContain('grant execute on function public.pieces_jointes_ecartees_du_client(uuid) to authenticated;')
     // La table reste fermée au client : la migration ne pose aucune policy.
     expect(migration).not.toMatch(/create policy/i)
+  })
+})
+
+describe('le bordereau de télétransmission (BOR6) : lu, dit, et jamais à renvoyer par e-mail', () => {
+  const BORDEREAU = () => ligne({ raison: 'bordereau' })
+  const PHRASE_UNE = 'Elle a la forme d’un bordereau de télétransmission : ne la renvoie pas par e-mail, elle porte des noms de patients. '
+    + 'Pour en importer les totaux, ouvre « Ma banque », section « Facturé à l’assurance maladie » : le fichier y est lu sur ton appareil '
+    + 'sans être envoyé ; ou remets-le à ton cabinet de la main à la main.'
+
+  it('une ligne de cette raison se lit — elle faisait rejeter toute la lecture avant BOR6', () => {
+    expect(lignesDuClient([{ jour: '2026-11-20', raison: 'bordereau', octets: 4120 }, { jour: '2026-11-19', raison: 'format', octets: 1 }]))
+      .toEqual([{ jour: '2026-11-20', raison: 'bordereau', octets: 4120 }, { jour: '2026-11-19', raison: 'format', octets: 1 }])
+    expect(lectureDesEcarteesDuClient({ data: [{ jour: '2026-11-20', raison: 'bordereau', octets: 4120 }], error: null }).complete).toBe(true)
+  })
+
+  it('seul : ni « renvoie », ni la liste qui ne sait pas — l’import dans « Ma banque », ou remis de la main à la main', () => {
+    expect(peutFaire([BORDEREAU()])).toEqual([PHRASE_UNE])
+    expect(peutFaire([BORDEREAU(), BORDEREAU()])[0]).toMatch(/^Elles ont la forme .* ne les renvoie pas par e-mail, elles portent/)
+    expect(ceQueTuPeuxFaire([BORDEREAU()], ADRESSE).join(' ')).not.toContain(ADRESSE)
+  })
+
+  it('mêlé aux autres : leurs consignes d’abord, sans le compter, puis la sienne', () => {
+    const autres = [ligne({ raison: 'depot', octets: null })]
+    const phrases = peutFaire([BORDEREAU(), ...autres])
+    const attendues = peutFaire(autres)
+    expect(phrases.slice(0, attendues.length - 1)).toEqual(attendues.slice(0, -1))
+    expect(phrases.at(-2)).toMatch(/^Celle qui a la forme d’un bordereau de télétransmission : ne la renvoie pas par e-mail/)
+    expect(phrases.at(-1)).toBe(attendues.at(-1))
   })
 })

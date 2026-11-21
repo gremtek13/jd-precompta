@@ -234,6 +234,25 @@ describe('la pièce jointe arrivée vide (ligne 22.91) : dite, comptée, et la c
   })
 })
 
+describe('le bordereau de télétransmission (BOR6) : dit sans nom, et la consigne de l’importer sur place', () => {
+  const BORDEREAU = () => ecart({ id: 'x7', raison: 'bordereau', octets: 4120, empreinte: '7'.repeat(64), recue_le: '2026-10-12T17:10:00+00:00' })
+
+  it('mêlé à une autre raison : sa phrase, le titre le compte, sa consigne après l’autre, et la marque le prend', async () => {
+    faux.lignes = [ecart(), BORDEREAU()]
+    const vue = await monter()
+    const section = screen.getByRole('region', { name: 'Pièces jointes écartées à la réception par e-mail' })
+    expect(section.querySelector('h3')?.textContent).toBe('2 pièces jointes reçues par e-mail n’ont pas été déposées')
+    const items = [...section.querySelectorAll('.pieces-jointes-ecartees-liste li')].map((li) => li.textContent)
+    expect(items[0]).toMatch(/^le 12\/10\/2026 à 19 h 10 — a la forme d’un bordereau de télétransmission, qui porte des noms de patients : il ne se dépose pas \(4/)
+    expect(texte(vue)).toContain('Celle qui a la forme d’un bordereau de télétransmission : ne demande pas au client de la renvoyer, elle porte des noms de patients. '
+      + 'Ses totaux s’importent dans la section « Facturé à l’assurance maladie » de l’onglet Banque, où le fichier est lu sur place sans être envoyé '
+      + '— remis de la main à la main, jamais par e-mail.')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Marquer comme vues' })) })
+    await laisser()
+    expect(faux.rpcs.map((r) => r.args.p_ids)).toEqual([['x7', 'x1']])
+  })
+})
+
 describe('lue en partie, refusée ou levée : le bandeau, sans compte ni geste', () => {
   it('partielle', async () => {
     faux.muetApres = 1

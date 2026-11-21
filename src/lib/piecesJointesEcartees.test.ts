@@ -249,6 +249,12 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
     const consignes = raisonsDeLaBase.map((r) => ceQueLeCabinetPeutFaire([{ raison: r as PieceJointeEcartee['raison'] }]))
     expect(new Set(consignes.slice(0, 2)).size).toBe(1)
     expect(new Set(consignes.slice(1)).size).toBe(3)
+    // La raison de la migration préparée (BOR6) a, elle aussi, sa phrase et sa consigne à elle.
+    const preparee = /add constraint pieces_jointes_ecartees_raison check \(raison in \(([^)]*)\)\)/.exec(MIGRATION_BORDEREAU)
+    const raisonsPreparees = [...(preparee?.[1] ?? '').matchAll(/'(\w+)'/g)].map((m) => m[1])
+    expect(raisonsPreparees).toEqual([...raisonsDeLaBase, 'bordereau'])
+    expect(phraseDeLaRaison({ raison: 'bordereau', octets: 4120 })).not.toBe('')
+    expect(consignes).not.toContain(ceQueLeCabinetPeutFaire([{ raison: 'bordereau' }]))
   })
 
   it('le poids : lu pour le format et la taille ; pour un dépôt échoué, inconnu AVANT la lecture, le poids lu après ; zéro pour la vide', () => {
@@ -285,5 +291,38 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
     expect(table).not.toMatch(/\b(nom|fichier|filename|extension|expediteur|objet|subject|sujet)\b/)
     const colonnes = [...table.matchAll(/^ {2}([a-z_]+) (?:uuid|timestamptz|text|bigint)/gm)].map((m) => m[1])
     expect(colonnes).toEqual(['id', 'dossier_id', 'recue_le', 'raison', 'octets', 'empreinte', 'vue_le', 'vue_par'])
+  })
+})
+
+describe('le bordereau de télétransmission (BOR6) : dit sans nom, et la consigne de l’importer sur place, jamais par e-mail', () => {
+  const BORDEREAU = () => ecart({ id: 'x7', raison: 'bordereau', octets: 4120 })
+
+  it('sa phrase : la forme du bordereau, les noms de patients, son poids — et sans poids, que la base refuse, rien d’inventé', () => {
+    expect(phraseDeLaRaison(BORDEREAU())).toBe(
+      `a la forme d’un bordereau de télétransmission, qui porte des noms de patients : il ne se dépose pas (${poids(4120)})`)
+    expect(phraseDeLaRaison({ raison: 'bordereau', octets: null })).not.toMatch(/\d|octet|Ko|Mo/)
+    expect(phraseDeLaLigneVue({ ...BORDEREAU(), vue_le: '2026-10-13T09:00:00+00:00' })).toContain('bordereau de télétransmission')
+  })
+
+  it('seul : ne pas demander de la renvoyer, l’importer dans la section de l’onglet Banque, sur place, jamais par e-mail', () => {
+    const une = ceQueLeCabinetPeutFaire([BORDEREAU()])
+    expect(une).toBe('Elle a la forme d’un bordereau de télétransmission : ne demande pas au client de la renvoyer, elle porte des '
+      + 'noms de patients. Ses totaux s’importent dans la section « Facturé à l’assurance maladie » de l’onglet Banque, où le fichier '
+      + 'est lu sur place sans être envoyé — remis de la main à la main, jamais par e-mail.')
+    expect(une).not.toMatch(/PDF, JPEG|telle quelle|adresse de collecte|Mes pièces/)
+    expect(ceQueLeCabinetPeutFaire([BORDEREAU(), BORDEREAU()])).toMatch(/^Elles ont la forme .* de les renvoyer, elles portent .* Leurs totaux/)
+  })
+
+  it('mêlé aux autres : leur consigne d’abord, inchangée, puis celle du bordereau', () => {
+    const autres = [ecart(), ecart({ raison: 'vide', octets: 0 })]
+    const melee = ceQueLeCabinetPeutFaire([BORDEREAU(), ...autres])
+    expect(melee.startsWith(`${ceQueLeCabinetPeutFaire(autres)} Celle qui a la forme d’un bordereau de télétransmission`)).toBe(true)
+    expect(ceQueLeCabinetPeutFaire([...autres, BORDEREAU(), BORDEREAU()])).toContain('Celles qui ont la forme')
+  })
+
+  it('compté dans le titre et rangé comme les autres ; la marque le prend', () => {
+    const { aSignaler } = rangerLesEcarts(D, [BORDEREAU(), ecart({ id: 'x8', recue_le: '2026-10-11T08:00:00+00:00' })])
+    expect(aSignaler.map((l) => l.id)).toEqual(['x7', 'x8'])
+    expect(refusDeMarquerVues({ dossierId: D, lecture: lue([BORDEREAU()]), ids: ['x7'] })).toBeNull()
   })
 })

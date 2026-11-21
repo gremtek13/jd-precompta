@@ -52,6 +52,12 @@ export function phraseDeLaRaison(e: Pick<PieceJointeEcartee, 'raison' | 'octets'
   // Le poids d'une pièce jointe arrivée vide est zéro, et la base ne l'admet que d'elle (`pieces_jointes_ecartees_octets`) :
   // un autre poids, qu'elle refuse, ne se dit pas, et zéro ne s'invente pas non plus.
   if (e.raison === 'vide') return e.octets === 0 ? `arrivée vide (${poids(0)})` : 'arrivée vide'
+  // Le bordereau de télétransmission (BOR6) : son poids est connu et de plus de zéro (la base l'exige comme du format) ;
+  // la phrase sert aussi au client, d'où ses mots neutres — ni onglet, ni « le client ».
+  if (e.raison === 'bordereau') {
+    const forme = 'a la forme d’un bordereau de télétransmission, qui porte des noms de patients : il ne se dépose pas'
+    return e.octets === null ? forme : `${forme} (${poids(e.octets)})`
+  }
   if (e.raison === 'depot') {
     return e.octets === null
       ? 'le dépôt a échoué avant toute lecture de la pièce jointe (poids inconnu)'
@@ -89,6 +95,24 @@ export function titreDuSignalement(n: number): string {
  * quelle la ferait arriver vide de nouveau. Signalées ensemble, chacune garde sa consigne.
  */
 export function ceQueLeCabinetPeutFaire(lignes: readonly Pick<PieceJointeEcartee, 'raison'>[]): string {
+  // Le bordereau de télétransmission (BOR6) ne se renvoie pas : il porte des noms de patients, et le dossier n'est pas
+  // hébergé pour des données de santé. Ses totaux s'importent dans la section de l'onglet Banque, le fichier lu sur place
+  // (celui du cabinet, ou du praticien), remis de la main à la main, jamais par e-mail (RGPD.md § 8.7, BOR3-RGPD (B)).
+  const bordereaux = lignes.filter((l) => l.raison === 'bordereau').length
+  const autres = lignes.filter((l) => l.raison !== 'bordereau')
+  if (bordereaux === 0) return consigneDesAutres(autres)
+  const sujet = bordereaux === 1
+    ? (autres.length === 0 ? 'Elle a la forme' : 'Celle qui a la forme') + ' d’un bordereau de télétransmission : ne demande pas au client de la renvoyer, '
+      + 'elle porte des noms de patients'
+    : (autres.length === 0 ? 'Elles ont la forme' : 'Celles qui ont la forme') + ' d’un bordereau de télétransmission : ne demande pas au client de les renvoyer, '
+      + 'elles portent des noms de patients'
+  const bordereau = `${sujet}. ${bordereaux === 1 ? 'Ses' : 'Leurs'} totaux s’importent dans la section « Facturé à l’assurance maladie » de l’onglet Banque, `
+    + 'où le fichier est lu sur place sans être envoyé — remis de la main à la main, jamais par e-mail.'
+  return autres.length === 0 ? bordereau : `${consigneDesAutres(autres)} ${bordereau}`
+}
+
+/** La consigne des pièces jointes qui se renvoient : refusées à leur format ou à leur poids, au dépôt échoué, ou vides. */
+function consigneDesAutres(lignes: readonly Pick<PieceJointeEcartee, 'raison'>[]): string {
   const echouees = lignes.filter((l) => l.raison === 'depot').length
   const vides = lignes.filter((l) => l.raison === 'vide').length
   const refusees = lignes.length - echouees - vides
