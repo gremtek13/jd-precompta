@@ -1,24 +1,67 @@
 import { formatDate, formatMoney } from './format'
 import { regimeChoisi } from './regimesAssuranceMaladie'
+import type { EspaceVentes } from './espaceVentes'
 import type { CoteDuDu, DuContrePaye, LigneComparee, LigneNonComparable, TrancheDuReste } from './duContrePaye'
 
 // CE QUE L'ASSURANCE MALADIE DOIT, À L'ÉCRAN : LES MOTS ET LA FENÊTRE PROPOSÉE (conception 59, lot BOR5 ; le calcul :
-// lib/duContrePaye.ts). Une section de l'onglet Banque du cabinet, EN LECTURE SEULE, sous `DU_CONTRE_PAYE_PREVU` baissé jusqu'à ce
-// que le cabinet ait vu un premier import réel des deux côtés (DU-Q1) ; « Ma banque » ne la reçoit pas encore. Des mots neutres :
-// « reste estimé », « à vérifier dans ton logiciel de télétransmission », jamais « impayé », jamais un conseil.
+// lib/duContrePaye.ts). Une section des deux espaces, EN LECTURE SEULE, sous `DU_CONTRE_PAYE_PREVU` baissé jusqu'à ce que le
+// cabinet ait vu un premier import réel des deux côtés (DU-Q1) : l'onglet Banque du cabinet, et « Ma banque » du praticien sous
+// « Banque » (DU-Q3 (A), décision du cabinet du 21/11/2026 : « avec les mots du client, sans geste »). Des mots neutres : « reste
+// estimé », « à vérifier dans ton logiciel de télétransmission », jamais « impayé », jamais un conseil. Les phrases du client
+// le tutoient et ne nomment aucun onglet (`MOTS_DU_CABINET`, lib/espaceVentes.ts, confronté par le test) ; celles qui ne
+// changent pas d'un espace à l'autre (les états muets, les avis, les organismes) sont neutres, confrontées de même.
 
 /** Baissé : la section ne se monte pas. Le lever est une décision du cabinet (DU-Q1), après un premier import réel des deux côtés. */
 export const DU_CONTRE_PAYE_PREVU = false
 
 export const TITRE_DU_DU = 'Ce que l’assurance maladie doit (estimé)'
+export const TITRE_DU_DU_AU_CLIENT = 'Ce que l’assurance maladie te doit (estimé)'
 
 export const PRESENTATION_DU_DU = 'Le facturé des bordereaux importés, confronté aux paiements NOEMIE importés, par organisme et par '
   + 'part, en compte courant : chaque paiement s’impute aux lots les plus anciens qu’il peut payer. Le reste est une ESTIMATION, à '
   + 'vérifier dans le logiciel de télétransmission du praticien : un rejet, un paiement d’un lot non importé, une facture refaite '
   + 'sous un autre lot le déplacent. Rien de ce qui suit ne compte dans la 2035, la CA3 ni le FEC.'
 
+export const PRESENTATION_DU_DU_AU_CLIENT = 'Ce que tu as facturé (tes bordereaux importés), confronté à ce que l’assurance '
+  + 'maladie t’a payé (tes paiements NOEMIE importés), par organisme et par part, en compte courant : chaque paiement s’impute '
+  + 'aux lots les plus anciens qu’il peut payer. Le reste est une ESTIMATION, à vérifier dans ton logiciel de télétransmission : '
+  + 'un rejet, un paiement d’un lot que tu n’as pas importé, une facture refaite sous un autre lot le déplacent. Rien de ce qui '
+  + 'suit ne compte dans tes recettes.'
+
 export const RESERVE_DES_CAISSES = 'Le rapprochement suppose que le code de caisse imprimé sur le bordereau est celui que porte le '
   + 'paiement NOEMIE de la même caisse : ce n’est pas encore vérifié sur un fichier réel. Un organisme d’un seul côté le dit.'
+
+export const RESERVE_DES_CAISSES_AU_CLIENT = 'Le rapprochement suppose que le code de caisse imprimé sur ton bordereau est celui '
+  + 'que porte le paiement NOEMIE de la même caisse : ce n’est pas encore vérifié sur un fichier réel. Un organisme d’un seul '
+  + 'côté le dit.'
+
+/** Le client ne choisit pas la fenêtre (aucun geste, DU-Q3 (A)) : elle se dit, la période que ses deux côtés couvrent ensemble. */
+export const fenetreDuClientDite = (f: { du: string; au: string }) => `Lots créés du ${formatDate(f.du)} au ${formatDate(f.au)}, `
+  + 'la période que tes bordereaux et tes paiements importés couvrent ensemble.'
+
+/** Sans « Relire » côté client : un import fait plus haut dans la page compte à sa prochaine ouverture. */
+export const RELECTURE_DU_CLIENT = 'Un import que tu fais plus haut compte ici à ta prochaine ouverture de cette page.'
+
+/** Ce qui ne se confronte pas faute de lecture : la case « Banque » retirée, ou le motif d'une lecture en échec. */
+export function phraseSansLecture(
+  espace: EspaceVentes,
+  lus: readonly ({ etat: 'echec'; motif: string } | { etat: 'sans_banque' } | { etat: 'lus' })[],
+): string {
+  if (lus.some((l) => l.etat === 'sans_banque')) {
+    return espace === 'client'
+      ? 'Ton accès ne porte plus « Banque » sur cette société : ce que l’assurance maladie te doit ne s’affiche pas ici.'
+      : 'Rien n’est confronté : l’accès ne porte pas « Banque ».'
+  }
+  const motif = lus.map((l) => (l.etat === 'echec' ? l.motif : null)).filter((m) => m !== null).join(' ; ')
+  return `Rien n’est confronté : ${motif || 'la lecture n’a pas abouti'}.`
+}
+
+/** Les mots qui changent d'un espace à l'autre ; les autres sont neutres et servent les deux. */
+export function motsDuDu(espace: EspaceVentes): { titre: string; presentation: string; reserve: string } {
+  return espace === 'client'
+    ? { titre: TITRE_DU_DU_AU_CLIENT, presentation: PRESENTATION_DU_DU_AU_CLIENT, reserve: RESERVE_DES_CAISSES_AU_CLIENT }
+    : { titre: TITRE_DU_DU, presentation: PRESENTATION_DU_DU, reserve: RESERVE_DES_CAISSES }
+}
 
 export const LIBELLES_DES_TRANCHES: Readonly<Record<TrancheDuReste, string>> = {
   sept_jours_au_plus: '7 jours au plus',

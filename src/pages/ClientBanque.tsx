@@ -39,6 +39,7 @@ import BarreRecherche from '../components/BarreRecherche'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import PaiementsAssuranceMaladie from '../components/PaiementsAssuranceMaladie'
 import FactureAssuranceMaladie from '../components/FactureAssuranceMaladie'
+import DuContrePaye from '../components/DuContrePaye'
 import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from '../lib/paiementsAssuranceMaladie'
 import { FACTURES_ASSURANCE_MALADIE_PREVUES } from '../lib/importDuFactureAssuranceMaladie'
 import { useCodeNafDuDossier } from '../lib/codeNafDuDossierLecture'
@@ -403,6 +404,10 @@ export default function ClientBanque() {
       {/* Le facturé à l'assurance maladie (BOR4), sous « Banque » : ses bordereaux lus dans le navigateur ; la section relit la case
           à la base avec ses tables. */}
       {lecture.etat === 'lu' && estOuvert('assurance_maladie', ouverts) && <FactureAssuranceMaladie espace="client" dossierId={dossierId} codeNaf={codeNaf} />}
+      {/* Ce que l'assurance maladie doit (BOR5, DU-Q3 (A)) : le facturé confronté au payé, estimé, en lecture seule et sans geste,
+          sous son drapeau `DU_CONTRE_PAYE_PREVU` (baissé, DU-Q1), le même module et la même règle d'offre ; la section relit la
+          case « Banque » à la base avec ses deux tables. */}
+      {lecture.etat === 'lu' && estOuvert('assurance_maladie', ouverts) && <DuContrePaye espace="client" dossierId={dossierId} codeNaf={codeNaf} />}
     </>
   )
 }

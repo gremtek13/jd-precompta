@@ -54423,3 +54423,16 @@ BOR6-Q1 (un PDF qui ne s'ouvre pas part comme avant) et BOR6-Q2 (l'état des pai
 base le même jour : aucune ligne dans les cinq tables de l'assurance maladie, donc aucun import réel encore — `DU_CONTRE_PAYE_PREVU`
 et `CONTROLES_ASSURANCE_MALADIE_PREVUS` restent baissés. Le banc de captures cherche l'exécutable du navigateur sous
 `chrome-linux` ou `chrome-linux64` (cinq scripts), vérifié à la syntaxe seule.
+
+### 21/11/2026 — DU-Q3 : CE QUE L'ASSURANCE MALADIE DOIT, DANS « MA BANQUE »
+
+(Agent dev ; DU-Q3 (A), décision du cabinet du 21/11/2026 : « oui, après DU-Q1, avec les mots du client, sans geste ».) La
+section de BOR5 sert les deux espaces : `components/DuContrePaye.tsx` prend `espace`, obligatoire, en union typée (le client
+porte aussi `codeNaf`), et se monte dans `ClientBanque.tsx` sous les mêmes conditions que NOE4 et BOR4, derrière le MÊME drapeau
+`DU_CONTRE_PAYE_PREVU`, resté baissé (DU-Q1). Côté client : les deux lectures en espace client (la case « Banque » relue à la
+base avec les tables, sans migration ni policy), la règle d'offre de `sectionAssuranceMaladie` sur le code NAF et les imports
+des deux côtés, aucun bouton ni champ — la fenêtre est la période commune, dite ; sans « Relire », une phrase dit qu'un import
+compte à la prochaine ouverture. Les mots dans `lib/duContrePayeVue.ts` (`motsDuDu`, `phraseSansLecture`,
+`fenetreDuClientDite`), tutoyés, confrontés à `MOTS_DU_CABINET` avec les mots neutres partagés ; le test d'écran
+`ClientBanque.duContrePaye.test.tsx` joue le drapeau par un accesseur (baissé : rien de lu ni monté ; levé : la section sans
+bouton ; lecture partielle : dite, aucun chiffre ; code hors santé sans import : rien).
