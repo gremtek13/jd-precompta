@@ -590,7 +590,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   L'ASSURANCE MALADIE, EN BASE ». BOR4 (20/11/2026), l'écran, `FACTURES_ASSURANCE_MALADIE_PREVUES` levé
   (`components/FactureAssuranceMaladie.tsx`, à côté de NOE4, même règle et même module) → « BOR4 : L'ÉCRAN D'IMPORT DU FACTURÉ ».
   BOR5 (20/11/2026), le dû contre le payé, estimé, en compte courant par organisme (`lib/duContrePaye.ts`, pur ; la section du cabinet sous
-  `DU_CONTRE_PAYE_PREVU` baissé) → « BOR5 : CE QUE L'ASSURANCE MALADIE DOIT ».
+  `DU_CONTRE_PAYE_PREVU` baissé, et, pour le client « Banque », dans « Ma banque », DU-Q3) → « BOR5 : CE QUE L'ASSURANCE MALADIE DOIT ».
   NOE6 (20/11/2026), sans migration, derrière `CONTROLES_ASSURANCE_MALADIE_PREVUS` baissé (`lib/controlesAssuranceMaladie.ts`, pur) :
   cinq attentions de la Vue d'ensemble et de la Révision (cycle recettes), jamais préalables, sous la règle de la section et le module ;
   le contrôle de l'exercice à la date du CRÉDIT ; le SNIR jamais comparé (NOE-E1) ; la piste d'audit cite le paiement associé

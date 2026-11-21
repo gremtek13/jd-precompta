@@ -740,7 +740,9 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
     + 'lecture partielle, et un seul envoi pour deux clics',
   'components/DuContrePaye.tsx': 'drapeau `DU_CONTRE_PAYE_PREVU` baissé : ne rend ni ne lit rien ; levé, son propre test '
     + '(DuContrePaye.test.tsx) éprouve « Chargement… » avant le retour des deux lectures, et qu’une lecture partielle ne confronte '
-    + 'rien et le dit ; en lecture seule, elle n’offre aucun geste qui écrive',
+    + 'rien et le dit ; en lecture seule, elle n’offre aucun geste qui écrive ; dans « Ma banque » (DU-Q3), '
+    + 'ClientBanque.duContrePaye.test.tsx éprouve rien de lu ni de monté sous le drapeau baissé, aucun bouton ni champ, et une '
+    + 'lecture partielle dite sans aucun chiffre',
   'components/CopieDesFichiers.tsx': 'drapeau `COPIE_DES_FICHIERS_PREVUE` baissé : ne rend ni ne lit rien ; levé, son propre test '
     + '(CopieDesFichiers.test.tsx) éprouve la lecture avant le rappel, et le geste sur une lecture partielle (aucun ZIP)',
   'components/DeuxFacteursDesComptes.tsx': 'drapeau `DEUX_FACTEURS_EXIGES_EXPORTE` baissé : ne rend ni ne lit rien ; levé, '

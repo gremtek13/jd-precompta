@@ -2843,7 +2843,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       {estOuvert('assurance_maladie', modulesOuverts) && <FactureAssuranceMaladie espace="cabinet" dossierId={dossierId} codeNaf={codeNaf} />}
       {/* Ce que l'assurance maladie doit (BOR5) : le facturé confronté au payé, estimé, en lecture seule, au cabinet seul, sous son
           drapeau baissé et le même module ; il ne compte dans aucun moteur. */}
-      {estOuvert('assurance_maladie', modulesOuverts) && <DuContrePaye dossierId={dossierId} />}
+      {estOuvert('assurance_maladie', modulesOuverts) && <DuContrePaye espace="cabinet" dossierId={dossierId} />}
     </>
   )
 }

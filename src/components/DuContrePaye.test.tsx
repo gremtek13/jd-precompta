@@ -67,14 +67,14 @@ const texte = () => document.body.textContent ?? ''
 describe('ce que l’assurance maladie doit, à l’écran du cabinet', () => {
   it('drapeau baissé : rien n’est monté ni lu', () => {
     faux.drapeau = false
-    const { container } = render(<DuContrePaye dossierId="d1" />)
+    const { container } = render(<DuContrePaye espace="cabinet" dossierId="d1" />)
     expect(container.innerHTML).toBe('')
     expect(faux.lectures).toBe(0)
   })
 
   it('rien avant le retour des deux lectures', async () => {
     faux.facture = factureLue()
-    render(<DuContrePaye dossierId="d1" />)
+    render(<DuContrePaye espace="cabinet" dossierId="d1" />)
     await act(async () => {})
     expect(screen.getByText('Chargement…')).toBeTruthy()
     expect(texte()).not.toMatch(/Reste estimé/)
@@ -82,7 +82,7 @@ describe('ce que l’assurance maladie doit, à l’écran du cabinet', () => {
 
   it('une lecture partielle ne confronte rien, et le dit', async () => {
     faux.facture = factureLue(false); faux.paye = payeLu()
-    render(<DuContrePaye dossierId="d1" />)
+    render(<DuContrePaye espace="cabinet" dossierId="d1" />)
     await act(async () => {})
     expect(texte()).toContain('Rien n’est confronté : les bordereaux n’ont pas pu être lus en entier.')
     expect(screen.queryByRole('table')).toBeNull()
@@ -90,7 +90,7 @@ describe('ce que l’assurance maladie doit, à l’écran du cabinet', () => {
 
   it('la période commune proposée ; le reste estimé, sous la réserve des caisses ; une fenêtre non couverte se dit', async () => {
     faux.facture = factureLue(); faux.paye = payeLu()
-    render(<DuContrePaye dossierId="d1" />)
+    render(<DuContrePaye espace="cabinet" dossierId="d1" />)
     await act(async () => {})
     expect(texte()).toContain(RESERVE_DES_CAISSES)
     const [du, au] = screen.getAllByDisplayValue(/^2026-/) as HTMLInputElement[]
