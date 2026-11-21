@@ -22,5 +22,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "outils/captures/fauxSupabase.ts", "outils/charge/annee.mts", "outils/fec/fecFictif.mts", "outils/bordereau/outil.mts", "outils/bordereau/sortie.mts", "outils/demonstration/demonstration.mts", "outils/demonstration/replique.mts"]
+  "include": ["src", "outils/captures/fauxSupabase.ts", "outils/charge/annee.mts", "outils/fec/fecFictif.mts", "outils/bordereau/outil.mts", "outils/bordereau/sortie.mts", "outils/bordereau/reception.mts", "outils/bordereau/jugementReception.mts", "outils/demonstration/demonstration.mts", "outils/demonstration/replique.mts"]
 }
