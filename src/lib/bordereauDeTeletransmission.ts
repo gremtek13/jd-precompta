@@ -42,6 +42,12 @@
 // avant le total est un refus) ; une page qui reprend seulement l'en-tête des colonnes, ou aucun, continue aussi. Le pied
 // (la date d'impression, « k/n », « Réalisé par Televitale ») est ignoré où qu'il soit.
 
+// ── DÉBUT COPIE formeDUnBordereau ────────────────────────────────────────────────────────────────────────────────────
+// LA FORME D'UN BORDEREAU DE TÉLÉTRANSMISSION, ET LES LIGNES D'UNE PAGE (BOR6). Ce bloc est copié À L'IDENTIQUE dans
+// receive-email, auto-portée, qui écarte à la réception par e-mail la pièce jointe qui a cette forme (seconde partie de BOR6) ;
+// formeDUnBordereauCopie.test.ts compare la copie au caractère près et l'exécute contre l'original. La lecture des
+// bordereaux, plus bas, s'en sert telle quelle.
+
 /** Un fragment de texte tel que pdf.js le rend (`getTextContent`), réduit à ce qui sert : le texte et sa position. */
 export interface FragmentDeTexte {
   texte: string
@@ -57,38 +63,6 @@ export interface FragmentDeTexte {
 
 /** Une page : ses lignes déjà recomposées, ou ses fragments positionnés. */
 export type PageDeTexte = { lignes: readonly string[] } | { fragments: readonly FragmentDeTexte[] }
-
-export interface TotauxDuBordereau {
-  totalCentimes: number
-  caisseCentimes: number
-  mutuelleCentimes: number
-  assureCentimes: number
-}
-
-/** Un bordereau lu : l'en-tête du lot et ses totaux, jamais une valeur d'une ligne de facture. */
-export interface BordereauLu {
-  lot: number
-  /** La date de création du lot, AAAA-MM-JJ. */
-  creeLe: string
-  securise: boolean
-  organisme: {
-    /** Trois chiffres, tels qu'imprimés (« 999 »). */
-    code: string
-    /** Le libellé imprimé après le code (« CPAM - VILLE ») : lettres, espaces, tirets, apostrophes et points seuls. */
-    libelle: string
-  }
-  nombreDeFactures: number
-  totaux: TotauxDuBordereau
-}
-
-export type LectureDuBordereau =
-  | { etat: 'lu'; bordereaux: readonly BordereauLu[] }
-  | { etat: 'refuse'; raison: string }
-
-/** Le libellé d'un organisme, au plus : au-delà, ce n'est plus un en-tête. */
-export const LIBELLE_ORGANISME_MAX = 60
-/** Un montant, au plus, en centimes (dix millions d'euros) : au-delà, la lecture s'est trompée de colonne. */
-const MONTANT_MAX_CENTIMES = 1_000_000_000
 
 // ── La normalisation : minuscules, sans accents, espaces insécables ramenées, espaces réduites. ──
 
@@ -124,6 +98,86 @@ export function lignesDesFragments(fragments: readonly FragmentDeTexte[]): strin
     return ligne.replace(ESPACES, ' ').replace(/\s+/g, ' ').trim()
   })
 }
+
+const TITRE = 'bordereau de teletransmission'
+const ENTETE_DES_COLONNES = 'facture date prescription numero assure nom beneficiaire naissance total caisse mutuelle assure'
+
+function estUnPied(normalisee: string): boolean {
+  const reste = normalisee.replace('realise par televitale', ' ').trim()
+  if (reste === '') return normalisee !== ''
+  return reste.split(' ').every((j) => /^\d{2}\/\d{2}\/\d{4}$/.test(j) || /^\d{1,3}\/\d{1,3}$/.test(j))
+}
+
+interface LigneDuFichier {
+  page: number
+  originale: string
+  normalisee: string
+  /** La première ligne de sa page qui ne soit ni vide ni un pied. */
+  enTeteDePage: boolean
+}
+
+function lignesDuFichier(pages: readonly PageDeTexte[]): LigneDuFichier[] {
+  const toutes: LigneDuFichier[] = []
+  pages.forEach((page, indice) => {
+    const brutes = 'lignes' in page ? page.lignes.map((l) => l.replace(ESPACES, ' ').replace(/\s+/g, ' ').trim()) : lignesDesFragments(page.fragments)
+    let premiere = true
+    for (const originale of brutes) {
+      const normalisee = normaliser(originale)
+      if (normalisee === '') continue
+      const pied = estUnPied(normalisee)
+      toutes.push({ page: indice + 1, originale, normalisee, enTeteDePage: premiere && !pied })
+      if (!pied) premiere = false
+    }
+  })
+  return toutes
+}
+
+/**
+ * LA FORME D'UN BORDEREAU, AU DÉPÔT (lot BOR6, BOR-Q9 (A)) : vrai dès qu'une ligne du fichier, sur n'importe quelle page, EST
+ * le titre « Bordereau de Teletransmission », ou CONTIENT l'en-tête des colonnes (« … Numéro Assuré Nom Bénéficiaire
+ * Naissance … ») — les deux reconnaissances de la lecture ci-dessous, sous la même normalisation, jamais recopiées. Deux
+ * signaux indépendants plutôt qu'un : un titre que pdf.js aurait collé à un autre texte de sa ligne laisse l'en-tête des
+ * colonnes, propre à un état nominatif. Aucun autre contrôle (ni le lot, ni les totaux) : un bordereau que la lecture
+ * refuserait (mal formé, tronqué) porte les mêmes noms, et se refuse au dépôt de même. Le titre n'est cherché qu'en ligne
+ * ENTIÈRE : une facture de logiciel qui vend « l'impression du bordereau de télétransmission » ne se refuse pas
+ * (refusDesBordereaux.test.ts mesure les faux positifs). Rend un booléen, jamais une ligne.
+ */
+export function porteLaFormeDUnBordereau(pages: readonly PageDeTexte[]): boolean {
+  return lignesDuFichier(pages).some((l) => l.normalisee === TITRE || l.normalisee.includes(ENTETE_DES_COLONNES))
+}
+// ── FIN COPIE formeDUnBordereau ──────────────────────────────────────────────────────────────────────────────────────
+
+export interface TotauxDuBordereau {
+  totalCentimes: number
+  caisseCentimes: number
+  mutuelleCentimes: number
+  assureCentimes: number
+}
+
+/** Un bordereau lu : l'en-tête du lot et ses totaux, jamais une valeur d'une ligne de facture. */
+export interface BordereauLu {
+  lot: number
+  /** La date de création du lot, AAAA-MM-JJ. */
+  creeLe: string
+  securise: boolean
+  organisme: {
+    /** Trois chiffres, tels qu'imprimés (« 999 »). */
+    code: string
+    /** Le libellé imprimé après le code (« CPAM - VILLE ») : lettres, espaces, tirets, apostrophes et points seuls. */
+    libelle: string
+  }
+  nombreDeFactures: number
+  totaux: TotauxDuBordereau
+}
+
+export type LectureDuBordereau =
+  | { etat: 'lu'; bordereaux: readonly BordereauLu[] }
+  | { etat: 'refuse'; raison: string }
+
+/** Le libellé d'un organisme, au plus : au-delà, ce n'est plus un en-tête. */
+export const LIBELLE_ORGANISME_MAX = 60
+/** Un montant, au plus, en centimes (dix millions d'euros) : au-delà, la lecture s'est trompée de colonne. */
+const MONTANT_MAX_CENTIMES = 1_000_000_000
 
 // ── Les montants à la française, lus depuis la fin d'une ligne. ──
 
@@ -162,15 +216,6 @@ export function montantsEnFin(ligne: string, n: number): { tete: string; centime
 }
 
 // ── La reconnaissance des lignes. ──
-
-const TITRE = 'bordereau de teletransmission'
-const ENTETE_DES_COLONNES = 'facture date prescription numero assure nom beneficiaire naissance total caisse mutuelle assure'
-
-function estUnPied(normalisee: string): boolean {
-  const reste = normalisee.replace('realise par televitale', ' ').trim()
-  if (reste === '') return normalisee !== ''
-  return reste.split(' ').every((j) => /^\d{2}\/\d{2}\/\d{4}$/.test(j) || /^\d{1,3}\/\d{1,3}$/.test(j))
-}
 
 function dateCivile(jour: string, mois: string, annee: string): string | null {
   const j = Number(jour)
@@ -257,14 +302,6 @@ function poserChamp(entete: EnteteDuLot, champ: Exclude<ChampDEntete, { champ: '
 
 // ── La lecture. ──
 
-interface LigneDuFichier {
-  page: number
-  originale: string
-  normalisee: string
-  /** La première ligne de sa page qui ne soit ni vide ni un pied. */
-  enTeteDePage: boolean
-}
-
 interface BordereauEnCours {
   rang: number
   entete: EnteteDuLot
@@ -272,36 +309,6 @@ interface BordereauEnCours {
   lignesDeFacture: number
   sommes: [number, number, number, number]
   total: { nombre: number; centimes: [number, number, number, number] } | null
-}
-
-function lignesDuFichier(pages: readonly PageDeTexte[]): LigneDuFichier[] {
-  const toutes: LigneDuFichier[] = []
-  pages.forEach((page, indice) => {
-    const brutes = 'lignes' in page ? page.lignes.map((l) => l.replace(ESPACES, ' ').replace(/\s+/g, ' ').trim()) : lignesDesFragments(page.fragments)
-    let premiere = true
-    for (const originale of brutes) {
-      const normalisee = normaliser(originale)
-      if (normalisee === '') continue
-      const pied = estUnPied(normalisee)
-      toutes.push({ page: indice + 1, originale, normalisee, enTeteDePage: premiere && !pied })
-      if (!pied) premiere = false
-    }
-  })
-  return toutes
-}
-
-/**
- * LA FORME D'UN BORDEREAU, AU DÉPÔT (lot BOR6, BOR-Q9 (A)) : vrai dès qu'une ligne du fichier, sur n'importe quelle page, EST
- * le titre « Bordereau de Teletransmission », ou CONTIENT l'en-tête des colonnes (« … Numéro Assuré Nom Bénéficiaire
- * Naissance … ») — les deux reconnaissances de la lecture ci-dessous, sous la même normalisation, jamais recopiées. Deux
- * signaux indépendants plutôt qu'un : un titre que pdf.js aurait collé à un autre texte de sa ligne laisse l'en-tête des
- * colonnes, propre à un état nominatif. Aucun autre contrôle (ni le lot, ni les totaux) : un bordereau que la lecture
- * refuserait (mal formé, tronqué) porte les mêmes noms, et se refuse au dépôt de même. Le titre n'est cherché qu'en ligne
- * ENTIÈRE : une facture de logiciel qui vend « l'impression du bordereau de télétransmission » ne se refuse pas
- * (refusDesBordereaux.test.ts mesure les faux positifs). Rend un booléen, jamais une ligne.
- */
-export function porteLaFormeDUnBordereau(pages: readonly PageDeTexte[]): boolean {
-  return lignesDuFichier(pages).some((l) => l.normalisee === TITRE || l.normalisee.includes(ENTETE_DES_COLONNES))
 }
 
 function refus(raison: string): LectureDuBordereau {

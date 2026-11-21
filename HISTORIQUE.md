@@ -54436,3 +54436,20 @@ compte à la prochaine ouverture. Les mots dans `lib/duContrePayeVue.ts` (`motsD
 `fenetreDuClientDite`), tutoyés, confrontés à `MOTS_DU_CABINET` avec les mots neutres partagés ; le test d'écran
 `ClientBanque.duContrePaye.test.tsx` joue le drapeau par un accesseur (baissé : rien de lu ni monté ; levé : la section sans
 bouton ; lecture partielle : dite, aucun chiffre ; code hors santé sans import : rien).
+
+### 21/11/2026 — BOR6, SECONDE PARTIE : LE BORDEREAU DE TÉLÉTRANSMISSION ÉCARTÉ À LA RÉCEPTION PAR E-MAIL (DERRIÈRE SA CONSTANTE)
+
+(Agent architecte ; BOR-Q9 (A).) La mesure d'abord, sous Node 22 (le moteur de Deno), sur des PDF fictifs de pdf-lib : pdf.js
+demande 176 ms de calcul pour 3 pages, 14,8 s et 420 Mo pour 5 Mio de texte (3 400 pages), son code 3,3 Mo — hors de ce qu'une
+Edge Function a (2 s de calcul, 256 Mo par requête). Écrit donc un lecteur de la couche de texte, sans dépendance
+(`lib/texteDUnPdf.ts`) : les objets par leur marque, les flux d'objets, FlateDecode par le `DecompressionStream` natif, ASCIIHex et
+ASCII85, l'arbre des pages, les polices simples (WinAnsi, Differences), composites (Identity-H, CMap embarqué), le ToUnicode, les
+largeurs, les formulaires ; chiffré, autre filtre ou prédicteur : illisible ou sans texte ; borné en octets décompressés et en
+durée. Mesuré : le bordereau fictif reconnu en 24 à 33 ms, 30 pages de texte lues en 96 ms, 5 Mio en 4,4 s (au-delà de la borne :
+illisible, déposé comme avant). Mêmes lignes que pdf.js sur le bordereau fictif, des textes ordinaires et des PDF écrits à la main.
+receive-email copie ce bloc et celui de la forme (`porteLaFormeDUnBordereau`, regroupée en bloc `formeDUnBordereau`), juge un PDF
+après les bornes et avant le doublon, le stockage et Textract, sur une seconde commune à tout l'e-mail, et consigne la raison
+`bordereau` — derrière `BORDEREAUX_ECARTES_A_LA_RECEPTION` baissée, la migration `pieces_jointes_ecartees_bordereau` préparée
+(à coller). Gardes : `bordereauALaReceptionCopie.test.ts`, `bordereauxALaReceptionHttp.test.ts` (six scénarios levés, un baissé).
+Non fait : les écrans ne connaissent pas encore la raison `bordereau` (le cabinet, « Mes pièces »), préalable à la levée ; non
+vérifié : un vrai bordereau de Télévitale (son producteur, ses polices), Deno lui-même.
