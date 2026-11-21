@@ -54409,3 +54409,17 @@ pendant ces 15 s, la fenêtre du cabinet ne montrait rien ; elle dit « Vérific
 `ImportDossierModal`, `FichePiece`) attendaient le bouton dans l'`act` du choix, que le premier chargement de pdf.js sous jsdom
 dépasse : ils simulent la lecture (vert par hasard au premier passage de la suite). L'état baissé reste joué par l'accesseur de
 `bornesStockageBordereaux.test.ts`. Non vérifié : un poste réel lent, Safari, un PDF numérisé lourd.
+
+### 21/11/2026 — TREIZE RÉPONSES DU CABINET (ASSURANCE MALADIE ET OPTIONS)
+
+(Session ; page des arbitrages relue le 21/11/2026.) Toutes à la recommandation (A), aucune ne change le code écrit :
+OPT5-Q1 (un seul module par fonction) et OPT5-Q2 (une seule phrase côté fonction, réécrite par l'écran du client) ; ARCHI-AM-Q1
+(la lecture entière gardée, à revoir plus tard) ; BOR4-Q1 (rien n'est conseillé sur le fichier après l'import) et BOR4-Q2 (le nom
+de chaque PDF choisi, avec le rang de ses bordereaux) ; DU-Q1 (« ce que l'assurance maladie doit » ne s'ouvre qu'après un premier
+import réel des deux côtés qui confirme les codes de caisse), DU-Q2 (jours civils, sans délai légal), DU-Q3 (la même section dans
+« Ma banque », après DU-Q1) ; NOE6-Q1 (les crédits de l'assurance maladie signalés même sans import), NOE6-Q2 (un paiement proposé
+mais pas associé compte comme un écart), NOE6-Q3 (la piste d'audit se refuse quand les paiements ne se lisent pas en entier) ;
+BOR6-Q1 (un PDF qui ne s'ouvre pas part comme avant) et BOR6-Q2 (l'état des paiements attend une page rendue anonyme). Relevé en
+base le même jour : aucune ligne dans les cinq tables de l'assurance maladie, donc aucun import réel encore — `DU_CONTRE_PAYE_PREVU`
+et `CONTROLES_ASSURANCE_MALADIE_PREVUS` restent baissés. Le banc de captures cherche l'exécutable du navigateur sous
+`chrome-linux` ou `chrome-linux64` (cinq scripts), vérifié à la syntaxe seule.
