@@ -33,7 +33,7 @@ if (NOMS_DU_VIDE.length !== 1) {
   throw new Error(`la migration pieces_jointes_ecartees_vide doit être UNE dans l'export : ${NOMS_DU_VIDE.length} trouvée(s)`)
 }
 const MIGRATION_VIDE = readFileSync(new URL(NOMS_DU_VIDE[0], SCHEMA), 'utf8')
-const MIGRATION_BORDEREAU = readFileSync(new URL('../../supabase/preparees/20261121120000_pieces_jointes_ecartees_bordereau.sql', import.meta.url), 'utf8')
+const MIGRATION_BORDEREAU = readFileSync(new URL('../../supabase/schema/20261121195200_pieces_jointes_ecartees_bordereau.sql', import.meta.url), 'utf8')
 const RECEIVE_EMAIL = readFileSync(new URL('../../supabase/functions/receive-email/index.ts', import.meta.url), 'utf8')
 
 const D = 'd1'

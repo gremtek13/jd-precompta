@@ -1,4 +1,4 @@
--- RETOUR DE `pieces_jointes_ecartees_bordereau` (BOR6, seconde partie, supabase/preparees/20261121120000_pieces_jointes_ecartees_bordereau.sql)
+-- RETOUR DE `pieces_jointes_ecartees_bordereau` (BOR6, seconde partie, supabase/schema/20261121195200_pieces_jointes_ecartees_bordereau.sql)
 -- — À COLLER par le cabinet dans l'éditeur SQL de Supabase, dans une transaction : il retire une contrainte avant de la reposer,
 -- ce que l'outil d'application retient. Il rend la liste des quatre raisons d'avant. receive-email se redéploie AVANT lui, sa
 -- constante `BORDEREAUX_ECARTES_A_LA_RECEPTION` baissée.

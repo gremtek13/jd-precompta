@@ -54465,3 +54465,14 @@ du client (`ceQueTuPeuxFaire` : « Ma banque », ou remis à son cabinet de la m
 ne sait pas »). Le lecteur du client accepte la raison : une telle ligne faisait rejeter toute la lecture. Aucun drapeau : tant que
 la base ne l'admet pas, aucune ligne ne la porte. Non changée : la phrase de l'onglet Accès (`ceQueDitLaCollecte`), qui dit ce que
 la base ouvre aujourd'hui — à reprendre avec la migration et la constante levées.
+
+### 21/11/2026 — BOR6R : TROIS RÉPONSES DU CABINET, ET LA RAISON « BORDEREAU » EN PRODUCTION (249)
+
+Le cabinet a répondu le 21/11/2026 au soir : BOR6R-migration (A), BOR6R-Q1 (oui : essayer un vrai bordereau dans un outil local
+avant de lever la constante), BOR6R-Q2 (oui : la limite d'un très gros PDF telle quelle). `pieces_jointes_ecartees_bordereau`
+collée par le cabinet sous la version `20261121195200` : l'empreinte de l'historique égale à celle du fichier
+(`20d324dde2d53f4cda1d0dfd4c405ef1`, sans la dernière fin de ligne), la contrainte relue en base (cinq raisons), le fichier rangé
+dans l'export. Les trois contrôles : dérive 249 = 249, `7ecacfa81a077580c625ea4a90a0ccb4` des deux côtés ; socle 83 instructions,
+`a9f83f2d95146e3b239f17654d61ba3f` ; inventaire 3 425 objets, `c2df15696f8799d8c291545e13eee8ee`. Rien n'écrit encore la raison :
+la constante `BORDEREAUX_ECARTES_A_LA_RECEPTION` reste baissée jusqu'à l'essai d'un vrai bordereau ; restent aussi la phrase de
+l'onglet Accès et le redéploiement de `receive-email`. DUQ3-Q1 reste ouverte.
