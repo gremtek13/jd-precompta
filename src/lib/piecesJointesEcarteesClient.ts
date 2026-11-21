@@ -41,7 +41,9 @@ export const ECARTEES_DU_CLIENT_EXPORTEES: boolean = true
  */
 export const JOURS_DE_LA_LECTURE_DU_CLIENT = 90
 
-const RAISONS = new Set<string>(['format', 'taille', 'depot', 'vide'])
+// `bordereau` (BOR6) : une ligne de cette raison faisait rejeter toute la lecture ; elle se lit et se dit. Tant que la base ne
+// l'admet pas (la migration préparée `pieces_jointes_ecartees_bordereau`), aucune ne vient.
+const RAISONS = new Set<string>(['format', 'taille', 'depot', 'vide', 'bordereau'])
 
 /** Une date civile AAAA-MM-JJ qui existe au calendrier (ni un 31 juin, ni un mois 13). */
 function estUnJourCivil(valeur: unknown): valeur is string {
@@ -138,7 +140,11 @@ export function ouRenvoyer(adresse: string | null): string {
  * liste garde 90 jours sans savoir s'il a renvoyé depuis : la dernière phrase le dit. `adresse` est celle que « Mes pièces »
  * a lue pour la société affichée, ou null (voir `ouRenvoyer`) : le paramètre n'a pas de valeur par défaut.
  */
-export function ceQueTuPeuxFaire(lignes: readonly Pick<PieceJointeEcarteeDuClient, 'raison'>[], adresse: string | null): string[] {
+export function ceQueTuPeuxFaire(toutes: readonly Pick<PieceJointeEcarteeDuClient, 'raison'>[], adresse: string | null): string[] {
+  // Le bordereau de télétransmission (BOR6) ne se renvoie pas : il porte des noms de patients. Sa phrase vient après celles
+  // des pièces jointes à renvoyer, qui ne le comptent pas.
+  const bordereaux = toutes.filter((l) => l.raison === 'bordereau').length
+  const lignes = toutes.filter((l) => l.raison !== 'bordereau')
   const OU = ouRenvoyer(adresse)
   const formats = lignes.filter((l) => l.raison === 'format').length
   const refusees = formats + lignes.filter((l) => l.raison === 'taille').length
@@ -162,6 +168,14 @@ export function ceQueTuPeuxFaire(lignes: readonly Pick<PieceJointeEcarteeDuClien
     if (vides === 1) phrases.push('Celle arrivée vide : vérifie ton fichier (qu’il s’ouvre et ne soit pas vide) avant de le renvoyer.')
     if (vides > 1) phrases.push('Celles arrivées vides : vérifie tes fichiers (qu’ils s’ouvrent et ne soient pas vides) avant de les renvoyer.')
     phrases.push(`Renvoie-les ${OU}.`)
+  }
+  if (bordereaux > 0) {
+    const debut = lignes.length === 0
+      ? (bordereaux === 1 ? 'Elle a la forme d’un bordereau de télétransmission' : 'Elles ont la forme d’un bordereau de télétransmission')
+      : (bordereaux === 1 ? 'Celle qui a la forme d’un bordereau de télétransmission' : 'Celles qui ont la forme d’un bordereau de télétransmission')
+    const ne = bordereaux === 1 ? 'ne la renvoie pas par e-mail, elle porte' : 'ne les renvoie pas par e-mail, elles portent'
+    phrases.push(`${debut} : ${ne} des noms de patients. Pour en importer les totaux, ouvre « Ma banque », section « Facturé à `
+      + 'l’assurance maladie » : le fichier y est lu sur ton appareil sans être envoyé ; ou remets-le à ton cabinet de la main à la main.')
   }
   if (formats > 0) {
     phrases.push('Une pièce jointe qui n’était pas une pièce — une signature électronique, une invitation… — n’a pas à être renvoyée.')

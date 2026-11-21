@@ -54453,3 +54453,15 @@ après les bornes et avant le doublon, le stockage et Textract, sur une seconde 
 (à coller). Gardes : `bordereauALaReceptionCopie.test.ts`, `bordereauxALaReceptionHttp.test.ts` (six scénarios levés, un baissé).
 Non fait : les écrans ne connaissent pas encore la raison `bordereau` (le cabinet, « Mes pièces »), préalable à la levée ; non
 vérifié : un vrai bordereau de Télévitale (son producteur, ses polices), Deno lui-même.
+
+### 21/11/2026 — BOR6 : LA RAISON « BORDEREAU » À L'ÉCRAN
+
+Les écrans apprennent la cinquième raison d'une pièce jointe écartée, `bordereau`, que `receive-email` consigne derrière sa
+constante baissée et que la migration préparée `pieces_jointes_ecartees_bordereau` admettra : le type (`types.ts`), la phrase
+partagée (`phraseDeLaRaison` : la forme du bordereau, les noms de patients, son poids, aux mots neutres que le client lit aussi),
+la consigne du cabinet (ne pas demander de la renvoyer, importer ses totaux dans la section « Facturé à l'assurance maladie » de
+l'onglet Banque, sur place, remis de la main à la main, jamais par e-mail ; mêlée, après la consigne inchangée des autres) et celle
+du client (`ceQueTuPeuxFaire` : « Ma banque », ou remis à son cabinet de la main à la main ; hors du « renvoie » et de « Cette liste
+ne sait pas »). Le lecteur du client accepte la raison : une telle ligne faisait rejeter toute la lecture. Aucun drapeau : tant que
+la base ne l'admet pas, aucune ligne ne la porte. Non changée : la phrase de l'onglet Accès (`ceQueDitLaCollecte`), qui dit ce que
+la base ouvre aujourd'hui — à reprendre avec la migration et la constante levées.
