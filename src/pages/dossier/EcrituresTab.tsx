@@ -84,6 +84,10 @@ import { lireLesPaiementsAssuranceMaladie } from '../../lib/paiementsAssuranceMa
 import { useModulesOuverts } from '../../context/ModulesOuverts'
 import { estOuvert } from '../../lib/modulesDuCabinet'
 import VentesFactureesEcritures from './VentesFactureesEcritures'
+import EcrituresLibresSection from './EcrituresLibresSection'
+import { lireLesEcrituresLibres } from '../../lib/ecrituresLibresLecture'
+import { ecrituresLibresPourLesMoteurs, motifDesEcrituresLibres, type LectureDesEcrituresLibres } from '../../lib/ecrituresLibresVue'
+import { ECRITURES_LIBRES_PREVUES } from '../../lib/ecritureLibre'
 import {
   AUCUNE_PIECE_CITEE, exemplairesDesSources, facturesSourcesDe, horsDesExemplairesDesSources, marquerLesPiecesCitees,
   type FacturesSources,
@@ -294,13 +298,17 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // lu avec le brouillon et gardé avec le dossier qui l'a demandé ; la carte du modèle comptable dit le refus de la base avant
   // le clic. Le drapeau baissé, rien n'est lu (sans appel au réseau) et rien ne change.
   const [lectureReprises, setLectureReprises] = useState<LectureDesReprisesDuModele | null>(null)
+  // LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL5 ; lib/ecrituresLibresLecture.ts) : le FEC et la piste d'audit les citent
+  // (EL3), la section « Écritures de l'expert-comptable » les liste et les passe. Le drapeau baissé, l'absence, sans requête ;
+  // levé et lues en partie, aucun export (`ecrituresLibresDesExports` nul).
+  const [lectureLibres, setLectureLibres] = useState<LectureDesEcrituresLibres | null>(null)
 
   async function load() {
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
       lectureReglements, lectureNatures, lectureLettrages, lectureDeclarations, lectureReportes, lectureDesVentes, lectureDeLaCaisse,
-      lectureDesChampsBnc, lectureDeLOuverture, lectureDesReprises,
+      lectureDesChampsBnc, lectureDeLOuverture, lectureDesReprises, lectureDesLibres,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -376,7 +384,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       lireLOuvertureEclatee(dossierId),
       // Ne rejette jamais ; le drapeau des reprises (A8B-Q3) baissé, ne touche pas au réseau.
       lireLesReprisesDuModele(dossierId),
+      // Ne rejette jamais ; le drapeau des écritures libres (EL2) baissé, ne touche pas au réseau.
+      lireLesEcrituresLibres(dossierId),
     ])
+    setLectureLibres(lectureDesLibres)
     setLectureOuverture(lectureDeLOuverture)
     setLectureReprises(lectureDesReprises)
     setLectureVentes(lectureDesVentes)
@@ -524,6 +535,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const caisseNonLue = paiementsDeLaCaisse !== null ? null
     : motifDesOperationsDeCaisse(operationsDeCaisseDuDossier(lectureCaisse, dossierId)) ?? 'pas encore lue'
   const paiements = paiementsDesPieces(lignesBancaires, reglements, encaissees, paiementsDeLaCaisse ?? [])
+  // Les écritures libres, telles que le FEC et la piste d'audit les reçoivent (EL3, sans le motif) : l'absence, le drapeau
+  // baissé ; nulles — pas encore revenues, ou illisibles —, ni FEC ni piste d'audit (une ligne qui en cite une tomberait hors
+  // du fichier, ou se dirait sans justificatif).
+  const ecrituresLibresDesExports = ecrituresLibresPourLesMoteurs(lectureLibres, dossierId)
   // Les pièces sans écriture, et ce que la génération écrirait d'elles. Rien ne s'écrit au plus tard à la frontière
   // de validation (lib/validationExercice.ts) : la base le refuserait, et tout le lot avec, l'insertion étant d'un
   // seul tenant. Une pièce dont une part tombe dans un exercice validé est NOMMÉE plus bas, plutôt que de
@@ -713,10 +728,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // colonnes quand sa validation a figé les quatre champs (FEC22b, FEC22c2) et que le drapeau est levé, à dix-huit sinon
   // (`numerotationValidee`). Les autres attendent leurs entrées, lues en entier.
   const numerotationDuFec = (): { contenu: string; numerotation: NumerotationFec } | null => {
-    if (typeof anneeFilter !== 'number' || ventesDesExports === null || operationsDuFec === null) return null
+    if (typeof anneeFilter !== 'number' || ventesDesExports === null || operationsDuFec === null || ecrituresLibresDesExports === null) return null
     const brute = fecValide ?? (champsDuFec === null ? null : numeroterFec(
       ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele, lignesBancaires,
-      ventesDesExports.ecritures, operationsDuFec, champsDuFec,
+      ventesDesExports.ecritures, operationsDuFec, champsDuFec, ecrituresLibresDesExports,
     ))
     const rendue = brute === null ? null : numerotationRendue(brute)
     return rendue === null ? null : { contenu: formaterFec(rendue, lettrage, modele.mode), numerotation: rendue }
@@ -855,6 +870,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     // revenues ou lues en partie, l'export se refuse — un paiement se dirait « hors du jeu chargé » —, mais seulement quand
     // un tel paiement peut exister (`paiementsDeLaCaisse` nuls) : tant que la migration n'est pas en base, la piste est
     // celle d'hier, et ne cite aucune opération.
+    if (ecrituresLibresDesExports === null) {
+      throw new Error(
+        `Les écritures de l'expert-comptable n'ont pas pu être lues en entier (${motifDesEcrituresLibres(lectureLibres) ?? 'pas encore lues'}). ` +
+        "L'export est annulé : une piste d'audit dirait sans justificatif une écriture libre qu'elle n'a pas lue.",
+      )
+    }
     if (paiementsDeLaCaisse === null) {
       throw new Error(
         `La caisse du dossier n'a pas pu être lue en entier (${caisseNonLue}). ` +
@@ -881,7 +902,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
         ventes: { ...ventes, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions, piecesCitees },
         caisse: operationsDuFec ?? OPERATIONS_DE_CAISSE_ABSENTES,
-        plan: modele.plan, banques,
+        plan: modele.plan, banques, ecrituresLibres: ecrituresLibresDesExports,
       },
     ), ecrituresFiltrees, citations))
   }
@@ -1328,6 +1349,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           relecture={loading}
           relire={load}
           lettrageDesFactures={lettrageDesFactures}
+        />
+      )}
+
+      {/* Les écritures de l'expert-comptable (EL5) : derrière le drapeau de leur migration, rien ne se monte ni ne se lit avant. */}
+      {ECRITURES_LIBRES_PREVUES && (
+        <EcrituresLibresSection
+          dossierId={dossierId}
+          annee={anneeFilter}
+          mode={modele.mode}
+          lecture={lectureLibres}
+          frontiere={frontiere}
+          ouverture={aNouveauxIncomplets !== null ? undefined : ouverture}
+          categories={categories}
+          pieces={piecesValidees}
+          relecture={loading}
+          relire={load}
         />
       )}
 

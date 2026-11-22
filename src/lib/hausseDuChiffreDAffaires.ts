@@ -1,4 +1,5 @@
 import { chiffreDAffairesDeLaPeriode, recettesFactureesDuDossier } from './estimation'
+import type { EcrituresLibresDesExports } from './ecrituresLibresDesExports'
 import { formatDate, formatMoney } from './format'
 import type { CaisseLue } from './recettesDeCaisse'
 import { motifDeLaCaisse, recettesDeCaisseDuDossier, recettesPourLesMoteurs } from './recettesDeCaisse'
@@ -375,6 +376,10 @@ export interface SourcesDuChiffreDAffaires {
   encaissees: readonly PartEncaissee[]
   // La caisse, telle que lue (lib/caisseLecture.ts).
   caisse: CaisseLue
+  // Les écritures libres de l'expert-comptable (EL4, EL5), lues en entier, ou absentes (le drapeau baissé) : leurs recettes
+  // comptées entrent au chiffre d'affaires, comme dans l'onglet Estimation. Omises, le défaut fermé du moteur
+  // (`ecrituresLibresParDefaut` : l'absence drapeau baissé, un refus levé).
+  ecrituresLibres?: EcrituresLibresDesExports
 }
 
 /**
@@ -399,10 +404,9 @@ export function chiffreDAffairesDesSources(
   return {
     ok: true,
     chiffreDAffaires: (debut, fin) => Math.round(chiffreDAffairesDeLaPeriode(
-      // Les écritures libres de l'expert (EL4) : absentes tant que leur table n'est pas en base, et un refus une fois le drapeau
-      // levé, tant que leur lecture (EL5) ne les passe pas ici.
+      // Les écritures libres de l'expert (EL4), lues avec les autres sources (EL5) ; omises, le défaut fermé.
       s.piecesDeVente, paiements, debut, fin, assujettiTva, mode, parts, recettesFacturees, recettesDeCaisse,
-      ecrituresLibresParDefaut()) * 100),
+      s.ecrituresLibres ?? ecrituresLibresParDefaut()) * 100),
   }
 }
 

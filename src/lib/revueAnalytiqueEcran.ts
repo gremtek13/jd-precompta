@@ -15,6 +15,8 @@ import type {
   RevisionExplication, RevisionSeuil, SoldeReporte, VehiculeDossier, VentilationBancaire,
 } from './types'
 import type { VentesFacturees } from './ventesFacturees'
+import type { EcrituresLibresDesExports } from './ecrituresLibresDesExports'
+import { ecrituresLibresParDefaut } from './ecrituresLibresDeLa2035'
 
 // CE QUE L'ÉCRAN DE LA REVUE ANALYTIQUE (ligne 41, étape R5, phase C) DONNE AU MODULE ET CE QU'IL EN MONTRE. Le calcul, les
 // états et les refus sont ceux de `lib/revueAnalytique.ts` : rien ici ne les réécrit. Ce fichier est PUR (il ne lit rien
@@ -68,6 +70,10 @@ export interface SourcesDeLaRevueAnalytique {
   // datent ces pièces dans la 2035 comme Clôture ; NULS tant que la caisse n'est pas revenue entière — la 2035 ne se calcule
   // pas. Aucun tant que la migration n'est pas en base.
   paiementsParLaCaisse: readonly PartPayeeParLaCaisse[] | null
+  // Les écritures libres de l'expert-comptable (EL4, EL5), que la 2035 compte : NULLES tant que leur lecture n'est pas revenue
+  // entière — la 2035 ne se calcule pas, et l'onglet le dit parmi les lectures de la revue. Omises, le défaut fermé du moteur
+  // (`ecrituresLibresParDefaut` : l'absence drapeau baissé, un refus levé).
+  ecrituresLibres?: EcrituresLibresDesExports | null
 }
 
 /**
@@ -89,6 +95,8 @@ export function declarationPourLaRevue(
   recettesDeCaisse: RecettesDeCaisse,
   // Les paiements par la caisse (étape C9a), comme Clôture les passe.
   paiementsParLaCaisse: readonly PartPayeeParLaCaisse[],
+  // Les écritures libres (EL4) : le défaut fermé du moteur, comme lui.
+  ecrituresLibres: EcrituresLibresDesExports = ecrituresLibresParDefaut(),
 ): Declaration2035 | null {
   if (modele.mode === 'engagement') return null
   const rapprochees = d.lignes.filter((l) => l.statut === 'rapprochee')
@@ -97,7 +105,7 @@ export function declarationPourLaRevue(
   const comptees = cotisationsComptees(d.cotisations, rapprochees, modele.mode)
   return calculerDeclaration2035(
     annee, d.piecesValidees, d.categories, d.immobilisations, comptees, d.vehicules, assujettiTva, paiements, parts, d.declarationsTva,
-    modele.plan, ventesFacturees, ecrituresDesVentes, recettesDeCaisse,
+    modele.plan, ventesFacturees, ecrituresDesVentes, recettesDeCaisse, ecrituresLibres,
   )
 }
 
@@ -117,9 +125,9 @@ export function donneesDeLaRevueAnalytique(
     reprise: s.reprise,
     reportes: s.reportes,
     declaration: s.ventesFacturees === null || s.ecrituresDesVentes === null || s.recettesDeCaisse === null
-      || s.paiementsParLaCaisse === null ? null
+      || s.paiementsParLaCaisse === null || s.ecrituresLibres === null ? null
       : declarationPourLaRevue(annee, modele, assujettiTva, s.dossier, s.ventesFacturees, s.ecrituresDesVentes, s.encaissees,
-        s.recettesDeCaisse, s.paiementsParLaCaisse),
+        s.recettesDeCaisse, s.paiementsParLaCaisse, s.ecrituresLibres ?? ecrituresLibresParDefaut()),
     exercicesValides: s.exercicesValides,
     reperes: s.reperes,
     partsDuReleve: partsDuReleve(rapprochees, s.dossier.categories, s.dossier.ventilations, assujettiTva),

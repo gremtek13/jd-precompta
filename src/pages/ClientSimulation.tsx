@@ -5,6 +5,7 @@ import { anneeDe, aujourdHuiSql, formatMoney } from '../lib/format'
 import { ecartPct, projectionAnnuelle, SIMULATION_SANS_VENTES_FACTUREES } from '../lib/estimation'
 import { CAISSE_EXPORTEE } from '../lib/caisse'
 import { recettesDeCaisseDuClient, simulationDitNePasCompterLaCaisse, SIMULATION_SANS_CAISSE } from '../lib/recettesDeCaisse'
+import { ECRITURES_LIBRES_DU_CLIENT, PHRASE_DE_LA_SIMULATION, simulationTaitLesEcrituresLibres } from '../lib/ecrituresLibresVue'
 import {
   QUOI_DES_VENTES_DE_LA_SIMULATION, SANS_PROJECTION, SIMULATION_VENTES_FACTUREES_EXPORTEE, lectureDeLaSimulation,
   avecLesPiecesCitees, lireLesVentesDeLaSimulation, ventesDeLaSimulation, type LectureDeLaSimulation,
@@ -243,6 +244,10 @@ export default function ClientSimulation() {
     // Un état choisi, et dit plus bas : pas une valeur par défaut.
     ventes.recettes,
     caisse,
+    // LES ÉCRITURES LIBRES DU CABINET (EL5-Q1, le côté fermé) : la session du client ne lit pas leur table (sa policy est au
+    // cabinet), et aucune fonction ne lui en rend les totaux. Jamais comptées ici ; le drapeau levé, en trésorerie, la
+    // simulation le dit (`PHRASE_DE_LA_SIMULATION`).
+    ECRITURES_LIBRES_DU_CLIENT,
   )
   const referenceN1 = references.find((r) => r.annee === annee - 1) ?? null
 
@@ -314,6 +319,9 @@ export default function ClientSimulation() {
         )}
         {simulationDitNePasCompterLaCaisse(caisse, modeComptable) && (
           <p className="muted" style={{ marginBottom: 0, fontSize: '0.85rem' }}>{SIMULATION_SANS_CAISSE}</p>
+        )}
+        {simulationTaitLesEcrituresLibres(modeComptable) && (
+          <p className="muted" style={{ marginBottom: 0, fontSize: '0.85rem' }}>{PHRASE_DE_LA_SIMULATION}</p>
         )}
       </div>
 

@@ -25,6 +25,7 @@
 // toute écriture (`referencesExternes`) : une catégorie inconnue de la base d'arrivée refuse tout, rien n'est écrit — jamais
 // une catégorie commune créée pour tous les cabinets.
 
+import { ECRITURES_LIBRES_ABSENTES } from '../lib/ecrituresLibresDesExports'
 import { AUCUNE_PIECE_CITEE } from '../lib/facturesSources'
 import { acquisitionsDesBiens, ecritureDeLaDotation } from '../lib/amortissements'
 import { ecritureDuMouvement } from '../lib/affectationBanque'
@@ -516,7 +517,7 @@ export function controlesDuDossier(contenu: Record<string, Ligne[]>, categories:
   // Les préalables de la validation de 2025, comme la carte de la Clôture les dit avant le clic (la répétition les appelle ainsi).
   const validation = prealablesDeValidation({
     annee: 2025, anneeCourante: 2026, aujourdHui: AUJOURD_HUI, modele: MODELE, assujettiTva: ASSUJETTI, anneesValidees: [],
-    lectureIncomplete: null, piecesValidees, piecesAValider, categories: cats, immobilisations, natures: [...natures], ecritures, lignes,
+    lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees, piecesAValider, categories: cats, immobilisations, natures: [...natures], ecritures, lignes,
     ventilations: [], reglements, encaissees: [], cotisations, vehicules, emprunts: [], aNouveaux, soldesReportes: [], declarationsTva: [],
     periodiciteTva: 'trimestrielle', comptesBancaires: { etat: 'sans_objet' }, controlesReleves: controles, doublonsTexte: [], facturesEmises: [],
     transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,

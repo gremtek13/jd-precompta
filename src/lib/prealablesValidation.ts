@@ -46,6 +46,7 @@ import {
   type FacturesSources, type PiecesCitees,
 } from './facturesSources'
 import { memeEcritureQueLeBrouillon } from './ecrituresVentesFacturees'
+import type { EcrituresLibresDesExports } from './ecrituresLibresDesExports'
 import { LIBELLE_ETAT_SOURCE, type EtatsDesVentes, type SourceDeVenteEtat } from './ecrituresVentesFactureesEcran'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
 import { anneeDe, formatDate, formatMoney } from './format'
@@ -213,6 +214,10 @@ export interface DonneesDeValidation {
   // suspend, comme sur toute lecture partielle. Sans valeur par défaut : oubliés, l'exercice se figerait sans les quatre
   // champs qu'aucune validation ne pourra plus lui donner (FEC22-Q6).
   champsBnc: ChampsBncDeLaValidation | null
+  // Les écritures libres de l'expert-comptable (EL3, EL5 ; lib/ecrituresLibresDesExports.ts), lues en entier, ou absentes (le
+  // drapeau baissé) : la numérotation que la validation enverra les porte au journal OD. SANS VALEUR PAR DÉFAUT : oubliées, leurs
+  // lignes tomberaient hors du FEC et la validation se refuserait sous « écritures que rien ne rattache ».
+  ecrituresLibres: EcrituresLibresDesExports
   // En trésorerie, la 2035 de l'exercice et sa concordance avec les écritures ; RIEN en engagement, où la 2035 ne se
   // produit pas — l'appelant ne la calcule pas, et la base refuserait de la recevoir.
   declaration: Declaration2035 | null
@@ -733,7 +738,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     : { etat: 'exportes', entrees: { ...d.champsBnc.entrees, paiements } }
   const numerotation = numeroterFec(
     ecrituresDeLExercice, d.piecesValidees, [...d.categories], ouvertureDeLExercice(d.aNouveaux, d.soldesReportes, d.annee),
-    d.modele, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [], d.operationsDeCaisse, champsBnc,
+    d.modele, d.lignes, etatsDesVentes?.contexte.composition.ecritures ?? [], d.operationsDeCaisse, champsBnc, d.ecrituresLibres,
   )
   // Les lignes que `ventes-facturees-a-ecrire` nomme — à réécrire ou à retirer —, et elles seules : une ligne d'une vente
   // facturée qu'aucune source en défaut ne porterait (défensif) reste une écriture que rien ne rattache.
