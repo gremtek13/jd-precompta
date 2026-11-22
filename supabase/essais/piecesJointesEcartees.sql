@@ -179,15 +179,15 @@ begin
   begin
     insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values
       (dossier_client, 'format', 12, e1), (dossier_client, 'taille', 20971521, e2), (dossier_client, 'depot', 12, e3),
-      (dossier_client, 'vide', 0, e4);
+      (dossier_client, 'vide', 0, e4), (dossier_client, 'bordereau', 12, e6);
     get diagnostics n = row_count;
     insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, 'autre', 12, repeat('d', 64));
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
-  verdicts := verdicts || jsonb_build_object('controle', '6. la raison est « format », « taille », « depot » (le dépôt a échoué) ou « vide » (arrivée vide), rien d''autre',
+  verdicts := verdicts || jsonb_build_object('controle', '6. la raison est « format », « taille », « depot » (le dépôt a échoué), « vide » (arrivée vide) ou « bordereau » (BOR6), rien d''autre',
     'observe', coalesce(n::text, '?') || ' ligne(s) admise(s), puis ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
-    'ok', coalesce(n = 4 and code_recu = '23514' and message like '%pieces_jointes_ecartees_raison%', false));
+    'ok', coalesce(n = 5 and code_recu = '23514' and message like '%pieces_jointes_ecartees_raison%', false));
 
   code_recu := null; message := null;
   begin
@@ -207,7 +207,7 @@ begin
     insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values
       (dossier_client, 'depot', null, e1), (dossier_client, 'depot', 4120, e2);
     get diagnostics n = row_count;
-    foreach champ in array array['format', 'taille'] loop
+    foreach champ in array array['format', 'taille', 'bordereau'] loop
       begin
         insert into pieces_jointes_ecartees (dossier_id, raison, octets, empreinte) values (dossier_client, champ, null, e3);
         obs := obs || champ || ':passe ';
@@ -226,9 +226,9 @@ begin
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
-  verdicts := verdicts || jsonb_build_object('controle', '7b. un dépôt échoué admet un poids inconnu (null) ou positif, et lui seul : le format et la taille sans poids se refusent, zéro aussi',
+  verdicts := verdicts || jsonb_build_object('controle', '7b. un dépôt échoué admet un poids inconnu (null) ou positif, et lui seul : le format, la taille et le bordereau sans poids se refusent, zéro aussi',
     'observe', coalesce(n::text, '?') || ' ligne(s) « depot » admise(s), puis ' || coalesce(nullif(obs, ''), coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
-    'ok', coalesce(n = 2 and obs = 'format:23514:poids_connu taille:23514:poids_connu depot-zero:23514:octets' and code_recu = 'P0001', false));
+    'ok', coalesce(n = 2 and obs = 'format:23514:poids_connu taille:23514:poids_connu bordereau:23514:poids_connu depot-zero:23514:octets' and code_recu = 'P0001', false));
 
   -- 7c. Une pièce jointe ARRIVÉE VIDE (ligne 22.91) pèse zéro, et elle seule : zéro s'admet pour elle ; un poids positif ou
   -- négatif se refuse pour elle par la contrainte du poids, un poids inconnu par celle du poids connu ; zéro se refuse à la
