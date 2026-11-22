@@ -144,6 +144,9 @@ export interface ChampsBnc {
 export type PosteLu =
   | { de: 'categorie'; categorie: Pick<Categorie, 'libelle' | 'poste_2035'> | null }
   | { de: 'moteur'; poste: PosteDuMoteur }
+  // Le poste qu'une ligne d'une écriture libre porte dans sa saisie (EL3 ; `poste_2035`, `posteDeLaLigneLibre`), un poste de la
+  // liste fermée de la base, que l'expert a choisi : ni une catégorie, ni un rôle du plan.
+  | { de: 'saisi'; poste: string }
   | { de: 'aucun' }
 
 export type PosteDuMoteur =
@@ -212,6 +215,7 @@ function posteDeLaSource(p: PosteLu): string | null {
   switch (p.de) {
     case 'categorie': return p.categorie === null ? null : p.categorie.poste_2035
     case 'moteur': return p.poste
+    case 'saisi': return p.poste
     case 'aucun': return null
   }
 }
@@ -271,6 +275,7 @@ export const REGLES_DES_SORTES = {
   'a-nouveaux': 'champsDesANouveaux',
   'ouverture-eclatee': 'champsDeLOuvertureEclatee',
   inventaire: 'champsDUneRegularisation',
+  libre: 'champsDUneEcritureLibre',
 } as const
 
 // ── Une pièce ──
@@ -570,6 +575,17 @@ export function champsDeLOuvertureEclatee(dateDeLEcriture: string, lignes: reado
  * en trésorerie n'en a aucune — la base la refuse (INV-Q10) — : la règle tient la liste des sortes entière.
  */
 export function champsDUneRegularisation(dateDeLEcriture: string, lignes: readonly LigneACaracteriser[], choix: ChoixChampsBnc): ChampsBnc {
+  return sansReglementDe(natureDesLignes(lignes), dateDeLEcriture, lignes, choix)
+}
+
+/**
+ * Une écriture libre de l'expert-comptable (clé `libre|écriture|date`, à sa date ou au 1er janvier suivant pour son extourne ;
+ * EL3, conception 54, § 5.6 ; lib/ecrituresLibresDesExports.ts) : rien n'est payé ce jour-là — une banque et une caisse que la
+ * base refuse (EL-Q4 (A)) —, sans règlement comme les autres opérations diverses (FEC22-Q1) ; aucun client ; la nature, celle
+ * de ses lignes de résultat (`natureDesLignes`), « Opération de bilan » sans elles, et NatOp le poste saisi sur une ligne de
+ * charge ou de produit qui compte (`poste_2035`), la nature seule sur une ligne hors de la 2035. Jamais le libellé ni le motif.
+ */
+export function champsDUneEcritureLibre(dateDeLEcriture: string, lignes: readonly LigneACaracteriser[], choix: ChoixChampsBnc): ChampsBnc {
   return sansReglementDe(natureDesLignes(lignes), dateDeLEcriture, lignes, choix)
 }
 

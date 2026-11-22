@@ -14,7 +14,7 @@ import { porteUneSourceDeVente, rattachementDesVentes } from './ventesFactureesD
 import { journalDeLOperation, operationsDe, referenceDeLaCaisse, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { AcquisitionDuBien } from './amortissements'
 import {
-  champsDeLaTvaDUneFacture, champsDeLOuvertureEclatee, champsDesANouveaux, champsDUneRegularisation, champsDUneDotation, champsDUneLiquidation, champsDUneOperationDeCaisse,
+  champsDeLaTvaDUneFacture, champsDeLOuvertureEclatee, champsDesANouveaux, champsDUneEcritureLibre, champsDUneRegularisation, champsDUneDotation, champsDUneLiquidation, champsDUneOperationDeCaisse,
   champsDUnEncaissement, champsDUnePiece, champsDUneSourceNonLue, champsDUnForfait, champsDUnMouvementDesEncaissements,
   champsDUnMouvementDuReleve, champsDUnPaiementPersonnel, partsDesReglementsALaDate, type ChampsBnc, type ChoixChampsBnc,
   type EncaissementDuRegistre, type FactureDuClient, type LigneACaracteriser, type ModeRglt, type NatureOperation,
@@ -22,6 +22,10 @@ import {
   MODES_REGLEMENT, NATURES_OPERATION,
 } from './champsBncDuFec'
 import { natOpFigee } from './champsBncDesLignes'
+import {
+  ECRITURES_LIBRES_ABSENTES, indexDesEcrituresLibres, libellesSaisisDesComptes, posteDeLaLigneLibre, referenceDeLEcritureLibre,
+  type EcritureLibreDesExports, type EcrituresLibresDesExports,
+} from './ecrituresLibresDesExports'
 import {
   categorieDesFraisBancaires, POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_AUTRES_IMPOTS,
   POSTE_COTISATIONS, POSTE_INDEMNITES_KM, POSTE_VENTES_FACTUREES,
@@ -246,6 +250,18 @@ function ordonnerLignes(lignes: LigneFec[]): LigneFec[] {
 // CompteNum NE PORTE QU'UN LIBELLÉ DANS TOUT LE FICHIER — à-nouveaux et écritures compris, et la validation
 // le refuse autrement —, et les mouvements de la banque l'appellent « Banque ». Le numéro et le libellé de la
 // balance d'origine passent dans EcritureLib.
+// Le libellé saisi d'un compte qu'une écriture libre emploie (EL3) prend la place de son NUMÉRO, et de lui seul : un compte que
+// l'application, une catégorie, le plan comptable ou les à-nouveaux nomment garde ce nom-là. Partout dans le fichier, pour
+// qu'un même CompteNum n'y porte qu'un CompteLib. Sans écriture libre lue, la fonction d'hier.
+function avecLesLibellesSaisis(libelleDu: (compte: string) => string, saisis: ReadonlyMap<string, string>): (compte: string) => string {
+  if (saisis.size === 0) return libelleDu
+  return (compte) => {
+    const libelle = libelleDu(compte)
+    const saisi = saisis.get(compte)
+    return saisi !== undefined && libelle === champFec(compte) ? champFec(saisi) : libelle
+  }
+}
+
 function libellesDesComptes(categories: Categorie[], aNouveaux: readonly ANouveau[]): (compte: string) => string {
   const repris = new Map<string, string>()
   for (const a of [...aNouveaux].sort((x, y) => x.compte.localeCompare(y.compte) || x.id.localeCompare(y.id))) {
@@ -453,6 +469,7 @@ interface ContexteDesChamps {
   operationById: ReadonlyMap<string, ReturnType<typeof operationsDe>[number]>
   mouvementById: ReadonlyMap<string, MouvementBancaire>
   ventes: ReturnType<typeof rattachementDesVentes>
+  ecrituresLibres: ReadonlyMap<string, EcritureLibreDesExports>
 }
 
 const AUCUN_POSTE: PosteLu = { de: 'aucun' }
@@ -511,6 +528,12 @@ function posteDeLaLigne(
     case 'facture': return AUCUN_POSTE
     case 'ouverture-eclatee': return AUCUN_POSTE
     case 'inventaire': return AUCUN_POSTE
+    case 'libre': {
+      // Le poste que l'expert a saisi sur la ligne (EL-Q2 (A)), jamais deviné du compte ; hors de la 2035, aucun.
+      const ecriture = x.ecrituresLibres.get(rows[0].ecriture_libre_id ?? '')
+      const poste = ecriture ? posteDeLaLigneLibre(ecriture, l) : null
+      return poste === null ? AUCUN_POSTE : { de: 'saisi', poste }
+    }
     case 'encaissement':
       return l.compte === plan.prestations_de_services || l.compte === plan.ventes_de_biens ? posteDuMoteur(POSTE_VENTES_FACTUREES) : AUCUN_POSTE
     case 'mouvement-encaissements':
@@ -566,6 +589,7 @@ function champsDeLEcriture(e: EcritureANumeroter, x: ContexteDesChamps): ChampsB
     case 'liquidation': return champsDUneLiquidation(date, lignes, choix)
     case 'ouverture-eclatee': return champsDeLOuvertureEclatee(date, lignes, choix)
     case 'inventaire': return champsDUneRegularisation(date, lignes, choix)
+    case 'libre': return champsDUneEcritureLibre(date, lignes, choix)
     case 'paiement-personnel': {
       const id = premiere.cotisation_id ?? ''
       return champsDUnPaiementPersonnel(cotisations.find((c) => c.id === id) ?? { id, paiement_personnel_le: null }, lignes)
@@ -638,6 +662,14 @@ const champsDeLaLigne = (c: ChampsBnc, id: string): ChampsBncDeLaLigne => ({
 // AAAA » du 31 décembre de cet exercice, pour l'extourne aussi ; la clé `inventaire|régularisation|date`. EcritureLib reste le
 // libellé que la base a composé (« CCA 31/12/AAAA — … », jamais le nom d'un tiers). C'est la forme que `valider_exercice`
 // exige (le défaut `inventaire` de lib/validationExercice.ts la redit). Un BNC en trésorerie n'en a jamais : la base le refuse.
+// UNE ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE (ligne 26.9, EL3 ; conception 54, § 5.6 ; lib/ecrituresLibresDesExports.ts) de même,
+// une écriture par écriture libre et par date — sa constatation, et son extourne au 1er janvier suivant —, au journal des
+// opérations diverses : sa pièce est l'ÉTAT DES ÉCRITURES LIBRES de son exercice (EL-Q8 (A)), « EL<année>-<numéro> », PieceDate
+// la date de l'écriture, pour l'extourne aussi ; la clé `libre|écriture|date`. EcritureLib reste le libellé que la base a écrit
+// sur la ligne (celui de l'expert, « Extourne — » devant celui de l'extourne), jamais le motif ; CompteLib celui de
+// l'application, ou le libellé saisi d'un compte qu'elle ne nomme que par son numéro (`libellesSaisisDesComptes`). Une ligne
+// dont l'écriture libre n'est pas dans ce que l'appelant a lu — ou toute ligne qui en cite une, les écritures libres absentes —
+// reste dehors, jamais devinée : la validation la retient.
 // Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
 //
 // UNE OPÉRATION DE LA CAISSE (ligne 26.6, étape C3b ; lib/controlesDeLaCaisse.ts) fait UNE écriture : les lignes qui la
@@ -690,6 +722,12 @@ export function numeroterFec(
   // Les entrées des quatre champs d'un BNC en trésorerie, ou leur absence (le drapeau baissé). Sans valeur par défaut :
   // oubliées, le FEC d'un praticien sortirait à dix-huit colonnes sans que rien ne le dise.
   champsBnc: ChampsBncDuFec,
+  // Les écritures libres du dossier, lues en entier, ou leur absence (EL3). LE SEUL PARAMÈTRE QUI A UNE VALEUR PAR DÉFAUT, et
+  // c'est l'état du drapeau baissé (`ECRITURES_LIBRES_PREVUES`) : la colonne `ecriture_libre_id` n'est pas en base, aucune
+  // ligne ne la porte, et le fichier est celui d'hier à l'octet. Oubliées le drapeau levé, une ligne qui cite une écriture
+  // libre tombe hors du fichier — du côté fermé : la validation la retient et l'onglet le dit (fecEcrituresLibres.test.ts,
+  // le chemin par défaut). EL5 les passe, lues, depuis l'onglet Écritures et la validation.
+  ecrituresLibres: EcrituresLibresDesExports = ECRITURES_LIBRES_ABSENTES,
 ): NumerotationFec {
   const calcul = modele.mode === 'tresorerie' && champsBnc.etat === 'exportes' ? champsBnc.entrees : null
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
@@ -697,7 +735,8 @@ export function numeroterFec(
   const ventes = rattachementDesVentes(ecritures, ventesFacturees)
   const idsJustifies = idsMouvementsJustifiesParLeReleve(mouvements)
   const mouvementById = new Map(mouvements.map((m) => [m.id, m]))
-  const libelleDu = libellesDesComptes(categories, aNouveaux)
+  const libreById = indexDesEcrituresLibres(ecrituresLibres)
+  const libelleDu = avecLesLibellesSaisis(libellesDesComptes(categories, aNouveaux), libellesSaisisDesComptes(ecrituresLibres))
 
   // La clé d'une écriture FEC : la pièce en trésorerie ; en engagement, la pièce et le mouvement d'un
   // règlement, la facture gardant la pièce seule ; le mouvement, pour un mouvement justifié par le relevé.
@@ -753,6 +792,14 @@ export function numeroterFec(
       // 31 décembre, son extourne au 1er janvier suivant ; la base n'en écrit que là, sans autre source
       // (`ecritures_brouillon_inventaire_sans_autre_source`), et la validation l'exige ainsi.
       cle = `inventaire|${e.operation_inventaire_id}|${e.date}`
+    } else if (e.ecriture_libre_id) {
+      // Une écriture libre (EL3) : une écriture par écriture libre et par date — la base n'en écrit que là, sans autre source
+      // (`ecritures_brouillon_libre_sans_autre_source`). Lue, elle a sa pièce ; sinon dehors, jamais devinée.
+      if (!libreById.has(e.ecriture_libre_id)) {
+        horsFec.push(e)
+        continue
+      }
+      cle = `libre|${e.ecriture_libre_id}|${e.date}`
     } else {
       horsFec.push(e)
       continue
@@ -815,6 +862,13 @@ export function numeroterFec(
         return { cle, sorte: 'inventaire', pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: `${exercice}-12-31`,
           pieceRef: referenceDeLInventaire(exercice), reglement: null }
       }
+      if (!pieceId && rows[0].ecriture_libre_id) {
+        // Au journal des opérations diverses ; sa pièce, l'état des écritures libres de son exercice, à la date de l'écriture
+        // — pour son extourne du 1er janvier suivant aussi.
+        const libre = libreById.get(rows[0].ecriture_libre_id)!
+        return { cle, sorte: 'libre', pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: libre.date,
+          pieceRef: referenceDeLEcritureLibre(libre), reglement: null }
+      }
       if (!pieceId) {
         const mouvement = mouvementById.get(rows[0].ligne_bancaire_id!)!
         return { cle, sorte: 'releve', pieceId: null, rows, ordre, journal: 'BQ' as const, pieceDate: mouvement.date,
@@ -858,7 +912,7 @@ export function numeroterFec(
     .sort((a, b) => a.ordre.localeCompare(b.ordre) || a.pieceDate.localeCompare(b.pieceDate) || a.cle.localeCompare(b.cle))
 
   const contexte: ContexteDesChamps | null = calcul === null ? null
-    : { entrees: calcul, categories, pieceById, operationById, mouvementById, ventes }
+    : { entrees: calcul, categories, pieceById, operationById, mouvementById, ventes, ecrituresLibres: libreById }
   const compteurs: Partial<Record<JournalCode, number>> = {}
   const lignes: LigneFec[] = []
   for (const ecriture of entrees) {
@@ -1115,9 +1169,11 @@ export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   modele: ModeleComptable, mouvements: readonly MouvementBancaire[], lettrage: ReadonlyMap<string, LettrageDeLigne>,
   ventesFacturees: readonly EcritureVenteFacturee[], caisse: OperationsDeCaisse, champsBnc: ChampsBncDuFec,
+  // Comme `numeroterFec` : le défaut est l'état du drapeau baissé (EL3).
+  ecrituresLibres: EcrituresLibresDesExports = ECRITURES_LIBRES_ABSENTES,
 ): string {
   return formaterFec(
-    numeroterFec(ecritures, pieces, categories, aNouveaux, modele, mouvements, ventesFacturees, caisse, champsBnc), lettrage,
+    numeroterFec(ecritures, pieces, categories, aNouveaux, modele, mouvements, ventesFacturees, caisse, champsBnc, ecrituresLibres), lettrage,
     modele.mode,
   )
 }

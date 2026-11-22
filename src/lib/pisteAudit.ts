@@ -5,6 +5,10 @@ import { mouvementJustifieParLeReleve, referenceDuReleve } from './affectationBa
 import { nomDuVehicule } from './forfaitKilometrique'
 import { LONGUEUR_DE_L_EMPREINTE_COURTE, referenceDeLaLiquidation, referenceDeLOuvertureEclatee, referenceDuPaiementPersonnel } from './fec'
 import { exerciceDeLaLigneDInventaire, referenceDeLInventaire } from './pieceDeLInventaire'
+import {
+  ECRITURES_LIBRES_ABSENTES, auteurDeLaVersion, indexDesEcrituresLibres, instantDeLaVersion, referenceDeLEcritureLibre,
+  type EcritureLibreDesExports, type EcrituresLibresDesExports,
+} from './ecrituresLibresDesExports'
 import { justificatifDeLaCaisse, operationsDe, type OperationsDeCaisse } from './controlesDeLaCaisse'
 import type { EcritureVenteFacturee } from './ecrituresVentesFacturees'
 import { MOYENS_ENCAISSEMENT } from './encaissementsFactures'
@@ -97,6 +101,10 @@ export interface RuptureAudit {
 // D'INVENTAIRE de l'exercice de sa régularisation (PCG, art. 1214-40 et 1214-41), et sa clé vers elle est sans action — une
 // régularisation ne se retire qu'après ses lignes (`retirer_operation_inventaire`), et la base ne les écrit qu'avec elle :
 // `operation_inventaire_id` ne tombe jamais à nul sous elles.
+// NI UNE ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE (ligne 26.9, EL3 ; conception 54, § 5.7) : son justificatif est l'ÉTAT DES
+// ÉCRITURES LIBRES de son exercice (EL-Q8 (A)), et sa clé vers elle est sans action — la base ne retire l'écriture qu'après ses
+// lignes (`retirer_ecriture_libre`) : `ecriture_libre_id` ne tombe jamais à nul sous elles. Elle ne touche ni la banque ni la
+// caisse (EL-Q4 (A)).
 export function rupturesPisteAudit(
   ecritures: EcritureBrouillon[],
   idsJustifies: ReadonlySet<string>,
@@ -107,7 +115,7 @@ export function rupturesPisteAudit(
   for (const ecriture of ecritures) {
     if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id && !ecriture.vehicule_id
       && !ecriture.declaration_tva_id && !ecriture.cotisation_id && !ecriture.operation_caisse_id
-      && !ecriture.ouverture_compte_bancaire_id && !ecriture.operation_inventaire_id) {
+      && !ecriture.ouverture_compte_bancaire_id && !ecriture.operation_inventaire_id && !ecriture.ecriture_libre_id) {
       ruptures.push({ ecriture, motif: 'sans_justificatif' })
     }
     // L'éclatement de l'ouverture n'a de mouvement par nature : il reporte des soldes de relevés, pas une opération.
@@ -155,11 +163,14 @@ export interface AbsenceFec {
 // la caisse (étape C3b), au journal des ventes ou des opérations diverses, avec le récapitulatif de son jour : l'écran ne
 // l'exporte que sur une caisse lue en entier, qui rend chaque opération qu'une ligne cite. Et l'éclatement de l'ouverture
 // de la banque (MCB5), au journal des opérations diverses, les relevés au 31 décembre pour pièce. Et une régularisation
-// d'inventaire (INV3), au même journal, l'état d'inventaire de son exercice pour pièce.
+// d'inventaire (INV3), au même journal, l'état d'inventaire de son exercice pour pièce. Et une écriture libre (EL3), au même
+// journal, l'état des écritures libres de son exercice pour pièce : l'écran ne l'exporte que sur des écritures libres lues en
+// entier, qui rendent chaque écriture qu'une ligne cite.
 export function absenceFec(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): AbsenceFec {
   const horsFec = ecritures.filter((e) =>
     !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id && !e.vehicule_id && !e.declaration_tva_id
-    && !e.cotisation_id && !e.operation_caisse_id && !e.ouverture_compte_bancaire_id && !e.operation_inventaire_id)
+    && !e.cotisation_id && !e.operation_caisse_id && !e.ouverture_compte_bancaire_id && !e.operation_inventaire_id
+    && !e.ecriture_libre_id)
   return {
     nb: horsFec.length,
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
@@ -288,6 +299,10 @@ export interface RegistreAudit {
   // Les banques du dossier (MCB5, quatrième partie ; lib/banqueDuMouvement.ts) : la ligne du 512 propre d'un compte bancaire
   // sans mouvement manque aussi du sien. Obligatoire : oubliées, celles d'un second compte ne manqueraient de rien.
   banques: BanquesDuDossier
+  // Les écritures libres du dossier, lues en entier, et l'adresse de qui les a écrites (EL3 ; lib/ecrituresLibresDesExports.ts).
+  // FACULTATIVES, et leur absence est l'état du drapeau baissé (`ECRITURES_LIBRES_PREVUES`) : aucune ligne ne cite alors une
+  // écriture libre. Oubliées le drapeau levé, une telle ligne le dit (« écriture libre hors du jeu chargé »), jamais muette.
+  ecrituresLibres?: EcrituresLibresDesExports
 }
 
 // LA PISTE D'AUDIT NE NOMME PAS UN PATIENT (JJ1Q1-Q1, tranchée par le cabinet le 07/11/2026 sur la recommandation ;
@@ -357,6 +372,9 @@ export function pisteAudit(
   const factureParId = new Map(registre.factures.map((p) => [p.id, p]))
   const vehiculeParId = new Map(registre.vehicules.map((v) => [v.id, v]))
   const operationParId = new Map(operationsDe(registre.caisse).map((o) => [o.id, o]))
+  const libres = registre.ecrituresLibres ?? ECRITURES_LIBRES_ABSENTES
+  const libreParId = indexDesEcrituresLibres(libres)
+  const auteurs = libres.etat === 'lues' ? libres.auteurs : new Map<string, string>()
   const piecesCitees = new Set(ecritures.map((e) => e.piece_id).filter((id): id is string => !!id))
   const ventes = rattachementDesVentes(ecritures, registre.ventes.ecritures)
   const index = indexDesFactures(registre.ventes)
@@ -377,6 +395,11 @@ export function pisteAudit(
     if (!e.piece_id && !e.ligne_bancaire_id && e.cotisation_id) return ligneDuPaiementPersonnel(e)
     if (!e.piece_id && !e.ligne_bancaire_id && e.operation_caisse_id) return ligneDeLaCaisse(e)
     if (!e.piece_id && !e.ligne_bancaire_id && e.operation_inventaire_id) return ligneDUneRegularisation(e)
+    if (!e.piece_id && !e.ligne_bancaire_id && e.ecriture_libre_id) {
+      const libre = libreParId.get(e.ecriture_libre_id) ?? null
+      const citee = libre?.piece_citee_id ? pieceParId.get(libre.piece_citee_id) ?? factureParId.get(libre.piece_citee_id) ?? null : null
+      return ligneDUneEcritureLibre(e, libre, citee, auteurs)
+    }
     if (!e.piece_id && !e.ligne_bancaire_id && e.ouverture_compte_bancaire_id) {
       return ligneDeLOuvertureEclatee(e, comptesDesOuvertures.get(`${e.date}|${e.ouverture_compte_bancaire_id}`) ?? null)
     }
@@ -690,6 +713,33 @@ function ligneDUneRegularisation(e: EcritureBrouillon): LignePisteAudit {
     mouvementLibelle: null,
     mouvementMontant: null,
     manque: [],
+  }
+}
+
+// La ligne d'une écriture libre de l'expert-comptable (ligne 26.9, EL3 ; conception 54, § 5.7) : pour justificatif, l'ÉTAT DES
+// ÉCRITURES LIBRES de son exercice — la pièce que le FEC lui donne (« EL<année>-<numéro> »), pour l'extourne du 1er janvier
+// suivant aussi —, avec la version que la ligne porte, son auteur (l'adresse lue, sinon « le cabinet ») et son instant à
+// Paris ; et, quand l'écriture en cite une, la pièce du dossier par son dépôt et son empreinte (`designationDUnePiece`), jamais
+// son nom de fichier ni son tiers. Jamais le motif. Une pièce citée que le jeu chargé ne rend pas se dit ; une écriture libre
+// que les lectures ne rendent pas aussi : l'export la dit, il ne la devine pas.
+function ligneDUneEcritureLibre(
+  e: EcritureBrouillon, libre: EcritureLibreDesExports | null, citee: Piece | null, auteurs: ReadonlyMap<string, string>,
+): LignePisteAudit {
+  const base: LignePisteAudit = {
+    ecritureId: e.id, date: e.date, compte: e.compte, libelle: e.libelle,
+    debit: e.sens === 'debit' ? e.montant : 0, credit: e.sens === 'credit' ? e.montant : 0,
+    pieceId: null, pieceTiers: null, pieceDate: null, pieceMontantTtc: null, pieceFichier: null, pieceEmpreinte: null,
+    mouvementDate: null, mouvementLibelle: null, mouvementMontant: null, manque: [],
+  }
+  if (libre === null) return { ...base, manque: ['écriture libre hors du jeu chargé'] }
+  const instant = instantDeLaVersion(libre)
+  const etat = `État des écritures libres ${libre.exercice} (${referenceDeLEcritureLibre(libre)}), version ${libre.version} `
+    + `du ${formatDate(dateAParis(instant))} par ${auteurDeLaVersion(libre, auteurs)}`
+  if (libre.piece_citee_id === null) return { ...base, pieceDate: libre.date, pieceFichier: etat }
+  if (citee === null) return { ...base, pieceDate: libre.date, pieceFichier: etat, manque: ['pièce citée hors du jeu chargé'] }
+  return {
+    ...base, pieceDate: libre.date, pieceFichier: `${etat} ; pièce citée : ${designationDUnePiece(citee)}`,
+    pieceEmpreinte: citee.storage_hash?.trim() || null,
   }
 }
 

@@ -54504,3 +54504,19 @@ suppression 9. `piecesJointesEcartees.sql` passait sans juger la raison `bordere
 raisons), son étape 7b la refuse sans poids comme le format et la taille ; 81 verdicts sans faute, les deux mutations (la
 contrainte d'avant 249, un poids inconnu admis au bordereau) mordent, le banc du leurre le dit SÛR. Ne prouve pas la production
 elle-même : ses données, ses comptes d'essai, ni un essai rejoué par `execute_sql`.
+
+### 22/11/2026 — EL3 : L'ÉCRITURE LIBRE DANS LE FEC, LA PISTE D'AUDIT ET SON ÉTAT (LIGNE 26.9)
+
+Derrière `ECRITURES_LIBRES_PREVUES` baissé, sans lecture de la table ni écran. `lib/ecrituresLibresDesExports.ts` (pur) : ce que
+les exports lisent d'une écriture libre, SANS le motif ; `ECRITURES_LIBRES_ABSENTES` ; la référence « EL<année>-<numéro sur
+quatre chiffres> » ; le poste d'une ligne (même compte et même sens, inverse à l'extourne ; deux postes n'en disent aucun).
+Le FEC (`numeroterFec`, `genererFec`, un dernier paramètre dont le défaut est l'état du drapeau baissé, 146 appels intacts) :
+la sorte `libre`, clé `libre|écriture|date`, journal OD, PieceDate la date de l'écriture (extourne comprise), les quatre champs
+par `champsDUneEcritureLibre` (sans règlement, aucun client, NatOp le poste saisi), le libellé saisi d'un compte que
+l'application ne nomme que par son numéro ; une ligne dont l'écriture n'est pas lue reste hors du fichier. La piste d'audit :
+ni rupture ni `absenceFec`, l'état cité (version, auteur lu sinon « le cabinet », jour de Paris) et la pièce citée par son dépôt
+et son empreinte. Le lettrage : rien à changer (il part des pièces), un test le garde. L'état des écritures libres
+(`lib/etatDesEcrituresLibres.ts`) : CSV (BOM, `champCsv`, CRLF) et PDF (`pdfDesBlocs`, daté de la dernière version). Mesuré :
+le FEC fictif d'une année, 18 et 22 colonnes, a la même empreinte SHA-256 avant et après (b8d1e80e…, 17943344…), épinglée dans
+`ecrituresLibresDesLecteurs.test.ts`. Restent à EL5 : la lecture de la table (lue en entier, les adresses des auteurs) et son
+passage par l'onglet Écritures et la validation ; EL3-Q1 (NatOp d'une ligne de bilan) prise à la recommandation.
