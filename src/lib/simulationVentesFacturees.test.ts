@@ -19,6 +19,7 @@ import {
   lecturesPourLEssai, recettesDeLAnnee, simulationCommeLaBase, ventesDuDossier,
 } from '../test/essaiSimulationVentesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // « MA SIMULATION » REÇOIT SES VENTES FACTURÉES (chantier EC-Q3, étape VF8e). Ce que ce fichier garde :
 //   1. la lecture : la valeur de la base, lue sous la forme « comptées » de `RecettesFacturees` — et toute autre forme
@@ -300,7 +301,7 @@ describe('l’essai porte le jeu et les lectures que le module calcule', () => {
         const client = recettesDeLaSimulation(rendu, annee)
         expect(client, `${d.nom} ${annee}`).not.toBeNull()
         const totaux = (recettes: RecettesFacturees) =>
-          totauxPourAnnee([], [], annee, true, new Map(), d.mode, [], recettes, CAISSE_ABSENTE).ca
+          totauxPourAnnee([], [], annee, true, new Map(), d.mode, [], recettes, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES).ca
         expect(totaux(client as RecettesFacturees), `${d.nom} ${annee}`).toBe(totaux(cabinet))
         expect((client as Extract<RecettesFacturees, { etat: 'comptees' }>).sources).toEqual(ventes.sources)
       }

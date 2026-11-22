@@ -13,6 +13,7 @@ import { previsionnellesSansPaiement, remplacementsDesPrevisionnelles } from './
 import { avertissementDuFormulaire, modeleDuFormulaire } from './modeles2035'
 import { ventesFactureesVides } from '../test/ventesFacturees'
 import type { Categorie, CotisationDeclaree, LigneBancaire } from './types'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // RELECTURE DU 01/11/2026 — LES TROIS POINTS « PLAUSIBLES » DE LA RELECTURE DU 31/10/2026, ÉTABLIS AVANT LES DONNÉES RÉELLES
 // (MVP-D6 : la 2035 de 2025 d'un praticien exonéré, rejouée vers le 20 novembre et comparée à celle qu'il a déposée).
@@ -43,7 +44,7 @@ const exonere = (o: { categories: Categorie[]; lignes?: LigneBancaire[]; cotisat
     o.annee ?? 2025, [], o.categories, [],
     cotisationsComptees(o.cotisations ?? [], o.lignes ?? [], 'tresorerie'), [], false,
     paiementsDesPieces(o.lignes ?? [], [], [], []), partsDuReleve(o.lignes ?? [], o.categories, [], false), [], PLAN_PAR_DEFAUT,
-    ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+    ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
   )
 
 // Le dossier type d'une infirmière exonérée : 60 000 € de l'Assurance maladie, 9 000 € de cotisations OBLIGATOIRES (Urssaf

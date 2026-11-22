@@ -18,10 +18,8 @@
 // au sens inverse, à sa date, dans l'exercice suivant : elle compte, ou reste hors de la 2035, comme la ligne qu'elle extourne —
 // sans quoi la 2035 de l'année suivante compterait deux fois ce qu'elle reprend. Depuis EXP58-Q3 (A), une charge ou un produit
 // RATTACHÉ ne se compte plus (la base le refuse, `estRattacheeComptee`) : son extourne reste donc hors de la 2035 avec lui.
-import { ECRITURES_LIBRES_PREVUES, classeDeResultat } from './ecritureLibre'
-import {
-  ECRITURES_LIBRES_ABSENTES, referenceDeLEcritureLibre, type EcritureLibreDesExports, type EcrituresLibresDesExports,
-} from './ecrituresLibresDesExports'
+import { classeDeResultat } from './ecritureLibre'
+import { referenceDeLEcritureLibre, type EcritureLibreDesExports, type EcrituresLibresDesExports } from './ecrituresLibresDesExports'
 
 /** Une ligne de résultat d'une écriture libre, à sa date : la constatation, ou son extourne au 1er janvier suivant. */
 export interface LigneDeResultatLibre {
@@ -89,17 +87,9 @@ export function nomDeLEcritureLibre(l: Pick<LigneDeResultatLibre, 'ecriture' | '
   return `Écriture libre ${referenceDeLEcritureLibre(l.ecriture)}${l.extourne ? ' (extourne)' : ''} — ${l.ecriture.libelle}`
 }
 
-/**
- * LE DÉFAUT DU CÔTÉ FERMÉ des moteurs qui reçoivent les écritures libres en dernier paramètre (la 2035, la situation
- * intermédiaire, l'estimation : plus de cent appels, la plupart dans les tests). Drapeau baissé, la table n'est pas en base :
- * l'absence est la vérité, et chaque moteur rend ce qu'il rendait hier. Drapeau levé (EL8), un appel qui les omet LÈVE : une
- * 2035 calculée sans les écritures de l'expert serait plausible et fausse, et rien ne le dirait. Aucun appelant de l'application
- * ne passe donc l'absence à la main : ils s'en remettent à ce défaut, qui lèvera chez celui que la lecture d'EL5 n'aura pas
- * rejoint ; les tests qui les omettent se rangent à EL8 (ecrituresLibresDeLa2035.test.ts joue les deux états).
- */
-export function ecrituresLibresParDefaut(prevues: boolean = ECRITURES_LIBRES_PREVUES): EcrituresLibresDesExports {
-  if (prevues) {
-    throw new Error('Les écritures libres du dossier ne sont pas passées au calcul : la 2035 et ce qui s’en estime ne se calculent pas sans elles.')
-  }
-  return ECRITURES_LIBRES_ABSENTES
-}
+// LE DÉFAUT DU CÔTÉ FERMÉ que la 2035, la situation intermédiaire, l'estimation, la revue analytique et l'alerte du chiffre
+// d'affaires donnaient aux écritures libres (EL4 : l'absence drapeau baissé, un refus à l'exécution levé) n'existe plus depuis
+// EL8 (22/11/2026) : le paramètre est OBLIGATOIRE, comme toutes leurs autres sources — un appel qui l'omet ne compile pas
+// (ecrituresLibresDeLa2035.test.ts le garde par `@ts-expect-error`), et chaque appel, de l'application comme des tests et de
+// leurs fabriques, dit ce qu'il passe : la lecture (EL5), ou l'absence (`ECRITURES_LIBRES_ABSENTES`). Un refus à l'exécution
+// ne se serait vu qu'en appelant, le jour du drapeau levé ; le compilateur le voit avant.

@@ -314,7 +314,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
   }
   for (const w of VEHICULES) for (const k of ecritureDuForfait(w, MODELE, null) ?? []) brouillon.push(ecriture({ date: fin, ...k, vehicule_id: w.id }))
 
-  const declaration = calculerDeclaration2035(ANNEE, PIECES, CATEGORIES, IMMOBILISATIONS, comptees, VEHICULES, ASSUJETTI, paiements, partsReleve, [], PLAN, ventes, pourLa2035.ecritures, recettesDeCaisse)
+  const declaration = calculerDeclaration2035(ANNEE, PIECES, CATEGORIES, IMMOBILISATIONS, comptees, VEHICULES, ASSUJETTI, paiements, partsReleve, [], PLAN, ventes, pourLa2035.ecritures, recettesDeCaisse, ECRITURES_LIBRES_ABSENTES)
   const concordance = concordance2035(declaration, brouillon, {
     piecesValidees: new Set(PIECES.map((x) => x.id)), piecesImmobilisees: new Set(IMMOBILISATIONS.map((i) => i.piece_id ?? '')),
     mouvementsDesVentesFacturees: mouvementsClassesParEncaissements(lignes),

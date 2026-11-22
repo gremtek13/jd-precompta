@@ -43,6 +43,7 @@ import { ecrituresDesVentesFacturees, type MouvementDesEncaissements } from '../
 import { SANS_ACOMPTE, ventesFacturees } from '../lib/ventesFacturees'
 import { CAISSE_ABSENTE } from '../lib/recettesDeCaisse'
 import { planLuDe } from './modeles'
+import { ECRITURES_LIBRES_ABSENTES } from '../lib/ecrituresLibresDesExports'
 
 // LES COMPOSITIONS SOUS UN PLAN (ligne 43, étape PC3 ; conception, § 5.1 et § 5.2) : chaque écriture que l'application
 // compose — et chaque contrôle qui la recompose pour juger le brouillon — joué sur des jeux d'essai FICTIFS tirés du
@@ -600,7 +601,7 @@ const CAS_DES_VENTES_FACTUREES: CasDuPlan[] = [
       })
       const fraisBancaires = categorie({ id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires fictifs', poste_2035: 'Frais financiers' })
       return calculerDeclaration2035(
-        2025, [], [fraisBancaires], [], [], [], true, new Map(), [], [], plan, ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE, ...sources, acomptes: SANS_ACOMPTE }), { etat: 'composees', composition }, CAISSE_ABSENTE,
+        2025, [], [fraisBancaires], [], [], [], true, new Map(), [], [], plan, ventesFacturees({ piecesCitees: AUCUNE_PIECE_CITEE, ...sources, acomptes: SANS_ACOMPTE }), { etat: 'composees', composition }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
       ).contributions
     },
   },
@@ -619,7 +620,7 @@ const CAS_DE_LA_CLOTURE: CasDuPlan[] = [
       return calculerDeclaration2035(
         2026, [], CATEGORIES, [IMMOBILISATION], cotisationsComptees([COTISATION], lignes, 'tresorerie'), [vehicule2026], true,
         new Map(), parts, [A_PAYER, EN_CREDIT], plan, ventesFactureesVides('d1'),
-        { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+        { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
       ).contributions
     },
   },

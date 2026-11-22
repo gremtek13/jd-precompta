@@ -17,6 +17,7 @@ import { totauxPourAnnee } from './estimation'
 import { recettesFactureesVides, ventesFactureesVides } from '../test/ventesFacturees'
 import type { LigneBancaire, Piece } from './types'
 import { formatMoney } from './format'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // L'espace insécable devant « % » : un pourcentage ne se coupe pas de son signe.
 const NB = String.fromCharCode(160)
@@ -349,6 +350,7 @@ function sources(o: Partial<SourcesDuChiffreDAffaires> = {}): SourcesDuChiffreDA
     lignes: [ligne({ id: 'l1', piece_id: 'r1', date: '2026-01-08', montant: 400 }), ligne({ id: 'l2', date: '2026-02-11', montant: -30, statut: 'non_rapprochee' })],
     ventilations: [], reglements: [], categories: [], ventesFacturees: ventesFactureesVides('d1'), encaissees: [],
     caisse: { dossierId: 'd1', enBase: false, lignes: [], complete: false, motif: 'la caisse n’est pas en base' },
+    ecrituresLibres: ECRITURES_LIBRES_ABSENTES,
     ...o,
   }
 }
@@ -360,7 +362,7 @@ describe('le chiffre d’une période, celui de l’estimation (CA-Q5)', () => {
     const s = sources()
     const paiements = paiementsDesPieces(s.lignes.filter((l) => l.statut === 'rapprochee'), [], [], [])
     for (const annee of [2025, 2026]) {
-      const ca = totauxPourAnnee(s.piecesDeVente, [], annee, false, paiements, 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE).ca
+      const ca = totauxPourAnnee(s.piecesDeVente, [], annee, false, paiements, 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES).ca
       expect(c.chiffreDAffaires(`${annee}-01-01`, `${annee}-12-31`), String(annee)).toBe(Math.round(ca * 100))
     }
     // 600 € de 2025 restés à la date de facture, 400 € encaissés le 8 janvier, 250,50 € à leur facture de février.

@@ -13,6 +13,7 @@ import { ventesFactureesVides } from '../test/ventesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import type { Categorie, Immobilisation, Piece } from './types'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LA DÉCLARATION 2035-SD : CE QU'ELLE REPORTE (docs/conceptions/55-formulaire-2035-sd.md). Rigueur entière sur les reports :
 // le tableau des immobilisations est confronté à la case CH que la 2035-B du MÊME jeu d'essai imprime, par le vrai moteur.
@@ -32,7 +33,7 @@ const categories = [{ id: 'c-achats', poste_2035: 'Achats' }, { id: 'c-recettes'
 function formulaireDe(immobilisations: Immobilisation[], pieces: Piece[] = [], annee = 2025): Map<string, number> {
   const declaration = calculerDeclaration2035(
     annee, pieces, categories, immobilisations, cotisationsComptees([], [], 'tresorerie'), [], false,
-    paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+    paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
   )
   return arrondirPourFormulaire(valeursDesCases(declaration, AUCUNE_SAISIE_2035).valeurs, annee)
 }

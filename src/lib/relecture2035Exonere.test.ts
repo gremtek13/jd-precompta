@@ -19,6 +19,7 @@ import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import type { Categorie, CotisationDeclaree, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // RELECTURE DU 31/10/2026 — la 2035 d'un soignant EXONÉRÉ en trésorerie. Trois défauts, prouvés d'abord par des
 // `it.fails`, puis corrigés : les tests ci-dessous disent ce que la déclaration doit dire, et ce qu'elle refuse.
@@ -39,7 +40,7 @@ const exonere = (o: {
   o.annee ?? 2025, o.pieces ?? [], o.categories, [],
   cotisationsComptees(o.cotisations ?? [], o.lignes ?? [], 'tresorerie'), [], false,
   paiementsDesPieces(o.lignes ?? [], [], [], []), partsDuReleve(o.lignes ?? [], o.categories, [], false), [], PLAN_PAR_DEFAUT,
-  ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+  ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
 )
 
 // Une ligne d'écriture du brouillon, telle que la base la rend.

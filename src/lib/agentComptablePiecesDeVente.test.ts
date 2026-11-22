@@ -106,11 +106,16 @@ const deployee = executer(bloc(sourceDeployee()))
 /**
  * Les clés étrangères du brouillon que l'assistant ne juge pas ENCORE, chacune avec la table qu'elle vise et sa raison :
  * une ligne qui ne cite qu'elles passe pour rattachée à rien, et se tait — rien d'elle ne part au modèle, ni son libellé
- * ni sa source. L'étape qui jugera la source d'une clé la fait passer d'ici aux RATTACHEMENTS du bloc, et redéploie. VIDE
- * depuis l'étape C5 de la caisse (ligne 26.6), qui en a fait passer `operation_caisse_id` aux rattachements : la prochaine
- * clé neuve du brouillon y entrera, avec sa raison, le jour où sa migration se prépare.
+ * ni sa source. L'étape qui jugera la source d'une clé la fait passer d'ici aux RATTACHEMENTS du bloc, et redéploie. Vide
+ * depuis l'étape C5 de la caisse (ligne 26.6), qui en a fait passer `operation_caisse_id` aux rattachements ; depuis EL8
+ * (22/11/2026), la clé de l'écriture libre, que sa migration (EL2) range dans l'export le jour de son collage.
  */
-const EN_ATTENTE_DE_L_ASSISTANT: readonly (readonly [colonne: string, parent: string, raison: string])[] = []
+const EN_ATTENTE_DE_L_ASSISTANT: readonly (readonly [colonne: string, parent: string, raison: string])[] = [
+  ['ecriture_libre_id', 'ecritures_libres',
+    'L’écriture libre de l’expert-comptable (ligne 26.9, EL2) : l’assistant la jugera à EL6, sans son libellé ni son motif '
+    + '(conception 54, § 5.9) ; jusque-là, sa ligne passe pour rattachée à rien, et rien d’elle ne part au modèle que son compte, '
+    + 'son sens, son montant et sa date.'],
+]
 
 // ── LE BLOC : CE QU'IL REND, CAS PAR CAS ────────────────────────────────────────────────────────────────────────────────
 

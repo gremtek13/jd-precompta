@@ -12,7 +12,7 @@ import { centimesDesRecettesDeCaisse, type RecettesDeCaissePourLEstimation } fro
 import type { Categorie, ModeComptable, Piece } from './types'
 import { exemplaireDUneFactureSource, recettesFactureesParMois, type VentesFacturees } from './ventesFacturees'
 import type { EcrituresLibresDesExports } from './ecrituresLibresDesExports'
-import { ecrituresLibresParDefaut, recettesComptees } from './ecrituresLibresDeLa2035'
+import { recettesComptees } from './ecrituresLibresDeLa2035'
 
 // Calculs partagés entre l'Estimation cabinet (EstimationTab, un dossier à la fois) et la Simulation
 // côté client (ClientSimulation, lecture seule) — mêmes chiffres, un seul endroit à faire évoluer si
@@ -156,9 +156,9 @@ export function totauxPourAnnee(
   // dans la 2035. Sans valeur par défaut : absente, le drapeau baissé ; « non comptées », ce que la simulation d'un client
   // passe et dit.
   recettesDeCaisse: RecettesDeCaissePourLEstimation,
-  // Les écritures libres de l'expert-comptable (EL4) : un défaut du côté fermé (trente-six appels, presque tous des tests) —
-  // drapeau baissé, l'absence ; levé, un appel qui les omet lève (`ecrituresLibresParDefaut`).
-  ecrituresLibres: EcrituresLibresDesExports = ecrituresLibresParDefaut(),
+  // Les écritures libres de l'expert-comptable (EL4) : leurs recettes comptées. Sans valeur par défaut depuis EL8 (22/11/2026),
+  // comme les autres sources : une absence se DIT (`ECRITURES_LIBRES_ABSENTES`).
+  ecrituresLibres: EcrituresLibresDesExports,
 ) {
   const debut = `${annee}-01-01`
   const fin = `${annee}-12-31`
@@ -228,8 +228,8 @@ export function projectionAnnuelle(
   partsDuReleve: readonly PartDuReleve[],
   recettesFacturees: RecettesFacturees,
   recettesDeCaisse: RecettesDeCaissePourLEstimation,
-  // Les écritures libres de l'expert-comptable (EL4) : le défaut du côté fermé de `totauxPourAnnee`.
-  ecrituresLibres: EcrituresLibresDesExports = ecrituresLibresParDefaut(),
+  // Les écritures libres de l'expert-comptable (EL4), sans valeur par défaut, comme dans `totauxPourAnnee`.
+  ecrituresLibres: EcrituresLibresDesExports,
 ): ProjectionAnnuelle {
   const annee = anneeDe(dateDuJour)
   // Du 1er janvier à aujourd'hui : la borne du jour fait un « à date », pour les recettes (à leur

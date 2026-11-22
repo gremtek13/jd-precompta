@@ -187,7 +187,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
   const declaration = calculerDeclaration2035(
     base.annee, [...base.piecesValidees], [...base.categories], [...base.immobilisations], [], [...base.vehicules],
     base.assujettiTva, paiements, [], base.declarationsTva, PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
-    { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+    { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
   )
   const ouverture = base.aNouveaux.length > 0 ? base.aNouveaux[0].date : null
   const concordance = concordance2035(
@@ -1192,7 +1192,7 @@ describe('prealablesDeValidation — une échéance payée depuis le compte pers
     const declaration = calculerDeclaration2035(
       d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
       d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements, [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
-      { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+      { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     const concordance = concordance2035(
       declaration, d.ecritures,
@@ -1280,7 +1280,7 @@ describe('prealablesDeValidation — la 2035 que la validation figerait', () => 
       const declaration = calculerDeclaration2035(
         d.annee, [...d.piecesValidees], [...d.categories], [], cotisationsComptees(d.cotisations, d.lignes, 'tresorerie'), [],
         d.assujettiTva, paiementsDesPieces(d.lignes, d.reglements, [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
-        { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+        { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
       )
       return { ...d, declaration }
     }
@@ -1759,7 +1759,7 @@ describe('prealablesDeValidation — les ventes facturées d’un dossier bascul
     if (modele.mode === 'engagement') return base
     // En trésorerie, la 2035 qui lit les ventes facturées et leurs écritures, et sa concordance avec le brouillon.
     const declaration = calculerDeclaration2035(
-      2025, [], categories, [], [], [], true, paiementsDesPieces([], [], [], []), [], [], modele.plan, ventes, { etat: 'composees', composition: c }, CAISSE_ABSENTE,
+      2025, [], categories, [], [], [], true, paiementsDesPieces([], [], [], []), [], [], modele.plan, ventes, { etat: 'composees', composition: c }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     const concordance = concordance2035(declaration, base.ecritures, {
       piecesValidees: new Set(), piecesImmobilisees: new Set(),

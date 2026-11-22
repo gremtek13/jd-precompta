@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ECRITURES_LIBRES_PREVUES } from './ecritureLibre'
 import { lireLesEcrituresLibres, lireLesEcrituresLibresSelon } from './ecrituresLibresLecture'
 import { ecrituresLibresPourLesMoteurs } from './ecrituresLibresVue'
 
@@ -64,10 +65,18 @@ beforeEach(() => {
 })
 
 describe('lireLesEcrituresLibres', () => {
-  it('le drapeau baissé (l’état du dépôt) : l’absence, sans aucune requête', async () => {
-    expect(await lireLesEcrituresLibres('d1')).toEqual({ dossierId: 'd1', etat: 'absentes' })
+  it('le drapeau baissé : l’absence, sans aucune requête', async () => {
     expect(await lireLesEcrituresLibresSelon('d1', false)).toEqual({ dossierId: 'd1', etat: 'absentes' })
     expect(faux.requetes).toEqual([])
+  })
+
+  // L'état du dépôt : la lecture suit le drapeau, qui suit la migration rangée dans l'export (ecritureLibre.test.ts) ; joué
+  // ainsi, le test passe la migration préparée comme rangée, sans supposer l'un des deux états.
+  it('l’état du dépôt : la lecture suit le drapeau, rien de lu tant qu’il est baissé', async () => {
+    const attendu = await lireLesEcrituresLibresSelon('d1', ECRITURES_LIBRES_PREVUES)
+    faux.requetes = []
+    expect(await lireLesEcrituresLibres('d1')).toEqual(attendu)
+    expect(faux.requetes.length > 0).toBe(ECRITURES_LIBRES_PREVUES)
   })
 
   it('levé : les écritures de SON dossier, en entier, puis les adresses de leurs auteurs', async () => {

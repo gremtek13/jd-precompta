@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ROLES_COMPTABLES } from './planComptable'
 import { ROLES_DU_CHANGE } from './rolesDuChange'
@@ -224,12 +224,15 @@ describe('les dix rôles des stocks, jugés à part par planComptable.sql', () =
 // et laissent la même base.
 describe('les sources neuves du brouillon, dans n’importe quel ordre', () => {
   const lire = (chemin: string) => readFileSync(new URL(`../../${chemin}`, import.meta.url), 'utf8')
+  // EL2 se lit là où elle est : préparée, ou rangée dans l'export sous la version que la production lui a donnée (EL8) — ce
+  // bloc passe dans les deux états. Son retour reste préparé dans les deux.
+  const rangee = readdirSync(new URL('../../supabase/schema/', import.meta.url)).find((f) => /^\d{14}_ecritures_libres\.sql$/.test(f))
   const MIGRATIONS = {
     operation_inventaire_id: lire('supabase/preparees/20261112190000_operations_d_inventaire.sql'),
     stock_de_cloture_id: MIGRATION,
     ouverture_compte_bancaire_id: lire('supabase/preparees/20261111235000_ouverture_eclatee_par_compte.sql'),
     affectation_id: lire('supabase/preparees/20261112233000_affectation_du_resultat.sql'),
-    ecriture_libre_id: lire('supabase/preparees/20261117120000_ecritures_libres.sql'),
+    ecriture_libre_id: lire(rangee ? `supabase/schema/${rangee}` : 'supabase/preparees/20261117120000_ecritures_libres.sql'),
   }
   const RETOURS = {
     operation_inventaire_id: lire('supabase/preparees/retour/20261112190100_retour_operations_d_inventaire.sql'),

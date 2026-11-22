@@ -21,6 +21,7 @@ import { entierTire, tirage } from '../test/encaissementsBatterie'
 import { ventesFactureesVides } from '../test/ventesFacturees'
 import { categorie, ecriture } from '../test/revision'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LES RECETTES DE CAISSE DANS LES MOTEURS (ligne 26.6, étape C3a). Ce que ces cas gardent : la forme — absente (le drapeau
 // baissé), lue, et ce que l'écran tient d'une lecture pas revenue ou partielle ; ce qu'est une recette (une opération
@@ -66,7 +67,7 @@ function caisseDe(operations: OperationCaisse[], assujetti = false, categories: 
 function declaration2035(annee: number, caisse: RecettesDeCaisse, assujetti = false, categories: Categorie[] = CATEGORIES): Declaration2035 {
   return calculerDeclaration2035(
     annee, [], categories, [], [], [], assujetti, paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides(DOSSIER),
-    { etat: 'sans_bascule' }, caisse,
+    { etat: 'sans_bascule' }, caisse, ECRITURES_LIBRES_ABSENTES,
   )
 }
 
@@ -211,13 +212,13 @@ describe('la 2035', () => {
     // Une ligne d'une autre source, sans le champ : elle est celle d'avant la caisse.
     const avecPiece = calculerDeclaration2035(
       2026, [{ ...piecePayee(), categorie_id: HONORAIRES.id }], CATEGORIES, [], [], [], false, paiementsDesPieces([], [], [], []), [], [],
-      PLAN_PAR_DEFAUT, ventesFactureesVides(DOSSIER), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+      PLAN_PAR_DEFAUT, ventesFactureesVides(DOSSIER), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     expect(Object.keys(avecPiece.recettes[0])).toEqual(['poste', 'nature', 'montant', 'nbPieces', 'nbMouvements', 'nbEncaissements'])
     // Lue et vide : le compte est là, à zéro.
     const lueVide = calculerDeclaration2035(
       2026, [{ ...piecePayee(), categorie_id: HONORAIRES.id }], CATEGORIES, [], [], [], false, paiementsDesPieces([], [], [], []), [], [],
-      PLAN_PAR_DEFAUT, ventesFactureesVides(DOSSIER), { etat: 'sans_bascule' }, caisseDe([]),
+      PLAN_PAR_DEFAUT, ventesFactureesVides(DOSSIER), { etat: 'sans_bascule' }, caisseDe([]), ECRITURES_LIBRES_ABSENTES,
     )
     expect(lueVide.recettes[0]).toEqual({ ...avecPiece.recettes[0], nbOperationsDeCaisse: 0 })
   })
@@ -329,12 +330,12 @@ describe('la situation, l’estimation, le plan de trésorerie, la revue', () =>
       operation({ id: 'r3', date: '2026-01-20', montant: 9, categorie_id: SANS_POSTE.id }),
     ])
     const s = calculerSituationIntermediaire([], CATEGORIES, [], [], '2026-01-01', '2026-03-31', false, paiementsDesPieces([], [], [], []), 'tresorerie', [],
-      ventesFactureesVides(DOSSIER), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, caisse)
+      ventesFactureesVides(DOSSIER), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, caisse, ECRITURES_LIBRES_ABSENTES)
     expect(s.totauxParPoste).toEqual([[HONORAIRES.poste_2035, 120]])
     expect([s.recettes, s.resultat]).toEqual([120, 120])
     expect(s.recettesDeCaisseSansPoste.map((r) => r.operationId)).toEqual(['r3'])
     const absente = calculerSituationIntermediaire([], CATEGORIES, [], [], '2026-01-01', '2026-03-31', false, paiementsDesPieces([], [], [], []), 'tresorerie', [],
-      ventesFactureesVides(DOSSIER), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, CAISSE_ABSENTE)
+      ventesFactureesVides(DOSSIER), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES)
     expect([absente.totauxParPoste, absente.recettesDeCaisseSansPoste]).toEqual([[], []])
   })
 
@@ -344,12 +345,12 @@ describe('la situation, l’estimation, le plan de trésorerie, la revue', () =>
       operation({ id: 'r3', date: '2026-01-20', montant: 9, categorie_id: DEVENUE_CHARGE.id }),
     ], true)
     const totaux = (c: Parameters<typeof totauxPourAnnee>[8]) =>
-      totauxPourAnnee([], [], 2026, true, paiementsDesPieces([], [], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, c).ca
+      totauxPourAnnee([], [], 2026, true, paiementsDesPieces([], [], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, c, ECRITURES_LIBRES_ABSENTES).ca
     expect(totaux(caisse)).toBe(100)
     expect(totaux(RECETTES_DE_CAISSE_NON_COMPTEES)).toBe(0)
     expect(totaux(CAISSE_ABSENTE)).toBe(0)
     expect(centimesDesRecettesDeCaisse(caisse, '2025-01-01', '2025-12-31')).toBe(5000)
-    expect(projectionAnnuelle([], [], '2026-02-01', true, paiementsDesPieces([], [], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, caisse).ca).toBe(100)
+    expect(projectionAnnuelle([], [], '2026-02-01', true, paiementsDesPieces([], [], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, caisse, ECRITURES_LIBRES_ABSENTES).ca).toBe(100)
   })
 
   it('la simulation du client ne lit pas la caisse : absente le drapeau baissé, non comptée et dite levé, en trésorerie seulement', () => {
@@ -378,11 +379,12 @@ describe('la situation, l’estimation, le plan de trésorerie, la revue', () =>
       piecesValidees: [], categories: CATEGORIES, immobilisations: [], cotisations: [], vehicules: [], lignes: [], ventilations: [],
       reglements: [], declarationsTva: [], ecritures: [],
     }
-    const avec = declarationPourLaRevue(2025, MODELE, false, lectures, ventesFactureesVides(DOSSIER), { etat: 'sans_bascule' }, [], caisse, [])
+    const avec = declarationPourLaRevue(2025, MODELE, false, lectures, ventesFactureesVides(DOSSIER), { etat: 'sans_bascule' }, [], caisse, [], ECRITURES_LIBRES_ABSENTES)
     expect(avec?.totalRecettes).toBe(70)
     const sources = {
       dossier: lectures, reprise: [], reportes: [], exercicesValides: [], reperes: { annuels: [], postes: [] }, seuils: [], explications: [],
       ventesFacturees: ventesFactureesVides(DOSSIER), encaissees: [], ecrituresDesVentes: { etat: 'sans_bascule' as const }, paiementsParLaCaisse: [],
+      ecrituresLibres: ECRITURES_LIBRES_ABSENTES,
     }
     expect(donneesDeLaRevueAnalytique(2025, 2026, MODELE, false, { ...sources, recettesDeCaisse: caisse }).declaration).toEqual(avec)
     expect(donneesDeLaRevueAnalytique(2025, 2026, MODELE, false, { ...sources, recettesDeCaisse: null }).declaration).toBeNull()
@@ -419,7 +421,7 @@ describe('l’instantané validé', () => {
   it('d’une caisse absente : la version 2 d’hier, au caractère près, et une version 2 relue ne dit pas d’opérations de caisse', () => {
     const d = calculerDeclaration2035(
       2026, [{ ...piecePayee(), categorie_id: HONORAIRES.id }], CATEGORIES, [], [], [], false, paiementsDesPieces([], [], [], []), [], [],
-      PLAN_PAR_DEFAUT, ventesFactureesVides(DOSSIER), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+      PLAN_PAR_DEFAUT, ventesFactureesVides(DOSSIER), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     const i = instantaneDe(d)
     expect(i.version).toBe(2)
@@ -491,14 +493,14 @@ describe('les bords', () => {
 
   it('la situation ne range pas une recette dont la catégorie est devenue une charge : elle la dit', () => {
     const s = calculerSituationIntermediaire([], CATEGORIES, [], [], '2026-01-01', '2026-12-31', false, paiementsDesPieces([], [], [], []), 'tresorerie', [],
-      ventesFactureesVides(DOSSIER), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, caisseDe([operation({ id: 'r1', categorie_id: DEVENUE_CHARGE.id })]))
+      ventesFactureesVides(DOSSIER), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, caisseDe([operation({ id: 'r1', categorie_id: DEVENUE_CHARGE.id })]), ECRITURES_LIBRES_ABSENTES)
     expect(s.totauxParPoste).toEqual([])
     expect(s.recettesDeCaisseSansPoste.map((r) => r.operationId)).toEqual(['r1'])
   })
 
   it('une recette du dernier jour compte : le 31 décembre dans l’année, le jour même dans la projection', () => {
     const caisse = caisseDe([operation({ id: 'r1', date: '2026-12-31', montant: 40 }), operation({ id: 'r2', date: '2026-03-20', montant: 7 })])
-    expect(totauxPourAnnee([], [], 2026, false, paiementsDesPieces([], [], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, caisse).ca).toBe(47)
-    expect(projectionAnnuelle([], [], '2026-03-20', false, paiementsDesPieces([], [], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, caisse).ca).toBe(7)
+    expect(totauxPourAnnee([], [], 2026, false, paiementsDesPieces([], [], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, caisse, ECRITURES_LIBRES_ABSENTES).ca).toBe(47)
+    expect(projectionAnnuelle([], [], '2026-03-20', false, paiementsDesPieces([], [], [], []), 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, caisse, ECRITURES_LIBRES_ABSENTES).ca).toBe(7)
   })
 })

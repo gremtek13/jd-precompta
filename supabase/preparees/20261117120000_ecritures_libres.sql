@@ -1,8 +1,9 @@
 -- EL2 : L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE, EN BASE — PRÉPARÉE le 17/11/2026, récrite le même jour (EXP58-Q3 (A) : la
--- désignation « contre la règle de la trésorerie » retirée), PAS APPLIQUÉE. À COLLER : ses deux fonctions
+-- désignation « contre la règle de la trésorerie » retirée), puis le 22/11/2026 (EL8 : la porte d'accès posée en clair, § 8),
+-- PAS APPLIQUÉE. À COLLER : ses deux fonctions
 -- retirent les lignes qu'elles remplacent (le mot de la suppression retient `apply_migration`). Rien de ce qui existe ne se
--- détruit : une table, une colonne, des contraintes, deux déclencheurs et quatre fonctions s'ajoutent ; aucune ligne, aucune
--- colonne ni aucun objet ne se retire ni ne change.
+-- détruit : une table, une colonne, des contraintes, trois déclencheurs (ses deux gardes et la porte) et six fonctions (deux
+-- aides, deux gardes, les deux de l'écriture) s'ajoutent ; aucune ligne, aucune colonne ni aucun objet ne se retire ni ne change.
 --
 -- La conception : docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md, § 3 et § 4, et les réponses du cabinet du
 -- 17/11/2026 (§ 10). Le module que la base redit : src/lib/ecritureLibre.ts (EL1), ses refus sous les mêmes mots, aux mêmes
@@ -42,7 +43,8 @@
 --      la garde des écritures validées. Le verrou PARTAGÉ de la validation (`cle_validation`) se prend avant toute lecture du
 --      gel.
 --   7. Si la double authentification exigée (`deux_facteurs_exiges`) est déjà en base, la policy restrictive `deux_facteurs` ;
---      si la porte d'accès (`acces_avant_les_gardes`) l'est, elle devant la garde de la table.
+--      et la porte d'accès (`acces_avant_les_gardes`, en production depuis le 15/11/2026), posée en clair devant la garde de
+--      la table (EL8, 22/11/2026).
 --   8. L'exclusion envers les quatre autres sources neuves du brouillon, préparées : l'ouverture éclatée par compte (MCB5g),
 --      l'inventaire (INV2), le stock de clôture (LIA2), l'affectation (AFF2) — une contrainte PAR PAIRE, au même nom et au même
 --      texte dans les deux migrations de la paire, posée par la seconde à se coller. Les cinq se collent ainsi dans n'importe
@@ -53,6 +55,15 @@
 -- porte, conception § 5.2) ; le FEC, la piste d'audit et l'état des écritures libres (EL3), la 2035 et la concordance (EL4),
 -- l'écran (EL5), la garde des lignes sans source (EL2b, EL-Q11 (A), après la mesure en base), le dégel d'un exercice validé
 -- (EL-Q10 (B), conçu, pas codé : ses questions EL10-Q1 à Q6). Rien ne s'écrit avant EL5.
+--
+-- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 22/11/2026, EL8, sur une réplique égale à la production, 249) :
+-- `ecritures_brouillon` est une table du socle — supabase/schema/socle/1_tables_sans_migration.sql se régénère du catalogue
+-- (supabase/essais/socle.sql) et gagne quatre lignes. Dans son `create table public.ecritures_brouillon` : après
+-- `  identification_client text,`, la colonne `  ecriture_libre_id uuid,` ; après la clé étrangère du dossier, la sienne
+-- (`ecritures_brouillon_ecriture_libre_id_fkey`) ; avant `ecritures_brouillon_liquidation_sans_autre_source`, la contrainte
+-- `ecritures_brouillon_libre_sans_autre_source`. Puis, après `ecritures_brouillon_facture_id_idx`, l'index
+-- `ecritures_brouillon_ecriture_libre` (83 instructions, puis 84 : `a9f83f2d…`, puis `e54200f4…`). L'inventaire compte 43
+-- objets de plus (3 425, puis 3 468 : `c2df1569…`, puis `4a6d01f1…`).
 
 do $garde$
 declare
@@ -71,6 +82,11 @@ begin
                 where not exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
                                     and a.attname = c.n and not a.attisdropped)) then
     raise exception 'ecritures_libres : une table ou une colonne dont elle dépend manque : relire la base.';
+  end if;
+  -- La porte d'accès devant les gardes, en production depuis le 15/11/2026 (GARDES-Q1) : cette migration la pose en clair
+  -- sur sa table (§ 8) ; sans sa fonction, elle ne s'applique pas.
+  if to_regprocedure('public.acces_avant_les_gardes()') is null then
+    raise exception 'ecritures_libres : la porte d''accès devant les gardes (acces_avant_les_gardes) manque : relire la base.';
   end if;
   -- Les sources du brouillon : sa contrainte « sans autre source » nomme les neuf d'hier, et les quatre sources neuves des
   -- migrations sœurs (MCB5g, INV2, LIA2, AFF2), présentes ou non, reçoivent leur exclusion au § 3. Toute autre clé étrangère du
@@ -649,27 +665,16 @@ begin
 end
 $deux_facteurs$;
 
--- ══ 8. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43), si elle est déjà en base ══
+-- ══ 8. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43, en production depuis le 15/11/2026) ══
 -- La garde `security definer` de cette migration sur sa table neuve : `garder_ecritures_libres` (celle du brouillon,
 -- `garder_ecriture_libre_du_brouillon`, est derrière la porte d'`ecritures_brouillon`). Une garde `security definer` tire
 -- avant l'expression WITH CHECK de la policy : sans la porte, elle répondrait à un appelant que la policy refuse. La porte est
--- en base depuis le 15/11/2026 (GARDES-Q1) : elle se pose ici, la première des déclencheurs BEFORE de la table. L'essai :
--- supabase/essais/accesAvantLesGardes.sql (étape 32), et supabase/essais/ecrituresLibres.sql.
-do $porte$
-declare
-  v_table text;
-begin
-  if to_regprocedure('public.acces_avant_les_gardes()') is not null then
-    foreach v_table in array array['ecritures_libres'] loop
-      if exists (select 1 from pg_catalog.pg_class c where c.oid = ('public.' || v_table)::regclass and not (c.relrowsecurity and not c.relforcerowsecurity))
-         or exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and not t.tgisinternal
-                     and (t.tgname collate "C") < ('_acces_avant_les_gardes' collate "C")) then
-        raise exception 'La porte d''accès ne se pose pas sur public.% : sa RLS n''est pas active (ou forcée), ou un déclencheur tirerait avant elle.', v_table;
-      end if;
-      if not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and t.tgname = '_acces_avant_les_gardes') then
-        execute format('create trigger _acces_avant_les_gardes before insert or update on public.%I for each row execute function public.acces_avant_les_gardes()', v_table);
-      end if;
-    end loop;
-  end if;
-end
-$porte$;
+-- en base depuis le 15/11/2026 (GARDES-Q1), et la garde de tête exige sa fonction : elle se pose ici EN CLAIR, comme GARDES-Q1
+-- la pose sur chacune de ses tables — posée par un `execute` dans un bloc `do`, comme la préparée du 17/11/2026 le faisait, elle
+-- échappait à l'inventaire des fichiers de l'export (supabase/essais/inventaire.py ne lit pas le corps d'un bloc), et le
+-- troisième contrôle de l'export aurait différé d'un objet après le collage (relevé le 22/11/2026, EL8). La première des
+-- déclencheurs BEFORE de la table : ils tirent dans l'ordre de leurs noms, et `_acces_avant_les_gardes` précède
+-- `ecritures_libres_garde` ; la RLS de la table est active (§ 1). L'essai : supabase/essais/accesAvantLesGardes.sql (étape 32),
+-- et supabase/essais/ecrituresLibres.sql (EL-F1).
+create trigger _acces_avant_les_gardes before insert or update on public.ecritures_libres
+  for each row execute function public.acces_avant_les_gardes();

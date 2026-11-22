@@ -54570,3 +54570,19 @@ commit (version 26), et la fonction répond 400 à un appel sans signature (elle
 `d30775cb`. Non vérifié : un e-mail réel — un PDF ordinaire qui arrive toujours « à valider », un bordereau écarté sous sa raison,
 le journal sans nom ni contenu ; à relever dans `query_logs` au premier envoi. Retour arrière : redéployer la ligne au commit
 d'avant. DUQ3-Q1 tranchée le 21/11/2026 (garder la phrase), rien à changer.
+
+### 22/11/2026 — EL8 : L'ÉCRITURE LIBRE PRÊTE À COLLER (LIGNE 26.9)
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 249, puis supprimée.) Derrière
+`ECRITURES_LIBRES_PREVUES` baissé : `ecritures_libres` au plan de sauvegarde (après `piece_textes_ocr`, accès direct, trois
+relations ; `sauvegardeEcrituresLibres.test.ts`), son bloc dans `restauration.sql`, le bloc LI de `rls.sql` (EN ATTENTE sans la
+table ; avec elle, trois contrôles et quatre mutations qui mordent), le leurre. Sur la réplique, la signature égale à la
+production avant EL2 et après son retour ; EL2 s'applique telle quelle, mais sa porte, posée dans un bloc `do`, échappait à
+l'inventaire, qui ne lit pas ces blocs : posée en clair, la garde de tête exigeant sa fonction ; l'en-tête dit les quatre lignes
+du socle et l'inventaire du jour de l'application (md5 `55ffe78c…` sans la dernière fin de ligne). Essais : ecrituresLibres 67
+sans faute, 6 mutations sur 6 ; `rls.sql` 288 contrôles sans faute, 173 mutations sur 173 ; la restauration identique (108
+tables) ; le banc du leurre SÛR ; l'export simulé rejoué dans une base vide ; le bloc collé égal à l'outil ; trois essais du
+brouillon apprennent ses gardes. Drapeau levé, 38 fichiers rouges, surtout du défaut fermé des moteurs : le paramètre devient
+OBLIGATOIRE (162 appels complétés, le compilateur garde l'oubli) ; six tests jugent l'état du dépôt (`migrationRangee`), le
+plancher de la porte admet une table que sa migration couvre, l'assistant tient la clé du brouillon en attente (EL6) ; la suite
+passe dans les deux états (978 fichiers, 23 939 tests). À coller ; ranger : le fichier, le socle, le drapeau ; restent EL6, EL7, EL9.

@@ -4,9 +4,7 @@ import { calculerDeclaration2035, type Declaration2035 } from './declaration2035
 import {
   ECRITURES_LIBRES_ABSENTES, type EcritureLibreDesExports, type EcrituresLibresDesExports, type LigneEnBaseDEcritureLibre,
 } from './ecrituresLibresDesExports'
-import {
-  dateDeLExtourne, ecrituresLibresParDefaut, lignesDeResultatLibres, recettesComptees,
-} from './ecrituresLibresDeLa2035'
+import { dateDeLExtourne, lignesDeResultatLibres, recettesComptees } from './ecrituresLibresDeLa2035'
 import { chiffreDAffairesDeLaPeriode, projectionAnnuelle, totauxPourAnnee } from './estimation'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { paiementsDesPieces } from './rattachement'
@@ -79,10 +77,24 @@ const SANS_CONTEXTE = { piecesValidees: new Set<string>(), piecesImmobilisees: n
 const poste = (d: Declaration2035, nom: string) => [...d.recettes, ...d.depenses].find((l) => l.poste === nom)
 
 describe('EL4 — drapeau baissé, écritures absentes : les chiffres d’hier', () => {
-  it('le défaut est l’absence drapeau baissé, et lève drapeau levé', () => {
-    expect(ecrituresLibresParDefaut()).toBe(ECRITURES_LIBRES_ABSENTES)
-    expect(ecrituresLibresParDefaut(false)).toBe(ECRITURES_LIBRES_ABSENTES)
-    expect(() => ecrituresLibresParDefaut(true)).toThrow(/écritures libres/)
+  it('les écritures libres sont un paramètre OBLIGATOIRE de chaque moteur (EL8) : un appel qui les omet ne compile pas', () => {
+    // Chaque `@ts-expect-error` est une garde : le jour où un moteur rendrait le paramètre facultatif (un défaut, l'absence ou
+    // un refus), l'appel compilerait, la directive serait sans emploi, et `tsc -b` le refuserait. Les appels ne s'exécutent pas.
+    const omis = [
+      // @ts-expect-error — la 2035 sans ses écritures libres
+      () => calculerDeclaration2035(2025, [], [], [], [], [], false, new Map(), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE),
+      // @ts-expect-error — la situation intermédiaire sans elles
+      () => calculerSituationIntermediaire([], [], [], [], '2025-01-01', '2025-09-30', false, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, CAISSE_ABSENTE),
+      // @ts-expect-error — l'estimation de l'année sans elles
+      () => totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE),
+      // @ts-expect-error — la projection annuelle sans elles
+      () => projectionAnnuelle([], [], '2025-06-30', false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE),
+      // @ts-expect-error — le chiffre d'affaires d'une période sans elles
+      () => chiffreDAffairesDeLaPeriode([], new Map(), '2025-01-01', '2025-12-31', false, 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE),
+    ]
+    expect(omis).toHaveLength(5)
+    // L'absence se DIT : celle du drapeau baissé, que chaque appel passe à la main quand il n'a rien lu.
+    expect(ECRITURES_LIBRES_ABSENTES).toEqual({ etat: 'absentes' })
   })
 
   it('la 2035 du dossier de démonstration ne bouge pas : épinglée, sans un champ de plus', () => {
@@ -100,14 +112,6 @@ describe('EL4 — drapeau baissé, écritures absentes : les chiffres d’hier',
     expect('ecrituresLibresHorsDeLa2035' in d.exclusions).toBe(false)
     expect([...d.recettes, ...d.depenses].some((l) => 'nbEcrituresLibres' in l)).toBe(false)
     expect('ecartsDeclares' in c.concordance2025).toBe(false)
-  })
-
-  it('le défaut et l’absence passée à la main rendent la même 2035, au caractère près', () => {
-    const parDefaut = calculerDeclaration2035(
-      2025, [], [], [], [], [], false, paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
-      { etat: 'sans_bascule' }, CAISSE_ABSENTE,
-    )
-    expect(declarer(2025, ECRITURES_LIBRES_ABSENTES)).toStrictEqual(parDefaut)
   })
 
   it('des écritures lues mais vides ne changent aucun montant', () => {
@@ -202,10 +206,11 @@ describe('EL4 — la concordance : comptée par construction, hors de la 2035 un
 })
 
 describe('EL4 — la situation intermédiaire et l’estimation lisent les mêmes lignes', () => {
-  const situation = (libres?: EcrituresLibresDesExports, mode: 'tresorerie' | 'engagement' = 'tresorerie') => calculerSituationIntermediaire(
-    [], [], [], [], '2025-01-01', '2025-09-30', false, new Map(), mode, [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT,
-    { etat: 'sans_bascule' }, CAISSE_ABSENTE, ...(libres ? [libres] : []),
-  )
+  const situation = (libres: EcrituresLibresDesExports = ECRITURES_LIBRES_ABSENTES, mode: 'tresorerie' | 'engagement' = 'tresorerie') =>
+    calculerSituationIntermediaire(
+      [], [], [], [], '2025-01-01', '2025-09-30', false, new Map(), mode, [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT,
+      { etat: 'sans_bascule' }, CAISSE_ABSENTE, libres,
+    )
 
   it('la situation à fin septembre compte la dépense et la recette diminuée, pas l’écriture de décembre', () => {
     const s = situation(lues(TOUTES))
@@ -214,7 +219,7 @@ describe('EL4 — la situation intermédiaire et l’estimation lisent les même
     expect(s.ecrituresLibresHorsDeLa2035).toEqual([])
   })
 
-  it('absentes, ou par défaut : la situation d’hier, sans un champ de plus', () => {
+  it('absentes : la situation d’hier, sans un champ de plus', () => {
     expect(situation()).toStrictEqual(situation(ECRITURES_LIBRES_ABSENTES))
     expect('ecrituresLibresHorsDeLa2035' in situation()).toBe(false)
   })
@@ -227,7 +232,7 @@ describe('EL4 — la situation intermédiaire et l’estimation lisent les même
       CAISSE_ABSENTE, lues(TOUTES))
     expect(avec - sansLibre).toBe(-20)
     expect(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, lues(TOUTES)).ca).toBe(-20)
-    expect(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE))
+    expect(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES))
       .toStrictEqual(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES))
     expect(projectionAnnuelle([], [], '2025-10-15', false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, lues(TOUTES)).ca).toBe(-20)
   })

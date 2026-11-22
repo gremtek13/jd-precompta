@@ -43,6 +43,13 @@ export function fichiersPrepares(): { chemin: string; texte: string }[] {
     .map((n) => ({ chemin: `supabase/preparees/${n}`, texte: readFileSync(racine + n, 'utf8') }))
 }
 
+/** La migration `<version>_<nom>.sql` est-elle RANGÉE dans l'export (appliquée), plutôt que préparée ? Un drapeau qui attend
+ *  une migration se juge contre ce rangement, dans ses deux états (EL8 : la simulation du drapeau levé, la migration rangée). */
+export function migrationRangee(nom: string): boolean {
+  const racine = new URL('../../supabase/schema/', import.meta.url).pathname
+  return readdirSync(racine).some((n) => n === `${n.slice(0, 14)}_${nom}.sql` && /^\d{14}_/.test(n))
+}
+
 /** Le contenu d'un groupe de parenthèses ouvert en `i`, parenthèses appariées. */
 function groupe(texte: string, i: number): { corps: string; fin: number } {
   let profondeur = 0

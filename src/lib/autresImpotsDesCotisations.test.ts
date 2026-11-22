@@ -28,6 +28,7 @@ import { LIBELLES_PAR_DEFAUT, planLuDe } from '../test/modeles'
 import { ROLES_DE_LA_BASE } from '../test/rolesDeLaBase'
 import { definitionsSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
 import { ventesFactureesVides } from '../test/ventesFacturees'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (EXP58-Q6, EXP58-Q7 ; la migration `autres_impots_des_cotisations`, en production depuis
 // le 19/11/2026, 243, et dans l'export : supabase/schema/20261119120000_autres_impots_des_cotisations.sql).
@@ -268,7 +269,7 @@ describe('drapeau levé : l’écriture d’une échéance', () => {
 describe('drapeau levé : la 2035, la concordance, le FEC, la situation', () => {
   const declaration = (mode: ModeComptable = 'tresorerie', c = cotisation()) => calculerDeclaration2035(
     2026, [], [], [], cotisationsComptees([c], [mouvement()], mode), [], false, new Map(), [], [], AVEC_LE_ROLE,
-    ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+    ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
   )
 
   it('la part quitte BK et BT et entre en BS ; le résultat ne change pas ; le revenu brut social baisse d’autant', () => {
@@ -324,7 +325,7 @@ describe('drapeau levé : la 2035, la concordance, le FEC, la situation', () => 
 
   it('la situation intermédiaire : la part sort des cotisations et rejoint « Autres impôts », le résultat ne change pas', () => {
     const situation = () => calculerSituationIntermediaire([], [], [], cotisationsComptees([cotisation()], [mouvement()], 'tresorerie'),
-      '2026-01-01', '2026-12-31', false, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), AVEC_LE_ROLE, { etat: 'sans_bascule' }, CAISSE_ABSENTE)
+      '2026-01-01', '2026-12-31', false, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), AVEC_LE_ROLE, { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES)
     baisser()
     const hier = situation()
     lever()

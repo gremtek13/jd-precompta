@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  ECRITURES_LIBRES_PREVUES, MOTS_DE_LA_BASE, MOTS_DES_REFUS, POSTES_DES_DEPENSES, POSTES_DES_RECETTES, RACINES_DE_RATTACHEMENT,
+  composerEcrituresLibres, ECRITURES_LIBRES_PREVUES, ecritureLibrePourLaBase, MOTS_DE_LA_BASE, MOTS_DES_REFUS, POSTES_DES_DEPENSES,
+  POSTES_DES_RECETTES, RACINES_DE_RATTACHEMENT, type SaisieDEcritureLibre,
 } from './ecritureLibre'
 
 // EL2 : LA BASE REDIT LE MODULE. La migration `ecritures_libres` (préparée) refuse ce que src/lib/ecritureLibre.ts refuse,
@@ -10,10 +11,16 @@ import {
 // l'export ; son essai (supabase/essais/ecrituresLibres.sql, joué sur une réplique) attend les mêmes mots.
 
 const lire = (chemin: string) => readFileSync(new URL(`../../${chemin}`, import.meta.url), 'utf8')
-const CHEMIN = 'supabase/preparees/20261117120000_ecritures_libres.sql'
+// La migration se lit là où elle est : préparée (supabase/preparees/), ou rangée dans l'export (supabase/schema/) sous la
+// version que la production lui a donnée, le jour où elle est collée (EL8). Ce fichier passe dans les deux états.
+const PREPAREE = 'supabase/preparees/20261117120000_ecritures_libres.sql'
+const RANGEE = readdirSync(new URL('../../supabase/schema/', import.meta.url))
+  .filter((f) => /^\d{14}_ecritures_libres\.sql$/.test(f)).map((f) => `supabase/schema/${f}`)
+const CHEMIN = RANGEE[0] ?? PREPAREE
 const MIGRATION = lire(CHEMIN)
 const RETOUR = lire('supabase/preparees/retour/20261117120100_retour_ecritures_libres.sql')
 const ESSAI = lire('supabase/essais/ecrituresLibres.sql')
+const RLS = lire('supabase/essais/rls.sql')
 const CHAMPS_BNC = lire('supabase/schema/20261102080337_champs_bnc_du_fec.sql')
 
 /** Le corps d'une fonction de la migration, ses littéraux concaténés recollés (`'…' || '…'` devient un seul littéral). */
@@ -122,9 +129,30 @@ describe('l’essai, le retour, le drapeau', () => {
     expect(RETOUR).toContain('drop constraint if exists ecritures_brouillon_libre_hors_des_stocks;')
   })
 
-  it('préparée, pas appliquée : hors de l’export, le drapeau baissé', () => {
-    expect(existsSync(new URL(`../../${CHEMIN}`, import.meta.url))).toBe(true)
-    expect(readdirSync(new URL('../../supabase/schema/', import.meta.url)).some((f) => /_ecritures_libres\.sql$/.test(f))).toBe(false)
-    expect(ECRITURES_LIBRES_PREVUES).toBe(false)
+  it('rls.sql porte son bloc LI, qui attend la migration, et envoie à la base ce que le module compose (EL8)', () => {
+    expect(RLS).toContain('do $li$')
+    expect(RLS).toContain('EN ATTENTE de la migration ecritures_libres')
+    // Le reclassement du bloc : l'écriture telle que `ecritureLibrePourLaBase` la donne, les écritures que
+    // `composerEcrituresLibres` en compose, au caractère près.
+    const saisie: SaisieDEcritureLibre = {
+      date: '2025-06-30', libelle: 'Essai de la RLS', motif: 'Essai de la RLS.', avecExtourne: false,
+      lignes: [
+        { compte: '606400', sens: 'debit', centimes: 100, poste2035: 'Fournitures de bureau', compteLib: null },
+        { compte: '606300', sens: 'credit', centimes: 100, poste2035: 'Petit outillage', compteLib: null },
+      ],
+    }
+    const ecritures = composerEcrituresLibres(saisie, { mode: 'tresorerie', frontiere: null, ouverture: null, aujourdhui: '2026-11-22' })
+    expect(ecritures).not.toBeNull()
+    expect(RLS).toContain(`  ecriture jsonb := '${JSON.stringify(ecritureLibrePourLaBase(saisie, null, null))}';`)
+    expect(RLS).toContain(`  ecritures jsonb := '${JSON.stringify(ecritures)}';`)
+    // Ses refus attendus sont les mots du module.
+    expect(RLS).toContain(`par_la_fonction = '42501 ${MOTS_DE_LA_BASE.acces}'`)
+    expect(RLS).toContain(`retrait = '42501 ${MOTS_DE_LA_BASE.accesALEcriture}'`)
+  })
+
+  it('préparée ou rangée, à un seul endroit ; le drapeau levé si et seulement si elle est dans l’export', () => {
+    const preparee = existsSync(new URL(`../../${PREPAREE}`, import.meta.url))
+    expect(RANGEE.length + (preparee ? 1 : 0)).toBe(1)
+    expect(ECRITURES_LIBRES_PREVUES).toBe(RANGEE.length === 1)
   })
 })

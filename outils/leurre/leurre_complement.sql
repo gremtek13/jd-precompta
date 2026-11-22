@@ -3,8 +3,8 @@
 -- — dix tables de dossier, et deux sans `dossier_id` qui porteront des données réelles ; sur la réplique qui porte une
 -- migration préparée, ses tables aussi (la caisse hier, les devis, les factures reprises, la numérotation qui continue,
 -- la pièce d'une facture reprise, les documents du cabinet et leurs lectures, les modèles de lettre de mission, les
--- paquets d'archive téléchargés et les conservations, l'inventaire, les provisions, les stocks et l'affectation du résultat),
--- chacune sous `to_regclass`.
+-- paquets d'archive téléchargés et les conservations, l'inventaire, les provisions, les stocks, l'affectation du résultat et
+-- les écritures libres), chacune sous `to_regclass`.
 \set ON_ERROR_STOP on
 begin;
 set local session_replication_role = replica;
@@ -286,5 +286,31 @@ begin
          and exists (select 1 from public.imports_factures_assurance_maladie i where i.dossier_id = lc.d)$i$;
   end if;
 end $assurance_maladie$;
+-- Les écritures libres de l'expert-comptable (migration `ecritures_libres`, EL2, ligne 26.9, sur la réplique qui la porte) : le
+-- remplisseur ne compose ni un exercice qui soit l'année de la date (il écrit 7), ni des lignes en tableau de deux au moins.
+-- Une écriture par leurre — son libellé et son motif marqués, son montant celui du leurre en centimes, la pièce du leurre citée —
+-- et ses deux lignes au brouillon, à sa date, qui la citent (une colonne que le remplisseur laisse nulle) : un essai qui lirait
+-- les écritures libres ou leurs lignes d'un autre dossier que les siens rendrait le leurre. Sous `to_regclass`, sa ligne
+-- seulement si le leurre n'en a pas.
+do $ecritures_libres$
+begin
+  if to_regclass('public.ecritures_libres') is not null then
+    execute $i$insert into public.ecritures_libres (id, dossier_id, exercice, numero, date, libelle, motif, lignes, avec_extourne,
+        piece_citee_id, version, cree_par)
+      select (pfx || '-0000-4000-8000-000000000e' || h || '1')::uuid, d, 2025, 1, '2025-06-17', m || ' libellé de l''écriture libre',
+             m || ' motif de l''écriture libre',
+             jsonb_build_array(
+               jsonb_build_object('compte', '606400', 'sens', 'debit', 'centimes', (montant * 100)::bigint, 'poste_2035', 'Fournitures de bureau', 'compte_lib', null),
+               jsonb_build_object('compte', '606300', 'sens', 'credit', 'centimes', (montant * 100)::bigint, 'poste_2035', 'Petit outillage', 'compte_lib', null)),
+             false, (pfx || '-0000-4000-8000-0000000001' || h || '1')::uuid, 1, chef
+        from lc where not exists (select 1 from public.ecritures_libres e where e.dossier_id = lc.d)$i$;
+    execute $i$insert into public.ecritures_brouillon (dossier_id, ecriture_libre_id, date, compte, libelle, montant, sens, statut)
+      select lc.d, (pfx || '-0000-4000-8000-000000000e' || h || '1')::uuid, '2025-06-17', c.compte, m || ' libellé de l''écriture libre',
+             montant, c.sens, 'proposee'
+        from lc cross join (values ('606400', 'debit'), ('606300', 'credit')) as c(compte, sens)
+       where exists (select 1 from public.ecritures_libres e where e.id = (pfx || '-0000-4000-8000-000000000e' || h || '1')::uuid)
+         and not exists (select 1 from public.ecritures_brouillon b where b.dossier_id = lc.d and b.ecriture_libre_id is not null)$i$;
+  end if;
+end $ecritures_libres$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;

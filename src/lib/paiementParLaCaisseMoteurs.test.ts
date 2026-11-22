@@ -33,6 +33,7 @@ import { tirage } from '../test/encaissementsBatterie'
 import { SANS_ECRITURE_DE_VENTE, SANS_EXEMPLAIRE, SANS_FACTURE_SOURCE, SANS_VENTE_FACTUREE, ventesFactureesVides } from '../test/ventesFacturees'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT, modeleDeTest } from '../test/modeles'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LE DRAPEAU, ÉCRIT : un accesseur sous `vi.mock`, BAISSÉ par défaut — l'état d'aujourd'hui, quelle que soit la valeur du module,
 // que la migration lèvera — et `paiementsParLaCaisse`, la dérivation selon le drapeau, qui le suit (son corps lit la constante
@@ -102,7 +103,7 @@ const paiements = (lignes: readonly LigneBancaire[], ops: readonly OperationCais
 const declaration = (annee: number, pieces: Piece[], p: PaiementsDesPieces, lignes: readonly LigneBancaire[] = [], assujetti = false) =>
   calculerDeclaration2035(
     annee, pieces, CATEGORIES, [], [], [], assujetti, p, partsDuReleve(lignes, CATEGORIES, [], assujetti), [], PLAN_PAR_DEFAUT,
-    ventesFactureesVides(D), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+    ventesFactureesVides(D), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
   )
 const cases = (annee: number, pieces: Piece[], p: PaiementsDesPieces) => valeursDesCases(declaration(annee, pieces, p), AUCUNE_SAISIE_2035).valeurs
 const etatDeLaCaisse = (ops: readonly OperationCaisse[], plan: PlanComptable = PLAN_PAR_DEFAUT): EtatDeLaCaisse => ({
@@ -208,7 +209,7 @@ describe('la neutralité, au caractère près', () => {
       ca3: calculerCa3({ pieces, paiements: p, pieceIdsImmobilisees: new Set(), releve: [], ventesFacturees: ventesFactureesVides(D), caisse: CAISSE_ABSENTE },
         { debut: '2026-01-01', fin: '2026-12-31' }, false, 0, 0),
       situation: calculerSituationIntermediaire(pieces, CATEGORIES, [], [], '2026-01-01', '2026-06-30', true, p, 'tresorerie', [],
-        ventesFactureesVides(D), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, CAISSE_ABSENTE),
+        ventesFactureesVides(D), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES),
       brouillon: brouillon.map(({ id: _id, ...l }) => l),
       analyse: analyserEcritures(brouillon, aComptabiliser, true, p, TRESORERIE, null, SANS_EXEMPLAIRE, banquesDuDossier({ etat: 'sans_objet' }, TRESORERIE.plan)),
       fec: genererFec(brouillon, pieces, CATEGORIES, [], modeleDeTest('tresorerie'), lignes, new Map(), SANS_ECRITURE_DE_VENTE,
@@ -313,7 +314,7 @@ describe('la CA3 et la situation suivent la date des espèces', () => {
   it('la situation intermédiaire : la charge dans la période du paiement en espèces', () => {
     const p = paiements([], [operation({ id: 'oc-1', date: '2026-07-02', montant: -120 })])
     const situation = (debut: string, fin: string) => calculerSituationIntermediaire([achat], CATEGORIES, [], [], debut, fin, true, p,
-      'tresorerie', [], ventesFactureesVides(D), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, CAISSE_ABSENTE).charges
+      'tresorerie', [], ventesFactureesVides(D), PLAN_PAR_DEFAUT, { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES).charges
     expect(situation('2026-01-01', '2026-06-30')).toBe(0)
     expect(situation('2026-07-01', '2026-12-31')).toBe(100)
   })

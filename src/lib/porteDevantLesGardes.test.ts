@@ -119,10 +119,18 @@ describe('la porte d’accès devant les gardes — la règle des migrations pr�
     expect(listesDeLaPorte(PORTE!.texte).tables).toHaveLength(32)
   })
 
-  it('le plancher : dans l’export, le relevé retrouve exactement les 32 tables de la porte et `dossiers`', () => {
+  // Une table neuve dont la migration pose elle-même la porte (EL2, `ecritures_libres`, le jour où elle est rangée dans
+  // l'export) s'ajoute aux 32 sans être une faute ; le plancher exige toujours les 32 et `dossiers`, et qu'une table de plus
+  // soit couverte par une migration de l'export — la règle du test suivant, qui la juge aussi.
+  it('le plancher : dans l’export, le relevé retrouve les 32 tables de la porte et `dossiers`, et seulement des tables que leur migration couvre en plus', () => {
     const sd = gardesSecurityDefiner(TOUS)
     const export_ = new Set(SCHEMA.flatMap((f) => tablesGardees(f.texte, sd)))
-    expect([...export_].sort()).toEqual([...listesDeLaPorte(PORTE!.texte).tables, 'dossiers'].sort())
+    const attendues = [...listesDeLaPorte(PORTE!.texte).tables, 'dossiers']
+    const couvertes = new Set(SCHEMA.filter((f) => !/_acces_avant_les_gardes\.sql$/.test(f.chemin))
+      .flatMap((f) => [...tablesCouvertesDirectement(f.texte), ...tablesCouvertesSousCondition(f.texte)]))
+    expect(attendues.filter((t) => !export_.has(t))).toEqual([])
+    expect([...export_].filter((t) => !attendues.includes(t) && !couvertes.has(t))).toEqual([])
+    expect(attendues).toHaveLength(33)
   })
 
   it('aucune migration, exportée ou préparée, ne pose une garde security definer hors de la porte sans la poser sous condition', () => {

@@ -38,6 +38,7 @@ import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from './paiementsAssuranceMaladie'
 import { OPTIONS_DES_CABINETS_EN_BASE, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
 import { FACTURES_ASSURANCE_MALADIE_EN_BASE } from './importDuFactureAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssuranceMaladie'
+import { ECRITURES_LIBRES_PREVUES, TABLES_DES_ECRITURES_LIBRES } from './ecritureLibre'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
@@ -1035,6 +1036,32 @@ function blocDeLAssociationAssuranceMaladie(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table de l'association existe : la sienne après sa table d'ancrage. */
 const avecLAssociationAssuranceMaladie = avecLesArticles
 
+// LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (ligne 26.9, EL2 ; au plan par EL8 le 22/11/2026) : un bloc à part, joué après celui
+// de l'association et avant celui des options, met sa table juste après `piece_textes_ocr`, les rangs qui suivent reculant d'un ;
+// son chemin ; aucune vague (`contre_passe_id` n'entre qu'à EL7).
+const MARQUE_DES_ECRITURES_LIBRES = "-- ══ Les écritures libres de l'expert-comptable (ligne 26.9, EL2) ══"
+
+function blocDesEcrituresLibres(texte: string): BlocDesArticles {
+  const debut = texte.indexOf(MARQUE_DES_ECRITURES_LIBRES)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const chemins: PlanDeLEssai['chemins'] = {}
+  for (const m of corps.matchAll(/\('(\w+)','(\w+)',(?:null|'(\w+)'),(?:null|'(\w+)')\)/g)) {
+    chemins[m[1]] = { acces: m[2], parent: m[3] ?? null, colonne: m[4] ?? null }
+  }
+  const tables = [...corps.matchAll(/values \(v_rang \+ (\d+), '(\w+)'\)/g)].sort((a, b) => Number(a[1]) - Number(b[1])).map((m) => m[2])
+  return {
+    ancre: /where o\.table_nom = '(\w+)';/.exec(corps)?.[1] ?? null,
+    tables,
+    chemins,
+    recule: tables.length > 0 && corps.includes(`set rang = -(rang + ${tables.length}) where rang > v_rang;`)
+      && corps.includes('set rang = -rang where rang < 0;'),
+    conditionne: corps.includes("if to_regclass('public.ecritures_libres') is not null then"),
+  }
+}
+
+/** Le plan que le script joue quand la table des écritures libres existe : la sienne après sa table d'ancrage. */
+const avecLesEcrituresLibres = avecLesArticles
+
 // LES OPÉRATIONS D'INVENTAIRE (ligne 35, INV2) : un bloc à part, joué en dernier, met leur table juste après
 // `notes_internes`, avant les pièces hors de France ; son chemin ; aucune vague.
 const MARQUE_DE_L_INVENTAIRE = "-- ══ Les opérations d'inventaire (ligne 35, INV2) ══"
@@ -1179,13 +1206,13 @@ const avecLesAchatsDuClient = avecLesArticles
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesOptionsDesCabinets(avecLAssociationAssuranceMaladie(avecLeFactureAssuranceMaladie(avecLesPaiementsAssuranceMaladie(avecLaHausse(avecLesExercices(avecLInventaire(avecLInventaire(avecLInventaire(avecLesStocks(avecLAffectation(avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesCopiesDesFichiers(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesOptionsDesCabinets(avecLesEcrituresLibres(avecLAssociationAssuranceMaladie(avecLeFactureAssuranceMaladie(avecLesPaiementsAssuranceMaladie(avecLaHausse(avecLesExercices(avecLInventaire(avecLInventaire(avecLInventaire(avecLesStocks(avecLAffectation(avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesCopiesDesFichiers(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesPrevisionsPubliees(avecLesSituations(avecLesDevis(avecLesOuverturesAttestees(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesOuverturesAttestees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesPrevisionsPubliees(texte)), blocDesSaisies2035(texte)),
   blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesCopiesDesFichiers(texte)), blocDesOriginauxLiberes(texte)), blocDuModeleDuCabinet(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDesHonorairesDeposes(texte)), blocDuDepart(texte)), blocDesNotesDeFrais(texte)), blocDesAchatsDuClient(texte)), blocDesDocumentsEtDemandes(texte)), blocDesSaisies2035E(texte)), blocDeLAffectation(texte)), blocDesStocks(texte)), blocDeLInventaire(texte)), blocDesProvisions(texte)), blocDesDeclarations(texte)), blocDesExercices(texte)), blocDeLaHausse(texte)),
   blocDesPaiementsAssuranceMaladie(texte)), blocDuFactureAssuranceMaladie(texte)), blocDeLAssociationAssuranceMaladie(texte)),
-  blocDesOptionsDesCabinets(texte))
+  blocDesEcrituresLibres(texte)), blocDesOptionsDesCabinets(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -1327,9 +1354,12 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const associationAM = blocDeLAssociationAssuranceMaladie(texteDeLEssai)
   const avecLAssociationAMDuJour = ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES
     ? avecLAssociationAssuranceMaladie(avecLeFactureAMDuJour, associationAM) : avecLeFactureAMDuJour
+  const ecrituresLibres = blocDesEcrituresLibres(texteDeLEssai)
+  const avecLesEcrituresLibresDuJour = ECRITURES_LIBRES_PREVUES
+    ? avecLesEcrituresLibres(avecLAssociationAMDuJour, ecrituresLibres) : avecLAssociationAMDuJour
   const options = blocDesOptionsDesCabinets(texteDeLEssai)
   const courant = OPTIONS_DES_CABINETS_EN_BASE
-    ? avecLesOptionsDesCabinets(avecLAssociationAMDuJour, options) : avecLAssociationAMDuJour
+    ? avecLesOptionsDesCabinets(avecLesEcrituresLibresDuJour, options) : avecLesEcrituresLibresDuJour
 
   it('le bloc de l’association des paiements de l’assurance maladie : sa table, après `lignes_bancaires`, conditionné, son chemin, joué après le facturé et avant les options (NOE5, NOE8)', () => {
     expect(associationAM).toEqual({
@@ -1347,6 +1377,31 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(blocDeLAssociationAssuranceMaladie(sansLeBloc).conditionne).toBe(false)
     const ailleurs = texteDeLEssai.replace("where o.table_nom = 'lignes_bancaires';", "where o.table_nom = 'ventilations_bancaires';")
     expect(blocDeLAssociationAssuranceMaladie(ailleurs).ancre).toBe('ventilations_bancaires')
+  })
+
+  it('le bloc des écritures libres : sa table, après `piece_textes_ocr`, conditionné, son chemin, joué après l’association et avant les options (EL8)', () => {
+    expect(ecrituresLibres).toEqual({
+      ancre: 'piece_textes_ocr', tables: [...TABLES_DES_ECRITURES_LIBRES], recule: true, conditionne: true,
+      chemins: { ecritures_libres: { acces: 'direct', parent: null, colonne: null } },
+    })
+    const rang = ORDRE_RESTAURATION_PREVU.indexOf('piece_textes_ocr')
+    expect(ORDRE_RESTAURATION_PREVU.slice(rang + 1, rang + 2)).toEqual([...TABLES_DES_ECRITURES_LIBRES])
+    // Après la pièce qu'elle cite, avant le brouillon qui la cite et les exercices validés, hors du bloc de la caisse.
+    const place = ORDRE_RESTAURATION_PREVU.indexOf('ecritures_libres')
+    expect(ORDRE_RESTAURATION_PREVU.indexOf('pieces')).toBeLessThan(place)
+    for (const apres of ['pieces_hors_de_france', 'operations_caisse', 'ecritures_brouillon', 'exercices_valides']) {
+      expect(place, apres).toBeLessThan(ORDRE_RESTAURATION_PREVU.indexOf(apres))
+    }
+    expect(texteDeLEssai.indexOf(MARQUE_DES_ECRITURES_LIBRES)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DE_L_ASSOCIATION_AM))
+    expect(texteDeLEssai.indexOf(MARQUE_DES_ECRITURES_LIBRES)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_OPTIONS_DES_CABINETS))
+    // Le bloc ôté, il ne conditionne plus rien ; ancré ailleurs, il le dit, et le plan prévu que le script joue n'est plus celui
+    // du code.
+    const sansLeBloc = texteDeLEssai.replace("if to_regclass('public.ecritures_libres') is not null then", 'if false then')
+    expect(blocDesEcrituresLibres(sansLeBloc).conditionne).toBe(false)
+    const ailleurs = texteDeLEssai.replace("where o.table_nom = 'piece_textes_ocr';", "where o.table_nom = 'notes_internes';")
+    expect(blocDesEcrituresLibres(ailleurs).ancre).toBe('notes_internes')
+    expect(ecartsAuCode(avecLesBlocs(ailleurs), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS,
+      TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES).join('\n')).toContain('_ordre diffère')
   })
 
   it('le bloc des options des cabinets : sa table, après `copies_des_fichiers`, conditionnée, son chemin de cabinet, joué en dernier (OPT1)', () => {
@@ -1806,6 +1861,7 @@ describe('l’essai de restauration rejoue le plan du code', () => {
       && !TABLES_DU_FACTURE_ASSURANCE_MALADIE.includes(t)
       && !TABLES_DE_L_ASSOCIATION_ASSURANCE_MALADIE.includes(t)
       && !(TABLES_DE_L_AFFECTATION as readonly string[]).includes(t)
+      && !(TABLES_DES_ECRITURES_LIBRES as readonly string[]).includes(t)
     const vaguesSansLesBlocs = TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => horsDesBlocs(a.table))
     const ordreSansLesBlocs = ORDRE_RESTAURATION_PREVU.filter(horsDesBlocs)
     const cheminsSansLesBlocs = Object.fromEntries(Object.entries(CHEMINS_DOSSIER_PREVUS).filter(([table]) => horsDesBlocs(table)))

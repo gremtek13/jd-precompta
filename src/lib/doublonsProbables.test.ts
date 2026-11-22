@@ -14,6 +14,7 @@ import {
 } from './doublonsProbables'
 import { tirage } from '../test/encaissementsBatterie'
 import type { Categorie, LigneBancaire, Piece } from './types'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LE DOUBLON PROBABLE (relecture du 04/11/2026, D1 ; PIECES-Q2, sur la recommandation). Les scénarios de la relecture
 // (`outils/relecture-pieces/doublons.scenarios.test.ts`), changés en gardes du comportement corrigé : la même dépense entrée
@@ -64,7 +65,7 @@ describe('D1 — le PDF du fournisseur et la photo du praticien : le même achat
     const validees = [pdf, { ...photo, statut: 'validee' as const }]
     const d = calculerDeclaration2035(2025, validees, [PETIT_MATERIEL], [], [], [], false,
       paiementsDesPieces(lignes, [], [], []), partsDuReleve(lignes, [PETIT_MATERIEL], [], false), [], PLAN_PAR_DEFAUT,
-      ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
+      ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES)
     expect(d.depenses.find((l) => l.poste === 'Petit outillage')?.montant).toBe(172.8)
     expect(d.sansPaiementConnu.map((s) => s.piece.id)).toEqual(['p-pdf'])
     // Ce que la carte de Clôture marque : la pièce sans paiement est l'une des deux.

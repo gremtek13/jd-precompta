@@ -23,6 +23,7 @@ import type { EcritureBrouillon, Piece } from './types'
 import { defautsDeNumerotation } from './validationExercice'
 import { anomaliesDgfip, colonnes, desequilibresDgfip } from '../test/fecDgfip'
 import { composerLeFecFictif } from '../test/fecFictif'
+import { migrationRangee } from '../test/schema'
 import { modeleDeTest } from '../test/modeles'
 import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE } from '../test/ventesFacturees'
 
@@ -103,8 +104,8 @@ const fec = (ecritures: EcritureBrouillon[], libres: EcrituresLibresDesExports, 
 const sha = (texte: string) => createHash('sha256').update(texte).digest('hex')
 
 describe('le drapeau baissé : le FEC d’hier, à l’octet', () => {
-  it('le drapeau reste baissé dans ce lot : la migration EL2 n’est que préparée', () => {
-    expect(ECRITURES_LIBRES_PREVUES).toBe(false)
+  it('le drapeau suit la migration EL2 : levé si et seulement si elle est rangée dans l’export', () => {
+    expect(ECRITURES_LIBRES_PREVUES).toBe(migrationRangee('ecritures_libres'))
   })
 
   it('le FEC fictif d’une année entière, à dix-huit et à vingt-deux colonnes : les empreintes d’avant EL3', () => {
