@@ -1,4 +1,6 @@
 import { supabase } from './supabase'
+import { lireLesEcrituresLibres } from './ecrituresLibresLecture'
+import { ecrituresLibresPourLesMoteurs, motifDesEcrituresLibres } from './ecrituresLibresVue'
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { lireLaCaisse } from './caisseLecture'
@@ -84,7 +86,7 @@ async function lireLesAuteursNommables(auteurs: readonly string[]): Promise<Read
 export async function lireLesSourcesDuChiffreDAffaires(dossierId: string):
   Promise<{ etat: 'lues'; sources: SourcesDuChiffreDAffaires } | { etat: 'incomplete'; motif: string }> {
   try {
-    const [pieces, lignes, ventilations, reglements, categories, ventes, caisse] = await Promise.all([
+    const [pieces, lignes, ventilations, reglements, categories, ventes, caisse, libres] = await Promise.all([
       lireTout<Piece>((debut, fin) =>
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'validee').eq('type_piece', 'vente').order('id').range(debut, fin),
@@ -105,18 +107,22 @@ export async function lireLesSourcesDuChiffreDAffaires(dossierId: string):
       // Ne rejettent jamais : refusées ou partielles, elles reviennent incomplètes, avec leur motif.
       lireLesVentesFacturees(dossierId),
       lireLaCaisse(dossierId),
+      // Le drapeau des écritures libres baissé, l'absence, sans requête.
+      lireLesEcrituresLibres(dossierId),
     ])
     const partielle = [pieces, lignes, ventilations, reglements, categories].find((l) => !l.complete)
     if (partielle) return { etat: 'incomplete', motif: partielle.motif ?? 'lecture incomplète' }
     if (ventes.dossierId !== dossierId) return { etat: 'incomplete', motif: 'les ventes facturées d’un autre dossier' }
     if (ventes.etat !== 'lue') return { etat: 'incomplete', motif: ventes.motif }
     if (caisse.dossierId !== dossierId) return { etat: 'incomplete', motif: 'la caisse d’un autre dossier' }
+    const ecrituresLibres = ecrituresLibresPourLesMoteurs(libres, dossierId)
+    if (ecrituresLibres === null) return { etat: 'incomplete', motif: motifDesEcrituresLibres(libres) ?? 'les écritures de l’expert-comptable d’un autre dossier' }
     return {
       etat: 'lues',
       sources: {
         dossierId, piecesDeVente: pieces.lignes, lignes: lignes.lignes, ventilations: ventilations.lignes,
         reglements: reglements.lignes, categories: categories.lignes, ventesFacturees: ventes.ventes, encaissees: ventes.encaissees,
-        caisse,
+        caisse, ecrituresLibres,
       },
     }
   } catch (erreur) {

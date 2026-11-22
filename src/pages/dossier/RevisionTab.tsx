@@ -58,6 +58,8 @@ import RevueAnalytiqueSection, { type MotifDeLectureDeLaRevue } from './RevueAna
 import DossierPermanentSection, { type LectureDuDossierPermanent } from './DossierPermanentSection'
 import { anneesDActivite } from '../../lib/dossierPermanentEcran'
 import FicheDossierPermanent from './FicheDossierPermanent'
+import { useEcrituresLibres } from '../../lib/useEcrituresLibres'
+import { ecrituresLibresPourLesMoteurs } from '../../lib/ecrituresLibresVue'
 
 // LA RÉVISION DES SOLDES DE BILAN D'UN EXERCICE (ligne 41, étape R3 ; conception du 09/10/2026, HISTORIQUE.md, « LA
 // RÉVISION DES COMPTES : LA CONCEPTION », § 4.1 à 4.3). Chaque solde de bilan au 31 décembre se JUSTIFIE par une pièce,
@@ -329,6 +331,8 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
   const { banques } = useBanquesDuDossier(dossierId, modele.plan)
   const { annee } = useAnnee()
+  // Les écritures libres de l'expert-comptable (EL5), que la 2035 de la revue compte : le drapeau baissé, l'absence sans requête.
+  const { lu: lectureDesLibres } = useEcrituresLibres(dossierId)
   const { exercices, frontiere } = useExercicesValides()
   const { session, estChef } = useAuth()
   // Le module des paiements de l'assurance maladie (NOE6) : ses contrôles ne se rangent que s'il est ouvert au cabinet.
@@ -858,6 +862,8 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     // La caisse d'un autre dossier — une lecture d'avant un changement de dossier — ne vaut pas, comme les ventes facturées.
     ...(etatDeLaCaisse.etat === 'en_attente'
       ? [{ quoi: 'La caisse du dossier', accord: 'lue' as const, motif: 'la lecture rendue est celle d’un autre dossier' }] : []),
+    ...(lectureDesLibres?.etat === 'illisibles'
+      ? [{ quoi: 'Les écritures de l’expert-comptable', accord: 'lues' as const, motif: lectureDesLibres.motif }] : []),
   ]
   const donneesDeLaRevue = donneesDeLaRevueAnalytique(annee, anneeCourante, modele, assujettiTva, {
     dossier: lecture.checklist, reprise: lecture.reprise, reportes: lecture.reportes, exercicesValides: exercices,
@@ -868,6 +874,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     recettesDeCaisse: recettesPourLesMoteurs(etatDeLaCaisse),
     // Les paiements de pièces par la caisse (étape C9a), de la même lecture : aucun tant que la migration n'est pas en base.
     paiementsParLaCaisse: paiementsParLaCaisseDuDossier(lecture.caisse, dossierId),
+    ecrituresLibres: ecrituresLibresPourLesMoteurs(lectureDesLibres, dossierId),
   })
   const lectureDeLaRevueIncomplete = motifsDeLaRevue.length > 0
     ? motifsDeLaRevue.map((m) => `${m.quoi} : ${m.motif}`).join(' ; ')

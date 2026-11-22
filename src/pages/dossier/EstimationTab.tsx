@@ -1,4 +1,6 @@
 import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
+import { useEcrituresLibres } from '../../lib/useEcrituresLibres'
+import { ecrituresLibresPourLesMoteurs, motifDesEcrituresLibres } from '../../lib/ecrituresLibresVue'
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
@@ -46,6 +48,8 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
 }) {
   // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
   const { banques } = useBanquesDuDossier(dossierId, plan)
+  // Les écritures libres de l'expert-comptable (EL5) : le drapeau baissé, l'absence, sans requête.
+  const { lu: lectureDesLibres } = useEcrituresLibres(dossierId)
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Deux jeux, deux filtres, et les noms le disent désormais. `recettesValidees` est restreint aux
   // pièces de VENTE validées, `piecesValidees` à toutes les validées. Le second s'appelait
@@ -249,13 +253,17 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   const etatDeLaCaisse = recettesDeCaisseDuDossier(lectureCaisse, dossierId, categories, assujettiTva)
   const recettesDeCaisse = recettesPourLesMoteurs(etatDeLaCaisse)
   const caisseIncomplete = motifDeLaCaisse(etatDeLaCaisse)
-  const projection = recettesFacturees === null || recettesDeCaisse === null
+  // Les écritures libres de l'expert-comptable (EL4, EL5) : leurs recettes comptées entrent au chiffre d'affaires. Le drapeau
+  // baissé, l'absence ; levées et pas encore revenues ou illisibles, ni projection ni chiffre calculé.
+  const ecrituresLibres = ecrituresLibresPourLesMoteurs(lectureDesLibres, dossierId)
+  const libresIncompletes = motifDesEcrituresLibres(lectureDesLibres)
+  const projection = recettesFacturees === null || recettesDeCaisse === null || ecrituresLibres === null
     ? null
-    : projectionAnnuelle(recettesValidees, comptees, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts, recettesFacturees, recettesDeCaisse)
+    : projectionAnnuelle(recettesValidees, comptees, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts, recettesFacturees, recettesDeCaisse, ecrituresLibres)
   const referenceN1 = projection === null ? null : references.find((r) => r.annee === projection.annee - 1) ?? null
   // Le calcul du chiffre d'affaires d'un repère est suspendu sur une lecture partielle, celle des ventes facturées comprise ;
   // le détail par poste ne lit que des charges, et ne suit que les autres.
-  const calculDuCaSuspendu = lectureIncomplete ?? ventesIncompletes ?? caisseIncomplete
+  const calculDuCaSuspendu = lectureIncomplete ?? ventesIncompletes ?? caisseIncomplete ?? libresIncompletes
   // LES FRAIS D'UN MOUVEMENT D'ENCAISSEMENTS (étape VF8g) : ce que le détail par poste reçoit des écritures des ventes
   // facturées, sur les lectures de CE dossier — la règle de Clôture et du Financement (lib/ecrituresVentesFactureesEcran.ts,
   // `ecrituresDesVentesPourLa2035`). Un dossier qui n'a pas basculé : `sans_bascule`, et le détail d'hier, que des ventes
@@ -345,11 +353,11 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   // au rechargement de la page.
   async function calculerDepuisAppli() {
     const annee = parseInt(anneeACalculer, 10)
-    if (!annee || calculDuCaSuspendu || recettesFacturees === null || recettesDeCaisse === null) return
+    if (!annee || calculDuCaSuspendu || recettesFacturees === null || recettesDeCaisse === null || ecrituresLibres === null) return
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(recettesValidees, comptees, annee, assujettiTva, paiements, modeComptable, parts, recettesFacturees, recettesDeCaisse)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, comptees, annee, assujettiTva, paiements, modeComptable, parts, recettesFacturees, recettesDeCaisse, ecrituresLibres)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,
@@ -581,6 +589,12 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
             Calcul du chiffre d’affaires suspendu : la caisse du dossier n’a pas pu être lue en entier ({caisseIncomplete}). Un
             repère calculé sans ses recettes en espèces serait enregistré trop bas. Recharge la page — la saisie à la main
             reste possible ci-dessous.
+          </p>
+        )}
+        {lectureIncomplete === null && ventesIncompletes === null && caisseIncomplete === null && libresIncompletes !== null && (
+          <p className="error-text" style={{ marginTop: -8 }}>
+            Calcul du chiffre d’affaires suspendu : {libresIncompletes}. Un repère calculé sans les recettes que
+            l’expert-comptable compte serait faux. Recharge la page — la saisie à la main reste possible ci-dessous.
           </p>
         )}
         {lectureIncomplete === null && ecrituresIncompletes !== null && (

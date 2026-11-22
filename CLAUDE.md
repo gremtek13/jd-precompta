@@ -620,7 +620,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   retirée, la préparée récrite, md5 `485ecc9f…`) ; EL-Q1 à
   Q12 tranchées le 17/11/2026 — tout compte du cabinet qui suit le dossier l'écrit (EL-Q1, `admin_du_dossier`, l'auteur posé par
   la base), un dégel du dernier exercice validé par le chef, conçu, pas codé (EL-Q10 (B), EL10-Q1 à Q7 ouvertes, lot EL9). EL1 en
-  module (`lib/ecritureLibre.ts`) ; EL2 préparée, à coller (`ecritures_libres`, `ECRITURES_LIBRES_PREVUES` baissé ; les quatre
+  module (`lib/ecritureLibre.ts`) ; EL5 (22/11/2026), la lecture (`lib/ecrituresLibresLecture.ts`, nulle = aucun calcul) passée à
+  chaque moteur (`ecrituresLibresAppelants.test.ts`) et la section de l'onglet Écritures, derrière le même drapeau ; « Ma simulation »
+  ne les compte pas et le dit (EL5-Q1) → « EL5 : LA LECTURE DES ÉCRITURES LIBRES » ; EL2 préparée, à coller (`ecritures_libres`, `ECRITURES_LIBRES_PREVUES` baissé ; les quatre
   sources neuves sœurs la tolèrent, `stocks.test.ts`) ; le plan de sauvegarde et `rls.sql` à EL8 ; EL3 (22/11/2026) en module,
   sans lecture : la sorte `libre` du FEC (OD, « EL<année>-<numéro> », sans règlement, NatOp le poste saisi), la piste d'audit et
   `absenceFec`, l'état des écritures libres en CSV et PDF (`lib/ecrituresLibresDesExports.ts`, `lib/etatDesEcrituresLibres.ts`),

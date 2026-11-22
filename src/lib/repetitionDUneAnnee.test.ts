@@ -6,6 +6,7 @@
 //
 // Un écart ou un blocage ne se corrige pas ici : il se marque `it.fails` avec sa cause, pour le lot qui le corrigera.
 
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { lignesDeDonnees, parseCsv, detectColumnMapping } from './csv'
@@ -227,7 +228,7 @@ beforeAll(() => {
 
   const validation = prealablesDeValidation({
     annee: ANNEE, anneeCourante: ANNEE + 1, aujourdHui: `${ANNEE + 1}-01-20`, modele: MODELE, assujettiTva: ASSUJETTI, anneesValidees: [],
-    lectureIncomplete: null, piecesValidees: PIECES, piecesAValider: [], categories: CATEGORIES, immobilisations: IMMOBILISATIONS,
+    lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: PIECES, piecesAValider: [], categories: CATEGORIES, immobilisations: IMMOBILISATIONS,
     natures: [NATURE_MATERIEL], ecritures: brouillon, lignes, ventilations: [], reglements, encaissees: [], cotisations: COTISATIONS,
     vehicules: VEHICULES, emprunts: [], aNouveaux: A_NOUVEAUX, soldesReportes: [], declarationsTva: [], periodiciteTva: 'mensuelle',
     comptesBancaires: { etat: 'sans_objet' }, controlesReleves, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,

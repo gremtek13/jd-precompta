@@ -54535,3 +54535,18 @@ l'écrit), hors de `ecarts` donc de `concorde` (EL-Q6 (A)) ; la validation le di
 (`ecritures-libres-hors-2035`) ; la carte de Clôture le liste à part. La CA3 reste aveugle (un scanner de ses quatre modules et
 de `DonneesTva`, un défaut planté). Mesuré : la 2035 du dossier de démonstration épinglée (77 835 / 26 970,75 / 119
 contributions), identique au défaut et à l'absence passée à la main. Reste à EL5 : la lecture, qui rejoindra chaque appelant.
+
+### 22/11/2026 — EL5 : LA LECTURE DES ÉCRITURES LIBRES ET LA SECTION « ÉCRITURES DE L'EXPERT-COMPTABLE » (LIGNE 26.9)
+
+Derrière `ECRITURES_LIBRES_PREVUES` baissé : aucune requête vers la table ni ses fonctions, aucune section visible. La lecture
+(`lib/ecrituresLibresLecture.ts`, par `lireTout`, tri total, les adresses des auteurs de `cabinet_admins` sous la session, leur
+échec ne retenant rien) ne rejette jamais ; lue en partie, refusée ou d'une forme inattendue (`ecritureLibreDeLaLigne`), elle est
+`illisibles`. `lib/ecrituresLibresVue.ts` (pur) la passe aux moteurs sans le motif, ou NULLE — pas revenue, illisible, d'un autre
+dossier —, et l'absence d'emblée le drapeau baissé. Branchée dans l'onglet Écritures (FEC, piste d'audit, paquet), Clôture (2035,
+préalables : `DonneesDeValidation.ecrituresLibres`, obligatoire), la Révision, le Financement, l'Estimation et l'alerte du chiffre
+d'affaires (`useEcrituresLibres` ou le chargement de l'écran) ; `ecrituresLibresAppelants.test.ts` exige de chaque appel des
+moteurs tous ses paramètres (défaut planté : il mord). « Ma simulation » ne les compte pas et, drapeau levé en trésorerie, le dit
+(EL5-Q1, le côté fermé). La section : la liste de l'exercice, la saisie compte par compte telle qu'elle part, l'équilibre, refus
+et avertissements sous chaque ligne, le poste proposé au clic, la règle de la trésorerie proposée, la confirmation qui nomme
+lignes, totaux et effet sur la 2035, le retrait, l'état CSV et PDF ; deux verrous `useRef`. Reste : la pièce citée choisie à
+l'écran, EL8 (les tests qui omettent le paramètre, la levée), EL5-Q1.

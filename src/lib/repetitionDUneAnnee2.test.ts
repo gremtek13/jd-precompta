@@ -13,6 +13,7 @@
 //
 // Un écart ou un blocage ne se corrige pas ici, ni dans un moteur : il se marque `it.fails` ou `it.todo` avec sa cause.
 
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { detectColumnMapping, lignesDeDonnees, parseCsv } from './csv'
@@ -337,7 +338,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
 
   const validation = prealablesDeValidation({
     annee: ANNEE, anneeCourante: h.anneeCourante, aujourdHui: h.aujourdHui, modele: MODELE, assujettiTva: ASSUJETTI, anneesValidees: v.anneesValidees,
-    lectureIncomplete: null, piecesValidees: PIECES, piecesAValider: [], categories: CATEGORIES, immobilisations: IMMOBILISATIONS,
+    lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: PIECES, piecesAValider: [], categories: CATEGORIES, immobilisations: IMMOBILISATIONS,
     natures: [NATURE_MATERIEL], ecritures: brouillon, lignes, ventilations: [], reglements, encaissees: [], cotisations: COTISATIONS,
     vehicules: VEHICULES, emprunts: [], aNouveaux: A_NOUVEAUX, soldesReportes: v.soldesReportes, declarationsTva: [], periodiciteTva: 'mensuelle',
     comptesBancaires: { etat: 'sans_objet' }, controlesReleves: controles, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,

@@ -81,6 +81,9 @@ import ConcordanceCard from './ConcordanceCard'
 import ValidationExerciceCard from './ValidationExerciceCard'
 import { AUCUNE_FACTURE_SOURCE, horsDesExemplairesDesSources } from '../../lib/facturesSources'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
+import { lireLesEcrituresLibres } from '../../lib/ecrituresLibresLecture'
+import { ecrituresLibresPourLesMoteurs, motifDesEcrituresLibres, type LectureDesEcrituresLibres } from '../../lib/ecrituresLibresVue'
+import { ECRITURES_LIBRES_ABSENTES } from '../../lib/ecrituresLibresDesExports'
 import { AUCUNE_SAISIE_2035, motifDesSaisies2035, SAISIES_2035_EXPORTEES, saisiesDeLExercice } from '../../lib/saisies2035'
 import type { LectureDesSaisies2035 } from '../../lib/saisies2035'
 import { lireLesSaisies2035 } from '../../lib/saisies2035Lecture'
@@ -261,6 +264,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // leur date. Lue tout ou rien avec le reste, gardée AVEC le dossier qui l'a demandée ; le drapeau baissé, rien n'est lu ni
   // dit (la caisse absente). Lue en partie : aucune 2035 — ni chiffre, ni formulaire, ni validation —, et l'écran le dit.
   const [lectureCaisse, setLectureCaisse] = useState<LectureDeLaCaisse | null>(null)
+  // LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL5 ; lib/ecrituresLibresLecture.ts) : la 2035 les compte (EL4), la validation
+  // les numérote (EL3). Le drapeau baissé, l'absence, sans requête ; levé et lues en partie, aucune 2035 ni validation.
+  const [lectureLibres, setLectureLibres] = useState<LectureDesEcrituresLibres | null>(null)
   // CE QUE LE FEC D'UN BNC EN TRÉSORERIE LIT DE PLUS (lot FEC22c2 ; lib/champsBncLecture.ts), la lecture même de l'onglet
   // Écritures : la validation reçoit les MÊMES entrées que l'export. Le drapeau baissé, rien n'est lu.
   const [lectureChampsBnc, setLectureChampsBnc] = useState<LectureDesChampsBnc | null>(null)
@@ -316,7 +322,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
       lectureEcritures, lectureOuverture, lectureAValider, lectureValides, lectureDeclarationsTva, lectureReportes,
       lectureFacturesEmises, lectureTransmissions, lectureVentesFacturees, lectureSourcesDesVentes, lectureDeLaCaisse,
-      lectureDesChampsBnc,
+      lectureDesChampsBnc, lectureDesLibres,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -427,6 +433,8 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       lireLaCaisse(dossierId),
       // Ne rejette jamais ; le drapeau `CHAMPS_BNC_EXPORTES` baissé, ne touche pas au réseau.
       lireLesChampsBnc(dossierId),
+      // Ne rejette jamais ; le drapeau `ECRITURES_LIBRES_PREVUES` baissé, ne touche pas au réseau.
+      lireLesEcrituresLibres(dossierId),
     ])
     // Les contrôles des relevés — tous : ceux qui ne bouclent pas, et ceux qui disent la banque au 31 décembre et d'où elle part
     // (MVPD7-Q2) — et les doublons de contenu, comme la Checklist les lit ; mais une lecture ratée n'y vaut jamais « rien à
@@ -442,6 +450,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     setLectureVentes(lectureVentesFacturees)
     setLectureSourcesVentes(lectureSourcesDesVentes)
     setLectureCaisse(lectureDeLaCaisse)
+    setLectureLibres(lectureDesLibres)
     setLectureChampsBnc(lectureDesChampsBnc)
     setControlesReleves(releves)
     setLectureDesComptes(comptes)
@@ -647,9 +656,12 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
   // Sans les ventes facturées du dossier lues en entier, AUCUNE 2035 : une déclaration sans ses ventes facturées serait
   // plausible, fausse et signée, et le moteur n'a pas de valeur par défaut à leur donner.
   // Ni sans sa caisse, pour la même raison : lue en partie, une recette en espèces manquerait à une 2035 signée.
-  const declarations = ventesFacturees === null || ecrituresDesVentes === null || recettesDeCaisse === null ? [] : exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees, ecrituresDesVentes, recettesDeCaisse),
-  )
+  // Ni sans les écritures de l'expert-comptable (EL4, EL5) : lues en partie, une OD comptée manquerait à la 2035.
+  const ecrituresLibres = ecrituresLibresPourLesMoteurs(lectureLibres, dossierId)
+  const declarations = ventesFacturees === null || ecrituresDesVentes === null || recettesDeCaisse === null || ecrituresLibres === null
+    ? [] : exercices.map((a) =>
+      calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees, ecrituresDesVentes, recettesDeCaisse, ecrituresLibres),
+    )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
   // l'ordre imprimé. Une 2035 est annuelle : plutôt que de cumuler des cases de plusieurs exercices
@@ -832,6 +844,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
     ?? saisiesIncompletes
     ?? (lectureVentesDuDossier?.etat === 'incomplete' ? `les ventes facturées : ${lectureVentesDuDossier.motif}` : null)
     ?? (caisseIncomplete !== null ? `la caisse : ${caisseIncomplete}` : null)
+    ?? motifDesEcrituresLibres(lectureLibres)
     ?? champsBncIncomplets
     ?? inventaireIncomplet
   const entete = { nom: dossier?.nom ?? null, activite: dossier?.libelle_naf ?? null, siret: dossier?.siret ?? null }
@@ -857,6 +870,9 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
       saisies2035: formulaire ? saisiesDeLExercice(lectureDesSaisies, annee) : AUCUNE_SAISIE_2035,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
       inventaire: inventaireDeLaLecture(lectureDeLInventaire),
+      // Nulles (pas encore revenues, ou illisibles), la validation se suspend déjà par `motifValidation` : l'absence n'est
+      // passée qu'alors, et ne numérote rien de plus.
+      ecrituresLibres: ecrituresLibres ?? ECRITURES_LIBRES_ABSENTES,
     })
     const demande = etat.validable && etat.numerotation
       ? demandeDeValidation(etat.numerotation, formulaire

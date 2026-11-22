@@ -23,6 +23,8 @@ import { DRAPEAU_DES_REPRISES_ET_DU_MODELE, REFUS_ENGAGEMENT_DES_REPRISES } from
 
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
+  // Les tables que l'écran demande, dans l'ordre (EL5 : le drapeau des écritures libres baissé, jamais `ecritures_libres`).
+  tablesDemandees: [] as string[],
   // Plafond « Max rows » de PostgREST : nombre maximum de lignes rendues PAR REQUÊTE, qui ne se
   // signale pas (voir lib/lectureComplete.ts). `lireTout` le recolle tranche par tranche.
   plafond: null as number | null,
@@ -120,6 +122,7 @@ vi.mock('../../lib/supabase', async () => {
         return Promise.resolve({ data: ecrites.length, error: null })
       },
       from: (table: string) => {
+        faux.tablesDemandees.push(table)
         const chaine: Record<string, unknown> = {}
         let debut = 0
         let fin = Number.MAX_SAFE_INTEGER
@@ -398,6 +401,10 @@ describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
     expect(screen.queryByText(/à régénérer$/)).toBeNull()
     expect(screen.queryAllByText(/déséquilibrée/)).toHaveLength(0)
     expect(screen.queryByText(/en attente de rapprochement bancaire/)).toBeNull()
+    // EL5 : le drapeau des écritures libres baissé, ni leur section ni leur table.
+    expect(screen.queryByText('Écritures de l’expert-comptable')).toBeNull()
+    expect(faux.tablesDemandees).not.toContain('ecritures_libres')
+    expect(faux.tablesDemandees.length).toBeGreaterThan(0)
   })
 
   it('se tait quand la pièce justifie toujours son écriture', async () => {

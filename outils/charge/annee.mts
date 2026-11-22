@@ -17,6 +17,7 @@
 // 10 immobilisations ; le brouillon est COMPOSÉ par les moteurs de l'application (pièces, caisse, ventes facturées), jamais
 // inventé ligne à ligne. Chaque mesure est la médiane de cinq passes, en millisecondes, après une passe de chauffe.
 
+import { ECRITURES_LIBRES_ABSENTES } from '../../src/lib/ecrituresLibresDesExports.ts'
 import { AUCUNE_PIECE_CITEE } from '../../src/lib/facturesSources'
 import { analyserAppariements, candidatsPieces } from '../../src/lib/appariementBanque'
 import { bilanDeLExercice } from '../../src/lib/bilan'
@@ -375,7 +376,7 @@ function mesurer(k: number): Map<string, number | string> {
       }), (r) => `${r.tousLesPointsATraiter.length} points : ${r.tousLesPointsATraiter.map((x) => x.id).join(', ')}`)
       t('préalables de la validation', () => prealablesDeValidation({
         annee: ANNEE, anneeCourante: ANNEE + 1, aujourdHui: `${ANNEE + 1}-01-15`, modele: MODELE, assujettiTva: assujetti, anneesValidees: [],
-        lectureIncomplete: null, piecesValidees: a.pieces, piecesAValider: [], categories: CATEGORIES, immobilisations: a.immobilisations,
+        lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: a.pieces, piecesAValider: [], categories: CATEGORIES, immobilisations: a.immobilisations,
         natures: [], ecritures: brouillon, lignes: a.lignes, ventilations: [], reglements: [], encaissees: [], cotisations: a.cotisations,
         vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'mensuelle',
         controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,

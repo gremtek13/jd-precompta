@@ -114,7 +114,8 @@ describe('declarationPourLaRevue — la 2035 de Clôture, et nulle part ailleurs
       'partsDuReleve(lignesBancaires, categories, ventilations, assujettiTva)',
       'cotisationsComptees(cotisations, lignesBancaires, modeComptable)',
       // Et la caisse (étape C3a) : ses recettes en espèces, comme la revue les reçoit.
-      'calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees, ecrituresDesVentes, recettesDeCaisse)',
+      // Et les écritures libres de l'expert-comptable (EL5), lues avec le reste.
+      'calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva, modele.plan, ventesFacturees, ecrituresDesVentes, recettesDeCaisse, ecrituresLibres)',
     ]) expect(source, expression).toContain(expression)
   })
 })

@@ -1,3 +1,4 @@
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 import type { CompteDuReleve, LectureDesComptes } from './importParCompte'
 import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { AUCUNE_SAISIE_2035 } from './saisies2035'
@@ -173,7 +174,7 @@ function releveQuiConcorde(b: Omit<DonneesDeValidation, 'declaration' | 'concord
 function donnees(o: Surcharges = {}): DonneesDeValidation {
   const base: Omit<DonneesDeValidation, 'declaration' | 'concordance'> = {
     annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, assujettiTva: false,
-    anneesValidees: [], lectureIncomplete: null, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
+    anneesValidees: [], lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
     vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', comptesBancaires: { etat: 'sans_objet' }, controlesReleves: [],
     doublonsTexte: [], facturesEmises: [], transmissions: [], facturesSources: SANS_FACTURE_SOURCE, piecesCitees: AUCUNE_PIECE_CITEE,

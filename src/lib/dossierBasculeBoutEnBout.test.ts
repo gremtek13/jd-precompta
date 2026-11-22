@@ -1,3 +1,4 @@
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 import { AUCUNE_SAISIE_2035 } from './saisies2035'
 import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { describe, expect, it } from 'vitest'
@@ -225,7 +226,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
     })
     const ouvert = (o: Partial<DonneesDeValidation>): DonneesDeValidation => ({
       annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode, compteNotesDeFrais: plan.associe, ...planLuDe(plan) }, assujettiTva: true,
-      anneesValidees: [], lectureIncomplete: null, piecesValidees: [], piecesAValider: [], categories: [], immobilisations: [], natures: [],
+      anneesValidees: [], lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: [], piecesAValider: [], categories: [], immobilisations: [], natures: [],
       ecritures: brouillon, lignes, ventilations: [], reglements: [], encaissees: [], cotisations: [], vehicules: [], emprunts: [],
       aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'trimestrielle', comptesBancaires: { etat: 'sans_objet' }, controlesReleves: [], doublonsTexte: [],
       facturesEmises: [], transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
