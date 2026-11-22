@@ -631,11 +631,13 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `absenceFec`, l'état des écritures libres en CSV et PDF (`lib/ecrituresLibresDesExports.ts`, `lib/etatDesEcrituresLibres.ts`),
   le FEC fictif inchangé à l'octet ; les écritures libres lues à passer par EL5 ; EL4 (22/11/2026, `lib/ecrituresLibresDeLa2035.ts`) :
   la 2035, la situation et l'estimation (le chiffre d'affaires) comptent chaque ligne sous un poste, à sa date, signée, l'extourne
-  inverse, par un dernier paramètre OBLIGATOIRE depuis EL8 (une absence se dit) ; une ligne hors de la 2035, un écart
+  inverse, par un dernier paramètre OBLIGATOIRE depuis EL8 (une absence se dit) ; les cotisations de l'estimation aussi, sous le
+  seul poste des cotisations (EL4-Q1, contre la recommandation : la somme de la période, jamais l'échéancier par organisme ni la
+  régularisation ; `cotisDontEcrituresLibres`, rendu non nul seulement, dit à l'écran) ; une ligne hors de la 2035, un écart
   déclaré (`ecartsDeclares`, hors de `ecarts` et de `concorde`), dit en attention à la validation ; la CA3 aveugle
   (`ecrituresLibresHorsDeLaCa3.test.ts`) → « L'ÉCRITURE LIBRE DE
   L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION », « EXP58-Q3 ET NOE4-Q1 »,
-  « EL3 : L'ÉCRITURE LIBRE DANS LE FEC », « EL4 : L'ÉCRITURE LIBRE DANS LA 2035 ».
+  « EL3 : L'ÉCRITURE LIBRE DANS LE FEC », « EL4 : L'ÉCRITURE LIBRE DANS LA 2035 », « EL4-Q1 : LES COTISATIONS DE L'ESTIMATION ».
 - **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
   (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
   les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».

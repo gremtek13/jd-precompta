@@ -527,6 +527,13 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
             <div>
               <span className="muted" style={{ display: 'block' }}>Cotisations appelées à date</span>
               <strong>{formatMoney(projection.cotis)}</strong>
+              {/* EL4-Q1 : ce total mêle l'échéancier et les écritures libres de l'expert sous le poste des cotisations ; leur
+                  part se dit, seulement quand le module la rend (non nulle). */}
+              {projection.cotisDontEcrituresLibres !== undefined && (
+                <span className="muted" style={{ display: 'block' }}>
+                  dont {formatMoney(projection.cotisDontEcrituresLibres)} par une écriture de l’expert-comptable
+                </span>
+              )}
             </div>
             <div>
               <span className="muted" style={{ display: 'block' }}>Cotisations projetées sur l'année</span>

@@ -187,7 +187,8 @@ describe('totauxPourAnnee', () => {
       2026, true, new Map(),
       'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
-    expect(totaux).toEqual({ ca: 100, cotis: 300 })
+    // Sans un champ de plus : la part des écritures libres (EL4-Q1) n'est rendue que non nulle.
+    expect(totaux).toStrictEqual({ ca: 100, cotis: 300 })
   })
 
   it('préfère le HT au TTC quand il est renseigné', () => {

@@ -54586,3 +54586,16 @@ brouillon apprennent ses gardes. Drapeau levé, 38 fichiers rouges, surtout du d
 OBLIGATOIRE (162 appels complétés, le compilateur garde l'oubli) ; six tests jugent l'état du dépôt (`migrationRangee`), le
 plancher de la porte admet une table que sa migration couvre, l'assistant tient la clé du brouillon en attente (EL6) ; la suite
 passe dans les deux états (978 fichiers, 23 939 tests). À coller ; ranger : le fichier, le socle, le drapeau ; restent EL6, EL7, EL9.
+
+### 22/11/2026 — EL4-Q1 : LES COTISATIONS DE L'ESTIMATION LISENT LES ÉCRITURES LIBRES (LIGNE 26.9)
+
+Le cabinet a tranché le 22/11/2026, contre la recommandation (EL4-Q1) : une écriture libre comptée sous « Cotisations sociales
+personnelles » s'ajoute aussi aux cotisations de l'estimation. `depensesCompteesSous` (lib/ecrituresLibresDeLa2035.ts, le poste
+jugé par un prédicat de l'appelant : importer cases2035 bouclerait sur declaration2035) ; `lib/estimation.ts` y passe
+`estLePosteDesCotisations`, la clé du rattachement. L'effet s'arrête à la SOMME de la période — l'année (`totauxPourAnnee`, donc
+le repère enregistré et sa comparaison), « à date » et la projection — ; la régularisation et l'estimation Urssaf, tirées de
+l'échéancier par organisme, année payée et nature, ne le reçoivent pas : une écriture libre ne dit aucun organisme. La part se
+rend (`cotisDontEcrituresLibres`) seulement non nulle, et la Projection la dit ; le repère enregistré la mêle sans la dire.
+Absentes, `toStrictEqual` sur le jeu de `totauxPourAnnee` ; le chiffre d'affaires d'EL4 inchangé ; « Ma simulation » inchangée.
+Tranchées le même jour : EL3-Q1 (A), EL5-Q1 (tel quel : la simulation ne compte pas les écritures libres et le dit),
+EL2-migration (A).

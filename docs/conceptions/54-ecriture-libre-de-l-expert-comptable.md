@@ -405,6 +405,11 @@ Calculées depuis les sources comme la 2035 : elles lisent les mêmes contributi
 septembre et la 2035 de mai ne se contredisent pas. « Ma simulation » du client « Banque » : la contribution entre dans le
 total, jamais la ligne, ni son libellé, ni son motif.
 
+EL4-Q1, réponse du cabinet du 22/11/2026 (contre la recommandation) : une ligne comptée sous « Cotisations sociales
+personnelles » s'ajoute aussi, signée et à sa date, aux cotisations de l'estimation (l'année, « à date », la projection),
+jamais à ce qui se tire de l'échéancier par organisme ; l'écran en dit la part (« dont … par une écriture de
+l'expert-comptable »).
+
 ### 5.4 La CA3
 
 La CA3 se calcule des sources (l'exigibilité à l'encaissement ou au paiement) et NE LIT PAS l'écriture libre ; un test le
