@@ -18,6 +18,7 @@ import { encaissementVendu, ligneVendue } from '../test/ventesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { planLuDe } from '../test/modeles'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LE VIREMENT MIXTE, DE BOUT EN BOUT (chantier EC-Q3, ligne 28.65, étape VF5h ; VF2-Q2, selon VF5-Q2 : la manière A, « le
 // registre DATE la pièce »). Un dossier basculé, en trésorerie, assujetti, des services à 20 % :
@@ -86,7 +87,7 @@ function leDossier(plan: PlanComptable, exemplaires: readonly ExemplaireLu[] = [
   ]
   const ecritures: EcrituresDesVentesDeLa2035 = { etat: 'composees', composition: c }
   const declaration = (annee: number, p = paiements) => calculerDeclaration2035(
-    annee, [EXEMPLAIRE], [RECETTES, FRAIS_BANCAIRES], [], [], [], true, p, [], [], plan, ventes, ecritures, CAISSE_ABSENTE)
+    annee, [EXEMPLAIRE], [RECETTES, FRAIS_BANCAIRES], [], [], [], true, p, [], [], plan, ventes, ecritures, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES)
   return { s, c, ventes, encaissees, paiements, brouillon, declaration, ecritures }
 }
 
@@ -150,12 +151,12 @@ describe.each(PLANS)('le virement mixte, de bout en bout — %s', (_, plan) => {
   it('la situation de janvier et l’estimation de 2026 la comptent aussi, une fois', () => {
     const { ventes, paiements, ecritures } = leDossier(plan)
     const situation = calculerSituationIntermediaire([EXEMPLAIRE], [RECETTES, FRAIS_BANCAIRES], [], [], '2026-01-01', '2026-01-31', true,
-      paiements, 'tresorerie', [], ventes, plan, ecritures, CAISSE_ABSENTE)
+      paiements, 'tresorerie', [], ventes, plan, ecritures, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES)
     expect(situation.recettes).toBe(150)
-    const estimation = totauxPourAnnee([EXEMPLAIRE], [], 2026, true, paiements, 'tresorerie', [], recettesFactureesDuDossier(ventes, 'tresorerie'), CAISSE_ABSENTE)
+    const estimation = totauxPourAnnee([EXEMPLAIRE], [], 2026, true, paiements, 'tresorerie', [], recettesFactureesDuDossier(ventes, 'tresorerie'), CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES)
     expect(estimation.ca).toBe(150)
     // « Ma simulation » ne compte pas encore les ventes facturées (jusqu'à VF8) : l'exemplaire seul, daté par le virement.
-    expect(totauxPourAnnee([EXEMPLAIRE], [], 2026, true, paiements, 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, CAISSE_ABSENTE).ca).toBe(50)
+    expect(totauxPourAnnee([EXEMPLAIRE], [], 2026, true, paiements, 'tresorerie', [], RECETTES_FACTUREES_NON_COMPTEES, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES).ca).toBe(50)
   })
 
   it('sans l’exemplaire unique et validé : rien n’est payé, et le mouvement ne s’écrit pas — la facture nommée', () => {

@@ -21,6 +21,7 @@ import {
 } from './ventesFacturees'
 import { derniereDefinitionSql } from '../test/schema'
 import { banquesDuDossier } from './banqueDuMouvement'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LA PIÈCE CITÉE PAR UNE FACTURE REPRISE NE COMPTE QUE SES PAIEMENTS (étape A8c4 ; HISTORIQUE.md, « A8C4 »). Le défaut, confirmé
 // le 10/11/2026 : la pièce citée par une facture reprise (A8-Q5) comptait encore son reste impayé à sa date de pièce
@@ -89,7 +90,7 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
     // Exactement ce que rend `ventes_facturees_de_la_simulation` pour ce dossier et 2026.
     const recettes = recettesDeLaSimulation({ par_mois: { '2026-12': 10000 }, sources: [] }, 2026)
     expect(recettes).not.toBeNull()
-    const p = projectionAnnuelle([PIECE_CITEE], [], '2026-12-31', false, AUCUN_PAIEMENT, 'tresorerie', [], recettes!, CAISSE_ABSENTE)
+    const p = projectionAnnuelle([PIECE_CITEE], [], '2026-12-31', false, AUCUN_PAIEMENT, 'tresorerie', [], recettes!, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES)
     expect(p.ca).toBe(200)
   })
 
@@ -98,7 +99,7 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
     const jointe = avecLesPiecesCitees(lue, { etat: 'lues', piecesCitees: new Set([PIECE_CITEE.id]) })
     expect(jointe.etat).toBe('lue')
     if (jointe.etat !== 'lue') return
-    const p = projectionAnnuelle([PIECE_CITEE], [], '2026-12-31', false, AUCUN_PAIEMENT, 'tresorerie', [], jointe.recettes, CAISSE_ABSENTE)
+    const p = projectionAnnuelle([PIECE_CITEE], [], '2026-12-31', false, AUCUN_PAIEMENT, 'tresorerie', [], jointe.recettes, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES)
     expect(p.ca).toBe(100)
     // Baissé, rien n'est demandé (`null`) : la lecture d'hier, et ses 200 €.
     expect(avecLesPiecesCitees(lue, null)).toBe(lue)
@@ -107,7 +108,7 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
   it('l’Estimation du cabinet : 100 €', () => {
     const p = projectionAnnuelle(
       [PIECE_CITEE], [], '2026-12-31', false, AUCUN_PAIEMENT, 'tresorerie', [], recettesFactureesDuDossier(ventes, 'tresorerie'),
-      CAISSE_ABSENTE,
+      CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     expect(p.ca).toBe(100)
   })
@@ -115,7 +116,7 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
   it('la 2035 du cabinet : 100 € de recettes, la pièce jamais dite « sans paiement connu »', () => {
     const d = calculerDeclaration2035(
       2026, [PIECE_CITEE], CATEGORIES, [], [], [], false, AUCUN_PAIEMENT, [], [], PLAN_PAR_DEFAUT, ventes,
-      { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE,
+      { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     expect(d.totalRecettes).toBe(100)
     expect(d.sansPaiementConnu).toEqual([])
@@ -124,12 +125,12 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
   it('témoin : chacune des deux sources seule compte 100 € ; une pièce que rien ne cite s’écrit au 706, à sa date', () => {
     const sansPiece = calculerDeclaration2035(
       2026, [], CATEGORIES, [], [], [], false, AUCUN_PAIEMENT, [], [], PLAN_PAR_DEFAUT, ventes,
-      { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE,
+      { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     expect(sansPiece.totalRecettes).toBe(100)
     const sansReprise = projectionAnnuelle(
       [PIECE_CITEE], [], '2026-12-31', false, AUCUN_PAIEMENT, 'tresorerie', [],
-      recettesDeLaSimulation({ par_mois: {}, sources: [] }, 2026)!, CAISSE_ABSENTE,
+      recettesDeLaSimulation({ par_mois: {}, sources: [] }, 2026)!, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     expect(sansReprise.ca).toBe(100)
     const lignes = lignesChargeProduitPourPiece(D, PIECE_CITEE, { compte: '706000', immobilisation: false }, false, [], PLAN_PAR_DEFAUT)
@@ -139,7 +140,7 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
   it('la situation intermédiaire du cabinet : 100 €', () => {
     const s = calculerSituationIntermediaire(
       [PIECE_CITEE], CATEGORIES, [], [], '2026-01-01', '2026-12-31', false, AUCUN_PAIEMENT, 'tresorerie', [], ventes,
-      PLAN_PAR_DEFAUT, { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE,
+      PLAN_PAR_DEFAUT, { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     expect(s.recettes).toBe(100)
   })
@@ -153,7 +154,7 @@ describe('la pièce citée par une facture reprise ne compte que ses paiements (
     expect(lignes.map((l) => [l.compte, l.date, l.montant])).toEqual([['706000', '2026-11-25', 40]])
     const d = calculerDeclaration2035(
       2026, [PIECE_CITEE], CATEGORIES, [], [], [], false, avant, [], [], PLAN_PAR_DEFAUT, ventes,
-      { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE,
+      { etat: 'composees', composition: { dossierId: D, ecritures: [] } }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
     )
     expect(d.totalRecettes).toBe(140)
   })

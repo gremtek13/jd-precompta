@@ -20,6 +20,7 @@ import {
 } from './ecrituresVentesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { modeleDeTest } from '../test/modeles'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LES ÉCRITURES D'UNE VENTE FACTURÉE (chantier EC-Q3, étape VF4a ; lib/ecrituresVentesFacturees.ts) : chaque cas du § 5
 // de la conception, dans les deux modèles comptables et sous les deux plans (le plan par défaut et le plan décalé : aucun
@@ -1251,7 +1252,7 @@ describe('un tirage de 1 500 dossiers : les écritures portent exactement ce que
         for (const annee of new Set(t.mouvements.map((m) => Number(m.date.slice(0, 4))))) {
           const d = calculerDeclaration2035(
             annee, [], [FRAIS_BANCAIRES], [], [], [], true, paiementsDesPieces([], [], [], []), [], [], plan, r.ventes,
-            { etat: 'composees', composition: r }, CAISSE_ABSENTE,
+            { etat: 'composees', composition: r }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
           )
           for (const c of d.contributions) {
             if (c.source.type !== 'frais_d_encaissements') continue

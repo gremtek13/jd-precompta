@@ -16,11 +16,13 @@
 // écriture équilibrée, une date). Lus par la conception (§ 2).
 
 /** LA MIGRATION `ecritures_libres` (EL2) EST-ELLE EN BASE ? Baissé tant qu'elle n'est que préparée
- *  (supabase/preparees/20261117120000_ecritures_libres.sql) : aucun écran n'appelle ses fonctions. Sa table n'est pas encore au
- *  plan de sauvegarde, même prévu : elle y entre à EL8, AVEC son bloc de l'essai de restauration (supabase/essais/restauration.sql,
- *  que restaurationEssai.test.ts confronte au plan prévu du code), derrière ce drapeau (`auPlanDes…`, sur le patron des
- *  paiements de l'assurance maladie), juste avant `ecritures_brouillon` ; sa colonne `ecriture_libre_id` au graphe de même.
- *  Il se lève avec la migration collée (EL8), la suite entière jouée d'abord en simulation. */
+ *  (supabase/preparees/20261117120000_ecritures_libres.sql) : aucun écran n'appelle ses fonctions. Sa table est au plan de
+ *  sauvegarde PRÉVU depuis EL8 (22/11/2026), avec son bloc de l'essai de restauration (supabase/essais/restauration.sql, que
+ *  restaurationEssai.test.ts confronte au plan prévu du code) et celui de supabase/essais/rls.sql (LI) : derrière ce drapeau
+ *  (`auPlanDesEcrituresLibres`, `auGrapheDesEcrituresLibres`, lib/sauvegarde.ts), juste après `piece_textes_ocr` — avant le
+ *  brouillon qui la cite, hors du bloc des pièces hors de France, de la caisse et du brouillon ; sa colonne `ecriture_libre_id`
+ *  au graphe de même. Il se lève avec la migration collée et son fichier rangé dans supabase/schema/ (EL8), la suite entière
+ *  jouée d'abord en simulation — elle l'a été le 22/11/2026, et passe dans les deux états. */
 export const ECRITURES_LIBRES_PREVUES: boolean = false
 
 /** La table de la migration, au plan de sauvegarde derrière le drapeau. */

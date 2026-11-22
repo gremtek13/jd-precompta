@@ -536,9 +536,9 @@ begin
     select string_agg(t.tgname, ',' order by t.tgname collate "C") into v_obs from pg_trigger t
      where not t.tgisinternal and (t.tgtype & 2) = 2 and t.tgrelid in ('public.ecritures_brouillon'::regclass, 'public.lettrages_manuels'::regclass)
        and t.tgname not in ('_acces_avant_les_gardes', 'ecritures_brouillon_intangibles_modification', 'ecritures_brouillon_vente_facturee_lignes_modification');
-    -- Les gardes du brouillon que posent cinq migrations préparées entrent dans la liste, chacune à sa place (l'ordre des
+    -- Les gardes du brouillon que posent six migrations préparées entrent dans la liste, chacune à sa place (l'ordre des
     -- noms) et présente avec sa fonction : AFF2 (`affectation_du_resultat`), INAL5 (`depart_du_client`), INV2
-    -- (`operations_d_inventaire`), MCB5g (`ouverture_eclatee_par_compte`), LIA2 (`stocks_de_cloture`).
+    -- (`operations_d_inventaire`), EL2 (`ecritures_libres`), MCB5g (`ouverture_eclatee_par_compte`), LIA2 (`stocks_de_cloture`).
     verdicts := verdicts || jsonb_build_object('rang', 142, 'etape', '142. l''ordre des déclencheurs BEFORE du brouillon et des lettrages',
       'ok', (select count(*) from pg_trigger t where t.tgrelid = 'public.ecritures_brouillon'::regclass and (t.tgtype & 2) = 2
               and t.tgname in ('ecritures_brouillon_intangibles_modification', 'ecritures_brouillon_vente_facturee_lignes_modification')) in (0, 2)
@@ -547,6 +547,7 @@ begin
                  || case when to_regprocedure('public.garder_dossier_conserve()') is not null then 'ecritures_brouillon_dossier_conserve,' else '' end
                  || 'ecritures_brouillon_intangibles,'
                  || case when to_regprocedure('public.garder_ecriture_d_inventaire()') is not null then 'ecritures_brouillon_inventaire,' else '' end
+                 || case when to_regprocedure('public.garder_ecriture_libre_du_brouillon()') is not null then 'ecritures_brouillon_libre,' else '' end
                  || case when to_regprocedure('public.garder_ecriture_ouverture_eclatee()') is not null then 'ecritures_brouillon_ouverture_eclatee,' else '' end
                  || 'ecritures_brouillon_paiement_personnel,'
                  || 'ecritures_brouillon_piece_d_une_facture_reprise,'

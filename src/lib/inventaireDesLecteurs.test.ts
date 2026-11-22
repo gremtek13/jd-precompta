@@ -17,6 +17,7 @@ import { defautsDeNumerotation } from './validationExercice'
 import { anomaliesDgfip, colonnes, desequilibresDgfip } from '../test/fecDgfip'
 import { modeleDeTest } from '../test/modeles'
 import { SANS_ECRITURE_DE_VENTE, SANS_VENTE_FACTUREE, ventesFactureesVides } from '../test/ventesFacturees'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LES RÉGULARISATIONS D'INVENTAIRE CHEZ LES LECTEURS DU BROUILLON (ligne 35, INV3 ; conception, § 5.3 et § 5.4) : le FEC (une
 // sorte de plus, au journal OD, l'état d'inventaire pour pièce), la numérotation que la validation enverra et ses défauts, la
@@ -168,7 +169,7 @@ describe('« à régénérer » et « sans objet » ne lisent que les pièces : 
 describe('la concordance de la 2035 ne se calcule qu’en trésorerie, où la base refuse toute régularisation', () => {
   it('une ligne d’inventaire impossible y resterait un écart, jamais écartée en silence : la validation tomberait du côté fermé', () => {
     const declaration = calculerDeclaration2035(2025, [], [], [], [], [], false, paiementsDesPieces([], [], [], []), [], [],
-      PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE)
+      PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES)
     const c = concordance2035(declaration, [...CONSTATATIONS], {
       piecesValidees: new Set(), piecesImmobilisees: new Set(), mouvementsDesVentesFacturees: new Set(),
     }, null)

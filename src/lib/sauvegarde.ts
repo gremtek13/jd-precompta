@@ -49,6 +49,7 @@ import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from './paiementsAssuranceMaladie'
 import { OPTIONS_DES_CABINETS_EN_BASE, TABLES_DES_OPTIONS_DES_CABINETS } from './modulesDuCabinet'
 import { FACTURES_ASSURANCE_MALADIE_EN_BASE } from './importDuFactureAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssuranceMaladie'
+import { ECRITURES_LIBRES_PREVUES, TABLES_DES_ECRITURES_LIBRES } from './ecritureLibre'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -680,6 +681,34 @@ export function auPlanDesOptionsDesCabinets(table: string, prevues: boolean): bo
   return prevues || !(TABLES_DES_OPTIONS_DES_CABINETS as readonly string[]).includes(table)
 }
 
+// LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (ligne 26.9, lot EL8 ; migration `ecritures_libres`, EL2, PRÉPARÉE le 17/11/2026,
+// supabase/preparees/20261117120000_ecritures_libres.sql) : une écriture en partie double que le cabinet saisit, et une colonne
+// du brouillon, `ecriture_libre_id`, sans action à la suppression (la fonction retire les lignes avant l'écriture ; une écriture
+// ne part sinon qu'avec son dossier). Sous le drapeau de la migration (`ECRITURES_LIBRES_PREVUES`, src/lib/ecritureLibre.ts),
+// baissé : la production n'a ni la table ni la colonne, et les lire ferait échouer toute sauvegarde. Ses relations — le dossier
+// en cascade, la pièce citée sans action (une pièce qu'une écriture cite ne part pas seule) — et celle du brouillon, qui ne
+// vit au graphe du jour que le drapeau levé (`auGrapheDesEcrituresLibres`). Son rang : juste après les textes lus des pièces,
+// avant les notes internes — après la pièce qu'elle cite, avant le brouillon qui la cite et bien avant les exercices validés,
+// dont le gel refuserait une écriture réinsérée après eux (sa garde juge la date d'une insertion contre la frontière de la
+// validation) ; une place qu'aucun voisin ne fixe, hors du bloc des pièces hors de France, de la caisse et du brouillon, qui se
+// tient d'un seul tenant. Son chemin, direct ; sa clé, la commune ; aucune vague : `contre_passe_id`, auto-référencée, n'entre
+// qu'à EL7. La restauration la réinsère par la porte que sa policy ouvre au super-administrateur (`ecritures_libres_restauration`),
+// son auteur, ses instants et sa version tels qu'ils ont été écrits, et ses lignes par celle que la garde des lignes lui ouvre, à
+// sa date ou au 1er janvier qui suit pour son extourne. sauvegardeEcrituresLibres.test.ts éprouve le plan prévu et le plan du
+// jour, sous chaque état du drapeau.
+
+/** Une table au plan, côté écritures libres : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDesEcrituresLibres(table: string, prevues: boolean): boolean {
+  return prevues || !(TABLES_DES_ECRITURES_LIBRES as readonly string[]).includes(table)
+}
+
+/** Une relation au graphe du jour, côté écritures libres : celles de sa table, et celle du brouillon vers une écriture libre,
+ *  attendent la migration, comme la table. */
+export function auGrapheDesEcrituresLibres(r: Pick<Relation, 'enfant' | 'parent'>, prevues: boolean): boolean {
+  const tables = TABLES_DES_ECRITURES_LIBRES as readonly string[]
+  return prevues || (!tables.includes(r.enfant) && !tables.includes(r.parent))
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -720,6 +749,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS)
     && auPlanDeLAffectation(table, AFFECTATION_PREVUE)
     && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_EN_BASE)
+    && auPlanDesEcrituresLibres(table, ECRITURES_LIBRES_PREVUES)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -1101,6 +1131,11 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'lignes_d_affectation', parent: 'affectations_du_resultat', colonne: 'affectation_id', aLaSuppression: 'cascade' },
   { enfant: 'lignes_d_affectation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'ecritures_brouillon', parent: 'affectations_du_resultat', colonne: 'affectation_id', aLaSuppression: 'bloque' },
+  // Les écritures libres de l'expert-comptable (ligne 26.9, EL2 ; migration `ecritures_libres`, préparée) : l'écriture part avec
+  // son dossier ; la pièce qu'elle cite, sans action ; la ligne du brouillon vers son écriture, sans action.
+  { enfant: 'ecritures_libres', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'ecritures_libres', parent: 'pieces', colonne: 'piece_citee_id', aLaSuppression: 'bloque' },
+  { enfant: 'ecritures_brouillon', parent: 'ecritures_libres', colonne: 'ecriture_libre_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -1113,7 +1148,8 @@ export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
     && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS)
     && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)
     && auGrapheDesStocks(r, STOCKS_PREVUS)
-    && auGrapheDeLAffectation(r, AFFECTATION_PREVUE))
+    && auGrapheDeLAffectation(r, AFFECTATION_PREVUE)
+    && auGrapheDesEcrituresLibres(r, ECRITURES_LIBRES_PREVUES))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
@@ -1396,6 +1432,10 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'lettrages_manuels',
   'piece_commentaires',
   'piece_textes_ocr',
+  // Les écritures libres de l'expert-comptable (ligne 26.9, EL2, préparée) : après la pièce qu'elles citent, avant le brouillon
+  // qui les cite et les exercices validés ; une place qu'aucun voisin ne fixe — l'essai de restauration les met après
+  // `piece_textes_ocr`.
+  'ecritures_libres',
   'notes_internes',
   'provisions',
   'operations_inventaire',
@@ -2020,6 +2060,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   provisions: { acces: 'direct' },
   operations_inventaire: { acces: 'direct' },
   inventaires_declares: { acces: 'direct' },
+  ecritures_libres: { acces: 'direct' },
 }
 
 // Les chemins tels qu'ils s'appliquent AUJOURD'HUI : sans les tables des devis, des articles, des adresses de réception, des

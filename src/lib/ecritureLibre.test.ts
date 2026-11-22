@@ -5,6 +5,7 @@ import {
   refusDeLEcritureLibre, TABLES_DES_ECRITURES_LIBRES,
   type ContexteDEcritureLibre, type LigneDEcritureLibre, type SaisieDEcritureLibre,
 } from './ecritureLibre'
+import { migrationRangee } from '../test/schema'
 
 // EL1 : LE JUGEMENT D'UNE ÉCRITURE LIBRE AVANT LE CLIC (conception 54, § 3). Les refus, leur ordre et leurs codes ; les
 // avertissements, qui ne refusent rien ; la règle de la trésorerie devant une charge rattachée (EL-Q3 (A), sans la désignation
@@ -25,8 +26,8 @@ const engagement: ContexteDEcritureLibre = { ...tresorerie, mode: 'engagement' }
 const cles = (s: SaisieDEcritureLibre, c: ContexteDEcritureLibre = tresorerie) => refusDeLEcritureLibre(s, c).map((r) => r.cle)
 
 describe('le drapeau et la table', () => {
-  it('la migration n’est que préparée : le drapeau est baissé ; une table', () => {
-    expect(ECRITURES_LIBRES_PREVUES).toBe(false)
+  it('le drapeau suit la migration : levé si et seulement si elle est rangée dans l’export ; une table', () => {
+    expect(ECRITURES_LIBRES_PREVUES).toBe(migrationRangee('ecritures_libres'))
     expect(TABLES_DES_ECRITURES_LIBRES).toEqual(['ecritures_libres'])
   })
 })

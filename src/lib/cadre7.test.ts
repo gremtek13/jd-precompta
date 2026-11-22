@@ -11,6 +11,7 @@ import { PLAN_PAR_DEFAUT } from './planComptable'
 import { ventesFactureesVides } from '../test/ventesFacturees'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import type { Categorie, Piece, VehiculeDossier } from './types'
+import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 
 // LE CADRE 7 DE LA 2035-B (17/11/2026) : ce que chaque ligne porte, et le total A, qui est la part de BJ venue du barème.
 
@@ -26,7 +27,7 @@ const peage = { id: 'p1', statut: 'validee', type_piece: 'achat', date_piece: '2
 
 const declaration = (vehicules: VehiculeDossier[], pieces: Piece[] = [], annee = 2025) => calculerDeclaration2035(
   annee, pieces, categories, [], cotisationsComptees([], [], 'tresorerie'), vehicules, false,
-  paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+  paiementsDesPieces([], [], [], []), [], [], PLAN_PAR_DEFAUT, ventesFactureesVides('d1'), { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
 )
 const attenduDe = (d: ReturnType<typeof declaration>) => Math.round(forfaitKilometriqueDesPostes(d.depenses) * 100)
 

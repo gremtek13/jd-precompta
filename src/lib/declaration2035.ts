@@ -15,7 +15,7 @@ import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
 import { compteDesAutresImpots } from './autresImpotsDesCotisations'
 import type { EcritureLibreDesExports, EcrituresLibresDesExports } from './ecrituresLibresDesExports'
-import { ecrituresLibresParDefaut, lignesDeResultatLibres, type LigneDeResultatLibre } from './ecrituresLibresDeLa2035'
+import { lignesDeResultatLibres, type LigneDeResultatLibre } from './ecrituresLibresDeLa2035'
 import type { MouvementBancaire } from './affectationBanque'
 import type { Categorie, CotisationDeclaree, DeclarationTva, Immobilisation, Piece, VehiculeDossier } from './types'
 import {
@@ -432,10 +432,11 @@ export function calculerDeclaration2035(
   recettesDeCaisse: RecettesDeCaisse,
   // Les écritures libres de l'expert-comptable (EL4 ; lib/ecrituresLibresDeLa2035.ts), LUES EN ENTIER, ou absentes : chaque
   // ligne de classe 6 ou 7 sous un poste compte à SA date, signée ; une ligne hors de la 2035 ne compte pas et se dit
-  // (`ecrituresLibresHorsDeLa2035`). UN DÉFAUT DU CÔTÉ FERMÉ, et non un paramètre obligatoire : soixante appels, presque tous
-  // des tests. Drapeau baissé, l'absence ; levé, un appel qui les omet lève (`ecrituresLibresParDefaut`). Une lecture
-  // partielle ne se passe pas : l'appelant n'appelle pas.
-  ecrituresLibres: EcrituresLibresDesExports = ecrituresLibresParDefaut(),
+  // (`ecrituresLibresHorsDeLa2035`). Sans valeur par défaut, comme le reste, depuis EL8 (22/11/2026) : un appelant qui les
+  // oublierait déclarerait le résultat sans les écritures de l'expert, plausible et faux — le compilateur le refuse, et une
+  // absence se DIT (`ECRITURES_LIBRES_ABSENTES`, l'état du drapeau baissé). Une lecture partielle ne se passe pas : l'appelant
+  // n'appelle pas.
+  ecrituresLibres: EcrituresLibresDesExports,
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 

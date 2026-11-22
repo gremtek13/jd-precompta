@@ -113,7 +113,7 @@ function donnees(o: Surcharges = {}): DonneesDeValidation {
   const declaration = calculerDeclaration2035(
     base.annee, [...base.piecesValidees], [...base.categories], [...base.immobilisations], [], [...base.vehicules],
     base.assujettiTva, paiements, [], base.declarationsTva, PLAN_PAR_DEFAUT, ventesFactureesVides('d1'),
-    { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+    { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
   )
   const concordance = concordance2035(
     declaration, base.ecritures,

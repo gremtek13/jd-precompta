@@ -488,7 +488,7 @@ export function controlesDuDossier(contenu: Record<string, Ligne[]>, categories:
   if (pourLa2035.etat !== 'pret') throw new Error(`Les ventes de la 2035 ne sont pas prêtes : ${pourLa2035.etat}`)
   const comptees = cotisationsComptees(cotisations, lignes, MODELE.mode)
   const partsReleve = partsDuReleve(lignes, cats, [], ASSUJETTI)
-  const declaration2025 = calculerDeclaration2035(2025, piecesValidees, cats, immobilisations, comptees, vehicules, ASSUJETTI, paiements, partsReleve, [], PLAN, ventes, pourLa2035.ecritures, recettesDeCaisse)
+  const declaration2025 = calculerDeclaration2035(2025, piecesValidees, cats, immobilisations, comptees, vehicules, ASSUJETTI, paiements, partsReleve, [], PLAN, ventes, pourLa2035.ecritures, recettesDeCaisse, ECRITURES_LIBRES_ABSENTES)
   const concordance2025 = concordance2035(declaration2025, ecritures.filter((e) => e.date.startsWith('2025-')), {
     piecesValidees: new Set(piecesValidees.map((x) => x.id)), piecesImmobilisees: new Set(immobilisations.map((i) => i.piece_id ?? '')),
     mouvementsDesVentesFacturees: mouvementsClassesParEncaissements(lignes),

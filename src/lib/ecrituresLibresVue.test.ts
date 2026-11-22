@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
-import { refusDeLEcritureLibre } from './ecritureLibre'
+import { ECRITURES_LIBRES_PREVUES, refusDeLEcritureLibre } from './ecritureLibre'
 import {
   centimesDuMontant, confirmationDeLEcriture, confirmationDuRetrait, ecritureLibreDeLaLigne, ecrituresLibresPourLesMoteurs,
   effetSurLa2035, equilibreDeLaSaisie, formulaireDeLEcriture, formulaireVide, motifDesEcrituresLibres, saisieDuFormulaire,
@@ -69,9 +69,12 @@ describe('la lecture relue et passée aux moteurs (EL5)', () => {
     expect(confirmationDuRetrait(e!)).toContain('EL2025-0002')
   })
 
-  it('le drapeau baissé : l’absence, avant même que la lecture revienne (le défaut, et l’état passé à la main)', () => {
-    expect(ecrituresLibresPourLesMoteurs(null, 'd1')).toBe(ECRITURES_LIBRES_ABSENTES)
+  // Le défaut suit le drapeau, qui suit la migration rangée dans l'export (ecritureLibre.test.ts) : le test le joue dans
+  // l'état du dépôt, sans supposer la migration préparée ou rangée.
+  it('le drapeau baissé : l’absence, avant même que la lecture revienne ; le défaut est l’état du dépôt', () => {
     expect(ecrituresLibresPourLesMoteurs(null, 'd1', false)).toBe(ECRITURES_LIBRES_ABSENTES)
+    expect(ecrituresLibresPourLesMoteurs(null, 'd1')).toBe(ecrituresLibresPourLesMoteurs(null, 'd1', ECRITURES_LIBRES_PREVUES))
+    expect(ecrituresLibresPourLesMoteurs(null, 'd1')).toBe(ECRITURES_LIBRES_PREVUES ? null : ECRITURES_LIBRES_ABSENTES)
   })
 
   it('levé : rien tant que la lecture n’est pas revenue pour CE dossier, ni quand elle est illisible', () => {
@@ -82,9 +85,11 @@ describe('la lecture relue et passée aux moteurs (EL5)', () => {
     expect(motifDesEcrituresLibres(null)).toBeNull()
   })
 
-  it('« Ma simulation » le dit le drapeau levé, en trésorerie seulement (EL5-Q1) ; le défaut est le drapeau baissé', () => {
-    expect(simulationTaitLesEcrituresLibres('tresorerie')).toBe(false)
+  it('« Ma simulation » le dit le drapeau levé, en trésorerie seulement (EL5-Q1) ; le défaut est l’état du dépôt', () => {
+    expect(simulationTaitLesEcrituresLibres('tresorerie', false)).toBe(false)
     expect(simulationTaitLesEcrituresLibres('tresorerie', true)).toBe(true)
     expect(simulationTaitLesEcrituresLibres('engagement', true)).toBe(false)
+    expect(simulationTaitLesEcrituresLibres('tresorerie')).toBe(ECRITURES_LIBRES_PREVUES)
+    expect(simulationTaitLesEcrituresLibres('engagement')).toBe(false)
   })
 })

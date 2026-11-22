@@ -47,6 +47,7 @@ import type {
 import { CAISSE_ABSENTE } from '../../src/lib/recettesDeCaisse'
 import { OPERATIONS_DE_CAISSE_ABSENTES } from '../../src/lib/controlesDeLaCaisse'
 import { banquesDuDossier } from '../../src/lib/banqueDuMouvement'
+import { ECRITURES_LIBRES_ABSENTES } from '../../src/lib/ecrituresLibresDesExports'
 
 type Ligne = Record<string, unknown>
 
@@ -803,7 +804,7 @@ function valider(
     // Aucune facture du banc n'est SOURCE de sa vente (`source_de_la_vente: false` partout) : les ventes facturées que la
     // Clôture lirait de ces dossiers sont vides, et la valeur vide le dit (étape VF3b1).
     ventesFactureesVides(s.dossier),
-    { etat: 'sans_bascule' }, CAISSE_ABSENTE,
+    { etat: 'sans_bascule' }, CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES,
   )
   const { valeurs } = valeursDesCases(declaration, AUCUNE_SAISIE_2035)
   const dossier = dossiers.find((d) => d.id === s.dossier)!

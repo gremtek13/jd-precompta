@@ -1220,6 +1220,27 @@ begin
   end if;
 end $$;
 
+-- ══ Les écritures libres de l'expert-comptable (ligne 26.9, EL2) ══ Au plan du code quand `ECRITURES_LIBRES_PREVUES` est
+-- levé — c'est-à-dire quand sa migration est en base : le script met sa table juste après `piece_textes_ocr`
+-- (ORDRE_RESTAURATION_PREVU : après la pièce qu'une écriture cite, avant le brouillon qui la cite et les exercices validés, dont
+-- le gel refuserait une écriture réinsérée après eux ; une place qu'aucun voisin ne fixe), les tables qui suivent reculant d'un
+-- rang ; son chemin. Aucune vague : `contre_passe_id`, auto-référencée, n'entre qu'à EL7. Ses deux clés (le dossier, la pièce
+-- citée) et celle du brouillon vers elle se recopient alors comme les autres. Joué avant le bloc des options des cabinets, qui
+-- reste le dernier. Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au
+-- plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.ecritures_libres') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'piece_textes_ocr';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'ecritures_libres');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('ecritures_libres','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les options des cabinets (conception 56, OPT1) ══ Au plan du code quand `OPTIONS_DES_CABINETS_PREVUES` est levé —
 -- c'est-à-dire quand leur migration est en base : le script met leur table juste après `copies_des_fichiers`
 -- (ORDRE_RESTAURATION_PREVU : une table du cabinet, hors de l'export d'un dossier), les tables qui suivent reculant d'un

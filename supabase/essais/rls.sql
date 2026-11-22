@@ -202,6 +202,11 @@
 --      en direct (la garde) ; personne — ni le cabinet, ni le client, ni l'anonyme — ne lit le registre des lots ni la clé du
 --      dossier ; le catalogue. Trois mutations ; la section P7 compte les imports et les totaux parmi les tables de la banque ;
 --      avant la migration, une ligne « EN ATTENTE ».
+--  19. Les écritures libres de l'expert-comptable (bloc LI, en fin de fichier ; migration `ecritures_libres`, EL2, ligne 26.9,
+--      préparée) : le chef et un membre de l'équipe assigné au dossier lisent et enregistrent (EL-Q1, contrôles positifs), le
+--      client du dossier, un membre non assigné et l'anonyme rien ; le client n'enregistre, ne retire, n'écrit ni ne réécrit
+--      rien, ni l'écriture ni ses lignes au brouillon ; le super-administrateur réinsère (la restauration) ; le catalogue. Quatre
+--      mutations, dont l'enregistrement sans son contrôle d'accès ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -12712,6 +12717,268 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $pl$;
+
+-- ══ LI. Les écritures libres de l'expert-comptable (ligne 26.9, EL2 ; migration `ecritures_libres`, PRÉPARÉE) ═══════════
+-- Une table d'un dossier, lue par son cabinet (`admin_du_dossier` : son chef, un membre de l'équipe à qui le dossier est
+-- assigné, le super-administrateur — EL-Q1), écrite par `enregistrer_ecriture_libre` et `retirer_ecriture_libre` seules (aucune
+-- policy d'écriture, deux gardes), réinsérée par le super-administrateur (la restauration). Aucun client, même celui du dossier :
+-- ni l'écriture (son motif), ni ses lignes au brouillon (son libellé, qui part au FEC). Le membre est le membre d'équipe d'essai
+-- (ESSAIS-Q1, outils/membre-d-essai/). Le reste (les refus sous leurs mots, la recomposition, le gel, les gardes) :
+-- `ecrituresLibres.sql`, sur une réplique.
+--   LI1. Le chef enregistre une écriture libre dans un dossier jetable du cabinet du dossier du client et la lit (le contrôle
+--        POSITIF) ; le client, qui y a un accès, n'en lit rien, ni ses lignes au brouillon ; un membre de l'équipe à qui le
+--        dossier n'est pas assigné non plus ; l'anonyme non plus ; assigné, le membre la lit (EL-Q1, le contrôle POSITIF).
+--   LI2. Le client n'enregistre rien et ne retire rien (42501, sous leurs mots), n'insère rien en direct (42501), ne réécrit ni
+--        n'efface rien, ni l'écriture ni ses lignes (aucune ligne touchée) ; le membre assigné en enregistre une (EL-Q1, le
+--        contrôle POSITIF) ; le super-administrateur en réinsère une en direct (la restauration, le contrôle POSITIF).
+--   LI3. Le catalogue : la RLS active ; deux policies permissives à authenticated — la lecture sur `admin_du_dossier`, la
+--        réinsertion sur `is_super_admin` —, et rien d'autre que la restrictive `deux_facteurs` ; les deux fonctions exécutables
+--        par authenticated, ni par anon ni par PUBLIC.
+-- Ce qui n'est pas borné au dossier jetable (le client et l'anonyme, sur toute la table) ne rend qu'un booléen, jamais un compte.
+-- Quatre mutations, qui doivent mordre : M-LI1 (la lecture élargie au client du dossier : il lit l'écriture), M-LI2 (la lecture
+-- fermée : le chef ne lit plus rien), M-LI3 (la porte de la restauration fermée : le super-administrateur ne réinsère plus),
+-- M-LI4 (l'accès de la fonction sans `admin_du_dossier` : le client enregistre). Avant la migration, une ligne dit que le bloc
+-- attend.
+do $li$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  dossier uuid := 'a1100000-0000-4000-8000-0000000000e1';
+  -- L'écriture telle que l'application la donne (`ecritureLibrePourLaBase`) et les écritures qu'elle en compose
+  -- (`composerEcrituresLibres`) : un reclassement de 1,00 € entre deux postes de la 2035, en trésorerie.
+  -- ecritureLibreEnBase.test.ts confronte les deux au module.
+  ecriture jsonb := '{"id":null,"date":"2025-06-30","libelle":"Essai de la RLS","motif":"Essai de la RLS.","piece_citee_id":null,"avec_extourne":false,"lignes":[{"compte":"606400","sens":"debit","centimes":100,"poste_2035":"Fournitures de bureau","compte_lib":null},{"compte":"606300","sens":"credit","centimes":100,"poste_2035":"Petit outillage","compte_lib":null}]}';
+  ecritures jsonb := '[{"date":"2025-06-30","journal":"OD","libelle":"Essai de la RLS","lignes":[{"compte":"606400","sens":"debit","centimes":100},{"compte":"606300","sens":"credit","centimes":100}]}]';
+  id_ecriture uuid; chef_lit bigint; client_rien text; lignes_du_client text; du_membre bigint; de_l_anon text; membre_lit bigint;
+  par_la_fonction text; retrait text; en_direct text; reecrites bigint; effacees bigint; lignes_reecrites bigint;
+  par_le_membre text; reinsere text; elargie bigint; fermee bigint; porte_fermee text; ouverte text; n bigint; erreur text;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.ecritures_libres') is null then
+    insert into rls_verdict values ('LI. les écritures libres de l''expert-comptable : EN ATTENTE de la migration ecritures_libres',
+      'ecritures_libres', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : un dossier en trésorerie du cabinet du dossier du client, que le client voit, que le membre ne suit pas ──
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva)
+      select dossier, 'Essai RLS des écritures libres', d.cabinet_id, 'tresorerie', 'franchise' from dossiers d where d.id = dossier_du_client;
+    insert into memberships (user_id, dossier_id, role)
+      select client, dossier, m.role from memberships m where m.user_id = client and m.dossier_id = dossier_du_client limit 1;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    id_ecriture := enregistrer_ecriture_libre(dossier, ecriture, ecritures, null);
+    select count(*) into chef_lit from ecritures_libres where dossier_id = dossier;
+    reset role;
+    construit := true;
+
+    -- LI1 : le client du dossier, le membre à qui il n'est pas assigné, l'anonyme ; puis le membre assigné.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select (count(*) = 0)::text into client_rien from ecritures_libres;
+    select (count(*) = 0)::text into lignes_du_client from ecritures_brouillon where ecriture_libre_id is not null;
+    perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+    select count(*) into du_membre from ecritures_libres where dossier_id = dossier;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select (count(*) = 0)::text into de_l_anon from ecritures_libres;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossier_assignations (dossier_id, user_id) values (dossier, membre);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+    select count(*) into membre_lit from ecritures_libres where dossier_id = dossier;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'LI1. le chef lit l''écriture libre qu''il a enregistrée, et le membre de l''équipe une fois le dossier assigné (les contrôles positifs, EL-Q1) ; le client du dossier n''en lit rien, ni ses lignes au brouillon, ni un membre à qui le dossier n''est pas assigné, ni l''anonyme',
+      'cible', 'ecritures_libres',
+      'observe', 'le chef : ' || chef_lit || ' | le client ne lit rien : ' || client_rien || ', ni au brouillon : ' || lignes_du_client
+        || ' | le membre non assigné : ' || du_membre || ' | l''anonyme ne lit rien : ' || coalesce(de_l_anon, '?')
+        || ' | le membre assigné : ' || membre_lit,
+      'ok', chef_lit = 1 and client_rien = 'true' and lignes_du_client = 'true' and du_membre = 0 and de_l_anon = 'true' and membre_lit = 1);
+
+    -- LI2 : le client n'enregistre, ne retire, n'insère, ne réécrit ni n'efface ; le membre assigné enregistre ; le
+    -- super-administrateur réinsère.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_ecriture_libre(dossier, ecriture, ecritures, null);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform retirer_ecriture_libre(id_ecriture, 1);
+      retrait := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if retrait is null then retrait := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into ecritures_libres (dossier_id, exercice, numero, date, libelle, motif, lignes, cree_par)
+        values (dossier, 2025, 99, '2025-06-30', 'En direct', 'En direct', '[{},{}]', client);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update ecritures_libres set libelle = 'Réécrit' where dossier_id = dossier returning 1) select count(*) into reecrites from t;
+    with t as (delete from ecritures_libres where dossier_id = dossier returning 1) select count(*) into effacees from t;
+    with t as (update ecritures_brouillon set montant = montant + 1 where dossier_id = dossier returning 1) select count(*) into lignes_reecrites from t;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      perform enregistrer_ecriture_libre(dossier, ecriture, ecritures, null);
+      par_le_membre := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_le_membre is null then par_le_membre := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into ecritures_libres (dossier_id, exercice, numero, date, libelle, motif, lignes, cree_par)
+        values (dossier, 2025, 99, '2025-06-30', 'Réinsérée', 'Réinsérée', '[{},{}]', chef);
+      reinsere := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if reinsere is null then reinsere := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'LI2. le client n''enregistre ni ne retire d''écriture libre (les fonctions), n''en écrit pas en direct, n''en réécrit ni n''en efface aucune, ni ses lignes ; le membre assigné en enregistre une (EL-Q1) et le super-administrateur en réinsère une (la restauration) : les contrôles positifs',
+      'cible', 'ecritures_libres',
+      'observe', 'enregistrer : ' || coalesce(par_la_fonction, '?') || ' | retirer : ' || coalesce(retrait, '?')
+        || ' | en direct : ' || coalesce(en_direct, '?') || ' | réécrites : ' || reecrites || ' | effacées : ' || effacees
+        || ' | lignes réécrites : ' || lignes_reecrites || ' | le membre assigné : ' || coalesce(par_le_membre, '?')
+        || ' | réinsérée : ' || coalesce(reinsere, '?'),
+      'ok', par_la_fonction = '42501 Accès refusé à ce dossier.' and retrait = '42501 Accès refusé à cette écriture libre.'
+        and en_direct like '42501 %' and reecrites = 0 and effacees = 0 and lignes_reecrites = 0 and par_le_membre = 'ACCEPTÉ'
+        and reinsere = 'ACCEPTÉ');
+
+    -- M-LI1 : la lecture élargie au client du dossier.
+    begin
+      alter policy ecritures_libres_lecture on public.ecritures_libres
+        using (admin_du_dossier(dossier_id) or exists (select 1 from memberships m where m.dossier_id = ecritures_libres.dossier_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from ecritures_libres where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-LI1 — la lecture des écritures libres élargie au client du dossier',
+      'attendu', 'le client lit l''écriture', 'observe', coalesce((elargie >= 1)::text, '?'), 'mord', coalesce(elargie >= 1, false));
+
+    -- M-LI2 : la lecture fermée.
+    begin
+      alter policy ecritures_libres_lecture on public.ecritures_libres using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from ecritures_libres where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-LI2 — la lecture des écritures libres fermée',
+      'attendu', 'le chef ne lit plus rien', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-LI3 : la porte de la restauration fermée.
+    begin
+      alter policy ecritures_libres_restauration on public.ecritures_libres with check (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      begin
+        insert into ecritures_libres (dossier_id, exercice, numero, date, libelle, motif, lignes, cree_par)
+          values (dossier, 2025, 99, '2025-06-30', 'Réinsérée', 'Réinsérée', '[{},{}]', chef);
+        porte_fermee := 'ACCEPTÉ';
+      exception when others then porte_fermee := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-LI3 — la porte de la restauration fermée',
+      'attendu', 'le super-administrateur ne réinsère plus', 'observe', coalesce(porte_fermee, '?'), 'mord', coalesce(porte_fermee like '42501 %', false));
+
+    -- M-LI4 : la fonction d'enregistrement sans son contrôle d'accès (elle contourne la RLS : seul ce contrôle tient le client).
+    begin
+      execute replace(pg_get_functiondef('public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)'::regprocedure),
+        'or not coalesce(public.admin_du_dossier(p_dossier_id), false)', '');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        perform enregistrer_ecriture_libre(dossier, ecriture, ecritures, null);
+        ouverte := 'ACCEPTÉ';
+      exception when others then ouverte := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-LI4 — l''enregistrement sans son contrôle d''accès (admin_du_dossier)',
+      'attendu', 'le client enregistre', 'observe', coalesce(ouverte, '?'), 'mord', coalesce(ouverte = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- LI3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'ecritures_libres' and p.roles = array['authenticated']::name[]
+     and p.permissive = 'PERMISSIVE'
+     and ((p.policyname = 'ecritures_libres_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'ecritures_libres_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'LI3. la RLS active ; deux policies à authenticated : la lecture du cabinet du dossier, la réinsertion du super-administrateur ; les deux fonctions à authenticated seul (lecture du catalogue)',
+    'cible', 'ecritures_libres',
+    'observe', n || ' sur 2, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'ecritures_libres' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.ecritures_libres'::regclass)
+      || ', fonctions ' || (select string_agg(has_function_privilege('authenticated', p.oid, 'execute')::text || '/'
+           || has_function_privilege('anon', p.oid, 'execute')::text || '/'
+           || exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)::text, ' ' order by p.proname)
+         from pg_proc p where p.oid in (to_regprocedure('public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)'),
+                                        to_regprocedure('public.retirer_ecriture_libre(uuid, integer)'))),
+    'ok', n = 2 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'ecritures_libres' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 2
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.ecritures_libres'::regclass)
+      and (select count(*) from pg_proc p
+            where p.oid in (to_regprocedure('public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)'),
+                            to_regprocedure('public.retirer_ecriture_libre(uuid, integer)'))
+              and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+              and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)) = 2);
+  verdicts := verdicts || jsonb_build_object('controle', 'LI. le jeu d''essai des écritures libres s''est construit', 'cible', 'un dossier en trésorerie du cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $li$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

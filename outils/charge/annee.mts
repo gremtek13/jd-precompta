@@ -329,7 +329,7 @@ function mesurer(k: number): Map<string, number | string> {
     resultats.set(`brouillon (${assujetti ? 'assujetti' : 'exonéré'})`, `${brouillon.length} lignes`)
 
     if (!assujetti) {
-      const d2035 = () => calculerDeclaration2035(ANNEE, a.pieces, CATEGORIES, a.immobilisations, comptees, [], assujetti, paiements, parts, [], PLAN, ventes, pourLa2035.ecritures, recettesDeCaisse)
+      const d2035 = () => calculerDeclaration2035(ANNEE, a.pieces, CATEGORIES, a.immobilisations, comptees, [], assujetti, paiements, parts, [], PLAN, ventes, pourLa2035.ecritures, recettesDeCaisse, ECRITURES_LIBRES_ABSENTES)
       t('2035 complète', d2035, (r) => `recettes ${r.totalRecettes}, dépenses ${r.totalDepenses}, exclusions ${JSON.stringify(r.exclusions).length} octets`)
       // La concordance que l'onglet Clôture calcule et que les préalables reçoivent (ClotureTab, `concordances`).
       const declaration = d2035()
@@ -355,7 +355,7 @@ function mesurer(k: number): Map<string, number | string> {
       t('lettrage', () => lettrages(brouillon, a.pieces, [], MODELE, { factures: a.factures, encaissements: a.encaissements, ecritures: composition.ecritures }))
       t('doublons probables', () => doublonsProbables(a.pieces, assujetti, piecesRegleesPourLesDoublons(paiements)))
       t('ventes facturées', () => ventesFacturees(sourcesVentes), (r) => `${r.parts.length} parts, ${r.ecartees.length} écartées`)
-      t('situation intermédiaire', () => calculerSituationIntermediaire(a.pieces, CATEGORIES, a.immobilisations, comptees, `${ANNEE}-01-01`, `${ANNEE}-10-31`, assujetti, paiements, MODELE.mode, parts, ventes, PLAN, pourLa2035.ecritures, recettesDeCaisse))
+      t('situation intermédiaire', () => calculerSituationIntermediaire(a.pieces, CATEGORIES, a.immobilisations, comptees, `${ANNEE}-01-01`, `${ANNEE}-10-31`, assujetti, paiements, MODELE.mode, parts, ventes, PLAN, pourLa2035.ecritures, recettesDeCaisse, ECRITURES_LIBRES_ABSENTES))
       // La Vue d'ensemble (pages/dossier/ChecklistTab.tsx, par lib/checklistLecture.ts) et les préalables de la validation
       // (ClotureTab) : les lectures du dossier fictif en entier ; ce que le dossier n'a pas (emprunts, véhicules, reprise,
       // déclarations de TVA, factures transmises) est une liste vide, lue, jamais un « partiel ».

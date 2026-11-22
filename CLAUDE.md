@@ -617,18 +617,21 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
   une OD source du brouillon ; en trésorerie, chaque ligne de résultat sous un poste de la 2035 ou « hors de la 2035 », une charge
   ou un produit rattaché hors de la 2035 seulement (`rattacheeComptee`, EXP58-Q3 (A) : la désignation « contre la règle »
-  retirée, la préparée récrite, md5 `485ecc9f…`) ; EL-Q1 à
+  retirée, la préparée récrite) ; EL-Q1 à
   Q12 tranchées le 17/11/2026 — tout compte du cabinet qui suit le dossier l'écrit (EL-Q1, `admin_du_dossier`, l'auteur posé par
   la base), un dégel du dernier exercice validé par le chef, conçu, pas codé (EL-Q10 (B), EL10-Q1 à Q7 ouvertes, lot EL9). EL1 en
   module (`lib/ecritureLibre.ts`) ; EL5 (22/11/2026), la lecture (`lib/ecrituresLibresLecture.ts`, nulle = aucun calcul) passée à
   chaque moteur (`ecrituresLibresAppelants.test.ts`) et la section de l'onglet Écritures, derrière le même drapeau ; « Ma simulation »
   ne les compte pas et le dit (EL5-Q1) → « EL5 : LA LECTURE DES ÉCRITURES LIBRES » ; EL2 préparée, à coller (`ecritures_libres`, `ECRITURES_LIBRES_PREVUES` baissé ; les quatre
-  sources neuves sœurs la tolèrent, `stocks.test.ts`) ; le plan de sauvegarde et `rls.sql` à EL8 ; EL3 (22/11/2026) en module,
+  sources neuves sœurs la tolèrent, `stocks.test.ts`) ; EL8 (22/11/2026) : la table au plan de sauvegarde, dans `restauration.sql`
+  et `rls.sql` (LI), derrière le drapeau ; la porte posée en clair (md5 `55ffe78c…`), le tout prouvé sur une réplique égale à la
+  production ; restent le collage, le rangement (le fichier, les quatre lignes du socle que dit son en-tête) et la levée → « EL8 :
+  L'ÉCRITURE LIBRE PRÊTE À COLLER » ; EL3 (22/11/2026) en module,
   sans lecture : la sorte `libre` du FEC (OD, « EL<année>-<numéro> », sans règlement, NatOp le poste saisi), la piste d'audit et
   `absenceFec`, l'état des écritures libres en CSV et PDF (`lib/ecrituresLibresDesExports.ts`, `lib/etatDesEcrituresLibres.ts`),
   le FEC fictif inchangé à l'octet ; les écritures libres lues à passer par EL5 ; EL4 (22/11/2026, `lib/ecrituresLibresDeLa2035.ts`) :
   la 2035, la situation et l'estimation (le chiffre d'affaires) comptent chaque ligne sous un poste, à sa date, signée, l'extourne
-  inverse, par un dernier paramètre au défaut FERMÉ (l'absence drapeau baissé, un refus levé) ; une ligne hors de la 2035, un écart
+  inverse, par un dernier paramètre OBLIGATOIRE depuis EL8 (une absence se dit) ; une ligne hors de la 2035, un écart
   déclaré (`ecartsDeclares`, hors de `ecarts` et de `concorde`), dit en attention à la validation ; la CA3 aveugle
   (`ecrituresLibresHorsDeLaCa3.test.ts`) → « L'ÉCRITURE LIBRE DE
   L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION », « EXP58-Q3 ET NOE4-Q1 »,

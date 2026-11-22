@@ -13,7 +13,7 @@ import { fraisDesMouvements } from './ecrituresVentesFacturees'
 import type { PlanComptable } from './planComptable'
 import type { RecetteDeCaisse, RecettesDeCaisse } from './recettesDeCaisse'
 import type { EcrituresLibresDesExports } from './ecrituresLibresDesExports'
-import { ecrituresLibresParDefaut, lignesDeResultatLibresDeLaPeriode, type LigneDeResultatLibre } from './ecrituresLibresDeLa2035'
+import { lignesDeResultatLibresDeLaPeriode, type LigneDeResultatLibre } from './ecrituresLibresDeLa2035'
 import {
   exemplaireDUneFactureSource, recettesFactureesDeLaPeriode, type ExcedentVenteFacturee, type VenteEcartee, type VentesFacturees,
 } from './ventesFacturees'
@@ -140,9 +140,9 @@ export function calculerSituationIntermediaire(
   recettesDeCaisse: RecettesDeCaisse,
   // Les écritures libres de l'expert-comptable (EL4 ; lib/ecrituresLibresDeLa2035.ts), LUES EN ENTIER, ou absentes : chaque
   // ligne de classe 6 ou 7 de la période sous un poste de la 2035 y compte à sa date, comme dans la 2035 (conception 54, § 5.3 :
-  // la situation de septembre et la 2035 de mai ne se contredisent pas). Un défaut du côté fermé (trente-six appels, presque
-  // tous des tests) : drapeau baissé, l'absence ; levé, un appel qui les omet lève (`ecrituresLibresParDefaut`).
-  ecrituresLibres: EcrituresLibresDesExports = ecrituresLibresParDefaut(),
+  // la situation de septembre et la 2035 de mai ne se contredisent pas). Sans valeur par défaut depuis EL8 (22/11/2026), comme
+  // dans la 2035 : les oublier montrerait à une banque un résultat sans les écritures de l'expert ; une absence se DIT.
+  ecrituresLibres: EcrituresLibresDesExports,
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))

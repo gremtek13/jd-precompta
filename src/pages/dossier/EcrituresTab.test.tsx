@@ -10,6 +10,7 @@ import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from '../../lib/planCo
 import { refusDeLaClasse, refusDeLaClasseCommune } from '../../lib/categoriesDuDossier'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 import { DRAPEAU_DES_REPRISES_ET_DU_MODELE, REFUS_ENGAGEMENT_DES_REPRISES } from '../../lib/reprisesRetiennentLaTresorerie'
+import { ECRITURES_LIBRES_PREVUES } from '../../lib/ecritureLibre'
 
 // L'ONGLET QUI PRODUIT LES DEUX FICHIERS OFFICIELS du projet — le FEC et la piste d'audit. Un défaut
 // ici ne reste pas à l'écran : il part chez un vérificateur. Ce test vise donc les trois choses
@@ -23,7 +24,8 @@ import { DRAPEAU_DES_REPRISES_ET_DU_MODELE, REFUS_ENGAGEMENT_DES_REPRISES } from
 
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
-  // Les tables que l'écran demande, dans l'ordre (EL5 : le drapeau des écritures libres baissé, jamais `ecritures_libres`).
+  // Les tables que l'écran demande, dans l'ordre (EL5 : le drapeau des écritures libres baissé, jamais `ecritures_libres`,
+  // levé, elle aussi).
   tablesDemandees: [] as string[],
   // Plafond « Max rows » de PostgREST : nombre maximum de lignes rendues PAR REQUÊTE, qui ne se
   // signale pas (voir lib/lectureComplete.ts). `lireTout` le recolle tranche par tranche.
@@ -401,9 +403,10 @@ describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
     expect(screen.queryByText(/à régénérer$/)).toBeNull()
     expect(screen.queryAllByText(/déséquilibrée/)).toHaveLength(0)
     expect(screen.queryByText(/en attente de rapprochement bancaire/)).toBeNull()
-    // EL5 : le drapeau des écritures libres baissé, ni leur section ni leur table.
-    expect(screen.queryByText('Écritures de l’expert-comptable')).toBeNull()
-    expect(faux.tablesDemandees).not.toContain('ecritures_libres')
+    // EL5 : leur section et leur table suivent le drapeau des écritures libres, qui suit la migration rangée dans l'export
+    // (ecritureLibre.test.ts) — baissé, ni l'une ni l'autre ; levé, les deux. Le test joue ainsi l'état du dépôt.
+    expect(screen.queryByText('Écritures de l’expert-comptable') !== null).toBe(ECRITURES_LIBRES_PREVUES)
+    expect(faux.tablesDemandees.includes('ecritures_libres')).toBe(ECRITURES_LIBRES_PREVUES)
     expect(faux.tablesDemandees.length).toBeGreaterThan(0)
   })
 

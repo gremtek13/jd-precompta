@@ -37,6 +37,7 @@ import { STOCKS_PREVUS } from './stocks'
 import { EXERCICES_DECALES_PREVUS } from './exercices'
 import { AFFECTATION_PREVUE } from './affectationDuResultat'
 import { OPTIONS_DES_CABINETS_EN_BASE } from './modulesDuCabinet'
+import { ECRITURES_LIBRES_PREVUES } from './ecritureLibre'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
@@ -88,7 +89,7 @@ import {
   tablesSansChemin,
   violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures, auPlanDesHonorairesDeposes,
   auPlanDesDocumentsEtDemandes, auPlanDesAchatsDuClient, auPlanDesNotesDeFrais, auPlanDesSaisies2035E, auPlanDuModeleDuCabinet, auPlanDesCopiesDesFichiers, auPlanDesExercices, auPlanDuDepart, TABLES_DU_DEPART,
-  auPlanDesOptionsDesCabinets,
+  auPlanDesOptionsDesCabinets, auPlanDesEcrituresLibres, auGrapheDesEcrituresLibres,
 } from './sauvegarde'
 
 // LES DEVIS AU PLAN DE SAUVEGARDE (espace client, étape P5). Leurs migrations attendent l'accord du cabinet : tant que
@@ -131,7 +132,8 @@ describe('le filtre du plan', () => {
     // (sauvegardeHausseDuChiffreDAffaires.test.ts) ; depuis P1TQ2-Q1, celui des auteurs des ouvertures d'accès
     // (sauvegardeOuverturesAttestees.test.ts) ; depuis BOR3, celui du facturé à l'assurance maladie
     // (sauvegardeFacturesAssuranceMaladie.test.ts) ; depuis NOE8, celui de l'association des paiements de l'assurance maladie
-    // (sauvegardeAssociationsAssuranceMaladie.test.ts).
+    // (sauvegardeAssociationsAssuranceMaladie.test.ts) ; depuis EL8, celui des écritures libres, et le graphe retire la clé du
+    // brouillon vers une écriture libre (sauvegardeEcrituresLibres.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -165,7 +167,8 @@ describe('le filtre du plan', () => {
         && auPlanDesStocks(table, STOCKS_PREVUS)
         && auPlanDesExercices(table, EXERCICES_DECALES_PREVUS)
         && auPlanDeLAffectation(table, AFFECTATION_PREVUE)
-        && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_EN_BASE))
+        && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_EN_BASE)
+        && auPlanDesEcrituresLibres(table, ECRITURES_LIBRES_PREVUES))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)
@@ -173,7 +176,8 @@ describe('le filtre du plan', () => {
         && auGrapheDesAcomptes(r, ACOMPTES_PREVUS) && auGrapheDesComptesBancaires(r, COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS) && auGrapheDuDossierDuCabinet(r, DOSSIER_DU_CABINET_PREVU)
         && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)
         && auGrapheDesStocks(r, STOCKS_PREVUS)
-        && auGrapheDeLAffectation(r, AFFECTATION_PREVUE)))
+        && auGrapheDeLAffectation(r, AFFECTATION_PREVUE)
+        && auGrapheDesEcrituresLibres(r, ECRITURES_LIBRES_PREVUES)))
     expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlanAujourdHui(t)))
