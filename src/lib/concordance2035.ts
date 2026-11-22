@@ -5,6 +5,7 @@ import type { ContributionDeclaration, Declaration2035, SourceDeclaration } from
 import { nomDuVehicule } from './forfaitKilometrique'
 import { anneeDe, formatDate, formatMoney } from './format'
 import { libelleDeLaRecette } from './recettesDeCaisse'
+import { dateDeLExtourne, nomDeLEcritureLibre } from './ecrituresLibresDeLa2035'
 import type { EcritureBrouillon } from './types'
 
 // LA 2035 SE RETROUVE-T-ELLE DANS LES ÉCRITURES ? (ligne 26.6 de la feuille de route, étape c)
@@ -46,6 +47,12 @@ import type { EcritureBrouillon } from './types'
 // se retire et se saisit de nouveau — un motif à lui (`caisse_a_reprendre`), sauf une catégorie sans poste, qui se règle
 // comme une autre.
 //
+// ET L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE (EL4 ; conception 54, § 5.2) : ses lignes au brouillon la désignent par
+// `ecriture_libre_id` — la constatation à sa date, l'extourne au 1er janvier suivant. Une ligne sous un poste de la 2035 y est
+// une contribution au compte de la ligne : elle concorde par construction. Une ligne « hors de la 2035 » est un ÉCART DÉCLARÉ
+// par l'expert (EL-Q6 (A)) : rangé à part (`ecartsDeclares`, motif `ecriture_libre_hors_2035`), chiffré, nommé par la référence
+// et le libellé de l'écriture, et `concorde` se juge HORS de lui. Tout autre écart d'une écriture libre reste un écart.
+//
 // CE QUI N'EST PAS UN ÉCART, PAR CONSTRUCTION : la CSG déductible (case BV). La CSG-CRDS passe entière au
 // 108000, hors résultat, et seule sa part déductible entre en BV — la présentation relevée sur la 2035 déposée
 // par le cabinet. Elle est dite à part : le résultat du FEC dépasse celui de la 2035 de son montant.
@@ -61,7 +68,8 @@ import type { EcritureBrouillon } from './types'
 // pour référence l'échéance elle-même : payée depuis le compte personnel, son écriture la désigne (`cotisation_id`) ; sans
 // paiement, elle n'a pas d'écriture.
 export type ReferenceEcriture = {
-  type: 'piece' | 'mouvement' | 'bien' | 'vehicule' | 'cotisation' | 'declaration' | 'encaissement' | 'facture' | 'caisse' | 'ecriture'
+  type: 'piece' | 'mouvement' | 'bien' | 'vehicule' | 'cotisation' | 'declaration' | 'encaissement' | 'facture' | 'caisse' | 'libre'
+    | 'ecriture'
   id: string
 }
 
@@ -99,6 +107,9 @@ export type MotifEcart =
   // Une recette de caisse que son écriture ne porte plus telle que la 2035 la compte — aucune écriture, une autre, ou une
   // écriture que la 2035 ne compte pas (sa catégorie n'est plus un produit) : l'opération se retire et se saisit de nouveau.
   | 'caisse_a_reprendre'
+  // Les lignes d'une écriture libre que l'expert a mises hors de la 2035 (EL-Q6 (A)) : écrites, et voulues hors de la
+  // déclaration. Un écart DÉCLARÉ, jamais dans `ecarts` : il ne retient pas la validation.
+  | 'ecriture_libre_hors_2035'
   // Les deux, mais pas le même montant.
   | 'montant_different'
   // Le même montant, sur un autre compte.
@@ -148,7 +159,12 @@ export interface Concordance2035 {
   // La CSG déductible de la case BV, sans écriture par construction (voir plus haut).
   csgDeductible: number
   ecarts: EcartDeSource[]
-  // Vrai quand aucune source ne diffère : les deux résultats ne s'écartent alors que de la CSG déductible.
+  // LES ÉCARTS DÉCLARÉS (EL4, EL-Q6 (A)) : les écritures libres dont l'expert a mis des lignes hors de la 2035, sous le motif
+  // `ecriture_libre_hors_2035`. PRÉSENT SEULEMENT QUAND LA 2035 A LU LES ÉCRITURES LIBRES (`exclusions.ecrituresLibresHorsDeLa2035`),
+  // vide compris ; ABSENT sinon (le drapeau baissé) : la concordance d'hier, au caractère près.
+  ecartsDeclares?: EcartDeSource[]
+  // Vrai quand aucune source ne diffère, HORS DES ÉCARTS DÉCLARÉS : les deux résultats ne s'écartent alors que de la CSG
+  // déductible et de ce que l'expert a déclaré.
   concorde: boolean
 }
 
@@ -171,10 +187,14 @@ function cleDeSource(s: SourceDeclaration): string {
     case 'frais_d_encaissements': return `mouvement:${s.id}`
     // Une recette de caisse : son écriture désigne l'opération.
     case 'caisse': return `caisse:${s.id}`
+    // Une écriture libre : ses lignes, constatation et extourne, désignent l'écriture.
+    case 'ecriture_libre': return `libre:${s.id}`
   }
 }
 
 function referenceDeLEcriture(e: EcritureBrouillon): ReferenceEcriture {
+  // Une écriture libre (EL2) : aucune autre source ne l'accompagne (`ecritures_brouillon_libre_sans_autre_source`).
+  if (e.ecriture_libre_id) return { type: 'libre', id: e.ecriture_libre_id }
   if (e.piece_id) return { type: 'piece', id: e.piece_id }
   // Une opération de caisse (étape C3a) : aucune autre source ne l'accompagne (la contrainte
   // `ecritures_brouillon_caisse_sans_autre_source`), sauf la pièce que la caisse paie, dont la ligne est au compte de la
@@ -199,6 +219,7 @@ function referenceDeSource(s: SourceDeclaration): ReferenceEcriture {
   if (s.type === 'cotisation') return s.ligne ? { type: 'mouvement', id: s.ligne.id } : { type: 'cotisation', id: s.id }
   if (s.type === 'csg') return { type: 'ecriture', id: 'csg' }
   if (s.type === 'frais_d_encaissements') return { type: 'mouvement', id: s.id }
+  if (s.type === 'ecriture_libre') return { type: 'libre', id: s.id }
   return { type: s.type, id: s.id }
 }
 
@@ -229,6 +250,10 @@ function libelleDeSource(s: SourceDeclaration): { libelle: string; date: string 
     case 'frais_d_encaissements': return { libelle: `Frais retenus sur le mouvement « ${s.frais.libelle} »`, date: s.frais.date }
     // Le libellé que la base compose pour son écriture : un total de jour, sans nom.
     case 'caisse': return { libelle: libelleDeLaRecette(s.recette), date: s.recette.date }
+    // Sa référence (« EL2026-0003 ») et le libellé que l'expert a saisi, celui du FEC ; le motif n'est jamais lu ici.
+    case 'ecriture_libre': return {
+      libelle: nomDeLEcritureLibre(s), date: s.extourne ? dateDeLExtourne(s.ecriture.date) : s.ecriture.date,
+    }
   }
 }
 
@@ -242,6 +267,8 @@ interface Groupe {
   reference: ReferenceEcriture
   declaration: Map<string | null, number>
   ecritures: Map<string, number>
+  // L'effet sur le résultat des lignes d'une écriture libre hors de la 2035, par compte (EL4).
+  horsDeLa2035: Map<string, number>
   premiereEcriture: EcritureBrouillon | null
 }
 
@@ -283,7 +310,7 @@ export function concordance2035(
   const groupe = (cle: string, reference: ReferenceEcriture, source: SourceDeclaration | null): Groupe => {
     let g = groupes.get(cle)
     if (!g) {
-      g = { source, reference, declaration: new Map(), ecritures: new Map(), premiereEcriture: null }
+      g = { source, reference, declaration: new Map(), ecritures: new Map(), horsDeLa2035: new Map(), premiereEcriture: null }
       groupes.set(cle, g)
     }
     if (source && !g.source) g.source = source
@@ -294,6 +321,14 @@ export function concordance2035(
     if (c.source.type === 'csg') continue
     const g = groupe(cleDeSource(c.source), referenceDeSource(c.source), c.source)
     g.declaration.set(c.compte, (g.declaration.get(c.compte) ?? 0) + effetDeContribution(c))
+  }
+  // Les lignes hors de la 2035 (EL-Q6 (A)) : leur effet sur le résultat — une recette l'augmente, une dépense le diminue —, sous
+  // l'écriture, à côté de ce que la 2035 compte.
+  const horsDeLa2035 = declaration.exclusions.ecrituresLibresHorsDeLa2035
+  for (const l of horsDeLa2035 ?? []) {
+    const source: SourceDeclaration = { type: 'ecriture_libre', id: l.ecriture.id, ecriture: l.ecriture, extourne: l.extourne }
+    const g = groupe(cleDeSource(source), referenceDeSource(source), source)
+    g.horsDeLa2035.set(l.compte, (g.horsDeLa2035.get(l.compte) ?? 0) + (l.nature === 'recette' ? l.centimes : -l.centimes))
   }
 
   // Les écritures de résultat, de cet exercice et des autres : celles des autres disent pourquoi une source
@@ -332,12 +367,30 @@ export function concordance2035(
   const recettesDeCaisseSansPoste = new Set(exclusions.recettesDeCaisseSansPoste.map((r) => r.operationId))
 
   const ecarts: EcartDeSource[] = []
+  const ecartsDeclares: EcartDeSource[] = []
   for (const [cle, g] of groupes) {
     const declare = new Map([...g.declaration].filter(([, v]) => v !== 0))
     const ecrit = new Map([...g.ecritures].filter(([, v]) => v !== 0))
     const comptes = new Set<string | null>([...declare.keys(), ...ecrit.keys()])
     const concorde = [...comptes].every((compte) => (declare.get(compte) ?? 0) === (compte === null ? 0 : ecrit.get(compte) ?? 0))
     if (concorde) continue
+    // UN ÉCART DÉCLARÉ : compte par compte, ce que la 2035 compte et ce que l'expert a mis hors d'elle font exactement ce qui
+    // est écrit. Une écriture libre dont les lignes ne disent pas cela (une ligne qui manque, un autre montant) reste un écart.
+    const hors = new Map([...g.horsDeLa2035].filter(([, v]) => v !== 0))
+    const declareEtHors = [...new Set<string | null>([...comptes, ...hors.keys()])]
+      .every((compte) => (declare.get(compte) ?? 0) + (compte === null ? 0 : hors.get(compte) ?? 0)
+        === (compte === null ? 0 : ecrit.get(compte) ?? 0))
+    if (hors.size > 0 && declareEtHors && g.source) {
+      const totalDeclare = [...declare.values()].reduce((s, v) => s + v, 0)
+      const totalEcrit = [...ecrit.values()].reduce((s, v) => s + v, 0)
+      ecartsDeclares.push({
+        cle, source: g.source, reference: g.reference, ...libelleDeSource(g.source),
+        declaration: totalDeclare / 100, ecritures: totalEcrit / 100,
+        comptesDeclaration: [...declare.keys()], comptesEcritures: [...ecrit.keys()],
+        autresExercices: [], motif: 'ecriture_libre_hors_2035',
+      })
+      continue
+    }
 
     const totalDeclare = [...declare.values()].reduce((s, v) => s + v, 0)
     const totalEcrit = [...ecrit.values()].reduce((s, v) => s + v, 0)
@@ -359,6 +412,7 @@ export function concordance2035(
 
   // Les plus gros écarts d'abord : c'est par eux qu'on commence.
   ecarts.sort((a, b) => Math.abs(b.declaration - b.ecritures) - Math.abs(a.declaration - a.ecritures) || a.cle.localeCompare(b.cle))
+  ecartsDeclares.sort((a, b) => Math.abs(b.declaration - b.ecritures) - Math.abs(a.declaration - a.ecritures) || a.cle.localeCompare(b.cle))
 
   return {
     annee,
@@ -367,8 +421,21 @@ export function concordance2035(
     ecritures: { recettes: recettesEcrites / 100, depenses: depensesEcrites / 100, resultat: (recettesEcrites - depensesEcrites) / 100 },
     csgDeductible: centimesCsg / 100,
     ecarts,
+    ...(horsDeLa2035 !== undefined ? { ecartsDeclares } : {}),
     concorde: ecarts.length === 0,
   }
+}
+
+/**
+ * Ce que les écarts déclarés font au résultat (EL-Q6 (A)) : le nombre d'écritures libres en cause — une écriture et son
+ * extourne n'en font qu'une, et la concordance d'un exercice n'en voit qu'une des deux — et ce dont le résultat du FEC dépasse
+ * celui de la 2035 par leur fait, en euros (négatif : il est en dessous). Nul quand la concordance n'en a pas.
+ */
+export function effetDesEcartsDeclares(c: Pick<Concordance2035, 'ecartsDeclares'>): { ecritures: number; resultat: number } | null {
+  const declares = c.ecartsDeclares ?? []
+  if (declares.length === 0) return null
+  const centimes = declares.reduce((s, e) => s + Math.round(e.ecritures * 100) - Math.round(e.declaration * 100), 0)
+  return { ecritures: new Set(declares.map((e) => e.reference.id)).size, resultat: centimes / 100 }
 }
 
 function motifDeLEcart(x: {
@@ -461,6 +528,7 @@ export const LIBELLES_MOTIFS: Readonly<Record<MotifEcart, string>> = {
   vente_facturee_a_retirer: 'écriture d’une vente facturée à retirer',
   frais_sans_poste: 'frais d’encaissements sans poste',
   caisse_a_reprendre: 'recette de caisse à reprendre',
+  ecriture_libre_hors_2035: 'écriture libre hors de la 2035',
   montant_different: 'montant différent',
   compte_different: 'compte différent',
   piece_non_validee: 'pièce non validée',
@@ -519,6 +587,8 @@ export function phraseDeLEcart(e: EcartDeSource): string {
         return `Son écriture porte ${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}, que la 2035 ne compte pas : sa catégorie n’est plus une catégorie de produit. Retire l’opération et saisis-la de nouveau sous une catégorie de produit.`
       }
       return `Son écriture porte ${formatMoney(Math.abs(e.ecritures))} au ${e.comptesEcritures.join(', ')}, la 2035 ${formatMoney(Math.abs(e.declaration))} au ${comptes(e.comptesDeclaration)} : elle n’est plus celle de l’opération (une catégorie ou un statut de TVA changé depuis la saisie) — retire l’opération et saisis-la de nouveau.`
+    case 'ecriture_libre_hors_2035':
+      return `L’expert-comptable a mis cette écriture hors de la 2035 : elle porte ${formatMoney(Math.abs(e.ecritures - e.declaration))} au ${e.comptesEcritures.join(', ')} que la 2035 ne compte pas. Un écart déclaré, qui ne retient pas la validation.`
     case 'montant_different':
       return `L’écriture porte ${formatMoney(Math.abs(e.ecritures))}, la 2035 ${formatMoney(Math.abs(e.declaration))} : à régénérer ou à réécrire.`
     case 'compte_different':
@@ -561,6 +631,8 @@ export function ouAgir(e: EcartDeSource): string {
   if (e.motif === 'frais_sans_poste') return 'Clôture — Postes manquants'
   // Une recette de caisse se retire et se saisit de nouveau là où la caisse se tient.
   if (e.motif === 'caisse_a_reprendre') return 'Caisse'
+  // Une écriture libre se reprend là où l'expert-comptable la saisit (la section de l'onglet Écritures, EL5).
+  if (e.motif === 'ecriture_libre_hors_2035' || e.reference.type === 'libre') return 'Écritures — Écritures de l’expert-comptable'
   switch (e.source?.type ?? e.reference.type) {
     case 'piece':
       return e.motif === 'piece_non_validee' ? 'Justificatifs' : 'Écritures'

@@ -2,7 +2,7 @@ import type { Saisie2035 } from './saisies2035'
 import { banquesDuDossier } from './banqueDuMouvement'
 import type { ModeleComptable } from './engagement'
 import type { DossierTab } from './ongletsDossier'
-import type { Concordance2035 } from './concordance2035'
+import { effetDesEcartsDeclares, type Concordance2035 } from './concordance2035'
 import { partCsgNonDeductible, type Declaration2035 } from './declaration2035'
 import { carburantSousLeBareme, casesNegatives, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from './cases2035'
 import type { DoublonDeTexte } from './doublonsTexte'
@@ -257,6 +257,12 @@ export interface EtatDeValidation {
  * pas, la base les fige nuls, et le FEC relu de l'exercice validé garde dix-huit colonnes — aucune validation ne pourra plus les
  * lui donner (FEC22-Q6). Dit avant le clic, dans la carte et dans la confirmation.
  */
+/** Ce que la validation dit des écritures libres hors de la 2035 (EL-Q6 (A)), après leur nombre : un avertissement, jamais un
+ *  refus. `resultat` : ce dont le résultat du FEC dépasse celui de la 2035 par leur fait (`effetDesEcartsDeclares`). */
+export function messageDesEcrituresLibresHorsDeLa2035(resultat: number): string {
+  return `écriture(s) libre(s) hors de la 2035 : le FEC et la 2035 diffèrent de ${formatMoney(Math.abs(resultat))}, par décision de l’expert-comptable. Le détail est dans la carte « Concordance avec les écritures » ci-dessus.`
+}
+
 export function phraseDuFecSansChampsBnc(annee: number): string {
   return `L'exercice ${annee} se fige sans les quatre champs du FEC d'un BNC en trésorerie — la date et le mode de règlement, `
     + "la nature de l'opération, l'identification du client (LPF, art. A47 A-1, VIII, 7°) — : aucune validation ne pourra plus "
@@ -888,6 +894,16 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       id: 'concordance', nb: d.concordance ? d.concordance.ecarts.length : 0, cible: 'cloture',
       message: "écart(s) entre la 2035 et les écritures : la validation attend une concordance au centime. Le détail est dans la carte « Concordance avec les écritures » ci-dessus.",
     })
+    // LES ÉCARTS DÉCLARÉS PAR L'EXPERT-COMPTABLE (EL4, EL-Q6 (A) ; conception 54, § 5.2) : les écritures libres qu'il a mises
+    // hors de la 2035. Ils ne sont pas dans `ecarts` — la concordance les range à part —, et ne retiennent pas la validation :
+    // ils se disent avant le clic, chiffrés. Sans écriture libre lue, ou sans écart déclaré, rien ne s'ajoute.
+    const declares = d.concordance ? effetDesEcartsDeclares(d.concordance) : null
+    if (declares !== null) {
+      prealables.push({
+        id: 'ecritures-libres-hors-2035', nb: declares.ecritures, cible: 'cloture', bloquant: false,
+        message: messageDesEcrituresLibresHorsDeLa2035(declares.resultat),
+      })
+    }
     // LES RECETTES DE CAISSE QUE LA 2035 NE COMPTE PAS (étape C3b ; la carte « Recettes de caisse absentes du
     // récapitulatif », étape C3a) : une catégorie sans poste, ou qui n'est plus un produit. Leur écriture est passée avec
     // l'opération, et la concordance les dit aussi en écart ; ici, elles sont nommées comme ce qu'elles sont. Sans recette

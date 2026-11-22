@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  CARTES_DE_CLOTURE, motsDeLaBase, NOM_DU_MOYEN_SANS_MOUVEMENT, phraseDuFecSansChampsBnc, POINTS_DE_LA_CHECKLIST_ECARTES,
+  CARTES_DE_CLOTURE, messageDesEcrituresLibresHorsDeLa2035, motsDeLaBase, NOM_DU_MOYEN_SANS_MOUVEMENT, phraseDuFecSansChampsBnc, POINTS_DE_LA_CHECKLIST_ECARTES,
   prealablesDeValidation, prochainExerciceAValider, REFUS_VENTES_FACTUREES_DE_LA_VALIDATION, type DonneesDeValidation,
 } from './prealablesValidation'
 import { calculerDeclaration2035 } from './declaration2035'
@@ -2701,5 +2701,33 @@ describe('prealablesDeValidation — un compte sur plusieurs lignes de la 2035 (
 
   it('ne regarde que l’exercice qui se valide', () => {
     expect(ids(deuxPostes({ annee: 2024, anneeCourante: 2026 }))).not.toContain('comptes-sur-plusieurs-postes')
+  })
+})
+
+// EL4 (EL-Q6 (A)) : les écritures libres que l'expert-comptable a mises hors de la 2035 se disent avant le clic, chiffrées, et
+// ne retiennent pas la validation ; sans elles, rien ne s'ajoute.
+describe('les écritures libres hors de la 2035 (EL4)', () => {
+  const ecartDeclare = (id: string, ecritures: number) => ({
+    cle: `libre:${id}`, source: null, reference: { type: 'libre' as const, id }, libelle: `Écriture libre ${id}`, date: '2025-12-31',
+    declaration: 0, ecritures, comptesDeclaration: [], comptesEcritures: ['615000'], autresExercices: [],
+    motif: 'ecriture_libre_hors_2035' as const,
+  })
+
+  it('sans écart déclaré, rien ne s’ajoute', () => {
+    expect(ids(donnees())).not.toContain('ecritures-libres-hors-2035')
+    const d = donnees()
+    expect(ids({ ...d, concordance: { ...d.concordance!, ecartsDeclares: [] } })).not.toContain('ecritures-libres-hors-2035')
+  })
+
+  it('deux écritures déclarées : un avertissement qui les compte et chiffre l’écart du résultat, sans bloquer', () => {
+    const d = donnees()
+    const avec = { ...d, concordance: { ...d.concordance!, ecartsDeclares: [ecartDeclare('a', -30), ecartDeclare('b', -12.5)] } }
+    const p = prealable(avec, 'ecritures-libres-hors-2035')
+    expect(p).toMatchObject({ nb: 2, bloquant: false, cible: 'cloture', message: messageDesEcrituresLibresHorsDeLa2035(-42.5) })
+    expect(p!.message).toContain('42,50')
+    expect(p!.message).toContain('par décision de l’expert-comptable')
+    // La validation n'en est pas retenue : l'état est celui de la même donnée sans eux.
+    expect(prealablesDeValidation(avec).prealables.filter((x) => x.bloquant))
+      .toEqual(prealablesDeValidation(d).prealables.filter((x) => x.bloquant))
   })
 })

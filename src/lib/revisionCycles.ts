@@ -341,6 +341,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   // L'ouverture de l'exercice qui ne reprend pas la clôture du précédent (O33-Q1) : l'enchaînement des exercices.
   'ouverture-en-ecart': 'ensemble',
   concordance: 'ensemble',
+  // Les écarts déclarés par l'expert-comptable (EL4, EL-Q6 (A)) : la concordance de l'ensemble, comme elle.
+  'ecritures-libres-hors-2035': 'ensemble',
   'exclusions-2035': 'ensemble',
   'piste-rompue': 'ensemble',
   informations: 'ensemble',

@@ -11,6 +11,8 @@ import type { PlanComptable } from './planComptable'
 import { centimesDesRecettesDeCaisse, type RecettesDeCaissePourLEstimation } from './recettesDeCaisse'
 import type { Categorie, ModeComptable, Piece } from './types'
 import { exemplaireDUneFactureSource, recettesFactureesParMois, type VentesFacturees } from './ventesFacturees'
+import type { EcrituresLibresDesExports } from './ecrituresLibresDesExports'
+import { ecrituresLibresParDefaut, recettesComptees } from './ecrituresLibresDeLa2035'
 
 // Calculs partagés entre l'Estimation cabinet (EstimationTab, un dossier à la fois) et la Simulation
 // côté client (ClientSimulation, lecture seule) — mêmes chiffres, un seul endroit à faire évoluer si
@@ -131,6 +133,12 @@ function recettesDeCaisseDeLaPeriode(caisse: RecettesDeCaissePourLEstimation, de
 // Les cotisations comptent comme dans la 2035 (`cotisationsComptees`, lib/cotisationRapprochee.ts) : à la
 // date et au montant du mouvement qui les paie, sinon à leur échéance. Sans valeur par défaut, comme les
 // paiements.
+// Les recettes que les écritures libres de l'expert comptent dans la 2035 d'une période, en euros (EL4 ;
+// lib/ecrituresLibresDeLa2035.ts). Absentes, un zéro exact : le chiffre d'hier ne bouge pas d'un caractère.
+function recettesLibresDeLaPeriode(ecrituresLibres: EcrituresLibresDesExports, debut: string, fin: string): number {
+  return recettesComptees(ecrituresLibres, debut, fin) / 100
+}
+
 function cotisationsDeLaPeriode(cotisations: readonly CotisationComptee[], debut: string, fin: string): number {
   return cotisations
     .filter((c) => c.date >= debut && c.date <= fin)
@@ -148,11 +156,15 @@ export function totauxPourAnnee(
   // dans la 2035. Sans valeur par défaut : absente, le drapeau baissé ; « non comptées », ce que la simulation d'un client
   // passe et dit.
   recettesDeCaisse: RecettesDeCaissePourLEstimation,
+  // Les écritures libres de l'expert-comptable (EL4) : un défaut du côté fermé (trente-six appels, presque tous des tests) —
+  // drapeau baissé, l'absence ; levé, un appel qui les omet lève (`ecrituresLibresParDefaut`).
+  ecrituresLibres: EcrituresLibresDesExports = ecrituresLibresParDefaut(),
 ) {
   const debut = `${annee}-01-01`
   const fin = `${annee}-12-31`
   return {
-    ca: chiffreDAffairesDeLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode, partsDuReleve, recettesFacturees, recettesDeCaisse),
+    ca: chiffreDAffairesDeLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode, partsDuReleve, recettesFacturees, recettesDeCaisse,
+      ecrituresLibres),
     cotis: cotisationsDeLaPeriode(cotisations, debut, fin),
   }
 }
@@ -169,11 +181,15 @@ export function totauxPourAnnee(
 export function chiffreDAffairesDeLaPeriode(
   pieces: Piece[], paiements: PaiementsDesPieces, debut: string, fin: string, assujettiTva: boolean, mode: ModeComptable,
   partsDuReleve: readonly PartDuReleve[], recettesFacturees: RecettesFacturees, recettesDeCaisse: RecettesDeCaissePourLEstimation,
+  // Depuis EL4, un cinquième terme : les recettes que les écritures libres de l'expert comptent dans la 2035 (une ligne de
+  // classe 7 sous un poste, à sa date, signée ; conception 54, § 5.3). Obligatoire : trois appels. Absentes, un zéro exact.
+  ecrituresLibres: EcrituresLibresDesExports,
 ): number {
   return montantDansLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode, recettesFacturees)
     + recettesAffecteesDansLaPeriode(partsDuReleve, debut, fin)
     + recettesFactureesDesMois(recettesFacturees, debut, fin)
     + recettesDeCaisseDeLaPeriode(recettesDeCaisse, debut, fin)
+    + recettesLibresDeLaPeriode(ecrituresLibres, debut, fin)
 }
 
 export interface ProjectionAnnuelle {
@@ -212,13 +228,15 @@ export function projectionAnnuelle(
   partsDuReleve: readonly PartDuReleve[],
   recettesFacturees: RecettesFacturees,
   recettesDeCaisse: RecettesDeCaissePourLEstimation,
+  // Les écritures libres de l'expert-comptable (EL4) : le défaut du côté fermé de `totauxPourAnnee`.
+  ecrituresLibres: EcrituresLibresDesExports = ecrituresLibresParDefaut(),
 ): ProjectionAnnuelle {
   const annee = anneeDe(dateDuJour)
   // Du 1er janvier à aujourd'hui : la borne du jour fait un « à date », pour les recettes (à leur
   // encaissement) comme pour les échéances. La même règle de montant que le calcul des repères. Les
   // recettes facturées, au mois près : celui du jour compte en entier (voir `RecettesFacturees`).
   const ca = chiffreDAffairesDeLaPeriode(recettes, paiements, `${annee}-01-01`, dateDuJour, assujettiTva, mode, partsDuReleve,
-    recettesFacturees, recettesDeCaisse)
+    recettesFacturees, recettesDeCaisse, ecrituresLibres)
   const cotis = cotisationsDeLaPeriode(cotisations, `${annee}-01-01`, dateDuJour)
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
   const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)
