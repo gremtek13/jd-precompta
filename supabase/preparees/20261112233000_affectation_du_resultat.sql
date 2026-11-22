@@ -1,7 +1,9 @@
--- AFF2 : L'AFFECTATION DU RÉSULTAT ET L'APPROBATION DES COMPTES, EN BASE (lignes 33 et 45) — PRÉPARÉE le 12/11/2026, PAS
+-- AFF2 : L'AFFECTATION DU RÉSULTAT ET L'APPROBATION DES COMPTES, EN BASE (lignes 33 et 45) — PRÉPARÉE le 12/11/2026, récrite
+-- le 22/11/2026 (la porte d'accès posée en clair, § 10 ; les rangs de la garde de tête ramenés aux six qu'elle insère), PAS
 -- APPLIQUÉE. À COLLER : ses fonctions retirent les lignes du brouillon qu'elles remplacent (le mot de la suppression retient
--- `apply_migration`). Rien de ce qui existe ne se détruit : deux tables, une colonne, des contraintes, trois déclencheurs,
--- huit fonctions et six rôles s'ajoutent ; aucune ligne, aucune colonne ni aucun objet ne se retire ni ne change.
+-- `apply_migration`). Rien de ce qui existe ne se détruit : deux tables, une colonne, des contraintes, cinq déclencheurs (ses
+-- trois gardes et la porte de ses deux tables), huit fonctions et six rôles s'ajoutent ; aucune ligne, aucune colonne ni aucun
+-- objet ne se retire ni ne change.
 --
 -- La conception : docs/conceptions/45-affectation-et-approbation.md, § 3 et § 4 (AFF-Q1 à AFF-Q13 à la recommandation, sauf
 -- AFF-Q13 : un exercice VALIDÉ seulement, la balance reprise viendra s'il le faut). Le module que la base redit :
@@ -22,7 +24,8 @@
 --   1. Six rôles au catalogue (`roles_comptables`), rangs 600 à 650 : 1061, 1063, 1068, 110, 119, 457 (§ 4.4). Le septième de
 --      la conception, les acomptes sur dividendes (1209), n'entre pas : sa racine commencerait celle du résultat (120), ce que
 --      le catalogue ne connaît nulle part (`regler_plan_du_dossier`, contrôle 8), et AFF-Q8 (B) ne l'écrit pas — son solde se
---      LIT par sa racine et refuse la décision. Le rang 660 lui reste.
+--      LIT par sa racine et refuse la décision. Le rang 660, qui lui restait, est celui d'`autres_impots` depuis le 19/11/2026
+--      (EXP58-Q6) : s'il entre un jour, un autre rang libre.
 --   2. `affectations_du_resultat` : une décision par version, IMMUABLE (§ 3.5) — l'approbation et l'affectation ensemble
 --      (AFF-Q1 (A)) —, qui se remplace par une version nouvelle ou se retire, sans jamais se supprimer ; ce qu'elle a LU (le
 --      résultat de l'exercice validé, la forme juridique et le capital du dossier — AFF-Q5 (A) —, les soldes des capitaux
@@ -38,7 +41,8 @@
 --      (le procès-verbal, une fois par version, AFF5).
 --   5. Le gel : une décision dont la date tombe dans un exercice validé, et son écriture, ne changent plus (23514).
 --   6. Si la double authentification exigée (`deux_facteurs_exiges`) est déjà en base, la policy restrictive `deux_facteurs`
---      sur les deux tables neuves.
+--      sur les deux tables neuves ; et la porte d'accès (`acces_avant_les_gardes`, en production depuis le 15/11/2026), posée
+--      en clair devant la garde de chacune (22/11/2026, § 10).
 --   7. L'exclusion envers les trois autres sources neuves du brouillon, préparées le même mois — l'ouverture éclatée par
 --      compte (MCB5g, `ouverture_compte_bancaire_id`), l'opération d'inventaire (INV2, `operation_inventaire_id`) et le stock
 --      de clôture (LIA2, `stock_de_cloture_id`) : une contrainte PAR PAIRE, au même nom et au même texte dans les deux
@@ -51,8 +55,17 @@
 -- (12/11/2026) : la fonction les refuse en premier, rien ne s'y écrit.
 --
 -- L'ORDRE. Après les migrations appliquées au 11/11/2026 ; indépendante des migrations préparées, sauf les trois sœurs qui
--- ajoutent une source au brouillon (ci-dessus, 7). Ses rangs au catalogue, 600 à 660, ne croisent ni ceux de l'inventaire
--- (360 à 410, et 420 à 470 pour INV4) ni ceux des stocks (500 à 590).
+-- ajoutent une source au brouillon (ci-dessus, 7). Ses rangs au catalogue, 600 à 650, ne croisent ni ceux de l'inventaire
+-- (360 à 410, et 420 à 470 pour INV4) ni ceux des stocks (500 à 590), ni le 660 d'`autres_impots` (EXP58-Q6, en production
+-- depuis le 19/11/2026).
+--
+-- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 22/11/2026 sur une réplique égale à la production, 249, la
+-- migration posée en simulation dans l'export : les fichiers et la base égaux) : `ecritures_brouillon` est une table du
+-- socle — supabase/schema/socle/1_tables_sans_migration.sql se régénère du catalogue (supabase/essais/socle.sql) et gagne,
+-- dans son `create table`, la colonne `affectation_id uuid`, sa clé étrangère (`ecritures_brouillon_affectation_id_fkey`) et
+-- la contrainte `ecritures_brouillon_affectation_sans_autre_source`, puis l'index `ecritures_brouillon_affectation` (83
+-- instructions, puis 84 : `a9f83f2d…`, puis `e710480c…`). L'inventaire compte 73 objets de plus (3 425, puis 3 498 :
+-- `c2df1569…`, puis `af6b3dd0…`).
 
 do $garde$
 declare
@@ -77,6 +90,11 @@ begin
                 where not exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_brouillon'::regclass
                                     and a.attname = c.n and not a.attisdropped)) then
     raise exception 'affectation_du_resultat : une table ou une colonne dont elle dépend manque : relire la base.';
+  end if;
+  -- La porte d'accès devant les gardes, en production depuis le 15/11/2026 (GARDES-Q1) : cette migration la pose en clair
+  -- sur ses deux tables (§ 10) ; sans sa fonction, elle ne s'applique pas.
+  if to_regprocedure('public.acces_avant_les_gardes()') is null then
+    raise exception 'affectation_du_resultat : la porte d''accès devant les gardes (acces_avant_les_gardes) manque : relire la base.';
   end if;
   -- Les sources du brouillon : sa contrainte « sans autre source » nomme les neuf d'hier, et les trois sources neuves des
   -- migrations sœurs (MCB5g, INV2, LIA2), présentes ou non, reçoivent leur exclusion au § 3. Toute autre clé étrangère du
@@ -104,12 +122,15 @@ begin
   loop
     raise exception 'La fonction % n''est plus celle que cette migration appelle : relire la migration contre la base avant de l''appliquer.', v_f;
   end loop;
-  -- Les rangs et les racines des six rôles sont libres, et aucune racine du catalogue n'en commence une autre.
-  if exists (select 1 from public.roles_comptables r where r.ordre between 600 and 660)
+  -- Les rangs et les racines des six rôles sont libres, et aucune racine du catalogue n'en commence une autre. Les rangs : les
+  -- six qu'elle insère, 600 à 650 — le 660, qu'elle laissait au septième rôle de la conception (§ 1), est celui
+  -- d'`autres_impots` depuis le 19/11/2026 (EXP58-Q6, en production) ; jugé de 600 à 660, ce contrôle refusait la production
+  -- (relevé le 22/11/2026 sur une réplique égale à la production).
+  if exists (select 1 from public.roles_comptables r where r.ordre between 600 and 650)
      or exists (select 1 from public.roles_comptables r cross join unnest(r.racines) as u(racine)
                 cross join unnest(array['1061', '1063', '1068', '110', '119', '457']) as n(racine)
                 where starts_with(u.racine, n.racine) or starts_with(n.racine, u.racine)) then
-    raise exception 'Le catalogue des rôles n''est plus celui que cette migration suppose (rangs 600 à 660, racines 1061, 1063, 1068, 110, 119, 457) : la relire.';
+    raise exception 'Le catalogue des rôles n''est plus celui que cette migration suppose (rangs 600 à 650, racines 1061, 1063, 1068, 110, 119, 457) : la relire.';
   end if;
 end
 $garde$;
@@ -950,29 +971,19 @@ begin
 end
 $deux_facteurs$;
 
--- ══ 10. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43), si elle est déjà en base ══
+-- ══ 10. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43, en production depuis le 15/11/2026) ══
 -- Les gardes `security definer` de cette migration sur ses tables neuves : `garder_affectations_du_resultat` et
 -- `garder_lignes_d_affectation` (celle du brouillon, `garder_ecriture_d_affectation`, est derrière la porte d'`ecritures_brouillon`).
 -- Une garde `security definer` tire avant l'expression WITH CHECK de la policy : sans la porte, elle répondrait à un
--- appelant que la policy refuse. Si la porte est en base, elle se pose ici, la première des déclencheurs BEFORE de la
--- table ; sinon, la porte la posera d'elle-même en s'appliquant (elle couvre toute table de cette liste qui porte déjà sa
--- garde). Les deux migrations se collent ainsi dans les deux ordres. L'essai : supabase/essais/accesAvantLesGardes.sql
--- (étape 32).
-do $porte$
-declare
-  v_table text;
-begin
-  if to_regprocedure('public.acces_avant_les_gardes()') is not null then
-    foreach v_table in array array['affectations_du_resultat', 'lignes_d_affectation'] loop
-      if exists (select 1 from pg_catalog.pg_class c where c.oid = ('public.' || v_table)::regclass and not (c.relrowsecurity and not c.relforcerowsecurity))
-         or exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and not t.tgisinternal
-                     and (t.tgname collate "C") < ('_acces_avant_les_gardes' collate "C")) then
-        raise exception 'La porte d''accès ne se pose pas sur public.% : sa RLS n''est pas active (ou forcée), ou un déclencheur tirerait avant elle.', v_table;
-      end if;
-      if not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and t.tgname = '_acces_avant_les_gardes') then
-        execute format('create trigger _acces_avant_les_gardes before insert or update on public.%I for each row execute function public.acces_avant_les_gardes()', v_table);
-      end if;
-    end loop;
-  end if;
-end
-$porte$;
+-- appelant que la policy refuse. La porte est en base depuis le 15/11/2026 (GARDES-Q1), et la garde de tête exige sa
+-- fonction : elle se pose ici EN CLAIR, comme GARDES-Q1 la pose sur chacune de ses tables — posée par un `execute` dans un
+-- bloc `do`, comme la préparée du 12/11/2026 le faisait sous la condition que sa fonction soit en base, elle échappait à
+-- l'inventaire des fichiers de l'export (supabase/essais/inventaire.py ne lit pas le corps d'un bloc), et le troisième
+-- contrôle de l'export aurait différé de deux objets après le collage (relevé le 22/11/2026 sur une réplique égale à la
+-- production, comme pour EL2). La première des déclencheurs BEFORE de chaque table : ils tirent dans l'ordre de leurs noms,
+-- et `_acces_avant_les_gardes` précède `affectations_du_resultat_garde` et `lignes_d_affectation_garde` ; la RLS des deux
+-- tables est active (§ 2). L'essai : supabase/essais/accesAvantLesGardes.sql (étapes 31 et 32).
+create trigger _acces_avant_les_gardes before insert or update on public.affectations_du_resultat
+  for each row execute function public.acces_avant_les_gardes();
+create trigger _acces_avant_les_gardes before insert or update on public.lignes_d_affectation
+  for each row execute function public.acces_avant_les_gardes();

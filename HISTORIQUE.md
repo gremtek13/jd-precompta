@@ -54599,3 +54599,19 @@ rend (`cotisDontEcrituresLibres`) seulement non nulle, et la Projection la dit ;
 Absentes, `toStrictEqual` sur le jeu de `totauxPourAnnee` ; le chiffre d'affaires d'EL4 inchangé ; « Ma simulation » inchangée.
 Tranchées le même jour : EL3-Q1 (A), EL5-Q1 (tel quel : la simulation ne compte pas les écritures libres et le dit),
 EL2-migration (A).
+
+### 22/11/2026 — LES PORTES POSÉES EN CLAIR DANS LES PRÉPARÉES (LIGNE 43), ET L'ESSAI 4C REMIS AU SCHÉMA
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 249, sa signature égale à la production, puis
+supprimée.) Chaque préparée appliquée (seule, après ses dépendances, puis en chaîne), les deux moitiés de l'inventaire
+comparées — la base, et les fichiers, la préparée en simulation, le socle rendu du catalogue : sept divergeaient de onze
+déclencheurs `_acces_avant_les_gardes`, posés par un `execute` dans un bloc sous une condition toujours vraie depuis le
+15/11/2026 (INAL5 trois, dont `memberships` et `exercices_valides` ; INV2, LIA2, EXD2, INV4, AFF2 deux, INV3). Posés en clair,
+la garde de tête exigeant la fonction (INV4, la porte d'INV2 ; INAL5, deux tables d'hier sans elle) ; le retour d'INAL5 la
+retire en clair. AFF2 refusait la production depuis 243 (le rang 660 d'`autres_impots`) : sa garde ramenée à 600-650.
+Chacune : inventaire égal (la chaîne, 4 061 des deux côtés), son essai sans faute, mutations comprises, accesAvantLesGardes
+juste, le retour rendant la signature. `creationsDansLesBlocs.test.ts` (export et préparées, 220 blocs) refuse toute création
+dans un bloc hors de quatre cas comptés, et voit les huit versions d'avant. Hors de l'inventaire, à décider avant le collage
+de `deux_facteurs_exiges` : sa boucle (107 restrictives, 125 avec les préparées, dans les deux ordres) et socle.sql, qui
+rend celles du socle sans `as restrictive`. L'essai `pieceDUnPaiementDansSonDossier` : 4c butait sur la contrainte du chemin
+(238) ; ses gestes déplacent aussi le chemin, 24 verdicts justes, deux mutations mordent, le banc du leurre SÛR.

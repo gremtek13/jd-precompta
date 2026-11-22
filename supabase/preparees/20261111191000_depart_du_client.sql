@@ -1,6 +1,7 @@
 -- INAL5 : LE DÉPART D'UN CLIENT — LES PAQUETS TÉLÉCHARGÉS, LA CONSERVATION DIX ANS, LA SUPPRESSION GARDÉE (ligne 44)
--- PRÉPARÉE, PAS APPLIQUÉE. À COLLER : « before delete » et « on delete cascade » nomment l'action de suppression ; rien ne
--- se détruit (deux tables, cinq fonctions et six déclencheurs s'ajoutent, aucune ligne ni aucun objet ne se retire).
+-- PRÉPARÉE le 11/11/2026, récrite le 22/11/2026 (la porte d'accès posée en clair, § 5), PAS APPLIQUÉE. À COLLER : « before
+-- delete » et « on delete cascade » nomment l'action de suppression ; rien ne se détruit (deux tables, cinq fonctions et neuf
+-- déclencheurs — ses six gardes et la porte de trois tables — s'ajoutent, aucune ligne ni aucun objet ne se retire).
 --
 -- La conception : HISTORIQUE.md, « 10/11/2026 — L'INALTÉRABILITÉ ET L'ARCHIVAGE À VALEUR PROBANTE : LA CONCEPTION (LIGNE
 -- 44) », « L'archivage des pièces » (le client qui part : l'obligation de conserver est la sienne ; le cabinet lui RESTITUE
@@ -41,7 +42,8 @@
 --   Les deux tables portent, comme toute table de public, la policy restrictive `deux_facteurs` de la double
 --   authentification exigée (C7, second temps ; `deux_facteurs_exiges`, préparée) : posée ici si celle-ci est déjà en
 --   base ; sinon, elle la posera elle-même en s'appliquant (sa boucle part de pg_class). Les deux se collent ainsi dans
---   les deux ordres.
+--   les deux ordres. La porte d'accès (`acces_avant_les_gardes`, en production depuis le 15/11/2026) se pose en clair devant
+--   ses gardes `security definer`, sur la table neuve et sur `memberships` et `exercices_valides` (§ 5, 22/11/2026).
 --
 -- CE QU'ELLE NE FAIT PAS. Elle ne vérifie pas le fichier téléchargé (la base ne le voit pas) ; elle n'horodate rien
 -- (INAL7) ; elle ne copie rien hors de Supabase (INAL6) ; elle ne retire aucun accès client d'elle-même ; elle ne
@@ -58,6 +60,11 @@
 -- un nouvel instantané, et voit ce que la transaction attendue a validé. « CREATE TRIGGER » : un déclencheur de ligne
 -- BEFORE DELETE se déclenche aussi pour une suppression en cascade ; un déclencheur qui rend NULL annule la ligne, une
 -- exception annule l'instruction.
+--
+-- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 22/11/2026 sur une réplique égale à la production, 249, la
+-- migration posée en simulation dans l'export : les fichiers et la base égaux) : le socle ne change pas (83 instructions,
+-- `a9f83f2d…` : il ne porte aucun déclencheur, et ceux de `pieces` et d'`ecritures_brouillon` sont dans ce fichier) ;
+-- l'inventaire compte 48 objets de plus (3 425, puis 3 473 : `c2df1569…`, puis `7e2de3d3…`).
 
 do $garde$
 begin
@@ -73,6 +80,26 @@ begin
   if to_regclass('public.paquets_d_archive_telecharges') is not null
      or to_regclass('public.conservations_des_dossiers') is not null then
     raise exception 'depart_du_client : déjà appliquée (une de ses tables existe).';
+  end if;
+  -- La porte d'accès devant les gardes, en production depuis le 15/11/2026 (GARDES-Q1) : cette migration la pose en clair
+  -- (§ 5) sur sa table neuve et sur les deux tables d'hier où elle ajoute une garde `security definer`. Sans sa fonction, ou
+  -- si l'une des deux la porte déjà (une autre migration l'y aurait posée : la relire), ou si sa RLS n'y est pas active, ou
+  -- forcée, ou si un de leurs déclencheurs tirerait avant elle (ils tirent dans l'ordre de leurs noms), elle ne s'applique pas.
+  if to_regprocedure('public.acces_avant_les_gardes()') is null then
+    raise exception 'depart_du_client : la porte d''accès devant les gardes (acces_avant_les_gardes) manque : relire la base.';
+  end if;
+  if exists (select 1 from pg_catalog.pg_trigger t
+              where t.tgrelid in ('public.memberships'::regclass, 'public.exercices_valides'::regclass)
+                and t.tgname = '_acces_avant_les_gardes') then
+    raise exception 'depart_du_client : memberships ou exercices_valides porte déjà la porte d''accès, que cette migration pose : la relire.';
+  end if;
+  if exists (select 1 from pg_catalog.pg_class c
+              where c.oid in ('public.memberships'::regclass, 'public.exercices_valides'::regclass)
+                and not (c.relrowsecurity and not c.relforcerowsecurity))
+     or exists (select 1 from pg_catalog.pg_trigger t
+                 where t.tgrelid in ('public.memberships'::regclass, 'public.exercices_valides'::regclass) and not t.tgisinternal
+                   and (t.tgname collate "C") < ('_acces_avant_les_gardes' collate "C")) then
+    raise exception 'depart_du_client : la porte d''accès ne se pose pas sur memberships ou exercices_valides : leur RLS n''est pas active (ou forcée), ou un déclencheur tirerait avant elle.';
   end if;
 end
 $garde$;
@@ -344,29 +371,24 @@ create trigger dossiers_depart_du_client
   before delete on public.dossiers
   for each row execute function public.garder_depart_du_dossier();
 
--- 5. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43), si elle est déjà en base.
+-- 5. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43, en production depuis le 15/11/2026).
 -- Les gardes `security definer` de cette migration : `garder_conservation_du_dossier` sur `conservations_des_dossiers`, et
 -- `garder_dossier_conserve` sur `memberships` et `exercices_valides` (sur `pieces` et `ecritures_brouillon`, la porte y est).
 -- Une garde `security definer` tire avant l'expression WITH CHECK de la policy : sans la porte, elle répondrait à un
--- appelant que la policy refuse. Si la porte est en base, elle se pose ici, la première des déclencheurs BEFORE de la
--- table ; sinon, la porte la posera d'elle-même en s'appliquant (elle couvre toute table de cette liste qui porte déjà sa
--- garde). Les deux migrations se collent ainsi dans les deux ordres. L'essai : supabase/essais/accesAvantLesGardes.sql
--- (étape 32).
-do $porte$
-declare
-  v_table text;
-begin
-  if to_regprocedure('public.acces_avant_les_gardes()') is not null then
-    foreach v_table in array array['conservations_des_dossiers', 'memberships', 'exercices_valides'] loop
-      if exists (select 1 from pg_catalog.pg_class c where c.oid = ('public.' || v_table)::regclass and not (c.relrowsecurity and not c.relforcerowsecurity))
-         or exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and not t.tgisinternal
-                     and (t.tgname collate "C") < ('_acces_avant_les_gardes' collate "C")) then
-        raise exception 'La porte d''accès ne se pose pas sur public.% : sa RLS n''est pas active (ou forcée), ou un déclencheur tirerait avant elle.', v_table;
-      end if;
-      if not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and t.tgname = '_acces_avant_les_gardes') then
-        execute format('create trigger _acces_avant_les_gardes before insert or update on public.%I for each row execute function public.acces_avant_les_gardes()', v_table);
-      end if;
-    end loop;
-  end if;
-end
-$porte$;
+-- appelant que la policy refuse. La porte est en base depuis le 15/11/2026 (GARDES-Q1), et la garde de tête exige sa
+-- fonction, et que `memberships` et `exercices_valides` ne la portent pas encore (aucune garde `security definer` n'y tire
+-- AVANT l'écriture aujourd'hui : celles de `memberships` tirent après) : elle se pose ici EN CLAIR sur les trois tables,
+-- comme GARDES-Q1 la pose sur chacune des siennes — posée par un `execute` dans un bloc `do`, comme la préparée du
+-- 11/11/2026 le faisait sous la condition que sa fonction soit en base, elle échappait à l'inventaire des fichiers de
+-- l'export (supabase/essais/inventaire.py ne lit pas le corps d'un bloc), et le troisième contrôle de l'export aurait
+-- différé de trois objets après le collage (relevé le 22/11/2026 sur une réplique égale à la production, comme pour EL2).
+-- La première des déclencheurs BEFORE de chaque table : ils tirent dans l'ordre de leurs noms, la garde de tête a vu
+-- qu'aucun de ceux de `memberships` et d'`exercices_valides` ne précède `_acces_avant_les_gardes` et que leur RLS est
+-- active, celle de la table neuve l'est (§ 2). Le retour la retire des deux tables d'hier, en clair. L'essai :
+-- supabase/essais/accesAvantLesGardes.sql (étapes 31 et 32).
+create trigger _acces_avant_les_gardes before insert or update on public.conservations_des_dossiers
+  for each row execute function public.acces_avant_les_gardes();
+create trigger _acces_avant_les_gardes before insert or update on public.memberships
+  for each row execute function public.acces_avant_les_gardes();
+create trigger _acces_avant_les_gardes before insert or update on public.exercices_valides
+  for each row execute function public.acces_avant_les_gardes();
