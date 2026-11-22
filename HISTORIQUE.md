@@ -54487,3 +54487,20 @@ illisible (le code du lecteur dit en mots), avec les pages lues, l'arrêt à une
 fragments comptés par page (0 = pas de couche de texte lisible) — les deux signes de la forme manquent alors toujours, un seul
 suffisant. Rien du contenu ne s'affiche (`outils/bordereau/jugementReception.mts`, gardé par
 `src/lib/bordereauReceptionOutilLocal.test.ts` sur le bordereau fictif et un PDF ordinaire, dans un processus à part).
+
+### 22/11/2026 — LES ESSAIS DE 241 À 249 ET `RLS.SQL` REJOUÉS SUR UNE RÉPLIQUE ÉGALE À LA PRODUCTION (249)
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 249, puis supprimée.) Les vingt-deux fichiers de
+`supabase/schema/` qui lui manquaient, de `arrivee_et_depart_des_acces` à `pieces_jointes_ecartees_bordereau`, appliqués dans
+l'ordre des versions, chacun dans sa transaction sous `proprietaire`, avec sa ligne d'historique (les empreintes égales à
+celles des fichiers). `signature.sql` égale à la production sur ses neuf familles (colonnes 1 290, contraintes 1 016,
+déclencheurs 201, fonctions 406, index 349, policies 227, rls 117). `rls.sql` entier, sous `postgres` puis sous `proprietaire`,
+la même sortie : 284 contrôles, 0 en faute ; 169 mutations sur 169 qui mordent ; AM, FM et la section P7 jugées, treize blocs EN
+ATTENTE, tous de préparées (AC, AF, DF, DM, DP, EX, ID, IV, LC, NF, PV, ST, TC). Douze essais sans faute : previsionsPubliees
+66, modeDeReglementDesMouvements 28, cumulReprisDesBiens 34, autresImpotsDesCotisations 27, optionsDesCabinets 12,
+optionsDesCabinetsEnCours 4 (sous le super-utilisateur, que son en-tête exige), plafondsHorsDuClient 8,
+paiementsAssuranceMaladie 66, associationPaiementsAssuranceMaladie 42 et sa suppression 6, facturesAssuranceMaladie 72 et sa
+suppression 9. `piecesJointesEcartees.sql` passait sans juger la raison `bordereau` : son étape 6 l'admet désormais (cinq
+raisons), son étape 7b la refuse sans poids comme le format et la taille ; 81 verdicts sans faute, les deux mutations (la
+contrainte d'avant 249, un poids inconnu admis au bordereau) mordent, le banc du leurre le dit SÛR. Ne prouve pas la production
+elle-même : ses données, ses comptes d'essai, ni un essai rejoué par `execute_sql`.
