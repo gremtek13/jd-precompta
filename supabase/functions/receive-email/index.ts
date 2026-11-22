@@ -1381,12 +1381,14 @@ export async function lireLeTexteDUnPdf(
 // refuser au dépôt dans le navigateur, écarter à la réception par e-mail). Un bordereau porte des noms de patients, et
 // l'application n'est pas hébergée chez un hébergeur de données de santé (RGPD.md § 8.7) : une pièce jointe PDF qui en a la
 // forme (`porteLaFormeDUnBordereau`, la règle du navigateur, copiée) ne se dépose jamais — ni au stockage, ni chez Textract —, et
-// se dit au cabinet sous la raison `bordereau`, que la migration préparée `pieces_jointes_ecartees_bordereau` ajoute. Le texte
-// se lit ici, sans pdf.js (`lireLeTexteDUnPdf`, copié) : ce qui ne se lit pas (chiffré, filtre inconnu, au-delà des bornes) ne
-// se reconnaît pas, et part comme avant (BOR6-Q1 (A)).
+// se dit au cabinet sous la raison `bordereau`, que la migration `pieces_jointes_ecartees_bordereau` ajoute (en production depuis
+// le 21/11/2026). Le texte se lit ici, sans pdf.js (`lireLeTexteDUnPdf`, copié) : ce qui ne se lit pas (chiffré, filtre inconnu,
+// au-delà des bornes) ne se reconnaît pas, et part comme avant (BOR6-Q1 (A)).
 //
-// BAISSÉE tant que la migration n'est pas en production : la session la lève au déploiement, après le collage.
-const BORDEREAUX_ECARTES_A_LA_RECEPTION = false
+// LEVÉE le 22/11/2026, après l'essai d'un vrai bordereau par le cabinet (BOR6R-Q1). La baisser rend la réception d'avant : tout
+// PDF déposé sans lecture de son texte (l'état baissé reste éprouvé par bordereauxALaReceptionHttp.test.ts). Elle se baisse
+// AVANT tout retour de la migration (supabase/preparees/retour/…_retour_pieces_jointes_ecartees_bordereau.sql).
+const BORDEREAUX_ECARTES_A_LA_RECEPTION = true
 
 // LES BORNES DE LA LECTURE. Une Edge Function a 2 s de calcul par requête : la lecture de TOUS les PDF d'un e-mail tient dans
 // une même seconde de durée (mesurée par l'horloge, qui ne compte pas moins que le calcul), et chaque PDF dans 48 Mio d'octets

@@ -41,8 +41,8 @@ export const ECARTEES_DU_CLIENT_EXPORTEES: boolean = true
  */
 export const JOURS_DE_LA_LECTURE_DU_CLIENT = 90
 
-// `bordereau` (BOR6) : une ligne de cette raison faisait rejeter toute la lecture ; elle se lit et se dit. Tant que la base ne
-// l'admet pas (la migration préparée `pieces_jointes_ecartees_bordereau`), aucune ne vient.
+// `bordereau` (BOR6) : une ligne de cette raison faisait rejeter toute la lecture ; elle se lit et se dit. La base l'admet
+// depuis le 21/11/2026 (`pieces_jointes_ecartees_bordereau`), et receive-email l'écrit depuis le 22/11/2026.
 const RAISONS = new Set<string>(['format', 'taille', 'depot', 'vide', 'bordereau'])
 
 /** Une date civile AAAA-MM-JJ qui existe au calendrier (ni un 31 juin, ni un mois 13). */
@@ -203,11 +203,12 @@ export const ACCUEIL_VERIFICATION_IMPOSSIBLE =
 /**
  * La phrase de l'onglet Accès sur la collecte par e-mail (S229-Q5) : ce qui arrive, ce qui n'arrive pas et où le cabinet
  * le voit — et, une fois la lecture du client en base, ce que la base en ouvre à la SESSION du client (la règle de cet
- * onglet : il dit ce que la base ouvre, écran ou non). Les quatre raisons d'une pièce jointe écartée y sont nommées.
+ * onglet : il dit ce que la base ouvre, écran ou non). Les cinq raisons d'une pièce jointe écartée y sont nommées, le
+ * bordereau de télétransmission aux mots neutres de `phraseDeLaRaison` (BOR6, la réception l'écarte depuis le 22/11/2026).
  */
 export function ceQueDitLaCollecte(ecarteesDuClientExportees: boolean): string {
   const arrivent = `Les pièces jointes reçues — en PDF, JPEG, PNG ou CSV, de ${poids(TAILLE_MAX_PIECE)} au plus chacune — arrivent directement en pièces à valider.`
-  const ecartees = 'Celle qui n’est pas déposée — d’un autre format, plus lourde, arrivée vide, ou dont le dépôt a échoué — se dit dans l’onglet Justificatifs, sans son nom'
+  const ecartees = 'Celle qui n’est pas déposée — d’un autre format, plus lourde, arrivée vide, dont le dépôt a échoué, ou qui a la forme d’un bordereau de télétransmission, qui porte des noms de patients — se dit dans l’onglet Justificatifs, sans son nom'
   return ecarteesDuClientExportees
     ? `${arrivent} ${ecartees} ; tout accès client du dossier, avec ou sans case, la voit aussi dans « Mes pièces » pendant ${JOURS_DE_LA_LECTURE_DU_CLIENT} jours : le jour, la raison et le poids, jamais le nom.`
     : `${arrivent} ${ecartees}.`

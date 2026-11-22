@@ -54550,3 +54550,13 @@ moteurs tous ses paramètres (défaut planté : il mord). « Ma simulation » ne
 et avertissements sous chaque ligne, le poste proposé au clic, la règle de la trésorerie proposée, la confirmation qui nomme
 lignes, totaux et effet sur la 2035, le retrait, l'état CSV et PDF ; deux verrous `useRef`. Reste : la pièce citée choisie à
 l'écran, EL8 (les tests qui omettent le paramètre, la levée), EL5-Q1.
+
+### 22/11/2026 — BOR6R : LA CONSTANTE DE LA RÉCEPTION LEVÉE, LE BORDEREAU ÉCARTÉ PAR E-MAIL
+
+L'essai du cabinet (BOR6R-Q1, `outils/bordereau/reception.mjs`, un vrai bordereau hors du dépôt) : reconnu à la première page, en
+21 ms. `BORDEREAUX_ECARTES_A_LA_RECEPTION` est levée dans `receive-email` ; la reconnaissance et les bornes sont inchangées. Les
+gardes basculent : `bordereauxALaReceptionHttp.test.ts` joue les six scénarios sur la source SERVIE et l'état d'avant sur la même,
+baissée en mémoire (la mutation inverse), chacun faisant tomber le scénario de l'autre ; `piecesJointesEcartees.test.ts` prend la
+contrainte de 249 pour celle en vigueur, cinq raisons, autant que la fonction en écrit. La phrase de l'onglet Accès nomme la
+cinquième raison aux mots de `phraseDeLaRaison` ; RGPD.md § 8.7 dit l'écart fait (NOE7 reste). Le retour de la migration demande
+d'abord la constante baissée et la fonction redéployée. Reste : le déploiement de `receive-email`, puis un e-mail d'essai.
