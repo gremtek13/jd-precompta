@@ -12,7 +12,10 @@ import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 // `security definer` (BEFORE, sur l'insertion ou la mise à jour) sur une table que la porte ne couvre pas d'office (ses 32
 // tables, et `dossiers`, écartée pour sa raison) y pose AUSSI la porte. LA PORTE EN BASE (l'état d'aujourd'hui) : posée
 // directement (`create trigger _acces_avant_les_gardes …`), ou sous la condition que sa fonction soit en base — la forme des
-// sept migrations préparées avant elle, qui s'appliquent ainsi avant ou après elle. LA PORTE PRÉPARÉE (l'état d'avant le
+// sept migrations préparées avant elle, qui s'appliquent ainsi avant ou après elle —, ou exigée par sa garde de tête sur une
+// table qu'une migration dont elle dépend couvre en clair (INV4 sur `operations_inventaire`, qu'INV2 couvre). Depuis le
+// 22/11/2026, les préparées la posent EN CLAIR (creationsDansLesBlocs.test.ts : une pose dans un bloc échappait à
+// l'inventaire de l'export). LA PORTE PRÉPARÉE (l'état d'avant le
 // 15/11/2026, que les défauts plantés jouent encore) : sous la condition seulement, et la liste des tables que la porte
 // couvre si leur garde est déjà là (`c_preparees`, le bloc `$preparees$`, et son retour) nomme cette table. La base, elle, se
 // juge par l'étape 32 de supabase/essais/accesAvantLesGardes.sql, sur une réplique.
@@ -71,6 +74,16 @@ export function tablesCouvertesDirectement(texte: string): Set<string> {
   return new Set([...sansCommentaires(texte).matchAll(motif)].map((m) => m[1].toLowerCase()))
 }
 
+/** Les tables dont un fichier EXIGE la porte en tête : un bloc `do` qui lève si `_acces_avant_les_gardes` manque sur la table,
+ *  où une migration dont il dépend l'a posée en clair (INV4 sur `operations_inventaire`, qu'INV2 couvre : deux poses du même
+ *  déclencheur se heurteraient). Elle suppose la porte en base, comme la pose directe ; et une autre migration doit la poser. */
+export function tablesDontLaPorteEstExigee(texte: string): Set<string> {
+  const motif = /if\s+not\s+exists\s*\(\s*select\s+1\s+from\s+(?:pg_catalog\.)?pg_trigger\s+t\s+where\s+t\.tgrelid\s*=\s*'public\.(\w+)'::regclass\s+and\s+t\.tgname\s*=\s*'_acces_avant_les_gardes'[^)]*\)\s*then\s+raise\s+exception\b/gi
+  const exigees = new Set<string>()
+  for (const { corps } of blocsDo(sansCommentaires(texte))) for (const m of corps.matchAll(motif)) exigees.add(m[1].toLowerCase())
+  return exigees
+}
+
 /** Les listes de la porte : ses 32 tables (`c_tables`), et les tables couvertes si leur garde est là (`c_preparees`, `$preparees$`). */
 export function listesDeLaPorte(porte: string): { tables: string[]; preparees: string[]; blocPreparees: string[] } {
   const liste = (re: RegExp) => [...(porte.match(re)?.[1] ?? '').matchAll(/'(\w+)'/g)].map((l) => l[1]).sort()
@@ -94,6 +107,13 @@ export function fautesDeLaPorte(fichiers: Fichier[], porte: { texte: string; pre
     const couvertes = tablesCouvertesSousCondition(f.texte)
     // La porte en base : sa pose directe vaut la pose sous condition. Préparée, elle échouerait (la fonction n'existe pas).
     if (!porte.preparee) for (const t of tablesCouvertesDirectement(f.texte)) couvertes.add(t)
+    // La porte en base, exigée en tête sur une table qu'une AUTRE migration couvre en clair : couverte aussi.
+    if (!porte.preparee) {
+      for (const t of tablesDontLaPorteEstExigee(f.texte)) {
+        if (fichiers.some((g) => g !== f && tablesCouvertesDirectement(g.texte).has(t))) couvertes.add(t)
+        else fautes.push(`${f.chemin} : la porte de ${t} exigée en tête, qu'aucune autre migration ne pose en clair`)
+      }
+    }
     for (const t of tablesGardees(f.texte, sd)) {
       if (t === 'dossiers' || tables.includes(t)) continue
       if (!couvertes.has(t)) {
@@ -184,6 +204,32 @@ $porte$;`
       expect(jugerEnBase(GARDE + '\n' + DIRECTE('autre'))).toHaveLength(1)
       // Une pose commentée n'est pas une pose.
       expect(jugerEnBase(GARDE + '\n-- ' + DIRECTE('neuve'))).toHaveLength(1)
+    })
+    // La porte exigée en tête (INV4 sur `operations_inventaire`, qu'INV2 couvre en clair) : la forme de la garde de tête.
+    const EXIGEE = (table: string) => `do $garde$
+begin
+  if not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = 'public.${table}'::regclass
+                   and t.tgname = '_acces_avant_les_gardes' and not t.tgisinternal) then
+    raise exception 'la porte manque';
+  end if;
+end
+$garde$;`
+    it('la porte en base, exigée en tête sur une table qu’une autre migration couvre en clair : aucune faute ; que rien ne pose, une faute', () => {
+      const pose = { chemin: 'supabase/preparees/w.sql', texte: DIRECTE('neuve') }
+      const exige = { chemin: 'supabase/preparees/x.sql', texte: GARDE + '\n' + EXIGEE('neuve') }
+      expect(fautesDeLaPorte([pose, exige], { texte: PORTE_PLANTEE, preparee: false })).toEqual([])
+      expect(fautesDeLaPorte([exige], { texte: PORTE_PLANTEE, preparee: false })).toEqual([
+        "supabase/preparees/x.sql : la porte de neuve exigée en tête, qu'aucune autre migration ne pose en clair",
+        'supabase/preparees/x.sql : la garde security definer de neuve sans la porte posée (directement ou sous condition)',
+      ])
+      // Exigée sur une autre table, ou commentée : la table de la garde reste sans porte.
+      expect(fautesDeLaPorte([pose, { ...exige, texte: GARDE + '\n' + EXIGEE('autre') }], { texte: PORTE_PLANTEE, preparee: false }))
+        .toContain('supabase/preparees/x.sql : la garde security definer de neuve sans la porte posée (directement ou sous condition)')
+      expect(fautesDeLaPorte([pose, { ...exige, texte: GARDE + '\n' + EXIGEE('neuve').replace(/^/gm, '-- ') }], { texte: PORTE_PLANTEE, preparee: false }))
+        .toEqual(['supabase/preparees/x.sql : la garde security definer de neuve sans la porte posée (directement ou sous condition)'])
+      // La porte préparée : l'exigence ne vaut rien (la fonction n'existe pas encore).
+      expect(fautesDeLaPorte([pose, exige], { texte: PORTE_PLANTEE, preparee: true }))
+        .toContain('supabase/preparees/x.sql : la garde security definer de neuve sans la porte posée sous condition')
     })
     it('la porte préparée : sa pose directe ne vaut rien (la fonction n’existe pas encore) — une faute', () => {
       expect(juger(GARDE + '\n' + DIRECTE('neuve'))).toEqual(['supabase/preparees/x.sql : la garde security definer de neuve sans la porte posée sous condition'])

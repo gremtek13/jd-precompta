@@ -251,6 +251,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Toute table neuve qui porte une garde `security definer` porte aussi la porte `_acces_avant_les_gardes`** (en base depuis le
   15/11/2026, GARDES-Q1 : posée directement, ou sous condition que sa fonction existe), éprouvée par l'étape 32 de `accesAvantLesGardes.sql`
   et, pour les préparées, par `porteDevantLesGardes.test.ts` → « LA PORTE COUVRE LES GARDES DES MIGRATIONS PRÉPARÉES ».
+  **Posée EN CLAIR, jamais dans un bloc `do`** (22/11/2026), que `inventaire.py` ne lit pas : la garde de tête exige sa fonction ;
+  `creationsDansLesBlocs.test.ts` refuse toute création dans un bloc, hors de cas nommés et comptés ; la boucle de
+  `deux_facteurs_exiges` reste hors de l'inventaire, à décider avant son collage → « LES PORTES POSÉES EN CLAIR DANS LES PRÉPARÉES ».
 - **Un prédicat de policy ne doit JAMAIS pouvoir être vrai sans session** : sans `to`, une policy vise `public`, donc
   `anon` ; toute nouvelle porte `to authenticated` → « Une policy sans clause `to` s'applique à `public` ».
 - **Les policies se REJOUENT** (`rls.sql`) : quatre profils, boucle sur `pg_class`, écritures annulées par

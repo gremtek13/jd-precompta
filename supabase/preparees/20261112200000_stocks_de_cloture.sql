@@ -1,4 +1,5 @@
--- LIA2 : LES STOCKS DE CLÔTURE (ligne 36 de la feuille de route) — PRÉPARÉE le 12/11/2026, PAS APPLIQUÉE.
+-- LIA2 : LES STOCKS DE CLÔTURE (ligne 36 de la feuille de route) — PRÉPARÉE le 12/11/2026, récrite le 22/11/2026 (la porte
+-- d'accès posée en clair, § 6), PAS APPLIQUÉE.
 -- La conception : docs/conceptions/37-liasse-2033.md, § 4.2 et § 4.5 à 4.9, § 5 ; LIA-Q2 et LIA-Q3, non tranchées, suivies
 -- à leur recommandation. Le récit : HISTORIQUE.md, « 12/11/2026 — LIA2 : LES STOCKS DE CLÔTURE, EN MODULE ET EN BASE
 -- (LIGNE 36) ». L'essai : supabase/essais/stocks.sql (réplique seulement) ; puis rls.sql (le bloc ST). Le retour :
@@ -6,8 +7,9 @@
 -- (`STOCKS_PREVUS`, baissé), qui compose ce que la base recompose ici.
 --
 -- Rien ne se détruit : une table, une colonne nullable, deux contraintes sur des lignes qui n'existent pas encore, dix rôles
--- au catalogue, deux gardes et deux fonctions s'ajoutent. Elle se COLLE (la fonction qui réécrit un stock retire d'abord
--- ses écritures : le mot de la suppression retient l'outil), avec sa ligne d'historique.
+-- au catalogue, deux gardes, deux fonctions et la porte d'accès devant la garde de sa table (§ 6) s'ajoutent. Elle se COLLE
+-- (la fonction qui réécrit un stock retire d'abord ses écritures : le mot de la suppression retient l'outil), avec sa ligne
+-- d'historique.
 --
 -- CE QU'ELLE FAIT.
 -- 1. `stocks_de_cloture` : par dossier, exercice et compte de stock, la valeur HORS TAXES de l'inventaire physique au 31
@@ -47,6 +49,14 @@
 -- d'entrée des stocks), art. 946-60 et 947-71 (fonctionnement du 603 et du 713) ; CGI, art. 38, 3 (évaluation au prix de
 -- revient ou au cours du jour s'il est inférieur) ; notice 2033-NOT-SD (cases 050, 060, 222, 236 et 240, valeurs hors
 -- taxes).
+--
+-- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 22/11/2026 sur une réplique égale à la production, 249, la
+-- migration posée en simulation dans l'export : les fichiers et la base égaux) : `ecritures_brouillon` est une table du
+-- socle — supabase/schema/socle/1_tables_sans_migration.sql se régénère du catalogue (supabase/essais/socle.sql) et gagne,
+-- dans son `create table`, la colonne `stock_de_cloture_id uuid`, sa clé étrangère (`ecritures_brouillon_stock_de_cloture_id_fkey`)
+-- et les contraintes `ecritures_brouillon_stock_au_31_decembre` et `ecritures_brouillon_stock_sans_autre_source`, puis
+-- l'index `ecritures_brouillon_stock_de_cloture` (83 instructions, puis 84 : `a9f83f2d…`, puis `e88853e8…`). L'inventaire
+-- compte 37 objets de plus (3 425, puis 3 462 : `c2df1569…`, puis `aca981da…`).
 
 do $garde$
 declare
@@ -65,6 +75,11 @@ begin
      or to_regprocedure('public.cle_validation(uuid)') is null or to_regprocedure('public.exercice_fige(uuid, integer)') is null
      or to_regprocedure('public.is_super_admin()') is null then
     raise exception 'stocks_de_cloture : une table ou une fonction dont elle dépend manque.';
+  end if;
+  -- La porte d'accès devant les gardes, en production depuis le 15/11/2026 (GARDES-Q1) : cette migration la pose en clair
+  -- sur sa table (§ 6) ; sans sa fonction, elle ne s'applique pas.
+  if to_regprocedure('public.acces_avant_les_gardes()') is null then
+    raise exception 'stocks_de_cloture : la porte d''accès devant les gardes (acces_avant_les_gardes) manque : relire la base.';
   end if;
   -- Les prédicats qu'elle appelle, à l'empreinte de leur corps (les retours chariot écartés).
   for v_corps in select x.f from (values
@@ -528,29 +543,17 @@ begin
 end
 $deux_facteurs$;
 
--- ── 6. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43), si elle est déjà en base ─────────────────
+-- ── 6. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43, en production depuis le 15/11/2026) ──────
 -- La garde `security definer` de cette migration sur sa table neuve : `garder_stock_de_cloture` (celle du brouillon,
--- `garder_ecriture_de_stock`, est derrière la porte d'`ecritures_brouillon`).
--- Une garde `security definer` tire avant l'expression WITH CHECK de la policy : sans la porte, elle répondrait à un
--- appelant que la policy refuse. Si la porte est en base, elle se pose ici, la première des déclencheurs BEFORE de la
--- table ; sinon, la porte la posera d'elle-même en s'appliquant (elle couvre toute table de cette liste qui porte déjà sa
--- garde). Les deux migrations se collent ainsi dans les deux ordres. L'essai : supabase/essais/accesAvantLesGardes.sql
--- (étape 32).
-do $porte$
-declare
-  v_table text;
-begin
-  if to_regprocedure('public.acces_avant_les_gardes()') is not null then
-    foreach v_table in array array['stocks_de_cloture'] loop
-      if exists (select 1 from pg_catalog.pg_class c where c.oid = ('public.' || v_table)::regclass and not (c.relrowsecurity and not c.relforcerowsecurity))
-         or exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and not t.tgisinternal
-                     and (t.tgname collate "C") < ('_acces_avant_les_gardes' collate "C")) then
-        raise exception 'La porte d''accès ne se pose pas sur public.% : sa RLS n''est pas active (ou forcée), ou un déclencheur tirerait avant elle.', v_table;
-      end if;
-      if not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and t.tgname = '_acces_avant_les_gardes') then
-        execute format('create trigger _acces_avant_les_gardes before insert or update on public.%I for each row execute function public.acces_avant_les_gardes()', v_table);
-      end if;
-    end loop;
-  end if;
-end
-$porte$;
+-- `garder_ecriture_de_stock`, est derrière la porte d'`ecritures_brouillon`). Une garde `security definer` tire avant
+-- l'expression WITH CHECK de la policy : sans la porte, elle répondrait à un appelant que la policy refuse. La porte est en
+-- base depuis le 15/11/2026 (GARDES-Q1), et la garde de tête exige sa fonction : elle se pose ici EN CLAIR, comme GARDES-Q1
+-- la pose sur chacune de ses tables — posée par un `execute` dans un bloc `do`, comme la préparée du 12/11/2026 le faisait
+-- sous la condition que sa fonction soit en base, elle échappait à l'inventaire des fichiers de l'export
+-- (supabase/essais/inventaire.py ne lit pas le corps d'un bloc), et le troisième contrôle de l'export aurait différé d'un
+-- objet après le collage (relevé le 22/11/2026 sur une réplique égale à la production, comme pour EL2). La première des
+-- déclencheurs BEFORE de la table : ils tirent dans l'ordre de leurs noms, et `_acces_avant_les_gardes` précède
+-- `stocks_de_cloture_par_ses_fonctions` ; la RLS de la table est active (§ 2). L'essai :
+-- supabase/essais/accesAvantLesGardes.sql (étapes 31 et 32).
+create trigger _acces_avant_les_gardes before insert or update on public.stocks_de_cloture
+  for each row execute function public.acces_avant_les_gardes();

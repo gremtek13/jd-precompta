@@ -1,4 +1,5 @@
--- LES EXERCICES DU DOSSIER (ligne 42, lot EXD2 ; PRÉPARÉE le 12/11/2026, pas appliquée). La conception :
+-- LES EXERCICES DU DOSSIER (ligne 42, lot EXD2 ; PRÉPARÉE le 12/11/2026, récrite le 22/11/2026 — la porte d'accès posée en
+-- clair, à la fin —, pas appliquée). La conception :
 -- docs/conceptions/42-exercices-decales.md (§ 3 et § 4.1-4.2) ; le jumeau pur : src/lib/exercices.ts (EXD1) ; le récit :
 -- HISTORIQUE.md, « 12/11/2026 — EXD2 : LES EXERCICES DU DOSSIER, EN BASE (LIGNE 42) (PRÉPARÉE, PAS APPLIQUÉE) ». Les
 -- questions EXD-Q1 à Q8 ne sont pas tranchées : la migration suit leurs recommandations — le millésime de clôture, unique
@@ -37,12 +38,18 @@
 --   6. Un dossier qui a déclaré ses exercices ne repasse pas en trésorerie (`dossiers_exercices_retiennent_l_engagement`).
 --   7. Si la migration de la double authentification (`deux_facteurs_exiges`) est déjà en base, la policy restrictive
 --      `deux_facteurs` sur la table neuve, que le bloc DF de rls.sql exige d'une table créée après elle.
+--   8. La porte d'accès (`acces_avant_les_gardes`, en production depuis le 15/11/2026), posée en clair devant la garde de
+--      la table (22/11/2026) ; la garde de tête exige sa fonction.
 -- Les droits hors RLS : la table naît sous les défauts de `droits_hors_rls` (SELECT, INSERT, UPDATE, DELETE seuls), que le
 -- bloc HR de rls.sql juge.
 --
 -- CE QUE LE MODULE A ET QUE LA BASE N'A PAS : la date inexistante (le type `date` la refuse à la lecture du paramètre) ;
 -- ici, une date hors des années 1000 à 9999 se refuse sous les mêmes mots. CE QUE LA BASE A ET QUE LE MODULE N'A PAS : la
 -- période figée, l'accès, l'appel mal formé, la clôture lue qui a changé (40001).
+--
+-- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 22/11/2026 sur une réplique égale à la production, 249, la
+-- migration posée en simulation dans l'export : les fichiers et la base égaux) : le socle ne change pas (83 instructions,
+-- `a9f83f2d…`) ; l'inventaire compte 29 objets de plus (3 425, puis 3 454 : `c2df1569…`, puis `1b929520…`).
 
 do $garde$
 begin
@@ -57,6 +64,11 @@ begin
      or to_regprocedure('public.exercice_fige(uuid, integer)') is null
      or to_regprocedure('public.admin_du_dossier(uuid)') is null or to_regprocedure('public.is_super_admin()') is null then
     raise exception 'Le gel de la validation n''est pas celui que suppose cette migration : la relire avant de l''appliquer.';
+  end if;
+  -- La porte d'accès devant les gardes, en production depuis le 15/11/2026 (GARDES-Q1) : cette migration la pose en clair
+  -- sur sa table (à la fin) ; sans sa fonction, elle ne s'applique pas.
+  if to_regprocedure('public.acces_avant_les_gardes()') is null then
+    raise exception 'exercices_du_dossier : la porte d''accès devant les gardes (acces_avant_les_gardes) manque : relire la base.';
   end if;
 end
 $garde$;
@@ -508,30 +520,17 @@ begin
 end
 $deux_facteurs$;
 
--- La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43), si elle est déjà en base.
+-- La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43, en production depuis le 15/11/2026).
 -- La garde `security definer` de cette migration sur sa table neuve : `garder_exercices` (celle de `dossiers`,
 -- `garder_l_engagement_des_exercices`, ne tire qu'à la mise à jour d'une ligne que la policy de `dossiers` laisse voir :
--- la porte n'y est pas, pour la raison qu'elle dit).
--- Une garde `security definer` tire avant l'expression WITH CHECK de la policy : sans la porte, elle répondrait à un
--- appelant que la policy refuse. Si la porte est en base, elle se pose ici, la première des déclencheurs BEFORE de la
--- table ; sinon, la porte la posera d'elle-même en s'appliquant (elle couvre toute table de cette liste qui porte déjà sa
--- garde). Les deux migrations se collent ainsi dans les deux ordres. L'essai : supabase/essais/accesAvantLesGardes.sql
--- (étape 32).
-do $porte$
-declare
-  v_table text;
-begin
-  if to_regprocedure('public.acces_avant_les_gardes()') is not null then
-    foreach v_table in array array['exercices'] loop
-      if exists (select 1 from pg_catalog.pg_class c where c.oid = ('public.' || v_table)::regclass and not (c.relrowsecurity and not c.relforcerowsecurity))
-         or exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and not t.tgisinternal
-                     and (t.tgname collate "C") < ('_acces_avant_les_gardes' collate "C")) then
-        raise exception 'La porte d''accès ne se pose pas sur public.% : sa RLS n''est pas active (ou forcée), ou un déclencheur tirerait avant elle.', v_table;
-      end if;
-      if not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and t.tgname = '_acces_avant_les_gardes') then
-        execute format('create trigger _acces_avant_les_gardes before insert or update on public.%I for each row execute function public.acces_avant_les_gardes()', v_table);
-      end if;
-    end loop;
-  end if;
-end
-$porte$;
+-- la porte n'y est pas, pour la raison qu'elle dit). Une garde `security definer` tire avant l'expression WITH CHECK de la
+-- policy : sans la porte, elle répondrait à un appelant que la policy refuse. La porte est en base depuis le 15/11/2026
+-- (GARDES-Q1), et la garde de tête exige sa fonction : elle se pose ici EN CLAIR, comme GARDES-Q1 la pose sur chacune de
+-- ses tables — posée par un `execute` dans un bloc `do`, comme la préparée du 12/11/2026 le faisait sous la condition que
+-- sa fonction soit en base, elle échappait à l'inventaire des fichiers de l'export (supabase/essais/inventaire.py ne lit
+-- pas le corps d'un bloc), et le troisième contrôle de l'export aurait différé d'un objet après le collage (relevé le
+-- 22/11/2026 sur une réplique égale à la production, comme pour EL2). La première des déclencheurs BEFORE de la table : ils
+-- tirent dans l'ordre de leurs noms, et `_acces_avant_les_gardes` précède `exercices_garde` ; la RLS de la table est
+-- active. L'essai : supabase/essais/accesAvantLesGardes.sql (étapes 31 et 32).
+create trigger _acces_avant_les_gardes before insert or update on public.exercices
+  for each row execute function public.acces_avant_les_gardes();

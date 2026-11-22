@@ -67,8 +67,15 @@ describe('le drapeau et la migration', () => {
     const crees = [...MIGRATION.matchAll(/create (table|function|trigger) public\.([a-z_]+)|create trigger ([a-z_]+)/gi)]
       .map(([, , nom, trigger]) => nom ?? trigger).sort()
     const retires = [...RETOUR.matchAll(/drop (?:table|function|trigger) (?:public\.)?([a-z_]+)/gi)].map(([, nom]) => nom).sort()
-    // Le déclencheur de la table des conservations part avec elle (ses policies et son index aussi).
-    expect(retires).toEqual(crees.filter((nom) => nom !== 'conservations_des_dossiers_gardes'))
+    // Les deux déclencheurs de la table des conservations partent avec elle (ses policies et son index aussi) : sa garde, et
+    // la porte d'accès qu'elle y pose ; les deux autres portes, sur `memberships` et `exercices_valides`, se retirent en clair.
+    const attendus = [...crees]
+    for (const avecLaTable of ['conservations_des_dossiers_gardes', '_acces_avant_les_gardes']) attendus.splice(attendus.indexOf(avecLaTable), 1)
+    expect(retires).toEqual(attendus)
+    const portes = (texte: string, verbe: 'create' | 'drop') =>
+      [...texte.matchAll(new RegExp(`${verbe} trigger _acces_avant_les_gardes (?:before insert or update )?on public\\.([a-z_]+)`, 'g'))].map((m) => m[1]).sort()
+    expect(portes(MIGRATION, 'create')).toEqual(['conservations_des_dossiers', 'exercices_valides', 'memberships'])
+    expect(portes(RETOUR, 'drop')).toEqual(['exercices_valides', 'memberships'])
   })
 
   it('l’essai et rls.sql attendent les mots du module', () => {

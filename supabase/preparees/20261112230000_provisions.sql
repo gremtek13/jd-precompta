@@ -1,7 +1,8 @@
--- INV4 : LES PROVISIONS, EN BASE (ligne 35) — PRÉPARÉE le 12/11/2026, PAS APPLIQUÉE. À COLLER : l'évaluation retire les lignes
+-- INV4 : LES PROVISIONS, EN BASE (ligne 35) — PRÉPARÉE le 12/11/2026, récrite le 22/11/2026 (la porte d'accès posée en clair,
+-- § 10), PAS APPLIQUÉE. À COLLER : l'évaluation retire les lignes
 -- qu'elle remplace et `retirer_provision` retire une provision (le mot de la suppression retient `apply_migration`). Rien de
--- ce qui existe ne se détruit : une table, une colonne, deux contraintes, deux déclencheurs, six fonctions et six rôles
--- s'ajoutent ; aucune ligne, aucune colonne ni aucun objet ne se retire ni ne change.
+-- ce qui existe ne se détruit : une table, une colonne, deux contraintes, trois déclencheurs (ses deux gardes et la porte de
+-- sa table), six fonctions et six rôles s'ajoutent ; aucune ligne, aucune colonne ni aucun objet ne se retire ni ne change.
 --
 -- ELLE DÉPEND D'INV2 (`operations_d_inventaire`), qui doit être en base avant elle : sa garde de tête l'exige, aux empreintes
 -- des fonctions d'INV2 sur lesquelles elle compte. Elle s'accommode de LIA2 et de MCB5g, présentes ou non (elle n'ajoute
@@ -47,11 +48,17 @@
 --      suivante mentirait. Le verrou PARTAGÉ de la validation se prend avant toute lecture du gel, puis un verrou propre aux
 --      provisions du dossier, qui sérialise la ventilation et la chaîne des évaluations.
 --   7. Si la double authentification exigée (`deux_facteurs_exiges`) est déjà en base, la policy restrictive `deux_facteurs`
---      sur la table neuve.
+--      sur la table neuve ; et la porte d'accès (`acces_avant_les_gardes`, en production depuis le 15/11/2026), posée en
+--      clair devant la garde de la table neuve (22/11/2026, § 10) — celle d'`operations_inventaire` est d'INV2.
 --
 -- CE QU'ELLE NE FAIT PAS : la validation (la sorte `inventaire`, les filets, dont la ventilation d'un compte repris sans
 -- provision : INV3), le relevé des provisions 2033-D (ligne 37), l'écran (INV5). Aucun dossier n'est en engagement en
 -- production (12/11/2026) : rien ne s'y écrit avant INV5.
+--
+-- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 22/11/2026 sur une réplique égale à la production, 249,
+-- après INV2, les deux migrations posées en simulation dans l'export : les fichiers et la base égaux) : le socle ne change
+-- pas (celui d'INV2, 84 instructions, `42878356…`) ; l'inventaire compte 43 objets de plus qu'après INV2 (3 472, puis
+-- 3 515 : `3edc1aaa…`, puis `ed9ca3c7…`).
 
 do $garde$
 declare
@@ -75,6 +82,16 @@ begin
                   ('public.factures_emises', 'dossier_id'), ('public.ecritures_brouillon', 'operation_inventaire_id')) c(t, n)
                 where not exists (select 1 from pg_attribute a where a.attrelid = c.t::regclass and a.attname = c.n and not a.attisdropped)) then
     raise exception 'provisions : une table ou une colonne dont elle dépend manque : relire la base.';
+  end if;
+  -- La porte d'accès devant les gardes, en production depuis le 15/11/2026 (GARDES-Q1) : cette migration la pose en clair
+  -- sur sa table neuve (§ 10), et trouve celle qu'INV2 pose sur `operations_inventaire`, où elle ajoute une garde ; sans sa
+  -- fonction, ou sans la porte d'INV2, elle ne s'applique pas.
+  if to_regprocedure('public.acces_avant_les_gardes()') is null then
+    raise exception 'provisions : la porte d''accès devant les gardes (acces_avant_les_gardes) manque : relire la base.';
+  end if;
+  if not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = 'public.operations_inventaire'::regclass
+                   and t.tgname = '_acces_avant_les_gardes' and not t.tgisinternal) then
+    raise exception 'provisions : la porte d''accès qu''INV2 pose sur operations_inventaire manque : relire la base.';
   end if;
   -- Les fonctions qu'elle appelle, ou dont elle attend la conduite, à l'empreinte de leur corps (les retours chariot écartés) :
   -- celles de la production, relevées le 12/11/2026 ; celles d'INV2, telles que sa migration préparée les pose depuis la
@@ -729,29 +746,17 @@ begin
 end
 $deux_facteurs$;
 
--- ══ 10. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43), si elle est déjà en base ══
+-- ══ 10. La porte d'accès devant les gardes (acces_avant_les_gardes, ligne 43, en production depuis le 15/11/2026) ══
 -- Les gardes `security definer` de cette migration : `garder_provisions` sur `provisions`, et `garder_evaluations_de_provision`
--- sur `operations_inventaire` (qu'INV2 a déjà couverte si la porte la précédait : elle ne s'y pose pas deux fois).
--- Une garde `security definer` tire avant l'expression WITH CHECK de la policy : sans la porte, elle répondrait à un
--- appelant que la policy refuse. Si la porte est en base, elle se pose ici, la première des déclencheurs BEFORE de la
--- table ; sinon, la porte la posera d'elle-même en s'appliquant (elle couvre toute table de cette liste qui porte déjà sa
--- garde). Les deux migrations se collent ainsi dans les deux ordres. L'essai : supabase/essais/accesAvantLesGardes.sql
--- (étape 32).
-do $porte$
-declare
-  v_table text;
-begin
-  if to_regprocedure('public.acces_avant_les_gardes()') is not null then
-    foreach v_table in array array['provisions', 'operations_inventaire'] loop
-      if exists (select 1 from pg_catalog.pg_class c where c.oid = ('public.' || v_table)::regclass and not (c.relrowsecurity and not c.relforcerowsecurity))
-         or exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and not t.tgisinternal
-                     and (t.tgname collate "C") < ('_acces_avant_les_gardes' collate "C")) then
-        raise exception 'La porte d''accès ne se pose pas sur public.% : sa RLS n''est pas active (ou forcée), ou un déclencheur tirerait avant elle.', v_table;
-      end if;
-      if not exists (select 1 from pg_catalog.pg_trigger t where t.tgrelid = ('public.' || v_table)::regclass and t.tgname = '_acces_avant_les_gardes') then
-        execute format('create trigger _acces_avant_les_gardes before insert or update on public.%I for each row execute function public.acces_avant_les_gardes()', v_table);
-      end if;
-    end loop;
-  end if;
-end
-$porte$;
+-- sur `operations_inventaire`, qu'INV2 a déjà couverte (elle y pose la porte en clair, et la garde de tête d'ici l'exige :
+-- elle ne s'y pose pas deux fois). Une garde `security definer` tire avant l'expression WITH CHECK de la policy : sans la
+-- porte, elle répondrait à un appelant que la policy refuse. La porte est en base depuis le 15/11/2026 (GARDES-Q1), et la
+-- garde de tête exige sa fonction : elle se pose ici EN CLAIR sur la table neuve, comme GARDES-Q1 la pose sur chacune de ses
+-- tables — posée par un `execute` dans un bloc `do`, comme la préparée du 12/11/2026 le faisait sous la condition que sa
+-- fonction soit en base, elle échappait à l'inventaire des fichiers de l'export (supabase/essais/inventaire.py ne lit pas le
+-- corps d'un bloc), et le troisième contrôle de l'export aurait différé d'un objet après le collage (relevé le 22/11/2026
+-- sur une réplique égale à la production, comme pour EL2). La première des déclencheurs BEFORE de la table : ils tirent
+-- dans l'ordre de leurs noms, et `_acces_avant_les_gardes` précède `provisions_par_ses_fonctions` ; la RLS de la table est
+-- active (§ 2). L'essai : supabase/essais/accesAvantLesGardes.sql (étapes 31 et 32).
+create trigger _acces_avant_les_gardes before insert or update on public.provisions
+  for each row execute function public.acces_avant_les_gardes();

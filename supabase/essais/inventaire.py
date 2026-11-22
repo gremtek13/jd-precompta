@@ -32,7 +32,11 @@ ne compte qu'une fois.
 CE QU'IL NE VOIT PAS, dit plutôt que promis : il compare des NOMS. Un type de colonne, une valeur par
 défaut, l'expression d'une policy, le corps d'une fonction ou un droit d'exécution changés hors
 migration lui échappent — pour le socle, `socle.py` compare les définitions ; pour le reste, seul un
-rejeu réel de l'export dans une base vide le dirait. Le nom d'une contrainte anonyme est DÉDUIT des
+rejeu réel de l'export dans une base vide le dirait. Le corps d'un bloc `do` est une instruction qu'il
+ne lit pas : un objet qu'une migration y crée (un `execute`) existe en base sans exister ici — la
+porte d'accès de sept préparées, relevée le 22/11/2026 ; `src/lib/creationsDansLesBlocs.test.ts`
+refuse désormais une telle création, hors de cas nommés (dont la restrictive `deux_facteurs` de la
+double authentification, que cet inventaire ne compte pas). Le nom d'une contrainte anonyme est DÉDUIT des
 règles de Postgres (`table_col_check`, `table_col_fkey`, `table_a_b_key`…) : une règle mal déduite se
 voit, puisqu'elle fait diverger les deux moitiés.
 """
