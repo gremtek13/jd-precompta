@@ -4,15 +4,18 @@ import { calculerDeclaration2035, type Declaration2035 } from './declaration2035
 import {
   ECRITURES_LIBRES_ABSENTES, type EcritureLibreDesExports, type EcrituresLibresDesExports, type LigneEnBaseDEcritureLibre,
 } from './ecrituresLibresDesExports'
-import { dateDeLExtourne, lignesDeResultatLibres, recettesComptees } from './ecrituresLibresDeLa2035'
+import { dateDeLExtourne, depensesCompteesSous, lignesDeResultatLibres, recettesComptees } from './ecrituresLibresDeLa2035'
 import { chiffreDAffairesDeLaPeriode, projectionAnnuelle, totauxPourAnnee } from './estimation'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { paiementsDesPieces } from './rattachement'
 import { CAISSE_ABSENTE } from './recettesDeCaisse'
 import { calculerSituationIntermediaire } from './situationIntermediaire'
-import type { EcritureBrouillon } from './types'
+import type { CotisationDeclaree, EcritureBrouillon } from './types'
+import { cotisationsComptees } from './cotisationRapprochee'
+import { estLePosteDesCotisations } from './cases2035'
 import { NON_VALIDEE } from '../test/ecritures'
 import { recettesFactureesVides, ventesFactureesVides } from '../test/ventesFacturees'
+import { pieceDeVente } from '../test/dossierBascule'
 import { CATEGORIES_CITEES, composerLeDossier, contenuDeLaSauvegarde, controlesDuDossier } from '../test/dossierDeDemonstration'
 
 const CABINET = 'ca000000-0000-4000-8000-000000000001'
@@ -235,5 +238,76 @@ describe('EL4 — la situation intermédiaire et l’estimation lisent les même
     expect(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES))
       .toStrictEqual(totauxPourAnnee([], [], 2025, false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, ECRITURES_LIBRES_ABSENTES))
     expect(projectionAnnuelle([], [], '2025-10-15', false, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, lues(TOUTES)).ca).toBe(-20)
+  })
+})
+
+// EL4-Q1 (réponse du cabinet du 22/11/2026, contre la recommandation) : une ligne d'écriture libre comptée sous le poste des
+// cotisations s'ajoute aux cotisations de l'estimation, signée, à sa date ; l'extourne les baisse l'année suivante. Rien d'autre
+// n'y entre, et le chiffre d'affaires d'EL4 ne bouge pas.
+describe('EL4-Q1 — les cotisations de l’estimation lisent les écritures libres sous le poste des cotisations', () => {
+  const echeance = (o: Partial<CotisationDeclaree>): CotisationDeclaree => ({
+    id: 'cot', dossier_id: 'd1', echeance: '2025-02-05', montant_appele: 300, montant_verse: null, montant_csg_crds: null,
+    previsionnel: false, created_at: '2025-01-05T09:00:00Z', paiement_personnel_le: null, ...o,
+  })
+  // Le jeu de totauxPourAnnee d'estimation.test.ts : une vente de 100 € et une échéance de 300 € dans l'année, et une de l'année
+  // d'avant.
+  const VENTE = pieceDeVente({ id: 'v', date_piece: '2025-01-01', montant_ht: null, montant_tva: null, montant_ttc: 100 })
+  const ECHEANCIER = cotisationsComptees([echeance({ id: 'a' }), echeance({ id: 'b', echeance: '2024-02-05', montant_appele: 999 })], [], 'tresorerie')
+  const totaux = (annee: number, libres: EcrituresLibresDesExports) =>
+    totauxPourAnnee([VENTE], ECHEANCIER, annee, true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, libres)
+  const projection = (jour: string, libres: EcrituresLibresDesExports) =>
+    projectionAnnuelle([VENTE], ECHEANCIER, jour, true, new Map(), 'tresorerie', [], recettesFactureesVides(), CAISSE_ABSENTE, libres)
+
+  // Une régularisation de 250 € au 31 décembre, sous le poste des cotisations, avec son extourne ; une autre ligne sous BK
+  // (« Charges sociales personnelles », un autre poste), une hors de la 2035, toutes deux sans effet.
+  const REGUL = ecriture({
+    id: 'el-cotis', numero: 5, date: '2025-12-31', libelle: 'Régularisation Urssaf', avec_extourne: true,
+    lignes: [ligneLibre('646000', 'debit', 25000, 'Cotisations sociales personnelles'), ligneLibre('108000', 'credit', 25000)],
+  })
+  const AUTRES = ecriture({
+    id: 'el-autres', numero: 6, date: '2025-06-30', libelle: 'Madelin et cotisation hors de la 2035',
+    lignes: [ligneLibre('646100', 'debit', 4000, 'Charges sociales personnelles'), ligneLibre('646200', 'debit', 7000),
+      ligneLibre('108000', 'credit', 11000)],
+  })
+  const CORRECTION = ecriture({
+    id: 'el-correction', numero: 7, date: '2025-03-31', libelle: 'Cotisation comptée deux fois',
+    lignes: [ligneLibre('646000', 'credit', 5000, 'cotisations SOCIALES personnelles'), ligneLibre('108000', 'debit', 5000)],
+  })
+
+  it('absentes : les totaux d’aujourd’hui, sans un champ de plus', () => {
+    expect(totaux(2025, ECRITURES_LIBRES_ABSENTES)).toStrictEqual({ ca: 100, cotis: 300 })
+    expect(totaux(2025, lues([]))).toStrictEqual({ ca: 100, cotis: 300 })
+    const p = projection('2025-10-15', ECRITURES_LIBRES_ABSENTES)
+    expect(p.cotis).toBe(300)
+    expect('cotisDontEcrituresLibres' in p).toBe(false)
+  })
+
+  it('une ligne de +X sous le poste monte les cotisations de X, et le dit ; son extourne les baisse de X l’année suivante', () => {
+    expect(totaux(2025, lues([REGUL]))).toStrictEqual({ ca: 100, cotis: 550, cotisDontEcrituresLibres: 250 })
+    expect(totaux(2026, lues([REGUL]))).toStrictEqual({ ca: 0, cotis: -250, cotisDontEcrituresLibres: -250 })
+    // À date : la ligne du 31 décembre n'est pas encore échue en octobre ; elle l'est le 31 décembre, projection comprise.
+    expect('cotisDontEcrituresLibres' in projection('2025-10-15', lues([REGUL]))).toBe(false)
+    const fin = projection('2025-12-31', lues([REGUL]))
+    expect(fin.cotis).toBe(550)
+    expect(fin.cotisDontEcrituresLibres).toBe(250)
+    expect(fin.cotisationsProjetees).toBeCloseTo((550 * 12) / fin.moisEcoules, 6)
+  })
+
+  it('la correction au crédit les diminue, le poste jugé à la casse et aux accents près, comme le rattachement', () => {
+    expect(estLePosteDesCotisations('cotisations SOCIALES personnelles')).toBe(true)
+    expect(totaux(2025, lues([CORRECTION]))).toStrictEqual({ ca: 100, cotis: 250, cotisDontEcrituresLibres: -50 })
+  })
+
+  it('une ligne sous un autre poste, hors de la 2035, ou de recette, ne les bouge pas', () => {
+    expect(totaux(2025, lues([AUTRES]))).toStrictEqual({ ca: 100, cotis: 300 })
+    expect(totaux(2025, lues(TOUTES)).cotis).toBe(300)
+    expect(depensesCompteesSous(lues([AUTRES, ...TOUTES]), '2025-01-01', '2025-12-31', estLePosteDesCotisations)).toBe(0)
+  })
+
+  it('le chiffre d’affaires d’EL4 ne bouge pas', () => {
+    const avec = lues([...TOUTES, REGUL, AUTRES, CORRECTION])
+    expect(totaux(2025, avec).ca).toBe(totaux(2025, lues(TOUTES)).ca)
+    expect(totaux(2025, avec).ca).toBe(80)
+    expect(projection('2025-12-31', avec).ca).toBe(projection('2025-12-31', lues(TOUTES)).ca)
   })
 })

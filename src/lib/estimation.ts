@@ -12,7 +12,8 @@ import { centimesDesRecettesDeCaisse, type RecettesDeCaissePourLEstimation } fro
 import type { Categorie, ModeComptable, Piece } from './types'
 import { exemplaireDUneFactureSource, recettesFactureesParMois, type VentesFacturees } from './ventesFacturees'
 import type { EcrituresLibresDesExports } from './ecrituresLibresDesExports'
-import { recettesComptees } from './ecrituresLibresDeLa2035'
+import { depensesCompteesSous, recettesComptees } from './ecrituresLibresDeLa2035'
+import { estLePosteDesCotisations } from './cases2035'
 
 // Calculs partagés entre l'Estimation cabinet (EstimationTab, un dossier à la fois) et la Simulation
 // côté client (ClientSimulation, lecture seule) — mêmes chiffres, un seul endroit à faire évoluer si
@@ -130,19 +131,42 @@ function recettesDeCaisseDeLaPeriode(caisse: RecettesDeCaissePourLEstimation, de
   return centimesDesRecettesDeCaisse(caisse, debut, fin) / 100
 }
 
-// Les cotisations comptent comme dans la 2035 (`cotisationsComptees`, lib/cotisationRapprochee.ts) : à la
-// date et au montant du mouvement qui les paie, sinon à leur échéance. Sans valeur par défaut, comme les
-// paiements.
 // Les recettes que les écritures libres de l'expert comptent dans la 2035 d'une période, en euros (EL4 ;
 // lib/ecrituresLibresDeLa2035.ts). Absentes, un zéro exact : le chiffre d'hier ne bouge pas d'un caractère.
 function recettesLibresDeLaPeriode(ecrituresLibres: EcrituresLibresDesExports, debut: string, fin: string): number {
   return recettesComptees(ecrituresLibres, debut, fin) / 100
 }
 
+// Les cotisations comptent comme dans la 2035 (`cotisationsComptees`, lib/cotisationRapprochee.ts) : à la
+// date et au montant du mouvement qui les paie, sinon à leur échéance. Sans valeur par défaut, comme les
+// paiements.
 function cotisationsDeLaPeriode(cotisations: readonly CotisationComptee[], debut: string, fin: string): number {
   return cotisations
     .filter((c) => c.date >= debut && c.date <= fin)
     .reduce((sum, c) => sum + c.montant, 0)
+}
+
+// LES COTISATIONS D'UNE ÉCRITURE LIBRE (EL4-Q1, réponse du cabinet du 22/11/2026, contre la recommandation) : une ligne de
+// classe 6 que l'expert compte sous le poste des échéances de l'onglet Cotisations (`estLePosteDesCotisations`, la clé du
+// rattachement, BK de la 2035) s'ajoute, signée, à sa date — l'extourne au sens inverse à la sienne —, aux cotisations que
+// l'estimation compte. Une ligne hors de la 2035 n'y entre pas, une ligne sous un autre poste non plus. En euros.
+//
+// OÙ CELA S'ARRÊTE : à la SOMME de la période — les cotisations de l'année, celles « à date » et leur projection, donc le
+// repère enregistré et sa comparaison. Rien de ce qui se déduit de l'échéancier par organisme, année payée ou nature (la
+// régularisation, lib/regularisationDesCotisations.ts ; l'estimation Urssaf du volet social) ne le reçoit : une écriture libre
+// ne dit aucun organisme, et en inventer un serait une donnée que personne n'a saisie. Le total qui les mêle le DIT
+// (`cotisDontEcrituresLibres`, rendu seulement quand il n'est pas nul). Absentes, un zéro exact : le chiffre d'hier.
+function cotisationsLibresDeLaPeriode(ecrituresLibres: EcrituresLibresDesExports, debut: string, fin: string): number {
+  return depensesCompteesSous(ecrituresLibres, debut, fin, estLePosteDesCotisations) / 100
+}
+
+/** Les cotisations d'une période et, quand elle n'est pas nulle, la part qu'y portent les écritures libres de l'expert. */
+function cotisationsEtLeurPartLibre(
+  cotisations: readonly CotisationComptee[], ecrituresLibres: EcrituresLibresDesExports, debut: string, fin: string,
+): { cotis: number; cotisDontEcrituresLibres?: number } {
+  const libres = cotisationsLibresDeLaPeriode(ecrituresLibres, debut, fin)
+  const cotis = cotisationsDeLaPeriode(cotisations, debut, fin) + libres
+  return libres === 0 ? { cotis } : { cotis, cotisDontEcrituresLibres: libres }
 }
 
 export function totauxPourAnnee(
@@ -156,7 +180,8 @@ export function totauxPourAnnee(
   // dans la 2035. Sans valeur par défaut : absente, le drapeau baissé ; « non comptées », ce que la simulation d'un client
   // passe et dit.
   recettesDeCaisse: RecettesDeCaissePourLEstimation,
-  // Les écritures libres de l'expert-comptable (EL4) : leurs recettes comptées. Sans valeur par défaut depuis EL8 (22/11/2026),
+  // Les écritures libres de l'expert-comptable (EL4) : leurs recettes comptées, et leurs cotisations depuis EL4-Q1 (voir
+  // `cotisationsLibresDeLaPeriode`). Sans valeur par défaut depuis EL8 (22/11/2026),
   // comme les autres sources : une absence se DIT (`ECRITURES_LIBRES_ABSENTES`).
   ecrituresLibres: EcrituresLibresDesExports,
 ) {
@@ -165,7 +190,7 @@ export function totauxPourAnnee(
   return {
     ca: chiffreDAffairesDeLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode, partsDuReleve, recettesFacturees, recettesDeCaisse,
       ecrituresLibres),
-    cotis: cotisationsDeLaPeriode(cotisations, debut, fin),
+    ...cotisationsEtLeurPartLibre(cotisations, ecrituresLibres, debut, fin),
   }
 }
 
@@ -198,8 +223,16 @@ export interface ProjectionAnnuelle {
   moisEcoules: number
   /** Recettes du 1er janvier à aujourd'hui inclus, à la date de leur encaissement (lib/rattachement.ts). */
   ca: number
-  /** Échéances du 1er janvier à aujourd'hui inclus, à la date de leur paiement quand le relevé le connaît : « appelées à date », jamais une à venir. */
+  /**
+   * Échéances du 1er janvier à aujourd'hui inclus, à la date de leur paiement quand le relevé le connaît : « appelées à date »,
+   * jamais une à venir ; plus les lignes des écritures libres comptées sous le poste des cotisations (EL4-Q1).
+   */
   cotis: number
+  /**
+   * La part de `cotis` que portent les écritures libres de l'expert sous le poste des cotisations (EL4-Q1), présente seulement
+   * quand elle n'est pas nulle : l'écran la dit, puisque ce total n'est plus seulement « appelé ».
+   */
+  cotisDontEcrituresLibres?: number
   /** Null sous un mois d'observation : ramener quelques jours à douze mois n'est pas une projection. */
   caProjete: number | null
   cotisationsProjetees: number | null
@@ -237,10 +270,10 @@ export function projectionAnnuelle(
   // recettes facturées, au mois près : celui du jour compte en entier (voir `RecettesFacturees`).
   const ca = chiffreDAffairesDeLaPeriode(recettes, paiements, `${annee}-01-01`, dateDuJour, assujettiTva, mode, partsDuReleve,
     recettesFacturees, recettesDeCaisse, ecrituresLibres)
-  const cotis = cotisationsDeLaPeriode(cotisations, `${annee}-01-01`, dateDuJour)
+  const { cotis, ...dont } = cotisationsEtLeurPartLibre(cotisations, ecrituresLibres, `${annee}-01-01`, dateDuJour)
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
   const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)
-  return { annee, moisEcoules, ca, cotis, caProjete: annualiser(ca), cotisationsProjetees: annualiser(cotis) }
+  return { annee, moisEcoules, ca, cotis, ...dont, caProjete: annualiser(ca), cotisationsProjetees: annualiser(cotis) }
 }
 
 export function ecartPct(valeurN: number, valeurN1: number | null): string {

@@ -82,6 +82,21 @@ export function recettesComptees(e: EcrituresLibresDesExports, debut: string, fi
     .reduce((s, l) => s + l.centimes, 0)
 }
 
+/**
+ * Les dépenses que les écritures libres COMPTENT dans une période sous les postes qu'`estDuPoste` désigne, en centimes signés :
+ * les lignes de classe 6 sous un tel poste, à leur date, l'extourne au sens inverse à la sienne. Une ligne hors de la 2035 n'y
+ * entre jamais. Le poste se juge par un prédicat de l'appelant, jamais une chaîne recopiée : l'estimation y passe
+ * `estLePosteDesCotisations` (lib/cases2035.ts), que ce module n'importe pas — cases2035 importe declaration2035, qui importe
+ * ce module, et la boucle évaluerait ses constantes avant elles.
+ */
+export function depensesCompteesSous(
+  e: EcrituresLibresDesExports, debut: string, fin: string, estDuPoste: (poste: string) => boolean,
+): number {
+  return lignesDeResultatLibresDeLaPeriode(e, debut, fin)
+    .filter((l) => l.nature === 'depense' && l.poste !== null && estDuPoste(l.poste))
+    .reduce((s, l) => s + l.centimes, 0)
+}
+
 /** Le nom d'une écriture libre tel que la carte de la concordance le dit : sa référence et son libellé, l'extourne nommée. */
 export function nomDeLEcritureLibre(l: Pick<LigneDeResultatLibre, 'ecriture' | 'extourne'>): string {
   return `Écriture libre ${referenceDeLEcritureLibre(l.ecriture)}${l.extourne ? ' (extourne)' : ''} — ${l.ecriture.libelle}`
