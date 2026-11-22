@@ -6,7 +6,7 @@ import * as champs from './champsBncDuFec'
 import {
   LIENS_DU_RELEVE, MODE_DU_MOYEN, MODES_REGLEMENT, NATURES_OPERATION, REGLES_DES_SORTES, SANS_REGLEMENT, SEPARATEUR_DU_POSTE,
   champsDeLaTvaDUneFacture, champsDeLOuvertureEclatee, champsDesANouveaux, champsDUnEncaissement, champsDUneDotation, champsDUneLiquidation,
-  champsDUneRegularisation,
+  champsDUneEcritureLibre, champsDUneRegularisation,
   champsDUnForfait, champsDUnMouvementDesEncaissements, champsDUnMouvementDuReleve, champsDUneOperationDeCaisse,
   champsDUnePiece, champsDUnPaiementPersonnel, identificationDuClient, modeRgltDuReleve, natOpDeLaLigne, reglementsDeLaPieceALaDate,
   type ChampsBnc, type ChoixChampsBnc, type EncaissementDuRegistre, type FactureDuClient, type LigneACaracteriser,
@@ -572,6 +572,7 @@ describe('aucun nom ne paraît dans les quatre valeurs', () => {
     const postes: PosteLu[] = [
       { de: 'aucun' }, { de: 'categorie', categorie: null }, categorie(null, 'Achats'), categorie('Achats', NOMS[4]),
       categorie('Recettes', NOMS[3]), categorie(NOMS[0], NOMS[1]), { de: 'moteur', poste: POSTE_AMORTISSEMENTS },
+      { de: 'saisi', poste: 'Achats' }, { de: 'saisi', poste: 'Gains divers' },
     ]
     const comptes = ['512000', '606400', '706000', '445660', '108000', '681100', '530000']
     const lignes = () => Array.from({ length: 1 + entierTire(suivant, 4) }, (_, i): LigneACaracteriser => ({
@@ -602,6 +603,7 @@ describe('aucun nom ne paraît dans les quatre valeurs', () => {
       () => champsDesANouveaux([{ id: 'an', compte: '512000', libelle: nom() }], '2026-01-01', choix()),
       () => champsDeLOuvertureEclatee('2026-01-01', lignes(), choix()),
       () => champsDUneRegularisation(parmi(['2026-12-31', '2027-01-01']), lignes(), choix()),
+      () => champsDUneEcritureLibre(parmi(['2026-12-31', '2027-01-01']), lignes(), choix()),
       () => champsDUnPaiementPersonnel({ id: 'e', paiement_personnel_le: '2026-02-15' }, lignes()),
       () => champsDeLaTvaDUneFacture(fac(), '2026-03-31', lignes(), choix()),
       () => champsDUnEncaissement(enc(), fac(), lignes()),
@@ -686,13 +688,13 @@ describe('le scanner des sortes d’écriture du FEC', () => {
   it('chaque sorte que numeroterFec distingue a sa règle, et chaque règle sa sorte', () => {
     const lecture = lireLesSortes(fec, composition)
     expect(fautesDesRegles(lecture, REGLES_DES_SORTES)).toEqual([])
-    // Le plancher : treize sortes depuis les régularisations d'inventaire (INV3), douze depuis l'éclatement de l'ouverture
-    // (MCB5) — une lecture devenue aveugle ne rendrait pas « zéro faute ».
-    expect(lecture.sortes.size).toBe(13)
-    // Les trois sorties hors du fichier — une ligne d'une vente à réécrire, une opération de caisse que la lecture ne rend
-    // pas, le reste d'une pièce supprimée — n'ont pas de règle : elles ne sont pas dans le fichier. Comptées : une
-    // quatrième serait une sorte à juger.
-    expect(lecture.horsFec).toBe(3)
+    // Le plancher : quatorze sortes depuis les écritures libres (EL3), treize depuis les régularisations d'inventaire (INV3),
+    // douze depuis l'éclatement de l'ouverture (MCB5) — une lecture devenue aveugle ne rendrait pas « zéro faute ».
+    expect(lecture.sortes.size).toBe(14)
+    // Les quatre sorties hors du fichier — une ligne d'une vente à réécrire, une opération de caisse ou une écriture libre
+    // que la lecture ne rend pas, le reste d'une pièce supprimée — n'ont pas de règle : elles ne sont pas dans le fichier.
+    // Comptées : une cinquième serait une sorte à juger.
+    expect(lecture.horsFec).toBe(4)
   })
 
   it('une sorte neuve sans règle est une faute (défaut planté)', () => {

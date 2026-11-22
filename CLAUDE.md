@@ -621,8 +621,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   Q12 tranchées le 17/11/2026 — tout compte du cabinet qui suit le dossier l'écrit (EL-Q1, `admin_du_dossier`, l'auteur posé par
   la base), un dégel du dernier exercice validé par le chef, conçu, pas codé (EL-Q10 (B), EL10-Q1 à Q7 ouvertes, lot EL9). EL1 en
   module (`lib/ecritureLibre.ts`) ; EL2 préparée, à coller (`ecritures_libres`, `ECRITURES_LIBRES_PREVUES` baissé ; les quatre
-  sources neuves sœurs la tolèrent, `stocks.test.ts`) ; le plan de sauvegarde et `rls.sql` à EL8 → « L'ÉCRITURE LIBRE DE
-  L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION », « EXP58-Q3 ET NOE4-Q1 ».
+  sources neuves sœurs la tolèrent, `stocks.test.ts`) ; le plan de sauvegarde et `rls.sql` à EL8 ; EL3 (22/11/2026) en module,
+  sans lecture : la sorte `libre` du FEC (OD, « EL<année>-<numéro> », sans règlement, NatOp le poste saisi), la piste d'audit et
+  `absenceFec`, l'état des écritures libres en CSV et PDF (`lib/ecrituresLibresDesExports.ts`, `lib/etatDesEcrituresLibres.ts`),
+  le FEC fictif inchangé à l'octet ; les écritures libres lues à passer par EL5 → « L'ÉCRITURE LIBRE DE
+  L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION », « EXP58-Q3 ET NOE4-Q1 »,
+  « EL3 : L'ÉCRITURE LIBRE DANS LE FEC ».
 - **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
   (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
   les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».

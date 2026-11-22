@@ -575,6 +575,12 @@ export interface EcritureBrouillon {
   // L'AFFECTATION DU RÉSULTAT (lignes 33 et 45, AFF2 ; migration `affectation_du_resultat`, préparée) : la décision dont
   // cette ligne est l'écriture, écrite par `enregistrer_affectation` seule. Facultative : absente avant la migration.
   affectation_id?: string | null
+  // L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE dont cette ligne est la constatation, ou l'extourne au 1er janvier suivant (ligne
+  // 26.9, EL2 ; migration `ecritures_libres`, préparée, pas appliquée — lib/ecritureLibre.ts, `ECRITURES_LIBRES_PREVUES`) : écrite
+  // par `enregistrer_ecriture_libre` seule, sans autre source (`ecritures_brouillon_libre_sans_autre_source`). FACULTATIVE, et
+  // c'est la vérité des deux côtés de la migration : avant elle, `select('*')` ne rend pas la colonne ; après, nulle sur toute
+  // autre écriture.
+  ecriture_libre_id?: string | null
   // LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, FIGÉS À LA VALIDATION (ligne 26.6, étape e ; lot FEC22b ; migration
   // `champs_bnc_du_fec`, en base et dans l'export depuis le 02/11/2026 — voir lib/champsBncFiges.ts) : la date et le mode
   // du règlement, la nature de l'opération (une par écriture), le poste de la 2035 d'une ligne de charge ou de produit
