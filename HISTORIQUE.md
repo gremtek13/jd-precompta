@@ -54560,3 +54560,13 @@ baissée en mémoire (la mutation inverse), chacun faisant tomber le scénario d
 contrainte de 249 pour celle en vigueur, cinq raisons, autant que la fonction en écrit. La phrase de l'onglet Accès nomme la
 cinquième raison aux mots de `phraseDeLaRaison` ; RGPD.md § 8.7 dit l'écart fait (NOE7 reste). Le retour de la migration demande
 d'abord la constante baissée et la fonction redéployée. Reste : le déploiement de `receive-email`, puis un e-mail d'essai.
+
+### 22/11/2026 — BOR6R : RECEIVE-EMAIL DÉPLOYÉE (V26), L'ÉCART DES BORDEREAUX EN SERVICE
+
+Après la fusion de la levée de la constante (le cabinet avait essayé un vrai bordereau avec l'outil local : reconnu à la première
+page), `receive-email` est redéployée par la ligne d'import au commit `54c3a62f163f36411a5692dcda2360026a3b5a99`, `verify_jwt` à
+false : le fichier public à ce commit a l'empreinte du dépôt (md5 `aab05ecf…`), la copie déployée relue porte cette ligne et ce
+commit (version 26), et la fonction répond 400 à un appel sans signature (elle démarre). La version d'avant importait le commit
+`d30775cb`. Non vérifié : un e-mail réel — un PDF ordinaire qui arrive toujours « à valider », un bordereau écarté sous sa raison,
+le journal sans nom ni contenu ; à relever dans `query_logs` au premier envoi. Retour arrière : redéployer la ligne au commit
+d'avant. DUQ3-Q1 tranchée le 21/11/2026 (garder la phrase), rien à changer.

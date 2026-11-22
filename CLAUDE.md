@@ -600,7 +600,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`sansBordereau`, `refusDesBordereauxAuDepot.test.ts`), avant tout envoi ; restent `receive-email`, l'état des paiements, une
   image → « BOR6 : LE REFUS D'UN BORDEREAU DE TÉLÉTRANSMISSION AU DÉPÔT » ; seconde partie (21/11/2026) : `receive-email` l'écarte
   avant tout dépôt, sans pdf.js (`lib/texteDUnPdf.ts`, copié), `BORDEREAUX_ECARTES_A_LA_RECEPTION` levée le 22/11/2026 après l'essai
-  d'un vrai bordereau (BOR6R-Q1), la raison `bordereau` en production (249) et dite aux écrans ; `receive-email` à déployer → « BOR6, SECONDE PARTIE », « BOR6R ».
+  d'un vrai bordereau (BOR6R-Q1), la raison `bordereau` en production (249) et dite aux écrans ; `receive-email` déployée le 22/11/2026 (v26, au commit `54c3a62f`) ; reste un premier bordereau réel reçu par e-mail → « BOR6, SECONDE PARTIE », « BOR6R ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)
