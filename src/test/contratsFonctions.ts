@@ -6733,8 +6733,8 @@ export const SCENARIOS_ACOMPTES_EN_BASE: Readonly<Record<'superpdp-emit' | 'plat
 // ── LE TOUT ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 // ── LE BORDEREAU DE TÉLÉTRANSMISSION À LA RÉCEPTION (BOR6, seconde partie) ──────────────────────────────────────────────
-// Joués par src/lib/bordereauxALaReceptionHttp.test.ts, sur la source servie (`BORDEREAUX_ECARTES_A_LA_RECEPTION` baissée)
-// et sur la même, levée en mémoire. Les PDF sont FICTIFS, fabriqués par le test (pdf-lib) : leurs octets arrivent ici.
+// Joués par src/lib/bordereauxALaReceptionHttp.test.ts, sur la source servie (`BORDEREAUX_ECARTES_A_LA_RECEPTION` levée le
+// 22/11/2026) et sur la même, baissée en mémoire (l'état d'avant, éprouvé tant que son code existe). Les PDF sont FICTIFS, fabriqués par le test (pdf-lib) : leurs octets arrivent ici.
 
 /** Les PDF fictifs des scénarios : le bordereau, une facture ordinaire, un PDF qui ne se lit pas. */
 export interface PdfDesBordereaux { bordereau: Uint8Array<ArrayBuffer>; facture: Uint8Array<ArrayBuffer>; illisible: Uint8Array<ArrayBuffer> }
@@ -6744,7 +6744,7 @@ const NOM_DU_BORDEREAU = 'Quervaldine-Ostrumbel.pdf'
 /** Les cellules nominatives du bordereau fictif (`src/test/bordereauFictif.ts`) : jamais au journal. */
 const NOMINATIFS_DU_BORDEREAU = ['BENEFICIAIRE UN', 'BENEFICIAIRE DEUX', '1999999999999']
 
-/** La constante levée : receive-email écarte le bordereau (la source servie la porte baissée). */
+/** La constante levée : receive-email écarte le bordereau (la source servie la porte levée depuis le 22/11/2026). */
 export const BORDEREAUX_ECARTES_LEVES = 'const BORDEREAUX_ECARTES_A_LA_RECEPTION = true'
 export const BORDEREAUX_ECARTES_BAISSES = 'const BORDEREAUX_ECARTES_A_LA_RECEPTION = false'
 
@@ -6758,7 +6758,7 @@ const deposeePdf = (pj: string) => [
 const sansExtractPiece = (m: Monde): string[] =>
   ((m.notes.appelsExtractPiece ?? []) as unknown[]).length === 0 ? [] : ['extract-piece a lu le bordereau']
 
-/** Les scénarios de la constante LEVÉE : le bordereau écarté avant tout dépôt ; le reste comme avant. */
+/** Les scénarios de la constante LEVÉE (la source servie) : le bordereau écarté avant tout dépôt ; le reste comme avant. */
 export function scenariosDesBordereauxLeves(pdf: PdfDesBordereaux): Scenario[] {
   return [
     {
@@ -6830,7 +6830,7 @@ export function scenariosDesBordereauxLeves(pdf: PdfDesBordereaux): Scenario[] {
       },
     },
     {
-      nom: 'la base refuse la trace (sa migration pas encore collée) : le bordereau reste écarté, le refus journalisé sans nom',
+      nom: 'la base refuse la trace (sa contrainte rendue par un retour de la migration) : le bordereau reste écarté, le refus journalisé sans nom',
       preparer: (m, voisine) => {
         boiteAuxLettres(m, voisine, { octets: pdf.bordereau })
         m.sensibles.push(NOM_DU_BORDEREAU, ...NOMINATIFS_DU_BORDEREAU)
@@ -6852,7 +6852,7 @@ export function scenariosDesBordereauxLeves(pdf: PdfDesBordereaux): Scenario[] {
   ]
 }
 
-/** La constante BAISSÉE (la source servie) : le bordereau part comme avant, sans lecture de son texte. */
+/** La constante BAISSÉE (en mémoire, l'état d'avant le 22/11/2026) : le bordereau part comme avant, sans lecture de son texte. */
 export function scenariosDesBordereauxBaisses(pdf: PdfDesBordereaux): Scenario[] {
   return [
     {

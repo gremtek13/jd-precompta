@@ -750,8 +750,9 @@ de l'article 29) ne tranche pas le cas d'un total d'un jour où une seule factur
 **Qui lit le fichier, et d'où il vient** (NOE-Q1, BOR-Q8 (A), BORQ8-Q1 (A), BOR3-RGPD (B)) : le praticien, depuis son espace
 client, sous sa case « Banque » — la voie que la consigne aux clients recommande, le fichier ne quittant pas son poste ; le
 cabinet, quand c'est lui qui importe, sur place (sur l'ordinateur du praticien) ou d'un fichier que le praticien lui remet de la
-main à la main — JAMAIS par e-mail : l'adresse de collecte écartera un retour NOEMIE ou un bordereau (NOE-Q6, BOR-Q9 (A), à
-faire : NOE7, BOR6), ce qui remplace, pour eux, la décision du 24/09/2026 de ne rien changer au code. Dans tous les cas, le
+main à la main — JAMAIS par e-mail : l'adresse de collecte écarte un bordereau avant tout dépôt depuis le 22/11/2026 (BOR6 :
+`receive-email`, la raison `bordereau` dite au cabinet, sans nom) et écartera un retour NOEMIE (NOE-Q6, BOR-Q9 (A), à faire :
+NOE7), ce qui remplace, pour eux, la décision du 24/09/2026 de ne rien changer au code. Dans tous les cas, le
 fichier se lit dans le navigateur de celui qui importe et n'en sort qu'en agrégats. **La remise de la main à la main est une
 transmission** : le bordereau quitte le poste du praticien pour le cabinet, et les informations qu'il porte sont couvertes par le
 secret professionnel du praticien (code de la santé publique, art. L. 1110-4) ; c'est le praticien qui la décide et qui en

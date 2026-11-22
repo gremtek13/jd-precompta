@@ -228,33 +228,28 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
     expect(RECEIVE_EMAIL).toContain('.from("pieces_jointes_ecartees")')
   })
 
-  it('les quatre raisons, et rien d’autre, des deux côtés : celle de 22.7 remplacée par celle de 22.8, puis par celle de 22.91', () => {
+  it('les cinq raisons, et rien d’autre, des deux côtés : celle de 22.7 remplacée par celle de 22.8, puis de 22.91, puis de BOR6', () => {
     expect(MIGRATION).toMatch(/constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille'\)\)/)
     expect(MIGRATION_DEPOT).toMatch(/drop constraint pieces_jointes_ecartees_raison;/i)
     expect(MIGRATION_DEPOT).toMatch(/add constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille', 'depot'\)\)/)
     expect(MIGRATION_VIDE).toMatch(/drop constraint pieces_jointes_ecartees_raison;/i)
-    const enVigueur = /add constraint pieces_jointes_ecartees_raison check \(raison in \(([^)]*)\)\)/.exec(MIGRATION_VIDE)
+    expect(MIGRATION_VIDE).toMatch(/add constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille', 'depot', 'vide'\)\)/)
+    // En vigueur : la contrainte de `pieces_jointes_ecartees_bordereau` (BOR6), en production depuis le 21/11/2026.
+    expect(MIGRATION_BORDEREAU).toMatch(/drop constraint pieces_jointes_ecartees_raison;/i)
+    const enVigueur = /add constraint pieces_jointes_ecartees_raison check \(raison in \(([^)]*)\)\)/.exec(MIGRATION_BORDEREAU)
     const raisonsDeLaBase = [...(enVigueur?.[1] ?? '').matchAll(/'(\w+)'/g)].map((m) => m[1])
-    expect(raisonsDeLaBase).toEqual(['format', 'taille', 'depot', 'vide'])
+    expect(raisonsDeLaBase).toEqual(['format', 'taille', 'depot', 'vide', 'bordereau'])
     const appels = [...RECEIVE_EMAIL.matchAll(/noterLaPieceJointeEcartee\(supabase, dossier\.id, email_id, fichier\.id, "(\w+)", ([\w.]+)\)/g)]
-    // La fonction en écrit une de plus, derrière sa constante baissée : `bordereau` (BOR6), que la migration PRÉPARÉE
-    // `pieces_jointes_ecartees_bordereau` ajoute ; les écrans l'apprendront avant que la constante se lève.
-    expect([...new Set(appels.map((m) => m[1]))].sort()).toEqual([...raisonsDeLaBase, 'bordereau'].sort())
-    expect(MIGRATION_BORDEREAU).toMatch(/add constraint pieces_jointes_ecartees_raison check \(raison in \('format', 'taille', 'depot', 'vide', 'bordereau'\)\)/)
-    expect(RECEIVE_EMAIL).toContain('const BORDEREAUX_ECARTES_A_LA_RECEPTION = false')
-    // Chaque raison de la base a sa phrase, et une consigne à elle.
+    // La fonction en écrit exactement autant, `bordereau` sous sa constante, levée le 22/11/2026 (BOR6R-Q1).
+    expect([...new Set(appels.map((m) => m[1]))].sort()).toEqual([...raisonsDeLaBase].sort())
+    expect(RECEIVE_EMAIL).toContain('const BORDEREAUX_ECARTES_A_LA_RECEPTION = true')
+    // Chaque raison de la base a sa phrase, et une consigne à elle (format et taille partagent la leur).
     for (const r of raisonsDeLaBase) {
       expect(phraseDeLaRaison({ raison: r as PieceJointeEcartee['raison'], octets: r === 'vide' ? 0 : TAILLE_MAX_PIECE + 1024 })).not.toBe('')
     }
     const consignes = raisonsDeLaBase.map((r) => ceQueLeCabinetPeutFaire([{ raison: r as PieceJointeEcartee['raison'] }]))
     expect(new Set(consignes.slice(0, 2)).size).toBe(1)
-    expect(new Set(consignes.slice(1)).size).toBe(3)
-    // La raison de la migration préparée (BOR6) a, elle aussi, sa phrase et sa consigne à elle.
-    const preparee = /add constraint pieces_jointes_ecartees_raison check \(raison in \(([^)]*)\)\)/.exec(MIGRATION_BORDEREAU)
-    const raisonsPreparees = [...(preparee?.[1] ?? '').matchAll(/'(\w+)'/g)].map((m) => m[1])
-    expect(raisonsPreparees).toEqual([...raisonsDeLaBase, 'bordereau'])
-    expect(phraseDeLaRaison({ raison: 'bordereau', octets: 4120 })).not.toBe('')
-    expect(consignes).not.toContain(ceQueLeCabinetPeutFaire([{ raison: 'bordereau' }]))
+    expect(new Set(consignes.slice(1)).size).toBe(4)
   })
 
   it('le poids : lu pour le format et la taille ; pour un dépôt échoué, inconnu AVANT la lecture, le poids lu après ; zéro pour la vide', () => {

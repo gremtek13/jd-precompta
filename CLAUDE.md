@@ -599,8 +599,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   bordereau de télétransmission (`porteLaFormeDUnBordereau`, BOR1) se refuse dans les quatre préparateurs d'un fichier choisi
   (`sansBordereau`, `refusDesBordereauxAuDepot.test.ts`), avant tout envoi ; restent `receive-email`, l'état des paiements, une
   image → « BOR6 : LE REFUS D'UN BORDEREAU DE TÉLÉTRANSMISSION AU DÉPÔT » ; seconde partie (21/11/2026) : `receive-email` l'écarte
-  avant tout dépôt, sans pdf.js (`lib/texteDUnPdf.ts`, copié), derrière `BORDEREAUX_ECARTES_A_LA_RECEPTION` baissée, la raison
-  `bordereau` en production depuis le 21/11/2026 (249, collée ; `pieces_jointes_ecartees_bordereau`) et dite aux écrans ; la constante se lève après l'essai d'un vrai bordereau (BOR6R-Q1) → « BOR6, SECONDE PARTIE », « BOR6R ».
+  avant tout dépôt, sans pdf.js (`lib/texteDUnPdf.ts`, copié), `BORDEREAUX_ECARTES_A_LA_RECEPTION` levée le 22/11/2026 après l'essai
+  d'un vrai bordereau (BOR6R-Q1), la raison `bordereau` en production (249) et dite aux écrans ; `receive-email` à déployer → « BOR6, SECONDE PARTIE », « BOR6R ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)
@@ -1131,7 +1131,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   20 Mio ; packs ZIP, XLSX, 50 Mio ; logos PNG, JPEG, WebP, 500 Kio, jamais de SVG ; `ventes` 20 Mio, PNG, JPEG,
   PDF, texte brut et CSV depuis le 11/11/2026 (A8d2a), un logo de facture restant PNG ou JPEG, 500 Kio ; les mêmes en base (`bornesStockage.test.ts`, `depotsDansLesSeaux.test.ts`) → « LES BORNES DES SEAUX DU STOCKAGE ».
 - **Une pièce jointe écartée se dit** : un `upsert` qui ne fait rien sur la clé (l'empreinte des identifiants Resend),
-  jamais le nom, l'expéditeur ni l'objet ; raisons format, poids, `depot` (toute autre perte), `vide` ; « vue » par
+  jamais le nom, l'expéditeur ni l'objet ; raisons format, poids, `depot` (toute autre perte), `vide`, `bordereau` (BOR6) ; « vue » par
   `marquer_pieces_jointes_vues` seule, l'insertion de restauration au super-administrateur ; le journal compte, ne
   recopie rien ; l'adresse de collecte ne se compose que dans `lib/adresseCollecte.ts` → « UNE PIÈCE JOINTE ÉCARTÉE À LA
   RÉCEPTION PAR E-MAIL SE DIT AU CABINET ».

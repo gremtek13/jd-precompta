@@ -278,9 +278,9 @@ describe('l’accueil du client (ligne 22.94) : une ligne qui signale et renvoie
 
 describe('la phrase de l’onglet Accès sur la collecte (S229-Q5) : ce que la base ouvre, aux deux états du drapeau', () => {
   const arrivent = `Les pièces jointes reçues — en PDF, JPEG, PNG ou CSV, de ${BORNE} au plus chacune — arrivent directement en pièces à valider.`
-  const ecartees = 'Celle qui n’est pas déposée — d’un autre format, plus lourde, arrivée vide, ou dont le dépôt a échoué — se dit dans l’onglet Justificatifs, sans son nom'
+  const ecartees = 'Celle qui n’est pas déposée — d’un autre format, plus lourde, arrivée vide, dont le dépôt a échoué, ou qui a la forme d’un bordereau de télétransmission, qui porte des noms de patients — se dit dans l’onglet Justificatifs, sans son nom'
 
-  it('drapeau baissé : les quatre raisons et l’onglet Justificatifs, et rien du client', () => {
+  it('drapeau baissé : les cinq raisons et l’onglet Justificatifs, et rien du client', () => {
     expect(ceQueDitLaCollecte(false)).toBe(`${arrivent} ${ecartees}.`)
     expect(ceQueDitLaCollecte(false)).not.toMatch(/Mes pièces/)
   })

@@ -1141,7 +1141,7 @@ describe('AccesTab — la règle des mots de passe du projet', () => {
   })
 })
 
-// LA PHRASE DE LA COLLECTE PAR E-MAIL (S229-Q5, ligne 22.9) : les quatre raisons d'une pièce jointe écartée et où le cabinet
+// LA PHRASE DE LA COLLECTE PAR E-MAIL (S229-Q5, ligne 22.9) : les cinq raisons d'une pièce jointe écartée et où le cabinet
 // les voit — et, une fois la lecture du client en base, ce que la base en ouvre au client. L'onglet dit ce que la base ouvre
 // à la SESSION du client : la phrase est celle du module à l'état du drapeau (lib/piecesJointesEcarteesClient.ts, où ses deux
 // états se jouent).
@@ -1151,7 +1151,7 @@ describe('AccesTab — la phrase de la collecte par e-mail', () => {
     const carte = screen.getByRole('heading', { name: 'Collecte automatique par e-mail' }).parentElement
     // Les blancs ordinaires seulement : une espace insécable tient « 20 Mo » ensemble.
     expect((carte?.textContent ?? '').replace(/[ \t\r\n]+/g, ' ')).toContain(CE_QUE_DIT_LA_COLLECTE)
-    expect(CE_QUE_DIT_LA_COLLECTE).toMatch(/arrivée vide, ou dont le dépôt a échoué/)
+    expect(CE_QUE_DIT_LA_COLLECTE).toMatch(/arrivée vide, dont le dépôt a échoué, ou qui a la forme d’un bordereau de télétransmission/)
   })
 })
 

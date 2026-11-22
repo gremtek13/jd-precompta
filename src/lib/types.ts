@@ -2293,9 +2293,9 @@ export interface PieceJointeEcartee {
   // L'instant où receive-email l'a reçue et écartée, posé par la base.
   recue_le: string
   // `depot` (ligne 22.8, migration `pieces_jointes_ecartees_depot`) : le dépôt a échoué ; `vide` (ligne 22.91, migration
-  // `pieces_jointes_ecartees_vide`) : arrivée vide ; `bordereau` (BOR6, migration préparée
-  // `pieces_jointes_ecartees_bordereau`) : un PDF qui a la forme d'un bordereau de télétransmission (des noms de patients),
-  // écarté avant tout dépôt — tant que la base ne l'admet pas, aucune ligne ne la porte.
+  // `pieces_jointes_ecartees_vide`) : arrivée vide ; `bordereau` (BOR6, migration `pieces_jointes_ecartees_bordereau`, en
+  // production depuis le 21/11/2026) : un PDF qui a la forme d'un bordereau de télétransmission (des noms de patients),
+  // écarté avant tout dépôt par receive-email depuis le 22/11/2026.
   raison: 'format' | 'taille' | 'depot' | 'vide' | 'bordereau'
   // Le poids de la pièce jointe, en octets : zéro pour une pièce jointe arrivée vide, et pour elle seule ; plus de zéro
   // pour toute autre (`pieces_jointes_ecartees_octets`) ; inconnu (null) pour un dépôt échoué avant toute lecture, et pour
