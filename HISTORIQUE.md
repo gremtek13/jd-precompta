@@ -54520,3 +54520,18 @@ et son empreinte. Le lettrage : rien à changer (il part des pièces), un test l
 le FEC fictif d'une année, 18 et 22 colonnes, a la même empreinte SHA-256 avant et après (b8d1e80e…, 17943344…), épinglée dans
 `ecrituresLibresDesLecteurs.test.ts`. Restent à EL5 : la lecture de la table (lue en entier, les adresses des auteurs) et son
 passage par l'onglet Écritures et la validation ; EL3-Q1 (NatOp d'une ligne de bilan) prise à la recommandation.
+
+### 22/11/2026 — EL4 : L'ÉCRITURE LIBRE DANS LA 2035, LA CONCORDANCE, LA VALIDATION, LA SITUATION ET L'ESTIMATION (LIGNE 26.9)
+
+Derrière `ECRITURES_LIBRES_PREVUES` baissé, sans lecture de la table ni écran neuf. `lib/ecrituresLibresDeLa2035.ts` (pur) lit
+d'EL3 les lignes de classe 6 et 7 : la constatation à sa date, l'extourne au 1er janvier suivant au sens inverse, signées comme la
+2035 compte (une dépense au débit, une recette au crédit). La 2035 (source `ecriture_libre`, au compte de la ligne, sous le poste
+SAISI ; `nbEcrituresLibres` et `exclusions.ecrituresLibresHorsDeLa2035` présents seulement les écritures lues), la situation
+intermédiaire et l'estimation (un cinquième terme du chiffre d'affaires, les recettes comptées) les reçoivent en DERNIER
+paramètre, au défaut fermé (`ecrituresLibresParDefaut` : l'absence drapeau baissé, un refus drapeau levé — plus de cent appels,
+presque tous des tests ; `chiffreDAffairesDeLaPeriode`, trois appels, obligatoire). La concordance range une ligne hors de la
+2035 en ÉCART DÉCLARÉ (`ecartsDeclares`, motif `ecriture_libre_hors_2035`, seulement si compté et déclaré font exactement
+l'écrit), hors de `ecarts` donc de `concorde` (EL-Q6 (A)) ; la validation le dit en attention, chiffré
+(`ecritures-libres-hors-2035`) ; la carte de Clôture le liste à part. La CA3 reste aveugle (un scanner de ses quatre modules et
+de `DonneesTva`, un défaut planté). Mesuré : la 2035 du dossier de démonstration épinglée (77 835 / 26 970,75 / 119
+contributions), identique au défaut et à l'absence passée à la main. Reste à EL5 : la lecture, qui rejoindra chaque appelant.

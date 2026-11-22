@@ -9,6 +9,7 @@ import { variationEnDixiemes } from './revueAnalytique'
 import { parQui } from './revueAnalytiqueEcran'
 import type { Categorie, LigneBancaire, ModeComptable, Piece, ReglementGroupe, StatutLigneBancaire, VentilationBancaire } from './types'
 import type { VentesFacturees } from './ventesFacturees'
+import { ecrituresLibresParDefaut } from './ecrituresLibresDeLa2035'
 
 // L'ALERTE DU CHIFFRE D'AFFAIRES D'UN DOSSIER, À LA HAUSSE ET À LA BAISSE (la demande du cabinet du 15/11/2026, au MVP ; ses
 // réponses du 16/11/2026, CA-Q1 à CA-Q5 ; la conception : docs/conceptions/52-alerte-hausse-du-chiffre-d-affaires.md). À la fin
@@ -398,7 +399,10 @@ export function chiffreDAffairesDesSources(
   return {
     ok: true,
     chiffreDAffaires: (debut, fin) => Math.round(chiffreDAffairesDeLaPeriode(
-      s.piecesDeVente, paiements, debut, fin, assujettiTva, mode, parts, recettesFacturees, recettesDeCaisse) * 100),
+      // Les écritures libres de l'expert (EL4) : absentes tant que leur table n'est pas en base, et un refus une fois le drapeau
+      // levé, tant que leur lecture (EL5) ne les passe pas ici.
+      s.piecesDeVente, paiements, debut, fin, assujettiTva, mode, parts, recettesFacturees, recettesDeCaisse,
+      ecrituresLibresParDefaut()) * 100),
   }
 }
 

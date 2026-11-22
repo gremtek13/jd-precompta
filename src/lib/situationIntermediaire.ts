@@ -12,6 +12,8 @@ import {
 import { fraisDesMouvements } from './ecrituresVentesFacturees'
 import type { PlanComptable } from './planComptable'
 import type { RecetteDeCaisse, RecettesDeCaisse } from './recettesDeCaisse'
+import type { EcrituresLibresDesExports } from './ecrituresLibresDesExports'
+import { ecrituresLibresParDefaut, lignesDeResultatLibresDeLaPeriode, type LigneDeResultatLibre } from './ecrituresLibresDeLa2035'
 import {
   exemplaireDUneFactureSource, recettesFactureesDeLaPeriode, type ExcedentVenteFacturee, type VenteEcartee, type VentesFacturees,
 } from './ventesFacturees'
@@ -47,6 +49,10 @@ export interface SituationIntermediaire {
   // LES RECETTES DE CAISSE DE LA PÉRIODE QUE NULLE LIGNE NE PORTE (étape C3a) : leur catégorie n'a pas de poste, ou n'est
   // plus un produit. Dites, comme la 2035 les dit : une recette qui manque à l'état montré à une banque se tairait sinon.
   recettesDeCaisseSansPoste: RecetteDeCaisse[]
+  // LES LIGNES DES ÉCRITURES LIBRES DE LA PÉRIODE QUE L'EXPERT A MISES HORS DE LA 2035 (EL4, EL-Q6 (A)), en trésorerie : la
+  // 2035 les dit, l'état « à ce jour » aussi. PRÉSENT SEULEMENT QUAND LES ÉCRITURES LIBRES ONT ÉTÉ LUES ; ABSENT sinon (le
+  // drapeau baissé) : la situation d'hier, au caractère près.
+  ecrituresLibresHorsDeLa2035?: LigneDeResultatLibre[]
 }
 
 // Situation intermédiaire — première brique du "dossier bancaire automatisé" (voir CLAUDE.md) :
@@ -132,6 +138,11 @@ export function calculerSituationIntermediaire(
   // dont cet état est la version « à ce jour ». Sans valeur par défaut : les oublier montrerait à une banque un praticien
   // sans ses recettes en espèces. Absente (le drapeau baissé), elle ne change rien.
   recettesDeCaisse: RecettesDeCaisse,
+  // Les écritures libres de l'expert-comptable (EL4 ; lib/ecrituresLibresDeLa2035.ts), LUES EN ENTIER, ou absentes : chaque
+  // ligne de classe 6 ou 7 de la période sous un poste de la 2035 y compte à sa date, comme dans la 2035 (conception 54, § 5.3 :
+  // la situation de septembre et la 2035 de mai ne se contredisent pas). Un défaut du côté fermé (trente-six appels, presque
+  // tous des tests) : drapeau baissé, l'absence ; levé, un appel qui les omet lève (`ecrituresLibresParDefaut`).
+  ecrituresLibres: EcrituresLibresDesExports = ecrituresLibresParDefaut(),
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
@@ -237,6 +248,23 @@ export function calculerSituationIntermediaire(
   // cours de période ne compte que depuis sa mise en service, un bien mis en service après la date de
   // l'état ne compte pas, et l'année civile complète rend exactement la dotation de l'exercice — le
   // PRÉVISIONNEL, qui appelle cette fonction sur l'année entière, compte donc la case CH de la 2035.
+  // LES ÉCRITURES LIBRES (EL4) : en centimes par poste, puis en euros, comme la caisse. En engagement, aucune ligne ne porte de
+  // poste (la base le refuse) : rien ne s'y ajoute, et rien ne se dit hors de la 2035, qui n'existe pas.
+  const ecrituresLibresHorsDeLa2035: LigneDeResultatLibre[] = []
+  if (ecrituresLibres.etat === 'lues') {
+    const parPoste = new Map<string, number>()
+    for (const l of lignesDeResultatLibresDeLaPeriode(ecrituresLibres, periodeDebut, periodeFin)) {
+      if (l.poste === null) {
+        if (mode === 'tresorerie') ecrituresLibresHorsDeLa2035.push(l)
+        continue
+      }
+      parPoste.set(l.poste, (parPoste.get(l.poste) ?? 0) + (l.nature === 'recette' ? l.centimes : -l.centimes))
+    }
+    for (const [poste, centimes] of parPoste) {
+      if (centimes !== 0) totauxParPoste.set(poste, (totauxParPoste.get(poste) ?? 0) + centimes / 100)
+    }
+  }
+
   const totalAmortissements = immobilisations.reduce((sum, i) => sum + dotationSurPeriode(i, periodeDebut, periodeFin), 0)
   if (totalAmortissements > 0) {
     totauxParPoste.set(POSTE_AMORTISSEMENTS, -Math.round(totalAmortissements * 100) / 100)
@@ -271,5 +299,6 @@ export function calculerSituationIntermediaire(
     ventesFactureesEnExcedent: [...ventesFacturees.excedents],
     fraisSansPoste,
     recettesDeCaisseSansPoste,
+    ...(ecrituresLibres.etat === 'lues' ? { ecrituresLibresHorsDeLa2035 } : {}),
   }
 }

@@ -14,6 +14,8 @@ import { centimesParDateSelon, partDeLAnnee, rattachementsTresorerie, type Paiem
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
 import { compteDesAutresImpots } from './autresImpotsDesCotisations'
+import type { EcritureLibreDesExports, EcrituresLibresDesExports } from './ecrituresLibresDesExports'
+import { ecrituresLibresParDefaut, lignesDeResultatLibres, type LigneDeResultatLibre } from './ecrituresLibresDeLa2035'
 import type { MouvementBancaire } from './affectationBanque'
 import type { Categorie, CotisationDeclaree, DeclarationTva, Immobilisation, Piece, VehiculeDossier } from './types'
 import {
@@ -126,6 +128,10 @@ export interface LigneDeclaration {
   // au caractère près, celle d'avant la caisse — et l'instantané validé qu'on en tire, la version 2 d'hier
   // (lib/validationExercice.ts).
   nbOperationsDeCaisse?: number
+  // Et d'écritures libres de l'expert-comptable (EL4) : leur preuve est l'état des écritures libres (EL3), ni une pièce ni un
+  // mouvement. Une écriture, pas une ligne ; son extourne est la même écriture. PRÉSENT SEULEMENT QUAND LA 2035 A LU LES
+  // ÉCRITURES LIBRES, zéro compris ; ABSENT sinon (le drapeau baissé) : la ligne d'hier, au caractère près.
+  nbEcrituresLibres?: number
 }
 
 // Ce qui n'a PAS été pris dans le calcul, avec la raison. Sur une déclaration fiscale, une pièce
@@ -167,6 +173,12 @@ export interface ExclusionsDeclaration {
   // aurait refusée sinon, ou elle n'est pas lue : ni recette ni dépense devinée, donc dites. Leur écriture reste sur le
   // compte d'alors : l'opération se retire et se saisit de nouveau.
   recettesDeCaisseSansProduit: RecetteDeCaisse[]
+  // LES LIGNES DE RÉSULTAT DES ÉCRITURES LIBRES QUE L'EXPERT A MISES HORS DE LA 2035 (EL4, EL-Q2 (A), EL-Q6 (A)) : de
+  // l'exercice, à leur date — une extourne du 1er janvier dans l'exercice qui suit son écriture. Écrites au FEC, ni comptées ni
+  // un trou : un ÉCART DÉCLARÉ, que la concordance range à part (`ecartsDeclares`) et que la validation dit sans le refuser.
+  // PRÉSENT SEULEMENT QUAND LA 2035 A LU LES ÉCRITURES LIBRES (`lues`), vide compris ; ABSENT quand elles le sont (le drapeau
+  // baissé) : les exclusions sont alors, au caractère près, celles d'hier.
+  ecrituresLibresHorsDeLa2035?: LigneDeResultatLibre[]
 }
 
 // Une pièce comptée à sa DATE DE FACTURE faute de paiement rapproché — une supposition, que l'écran
@@ -207,6 +219,10 @@ export type SourceDeclaration =
   // Une recette de caisse (étape C3a ; lib/recettesDeCaisse.ts) : `id` est l'opération, que son écriture désigne par
   // `operation_caisse_id`.
   | { type: 'caisse'; id: string; recette: RecetteDeCaisse }
+  // Une ligne d'une écriture libre de l'expert-comptable sous un poste de la 2035 (EL4) : `id` est l'écriture, que ses lignes
+  // au brouillon désignent par `ecriture_libre_id` — sa constatation à sa date, son extourne (`extourne`) au 1er janvier qui
+  // suit, sous le même identifiant.
+  | { type: 'ecriture_libre'; id: string; ecriture: EcritureLibreDesExports; extourne: boolean }
 
 export interface ContributionDeclaration {
   source: SourceDeclaration
@@ -414,6 +430,12 @@ export function calculerDeclaration2035(
   // oublierait rendrait la 2035 d'un praticien sans ses recettes en espèces, plausible et signée. Une caisse ABSENTE (le
   // drapeau baissé) se DIT, et ne change rien ; une caisse lue en partie n'a pas de 2035 — l'appelant ne l'appelle pas.
   recettesDeCaisse: RecettesDeCaisse,
+  // Les écritures libres de l'expert-comptable (EL4 ; lib/ecrituresLibresDeLa2035.ts), LUES EN ENTIER, ou absentes : chaque
+  // ligne de classe 6 ou 7 sous un poste compte à SA date, signée ; une ligne hors de la 2035 ne compte pas et se dit
+  // (`ecrituresLibresHorsDeLa2035`). UN DÉFAUT DU CÔTÉ FERMÉ, et non un paramètre obligatoire : soixante appels, presque tous
+  // des tests. Drapeau baissé, l'absence ; levé, un appel qui les omet lève (`ecrituresLibresParDefaut`). Une lecture
+  // partielle ne se passe pas : l'appelant n'appelle pas.
+  ecrituresLibres: EcrituresLibresDesExports = ecrituresLibresParDefaut(),
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -443,12 +465,12 @@ export function calculerDeclaration2035(
   // Clôture montre et que la validation d'un exercice refuse.
   const totaux = new Map<string, {
     poste: string; nature: 'recette' | 'depense'; centimes: number; nbPieces: number; mouvements: Set<string>; encaissements: Set<string>
-    operationsDeCaisse: Set<string>
+    operationsDeCaisse: Set<string>; ecrituresLibres: Set<string>
   }>()
 
   const ajouter = (
     contribution: ContributionDeclaration, nbPieces: number, mouvementId: string | null = null, encaissementId: string | null = null,
-    operationDeCaisseId: string | null = null,
+    operationDeCaisseId: string | null = null, ecritureLibreId: string | null = null,
   ) => {
     contributions.push(contribution)
     const cle = `${contribution.nature}:${contribution.poste}`
@@ -456,7 +478,7 @@ export function calculerDeclaration2035(
     if (!actuel) {
       actuel = {
         poste: contribution.poste, nature: contribution.nature, centimes: 0, nbPieces: 0, mouvements: new Set(), encaissements: new Set(),
-        operationsDeCaisse: new Set(),
+        operationsDeCaisse: new Set(), ecrituresLibres: new Set(),
       }
       totaux.set(cle, actuel)
     }
@@ -465,6 +487,7 @@ export function calculerDeclaration2035(
     if (mouvementId) actuel.mouvements.add(mouvementId)
     if (encaissementId) actuel.encaissements.add(encaissementId)
     if (operationDeCaisseId) actuel.operationsDeCaisse.add(operationDeCaisseId)
+    if (ecritureLibreId) actuel.ecrituresLibres.add(ecritureLibreId)
   }
   const enCentimes = (montant: number) => Math.round(montant * 100)
 
@@ -731,6 +754,30 @@ export function calculerDeclaration2035(
     }, 0)
   }
 
+  // LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL4 ; conception 54, § 5.1, § 5.2). Chaque ligne de classe 6 ou 7 de l'exercice
+  // sous un poste de la 2035 est UNE contribution, au compte de la ligne, signée comme elle agit sur son poste (une dépense au
+  // débit, une recette au crédit, en positif ; l'extourne au sens inverse) : la concordance la retrouve sur ce compte, sous
+  // l'écriture, et elle concorde par construction. Le poste est celui de la saisie, jamais celui d'une catégorie. Une ligne hors
+  // de la 2035 ne compte pas : elle se dit (`ecrituresLibresHorsDeLa2035`), un écart que l'expert a déclaré.
+  if (ecrituresLibres.etat === 'lues') {
+    const horsDeLa2035: LigneDeResultatLibre[] = []
+    for (const l of lignesDeResultatLibres(ecrituresLibres)) {
+      if (anneeDe(l.date) !== annee) continue
+      if (l.poste === null) {
+        horsDeLa2035.push(l)
+        continue
+      }
+      ajouter({
+        source: { type: 'ecriture_libre', id: l.ecriture.id, ecriture: l.ecriture, extourne: l.extourne },
+        poste: l.poste,
+        nature: l.nature,
+        compte: l.compte,
+        centimes: l.centimes,
+      }, 0, null, null, null, l.ecriture.id)
+    }
+    exclusions.ecrituresLibresHorsDeLa2035 = horsDeLa2035
+  }
+
   // Le total SIGNÉ de chaque poste, jamais sa valeur absolue (voir `LigneDeclaration`).
   const lignes = [...totaux.values()]
     .filter((t) => t.centimes !== 0)
@@ -743,6 +790,8 @@ export function calculerDeclaration2035(
       nbEncaissements: t.encaissements.size,
       // Le compte des opérations de caisse, seulement quand la 2035 a lu la caisse : la ligne d'avant, sinon.
       ...(recettesDeCaisse.etat === 'lue' ? { nbOperationsDeCaisse: t.operationsDeCaisse.size } : {}),
+      // Le compte des écritures libres, seulement quand la 2035 les a lues : la ligne d'avant, sinon.
+      ...(ecrituresLibres.etat === 'lues' ? { nbEcrituresLibres: t.ecrituresLibres.size } : {}),
     }))
 
   const recettes = lignes.filter((l) => l.nature === 'recette').sort((a, b) => b.montant - a.montant)

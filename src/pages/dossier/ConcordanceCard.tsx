@@ -90,6 +90,21 @@ export default function ConcordanceCard({ concordance: c, comptesPartages, lectu
             </p>
           )}
           {c.ecarts.length > 0 && !figePar && <Ecarts concordance={c} />}
+          {/* LES ÉCARTS DÉCLARÉS (EL4, EL-Q6 (A)) : les écritures libres que l'expert-comptable a mises hors de la 2035, à part
+              des écarts à corriger — voulus, chiffrés, nommés par leur référence et leur libellé ; ils ne retiennent pas la
+              validation. Absents tant que les écritures libres ne sont pas lues (le drapeau baissé) : la carte d'hier. */}
+          {(c.ecartsDeclares?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <h4 style={{ margin: '0 0 6px' }}>Écarts déclarés par l’expert-comptable</h4>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {c.ecartsDeclares!.map((e) => (
+                  <li key={e.cle}>
+                    <strong>{e.libelle}</strong>{e.date ? ` (${formatDate(e.date)})` : ''} — {phraseDeLEcart(e)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
       {!lectureIncomplete && !c.anterieurALOuverture && !figePar && comptesPartages.length > 0 && (
