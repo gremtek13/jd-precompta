@@ -54615,3 +54615,15 @@ dans un bloc hors de quatre cas comptés, et voit les huit versions d'avant. Hor
 de `deux_facteurs_exiges` : sa boucle (107 restrictives, 125 avec les préparées, dans les deux ordres) et socle.sql, qui
 rend celles du socle sans `as restrictive`. L'essai `pieceDUnPaiementDansSonDossier` : 4c butait sur la contrainte du chemin
 (238) ; ses gestes déplacent aussi le chemin, 24 verdicts justes, deux mutations mordent, le banc du leurre SÛR.
+
+### 23/11/2026 — EL2 EN PRODUCTION : LA MIGRATION DES ÉCRITURES LIBRES COLLÉE, LE DRAPEAU LEVÉ (LIGNE 26.9)
+
+Collée par le cabinet le 23/11/2026 sur EL2-migration (A), par le bloc qui vérifie l'empreinte du texte avant de l'exécuter :
+250 migrations, la dernière `20261122150000_ecritures_libres`, l'historique à `55ffe78c104dd5b299cbf392eac0b56c`. Le fichier
+rangé dans supabase/schema/ sous sa version, les quatre lignes de `ecritures_brouillon` au socle (la colonne
+`ecriture_libre_id`, sa clé étrangère, `ecritures_brouillon_libre_sans_autre_source`, l'index `ecritures_brouillon_ecriture_libre`),
+relevées du catalogue. Les trois contrôles égaux des deux côtés, aux valeurs annoncées par EL8 : dérive 250 `cdc9d7ff…`,
+socle 84 `e54200f4…`, inventaire 3 468 `4a6d01f1…`. `ECRITURES_LIBRES_PREVUES` levé : la section « Écritures de
+l'expert-comptable » de l'onglet Écritures s'ouvre, la table entre au plan de sauvegarde, les moteurs lisent les écritures
+libres. Non fait : `rls.sql` (bloc LI) et l'essai de la migration rejoués en production ; une première écriture libre saisie
+dans un navigateur ; l'assistant (EL6) ne les lit pas. Restent EL6, EL7, EL9 (le dégel), EL2b, le choix à l'écran de la pièce citée.
