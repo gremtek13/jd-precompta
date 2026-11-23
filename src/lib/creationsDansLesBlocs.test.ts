@@ -314,8 +314,8 @@ const PREPAREES = fichiersPrepares()
 
 describe('aucun objet ne se crée dans un bloc do, que l’inventaire de l’export ne verrait pas (22/11/2026)', () => {
   it('le plancher : l’export et les préparées se lisent entiers, et chaque cas nommé compte ses créations', () => {
-    expect(PREPAREES.length).toBeGreaterThanOrEqual(22)
-    expect(SCHEMA.length).toBeGreaterThanOrEqual(251)
+    expect(PREPAREES.length).toBeGreaterThanOrEqual(21)
+    expect(SCHEMA.length).toBeGreaterThanOrEqual(252)
     // Relevé le 22/11/2026, l'export et les préparées RÉUNIS (une préparée rangée dans l'export au collage ne change rien) :
     // 220 blocs ; quarante-quatre restrictives sous condition (vingt-six dans l'export, dix-huit dans onze préparées), vingt
     // contraintes de paire (MCB5g, INV2, LIA2, AFF2, EL2 : quatre chacune), la boucle de la double authentification, le bloc
@@ -325,7 +325,7 @@ describe('aucun objet ne se crée dans un bloc do, que l’inventaire de l’exp
     expect(tout.cas).toEqual({ restrictive: 44, paire: 20, balayage: 1, porteDesPreparees: 10 })
     expect(tout.verifications).toBe(21)
     expect(tout.blocs).toBeGreaterThanOrEqual(220)
-    expect(releve(PREPAREES).blocs).toBeGreaterThanOrEqual(43)
+    expect(releve(PREPAREES).blocs).toBeGreaterThanOrEqual(40)
   })
 
   it('aucune préparée ne crée dans un bloc un objet hors des cas nommés', () => {
