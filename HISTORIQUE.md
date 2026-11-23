@@ -54627,3 +54627,20 @@ socle 84 `e54200f4…`, inventaire 3 468 `4a6d01f1…`. `ECRITURES_LIBRES_PREVUE
 l'expert-comptable » de l'onglet Écritures s'ouvre, la table entre au plan de sauvegarde, les moteurs lisent les écritures
 libres. Non fait : `rls.sql` (bloc LI) et l'essai de la migration rejoués en production ; une première écriture libre saisie
 dans un navigateur ; l'assistant (EL6) ne les lit pas. Restent EL6, EL7, EL9 (le dégel), EL2b, le choix à l'écran de la pièce citée.
+
+### 23/11/2026 — L'ÉCRITURE LIBRE ÉPROUVÉE DANS UN NAVIGATEUR, ET LE CHOIX DE LA PIÈCE CITÉE (EL-Q8 (A), LIGNE 26.9)
+
+(Agent dev ; rien en base.) Le banc reçoit la table `ecritures_libres` et ses deux fonctions (`rpcDesEcrituresLibres` : la pièce
+d'un autre dossier refusée, la version lue, le numéro de l'année, les lignes et l'extourne au brouillon sous
+`ecriture_libre_id`), et cinq visites `ecritures-libres/*` (outils/captures/ecrituresLibres.mjs, partagé avec vitrine.mjs,
+qui gagne une directive `pas`) : la section vide, une saisie équilibrée sous un poste, la pièce citée choisie, un déséquilibre
+refusé avant le clic, l'écriture passée relue dans la liste (le brouillon de d1 passe de 43 à 45 lignes), son retrait. Vu au
+banc et corrigé : sur téléphone, le fieldset d'une ligne prenait la largeur de l'option la plus longue du poste (302 px hors
+du panneau, la règle du banc le voit, retirée la correction) ; le poste comprimé à un mot à 1 280 px, mis sur sa rangée ; la
+liste repliée en fiches (`table-empilable`), « EL2026- / 0001 » insécable ; le bouton qui passe en primaire. 0 débordement aux
+quatre largeurs, à 720 px et aux volets extrêmes. Le banc relevait deux clés `r31`, `r32` en double dans le faux brouillon de
+d1 (React le criait sur l'onglet Écritures) : renommées. Le choix de la pièce : le `ChoixDuJustificatif` de l'inventaire, les
+seules pièces VALIDÉES du dossier lues en entier par l'onglet, désignées par date, tiers et montant TTC, jamais le fichier ;
+lues en partie, aucun choix, le motif dit, la saisie part sans pièce (ou avec la sienne). Aucun refus avant le clic : la base
+n'en a qu'un, la pièce d'un autre dossier, que l'écran ne propose jamais. La phrase « dont … par une écriture de
+l'expert-comptable » de la Projection a son test d'écran (EstimationTab.test.tsx). Question au cabinet : ELQ8-Q1 (offrir aussi les pièces « à valider » ?).

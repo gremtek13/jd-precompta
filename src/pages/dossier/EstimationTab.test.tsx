@@ -56,6 +56,8 @@ const faux = vi.hoisted(() => ({
   references: [] as unknown[],
   referencesPostes: [] as unknown[],
   refusRetrait: null as string | null,
+  // Les écritures libres de l'expert-comptable (EL4-Q1), lues par `useEcrituresLibres` (le drapeau levé) : vides par défaut.
+  ecrituresLibres: [] as unknown[],
 }))
 
 // Doublée pour ne rien facturer : ce qui se joue ici est le NOMBRE de lectures, pas ce qu'elles lisent.
@@ -122,7 +124,8 @@ vi.mock('../../lib/supabase', async () => {
           : table === 'ventilations_bancaires' ? faux.ventilations
           : table === 'reglements_groupes' ? faux.reglements
           : table === 'references_annuelles' ? faux.references
-          : table === 'references_postes_annuels' ? faux.referencesPostes : [], predicats)
+          : table === 'references_postes_annuels' ? faux.referencesPostes
+          : table === 'ecritures_libres' ? faux.ecrituresLibres : [], predicats)
         if (table === 'pieces' && faux.muetPieces != null) {
           const rendu = donnees.slice(debut, Math.min(fin + 1, faux.muetPieces))
           return Promise.resolve({ data: rendu, error: null, count: donnees.length }).then(suite)
@@ -327,6 +330,60 @@ describe('EstimationTab — la projection de l’année', () => {
     expect(valeur('Cotisations appelées à date')).toBe('300,00 €')
     expect(valeur('CA encaissé à date')).toBe('600,00 €')
     expect(valeur("Cotisations projetées sur l'année")).toBe('1 350,00 €')
+  })
+})
+
+// EL4-Q1 : « COTISATIONS APPELÉES À DATE » MÊLE L'ÉCHÉANCIER ET LES ÉCRITURES LIBRES DE L'EXPERT sous le poste des cotisations ;
+// leur part se dit sous le total, et SEULEMENT quand le module la rend (`cotisDontEcrituresLibres`, non nulle). Une écriture dont la
+// ligne de charge est hors de la 2035 ne compte pas : la phrase ne paraît pas, le total reste celui de l'échéancier.
+describe('EstimationTab — la part des écritures de l’expert-comptable dans les cotisations (EL4-Q1)', () => {
+  const ecriture = (poste: string | null) => ({
+    id: 'el1', dossier_id: 'dossier-de-test', exercice: 2026, numero: 1, date: '2026-02-15', libelle: 'Cotisation reclassée',
+    motif: 'Prélèvement passé sur le compte personnel', avec_extourne: false, piece_citee_id: null, version: 1, cree_par: 'u-expert',
+    cree_le: '2026-02-16T09:00:00Z', modifie_par: null, modifie_le: null,
+    lignes: [
+      { compte: '646100', sens: 'debit', centimes: 25000, poste_2035: poste, compte_lib: null },
+      { compte: '108000', sens: 'credit', centimes: 25000, poste_2035: null, compte_lib: null },
+    ],
+  })
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    faux.pieces = []
+    faux.categories = []
+    faux.immobilisations = []
+    faux.muetPieces = null
+    faux.cotisations = Array.from({ length: 12 }, (_, i) =>
+      cotisationDeTest({ id: `e${i}`, echeance: `2026-${String(i + 1).padStart(2, '0')}-05` }))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    faux.cotisations = []
+    faux.ecrituresLibres = []
+  })
+  const phrase = /par une écriture de l’expert-comptable/
+
+  it('une part non nulle : le total la compte, et la phrase la dit', async () => {
+    faux.ecrituresLibres = [ecriture('Cotisations sociales personnelles')]
+    await rendre()
+    expect(await screen.findByText(phrase)).toBeDefined()
+    expect(screen.getByText(phrase).textContent?.replace(/\s/g, ' ')).toBe('dont 250,00 € par une écriture de l’expert-comptable')
+    expect(valeur('Cotisations appelées à date')).toBe('550,00 €')
+  })
+
+  it('sans écriture libre : aucune phrase, le total de l’échéancier', async () => {
+    await rendre()
+    await screen.findByText(/D'après les 2,7 mois écoulés cette année/)
+    expect(valeur('Cotisations appelées à date')).toBe('300,00 €')
+    expect(screen.queryByText(phrase)).toBeNull()
+  })
+
+  it('une écriture dont la charge est hors de la 2035 : sa part est nulle, la phrase ne paraît pas', async () => {
+    faux.ecrituresLibres = [ecriture(null)]
+    await rendre()
+    await screen.findByText(/D'après les 2,7 mois écoulés cette année/)
+    expect(valeur('Cotisations appelées à date')).toBe('300,00 €')
+    expect(screen.queryByText(phrase)).toBeNull()
   })
 })
 

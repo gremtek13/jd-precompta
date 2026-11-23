@@ -192,6 +192,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const { ouverts: modulesOuverts } = useModulesOuverts()
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
+  // Le motif d'une lecture des pièces validées partielle ou refusée, nul lue en entier : la section des écritures libres n'offre
+  // alors aucune pièce à citer (EL-Q8 (A)).
+  const [piecesIncompletes, setPiecesIncompletes] = useState<string | null>(null)
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
   // L'ouverture d'un dossier repris d'un autre logiciel (voir lib/aNouveaux.ts) : elle ouvre le FEC et
   // la piste d'audit de l'exercice qu'elle ouvre.
@@ -403,6 +406,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setVentilationsIncompletes(lectureVentilations.complete ? null : lectureVentilations.motif)
     setCategories(lectureCategories.lignes)
     setPiecesValidees(lecturePieces.lignes)
+    setPiecesIncompletes(lecturePieces.complete ? null : lecturePieces.motif ?? 'lecture incomplète')
     setEcritures(brouillon.lignes)
     setANouveaux(lectureANouveaux.lignes)
     // Un seul drapeau pour TOUTES les collections dont dépendent le FEC et la piste d'audit, et
@@ -1363,6 +1367,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           ouverture={aNouveauxIncomplets !== null ? undefined : ouverture}
           categories={categories}
           pieces={piecesValidees}
+          piecesIncompletes={piecesIncompletes}
           relecture={loading}
           relire={load}
         />

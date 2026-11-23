@@ -7,7 +7,9 @@ import BarreRecherche from '../../components/BarreRecherche'
 // d'une régularisation, la pièce ou la facture d'une provision. Il n'écrit RIEN : le choix part avec l'écriture du formulaire, sous
 // son verrou. Rien ne se propose avant le retour de la lecture ; lue en partie ou refusée, il le dit et n'offre aucun choix — une
 // régularisation remplacée garde alors la pièce qu'elle cite. Ce qui se propose, le titre et le détail de chaque option sont ceux
-// du module (lib/justificatifsDeLInventaire.ts) ; la liste passe par la recherche commune et dit son plafond.
+// du module (lib/justificatifsDeLInventaire.ts) ; la liste passe par la recherche commune et dit son plafond. Le même choix sert
+// la pièce citée d'une écriture libre de l'expert-comptable (EL-Q8 (A), pages/dossier/EcrituresLibresSection.tsx), ses options
+// tirées de lib/ecrituresLibresVue.ts.
 
 interface Props {
   /** Le préfixe des identifiants du formulaire (deux choix dans l'onglet). */
@@ -23,10 +25,15 @@ interface Props {
   /** « une pièce », « une pièce ou une facture » : ce que la liste propose, pour ses phrases. */
   quoi: string
   desactive: boolean
+  /** Ce que la recherche invite à taper ; par défaut, celui de l'inventaire, qui montre le nom du fichier. */
+  placeholder?: string
   onChoisir: (c: Citation | null) => void
 }
 
-export default function ChoixDuJustificatif({ id, lecture, options, citee, optionCitee, quoi, desactive, onChoisir }: Props) {
+export default function ChoixDuJustificatif({
+  id, lecture, options, citee, optionCitee, quoi, desactive, onChoisir,
+  placeholder = 'Rechercher un fichier, un tiers, une date, un montant…',
+}: Props) {
   const [ouvert, setOuvert] = useState(false)
   const [recherche, setRecherche] = useState('')
 
@@ -72,7 +79,7 @@ export default function ChoixDuJustificatif({ id, lecture, options, citee, optio
             ) : (
               <>
                 <BarreRecherche
-                  valeur={recherche} onChange={setRecherche} placeholder="Rechercher un fichier, un tiers, une date, un montant…"
+                  valeur={recherche} onChange={setRecherche} placeholder={placeholder}
                   affiches={affichees.length} total={options.length}
                 />
                 {affichees.length === 0 ? (

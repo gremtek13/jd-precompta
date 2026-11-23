@@ -12,6 +12,7 @@
 // chargée » le prouve à chaque vue. Les polices passaient avant par curl, venant de Google.
 import { chromium } from 'playwright-core'
 import { existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { SECTION_LIBRE, ecritureLibrePassee, ecritureLibreRetiree, saisieLibreOuverte, saisieLibreRemplie } from './ecrituresLibres.mjs'
 
 const BASE = 'http://127.0.0.1:5199/'
 const SORTIE = new URL('./sorties/', import.meta.url).pathname
@@ -420,6 +421,29 @@ const VUES = [
   { nom: 'pc-securite-clair', chemin: '#/securite', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Ajouter l’appareil' },
   { nom: 'pc-securite-sombre', chemin: '#/securite', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Ajouter l’appareil' },
   { nom: 'mobile-securite-clair', chemin: '#/securite', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Ajouter l’appareil' },
+  // LA SECTION « ÉCRITURES DE L'EXPERT-COMPTABLE » DE L'ONGLET ÉCRITURES (EL5, `ECRITURES_LIBRES_PREVUES` levé le 23/11/2026), sur le
+  // cabinet infirmier (voir ecrituresLibres.mjs) : vide ; une saisie équilibrée, la pièce citée choisie ; un déséquilibre refusé
+  // avant le clic ; l'écriture passée relue dans la liste ; son retrait. En clair, en sombre, à 1 024 et sur téléphone.
+  ...[
+    { suffixe: 'vide', pas: async (page) => { await SECTION_LIBRE(page).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
+    {
+      suffixe: 'choix',
+      pas: async (page) => {
+        const section = await saisieLibreOuverte(page)
+        await section.getByRole('button', { name: 'Choisir une pièce validée', exact: true }).click()
+        await section.getByRole('list', { name: 'Choisir une pièce validée' }).evaluate((e) => e.scrollIntoView({ block: 'center' }))
+      },
+    },
+    { suffixe: 'saisie', pas: async (page) => { await (await saisieLibreRemplie(page)).getByText(/^Pièce justificative/).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
+    { suffixe: 'refus', pas: async (page) => { await (await saisieLibreRemplie(page, { desequilibre: true, piece: false })).getByText(/^L’écriture n’est pas équilibrée/).evaluate((e) => e.scrollIntoView({ block: 'center' })) } },
+    { suffixe: 'passee', pas: async (page) => { await (await ecritureLibrePassee(page)).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
+    { suffixe: 'retiree', pas: async (page) => { await ecritureLibrePassee(page); await (await ecritureLibreRetiree(page)).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
+  ].flatMap(({ suffixe, pas }) => [
+    { nom: `pc-ecritures-libres-${suffixe}`, chemin: '#/dossiers/d1/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, pas },
+    { nom: `pc-ecritures-libres-${suffixe}-sombre`, chemin: '#/dossiers/d1/ecritures', l: 1280, h: 800, theme: 'dark', reduite: false, pas },
+    { nom: `pc-ecritures-libres-${suffixe}-1024`, chemin: '#/dossiers/d1/ecritures', l: 1024, h: 768, theme: 'light', reduite: false, pas },
+    { nom: `mobile-ecritures-libres-${suffixe}`, chemin: '#/dossiers/d1/ecritures', l: 390, h: 844, theme: 'light', reduite: false, pas },
+  ]),
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
@@ -497,6 +521,11 @@ for (const v of VUES) {
   if (v.deplier) {
     await page.getByText(v.deplier).first().click()
     await page.waitForTimeout(300)
+  }
+  // Des gestes que les directives ci-dessus ne disent pas (une saisie remplie, une confirmation acceptée) : une fonction de la vue.
+  if (v.pas) {
+    await v.pas(page)
+    await page.waitForTimeout(400)
   }
   // Un texte à amener à l'écran avant la capture, pour montrer le bas d'un long onglet.
   // `enTete` le pose en HAUT de l'écran plutôt qu'au plus près : ce qui le suit — un tableau déplié — se voit.

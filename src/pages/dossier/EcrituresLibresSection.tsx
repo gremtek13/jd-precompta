@@ -4,6 +4,7 @@ import { aujourdHuiAParis, formatDate } from '../../lib/format'
 import { telechargerTexte } from '../../lib/fec'
 import { telechargerUnPdf } from '../../lib/apercu'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import ChoixDuJustificatif from './ChoixDuJustificatif'
 import {
   AVERTISSEMENT_DU_LIBELLE, POSTES_DES_DEPENSES, POSTES_DES_RECETTES, avertissementsDeLEcritureLibre, classeDeResultat,
   composerEcrituresLibres, ecritureLibrePourLaBase, estRattachee, posteProposeDuCompte, propositionDeLaRegle,
@@ -12,8 +13,9 @@ import {
 import { auteurDeLaVersion, instantDeLaVersion, referenceDeLEcritureLibre } from '../../lib/ecrituresLibresDesExports'
 import {
   LIGNE_VIDE, compteDuFormulaire, confirmationDeLEcriture, confirmationDuRetrait, contexteDuJugement, ecrituresDeLExercice,
-  equilibreDeLaSaisie, euros, formulaireDeLEcriture, formulaireVide, saisieDuFormulaire, type FormulaireDEcritureLibre,
-  type LectureDesEcrituresLibres, type LigneDuFormulaire,
+  equilibreDeLaSaisie, euros, formulaireDeLEcriture, formulaireVide, ligneDeLaPieceCitee, optionDeLaPieceCitee,
+  optionsDesPiecesDUneEcritureLibre, saisieDuFormulaire, type FormulaireDEcritureLibre, type LectureDesEcrituresLibres,
+  type LigneDuFormulaire,
 } from '../../lib/ecrituresLibresVue'
 import { effetDeLaLigne, genererEtatDesEcrituresLibresCsv, instantAParis, lignesDeLEtat, nomDuFichierDeLEtat, pdfDeLEtat } from '../../lib/etatDesEcrituresLibres'
 import type { Categorie, Piece } from '../../lib/types'
@@ -30,8 +32,11 @@ import type { Categorie, Piece } from '../../lib/types'
 //   trésorerie proposée devant une charge ou un produit rattaché ; la confirmation NOMME les lignes, les totaux et l'effet sur
 //   la 2035 ; les gestes par `enregistrer_ecriture_libre` et `retirer_ecriture_libre` seules, chacun sous son verrou `useRef`,
 //   relâché après la relecture.
+// - La pièce citée, facultative (EL-Q8 (A)) : un choix parmi les pièces VALIDÉES du dossier que l'onglet a lues EN ENTIER
+//   (`optionsDesPiecesDUneEcritureLibre`), par le choix commun de l'inventaire (`ChoixDuJustificatif`) ; lues en partie, aucun
+//   choix, le motif dit, et la saisie part avec ce qu'elle cite déjà. La liste nomme la pièce citée de chaque écriture.
 export default function EcrituresLibresSection({
-  dossierId, annee, mode, lecture, frontiere, ouverture, categories, pieces, relecture, relire,
+  dossierId, annee, mode, lecture, frontiere, ouverture, categories, pieces, piecesIncompletes, relecture, relire,
 }: {
   dossierId: string
   annee: number | 'toutes' | 'sans_date'
@@ -42,8 +47,11 @@ export default function EcrituresLibresSection({
   // La date des à-nouveaux (l'ouverture), nulle sans reprise ; `undefined` tant qu'ils ne sont pas lus en entier : aucun geste.
   ouverture: string | null | undefined
   categories: readonly Categorie[]
-  // Les pièces que l'état peut citer, lues par l'onglet (une absente s'y dit « hors du jeu chargé »).
+  // Les pièces VALIDÉES du dossier, lues par l'onglet : celles que l'état désigne (une absente s'y dit « hors du jeu chargé ») et
+  // celles qu'une écriture peut citer.
   pieces: readonly Piece[]
+  // Le motif d'une lecture des pièces partielle ou refusée ; nul quand elles sont lues en entier.
+  piecesIncompletes: string | null
   relecture: boolean
   relire: () => Promise<void>
 }) {
@@ -77,6 +85,9 @@ export default function EcrituresLibresSection({
   const avis = saisie === null ? [] : avertissementsDeLEcritureLibre(saisie, mode)
   const equilibre = saisie === null ? null : equilibreDeLaSaisie(saisie)
   const geler = enCours || relecture
+  // Les pièces qui se citent : nulles tant qu'elles ne sont pas lues en entier — aucun choix ne s'offre alors.
+  const citables = piecesIncompletes === null ? pieces : null
+  const optionsDesPieces = citables === null ? [] : optionsDesPiecesDUneEcritureLibre(citables, dossierId)
 
   function changerLigne(i: number, change: Partial<LigneDuFormulaire>) {
     setFormulaire((f) => f === null ? f : { ...f, lignes: f.lignes.map((l, j) => (j === i ? { ...l, ...change } : l)) })
@@ -89,7 +100,8 @@ export default function EcrituresLibresSection({
     const proposees = composerEcrituresLibres(s, contexte)
     if (proposees === null) return
     const avertissements = avertissementsDeLEcritureLibre(s, mode).map((a) => a.message)
-    if (!window.confirm(confirmationDeLEcriture(formulaire, mode, [...new Set(avertissements)]))) return
+    const pieceCitee = ligneDeLaPieceCitee(formulaire.pieceCiteeId, citables, dossierId)
+    if (!window.confirm(confirmationDeLEcriture(formulaire, mode, [...new Set(avertissements)], pieceCitee))) return
     enregistrementEnCours.current = true
     setEnCours(true)
     setMessage(null)
@@ -161,29 +173,36 @@ export default function EcrituresLibresSection({
       ) : (
         <>
           {ecritures.length === 0 ? <p className="muted">Aucune écriture libre dans l’exercice {exercice}.</p> : (
-            <div className="table-scroll">
-              <table className="table">
+            // Sur une carte étroite (téléphone, volet ouvert), chaque écriture se replie en fiche, la cellule précédée de son
+            // libellé (`table-empilable`) : la colonne des lignes ne se comprime plus à trois mots par ligne. La référence et la
+            // date ne se coupent pas (« EL2026- / 0001 »).
+            <div className="table-scroll tableau-adaptable">
+              <table className="table table-empilable">
                 <thead>
                   <tr><th>Numéro</th><th>Date</th><th>Libellé et lignes</th><th>Version</th><th /></tr>
                 </thead>
                 <tbody>
                   {ecritures.map((e) => (
                     <tr key={e.id}>
-                      <td>{referenceDeLEcritureLibre(e)}</td>
-                      <td>{formatDate(e.date)}</td>
-                      <td>
-                        <div>{e.libelle}{e.avec_extourne ? ' (extournée au 1er janvier suivant)' : ''}</div>
-                        <ul style={{ margin: 0, paddingLeft: 18 }}>
-                          {e.lignes.map((l, i) => (
-                            <li key={i}>
-                              {l.compte}{l.compte_lib ? ` ${l.compte_lib}` : ''} : {l.sens === 'debit' ? 'débit' : 'crédit'} {euros(l.centimes)}
-                              {mode === 'tresorerie' && classeDeResultat(l.compte) !== null ? ` — 2035 : ${effetDeLaLigne(l, mode)}` : ''}
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="muted">Motif : {e.motif}</div>
+                      <td data-libelle="Numéro" style={{ whiteSpace: 'nowrap' }}>{referenceDeLEcritureLibre(e)}</td>
+                      <td data-libelle="Date" style={{ whiteSpace: 'nowrap' }}>{formatDate(e.date)}</td>
+                      <td data-libelle="Libellé et lignes">
+                        {/* Un seul bloc : la cellule repliée en fiche est une rangée (le libellé, puis son contenu). */}
+                        <div>
+                          <div>{e.libelle}{e.avec_extourne ? ' (extournée au 1er janvier suivant)' : ''}</div>
+                          <ul style={{ margin: 0, paddingLeft: 18 }}>
+                            {e.lignes.map((l, i) => (
+                              <li key={i}>
+                                {l.compte}{l.compte_lib ? ` ${l.compte_lib}` : ''} : {l.sens === 'debit' ? 'débit' : 'crédit'} {euros(l.centimes)}
+                                {mode === 'tresorerie' && classeDeResultat(l.compte) !== null ? ` — 2035 : ${effetDeLaLigne(l, mode)}` : ''}
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="muted">Motif : {e.motif}</div>
+                          {e.piece_citee_id !== null && <div className="muted">{ligneDeLaPieceCitee(e.piece_citee_id, citables, dossierId)}</div>}
+                        </div>
                       </td>
-                      <td>{e.version}, le {instantAParis(instantDeLaVersion(e))}, par {auteurDeLaVersion(e, lue.auteurs)}</td>
+                      <td data-libelle="Version">{e.version}, le {instantAParis(instantDeLaVersion(e))}, par {auteurDeLaVersion(e, lue.auteurs)}</td>
                       <td>
                         <div className="actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button type="button" className="btn btn-outline btn-sm" disabled={geler}
@@ -224,13 +243,25 @@ export default function EcrituresLibresSection({
             <textarea value={formulaire.motif} maxLength={2000} rows={2}
               onChange={(ev) => setFormulaire({ ...formulaire, motif: ev.target.value })} />
           </label>
+          <ChoixDuJustificatif
+            id="ecriture-libre-piece" quoi="une pièce validée" desactive={geler}
+            lecture={piecesIncompletes === null ? { etat: 'lue' } : { etat: 'incomplete', motif: piecesIncompletes }}
+            options={optionsDesPieces}
+            citee={formulaire.pieceCiteeId === null ? null : { genre: 'piece', id: formulaire.pieceCiteeId }}
+            optionCitee={optionDeLaPieceCitee(formulaire.pieceCiteeId, citables, dossierId)}
+            placeholder="Rechercher un tiers, une date, un montant…"
+            onChoisir={(c) => setFormulaire({ ...formulaire, pieceCiteeId: c === null ? null : c.id })}
+          />
 
           {formulaire.lignes.map((l, i) => {
             const compte = compteDuFormulaire(l.compte)
             const deResultat = mode === 'tresorerie' && classeDeResultat(compte) !== null
             const propose = deResultat ? posteProposeDuCompte(compte, categories) : null
             return (
-              <fieldset key={i} style={{ border: 'none', padding: 0, margin: '8px 0' }} aria-label={`Ligne ${i + 1}`}>
+              // `minWidth: 0` : un fieldset prend d'office la largeur de son contenu le plus large — l'option la plus longue du choix
+              // du poste — et débordait la carte sur téléphone (vu au banc, 23/11/2026). Le poste prend sa propre rangée : comprimé
+              // à côté des quatre champs, il ne montrait plus que son premier mot.
+              <fieldset key={i} style={{ border: 'none', padding: 0, margin: '8px 0', minWidth: 0 }} aria-label={`Ligne ${i + 1}`}>
                 <div className="field-row aligne-bas" style={{ flexWrap: 'wrap' }}>
                   <label className="field">Compte
                     <input type="text" inputMode="numeric" value={l.compte} onChange={(ev) => changerLigne(i, { compte: ev.target.value })} />
@@ -248,8 +279,8 @@ export default function EcrituresLibresSection({
                     <input type="text" inputMode="decimal" value={l.montant} onChange={(ev) => changerLigne(i, { montant: ev.target.value })} />
                   </label>
                   {deResultat && (
-                    <label className="field">Effet sur la 2035
-                      <select value={l.poste} onChange={(ev) => changerLigne(i, { poste: ev.target.value })}>
+                    <label className="field" style={{ flex: '1 1 100%', minWidth: 0, maxWidth: '100%' }}>Effet sur la 2035
+                      <select style={{ maxWidth: '100%' }} value={l.poste} onChange={(ev) => changerLigne(i, { poste: ev.target.value })}>
                         <option value="">Hors de la 2035</option>
                         {postesDe(compte).map((p) => <option key={p} value={p}>{p}</option>)}
                       </select>
@@ -290,8 +321,8 @@ export default function EcrituresLibresSection({
             </p>
           )}
           {refusGeneraux.map((r) => <p key={r.cle} className="error-text">{r.message}</p>)}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="submit" className="btn btn-sm" disabled={geler || contexte === null || refus.length > 0}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={geler || contexte === null || refus.length > 0}>
               {formulaire.id === null ? 'Passer l’écriture' : 'Remplacer l’écriture'}
             </button>
             <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => setFormulaire(null)}>Abandonner</button>

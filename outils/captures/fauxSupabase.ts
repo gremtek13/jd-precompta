@@ -654,8 +654,8 @@ const COTISATIONS_D1 = {
     ecritureReleve('r28', 'l21', '2026-08-05', '646000', 'PRLV URSSAF COTISATIONS AOUT', 'debit', 471.5),
     ecritureReleve('r29', 'l21', '2026-08-05', '108000', 'PRLV URSSAF COTISATIONS AOUT', 'debit', 48.5),
     ecritureReleve('r30', 'l21', '2026-08-05', '512000', 'PRLV URSSAF COTISATIONS AOUT', 'credit', 520),
-    { ...ecritureReleve('r31', null, '2026-07-08', '646000', 'Cotisation, échéance du 05/07/2026, payée depuis le compte personnel', 'debit', 471.5), cotisation_id: 'cs5' },
-    { ...ecritureReleve('r32', null, '2026-07-08', '108000', 'Cotisation, échéance du 05/07/2026, payée depuis le compte personnel', 'credit', 471.5), cotisation_id: 'cs5' },
+    { ...ecritureReleve('r31p', null, '2026-07-08', '646000', 'Cotisation, échéance du 05/07/2026, payée depuis le compte personnel', 'debit', 471.5), cotisation_id: 'cs5' },
+    { ...ecritureReleve('r32p', null, '2026-07-08', '108000', 'Cotisation, échéance du 05/07/2026, payée depuis le compte personnel', 'credit', 471.5), cotisation_id: 'cs5' },
   ],
 }
 
@@ -2072,6 +2072,58 @@ const LIGNES_FIGEES_D1: FactureLigne[] = [
 // `enregistrer_parametres_facturation` et `confirmer_rib` (étape A5b1), comme leurs fonctions en base pour ce que le banc montre :
 // la version nouvelle remplace la courante, son RIB gardé tel quel garde son état, posé ou changé par le cabinet il est confirmé,
 // par le client proposé ; la confirmation passe la courante à « confirmé ». Les refus, l'essai en base les juge.
+// LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL2, en production depuis le 23/11/2026 ; la section de l'onglet Écritures) : la table
+// `ecritures_libres`, vide au départ, et ses deux fonctions, comme la base les joue pour ce que l'écran peut éprouver — la pièce
+// citée d'un autre dossier refusée, la version lue comparée, le numéro suivant de l'année (gardé par un remplacement dans la même
+// année), l'écriture et son extourne posées au brouillon sous `ecriture_libre_id`, puis retirées avec elle. Les autres refus de la
+// base (date, comptes, équilibre, règle de la trésorerie) sont dits par l'écran avant le clic : le banc ne les rejoue pas.
+let ecrituresLibresDuBanc = 0
+function rpcDesEcrituresLibres(nom: string, args?: Ligne): { data: unknown; error: null | { message: string } } | null {
+  const libres = () => TABLES.ecritures_libres ?? []
+  const changee = { data: null, error: { message: 'Cette écriture libre a changé depuis sa lecture : relire les écritures avant de l’écrire.' } }
+  if (nom === 'enregistrer_ecriture_libre' && args) {
+    const dossierId = String(args.p_dossier_id)
+    const e = (args.p_ecriture ?? {}) as Ligne
+    const piece = e.piece_citee_id ?? null
+    if (piece !== null && !(TABLES.pieces ?? []).some((p) => p.id === piece && p.dossier_id === dossierId)) {
+      return { data: null, error: { message: 'La pièce citée n’est pas une pièce de ce dossier.' } }
+    }
+    const ancienne = e.id == null ? undefined : libres().find((x) => x.id === e.id && x.dossier_id === dossierId)
+    if (e.id != null && (ancienne === undefined || ancienne.version !== args.p_version_lue)) return changee
+    const date = String(e.date)
+    const exercice = Number(date.slice(0, 4))
+    const numero = ancienne !== undefined && ancienne.exercice === exercice ? Number(ancienne.numero)
+      : Math.max(0, ...libres().filter((x) => x.dossier_id === dossierId && x.exercice === exercice).map((x) => Number(x.numero))) + 1
+    const id = ancienne === undefined ? `el-banc-${++ecrituresLibresDuBanc}` : String(ancienne.id)
+    const maintenant = new Date().toISOString()
+    const ecrite: Ligne = {
+      id, dossier_id: dossierId, exercice, numero, date, libelle: e.libelle, motif: e.motif, lignes: e.lignes,
+      avec_extourne: e.avec_extourne, piece_citee_id: piece, version: ancienne === undefined ? 1 : Number(ancienne.version) + 1,
+      cree_par: ancienne?.cree_par ?? session.user.id, cree_le: ancienne?.cree_le ?? maintenant,
+      modifie_par: ancienne === undefined ? null : session.user.id, modifie_le: ancienne === undefined ? null : maintenant,
+    }
+    TABLES.ecritures_libres = [...libres().filter((x) => x.id !== id), ecrite]
+    const proposees = (args.p_ecritures ?? []) as { date: string; libelle: string; lignes: { compte: string; sens: string; centimes: number }[] }[]
+    TABLES.ecritures_brouillon = [
+      ...(TABLES.ecritures_brouillon ?? []).filter((b) => b.ecriture_libre_id !== id),
+      ...proposees.flatMap((p, i) => p.lignes.map((l, j) => ({
+        id: `${id}-${i}-${j}`, dossier_id: dossierId, piece_id: null, ligne_bancaire_id: null, ecriture_libre_id: id, date: p.date,
+        compte: l.compte, libelle: p.libelle, sens: l.sens, montant: l.centimes / 100, statut: 'proposee', created_at: maintenant,
+      }))),
+    ]
+    return { data: id, error: null }
+  }
+  if (nom === 'retirer_ecriture_libre' && args) {
+    const ecriture = libres().find((x) => x.id === args.p_id)
+    if (ecriture === undefined || ecriture.version !== args.p_version_lue) return changee
+    const avant = (TABLES.ecritures_brouillon ?? []).length
+    TABLES.ecritures_brouillon = (TABLES.ecritures_brouillon ?? []).filter((b) => b.ecriture_libre_id !== ecriture.id)
+    TABLES.ecritures_libres = libres().filter((x) => x.id !== ecriture.id)
+    return { data: avant - TABLES.ecritures_brouillon.length, error: null }
+  }
+  return null
+}
+
 function rpcDesParametres(nom: string, args?: Ligne): { data: unknown; error: null } | null {
   const versions = () => TABLES.parametres_facturation ?? []
   if (nom === 'enregistrer_parametres_facturation' && args) {
@@ -3049,7 +3101,7 @@ export const supabase = {
     ? caisseDuClientDuBanc(args)
     : nom === 'plafonds_de_l_assistant'
       ? plafondsDuBanc()
-      : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDuBanc(nom, args?.p_dossier_id))),
+      : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDesEcrituresLibres(nom, args) ?? rpcDuBanc(nom, args?.p_dossier_id))),
   from: (table: string) => requete(table),
   storage: {
     // Le seau `ventes` (étape A5c2a) rend et range les logos ; les autres seaux restent une maquette.
