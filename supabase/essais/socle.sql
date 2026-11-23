@@ -77,7 +77,12 @@ instructions as (
   join pg_class c on c.relname = m.t and c.relnamespace = 'public'::regnamespace
   where c.relrowsecurity
   union all
+  -- Une policy RESTRICTIVE se rend `as restrictive`, à la place que `create policy` lui donne (après la table, avant
+  -- `for`) : sans lui, une base rebâtie du socle la poserait PERMISSIVE — `deux_facteurs`, la double authentification
+  -- exigée, s'ajouterait alors aux autres par un OU et ouvrirait chaque ligne des douze tables à tout compte connecté
+  -- en règle, au lieu de restreindre (DF-INV-Q1, 23/11/2026). Une permissive se rend comme avant, au caractère près.
   select 'create policy "' || p.policyname || '" on public.' || p.tablename
+         || case when p.permissive = 'RESTRICTIVE' then ' as restrictive' else '' end
          || E'\n  for ' || lower(p.cmd) || ' to ' || array_to_string(p.roles, ', ')
          || coalesce(E'\n  using (' || p.qual || ')', '')
          || coalesce(E'\n  with check (' || p.with_check || ')', '') || ';'

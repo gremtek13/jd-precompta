@@ -19,12 +19,14 @@
 --   - `proprietaire` est membre de `supabase_storage_admin`, pour poser les policies de `storage.objects` (il faut en
 --     être propriétaire) : en production, `postgres` les pose, mais le chemin exact n'est pas dans le dépôt ;
 --   - `auth.users` n'a que trois colonnes (`id`, `email`, `created_at`) : celles que l'export et les essais lisent ; le
---     schéma `auth` de Supabase (identités, sessions, facteurs, jetons…) n'est pas là, ni ses fonctions hors des quatre ;
+--     schéma `auth` de Supabase (identités, jetons…) n'est pas là, ni ses fonctions hors des quatre — les facteurs et les
+--     sessions, au minimum, pour la double authentification exigée (plus bas) ;
 --   - `supabase_admin` n'est ni super-utilisateur ni connectable (il l'est chez Supabase) : il ne porte que ses droits par
 --     défaut dans public, ceux que relève la garde de `droits_hors_rls` ;
 --   - pg_net est une DOUBLURE (`reprise/pg_net/`, à installer dans le répertoire des extensions) : le schéma `net` et deux
---     fonctions qui ne font rien ; aucune migration n'appelle `net`. Les déclencheurs d'événement de Supabase, le rôle
---     `authenticator`, PostgREST, GoTrue, l'API du stockage et ses fichiers manquent ;
+--     fonctions qui ne font rien ; aucune migration n'appelle `net`. Les déclencheurs d'événement de Supabase, PostgREST,
+--     GoTrue, l'API du stockage et ses fichiers manquent ; le rôle `authenticator` n'est là que pour recevoir la
+--     pré-requête de la double authentification exigée ;
 --   - aucune donnée : ni compte, ni seau (les migrations posent les seaux), ni secret.
 --
 -- LES DROITS PAR DÉFAUT DE `proprietaire` DANS PUBLIC sont ceux d'un projet Supabase AVANT `droits_hors_rls` : tout aux
@@ -117,6 +119,42 @@ create function auth.jwt() returns jsonb language sql stable as $$
         nullif(current_setting('request.jwt.claims', true), '')
     )::jsonb
 $$;
+
+-- Ce que la double authentification exigée (`deux_facteurs_exiges`, préparée : C7, second temps) suppose de GoTrue et de
+-- PostgREST, au minimum — le talon des copies de la réplique, sur le relevé de la production du 07/11/2026 : les facteurs et
+-- les sessions d'un compte, que `retirer_second_facteur` lit et supprime (le propriétaire les lit et les supprime) ; le
+-- rôle `authenticator`, sur lequel elle pose la pré-requête de PostgREST, créé PAR le propriétaire, qui en reçoit
+-- l'administration (PostgreSQL 16 et après) ; le droit de poser `pgrst.db_pre_request`, qu'un paramètre que PostgreSQL ne
+-- connaît pas ne donne qu'au super-utilisateur (la production l'accorde à postgres par
+-- `supautils.privileged_role_allowed_configs`, `pgrst.*`). Sans eux, la reprise s'arrête sur sa garde de tête le jour où
+-- elle est dans l'export (mesuré le 23/11/2026, DF-INV-Q1) ; avant, rien ne les lit. Les deux énumérations de GoTrue
+-- (`factor_type`, `factor_status`) y sont du texte.
+create table auth.mfa_factors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  friendly_name text,
+  factor_type text not null default 'totp',
+  status text not null default 'unverified',
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now()
+);
+create table auth.sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
+);
+grant select, delete on auth.mfa_factors, auth.sessions to proprietaire;
+grant set on parameter pgrst.db_pre_request to proprietaire;
+set role proprietaire;
+do $$
+begin
+  if to_regrole('authenticator') is null then
+    create role authenticator noinherit login;
+  end if;
+end
+$$;
+reset role;
 
 -- ── storage : les seaux, les objets et les fonctions de chemin ──
 create schema storage authorization supabase_storage_admin;

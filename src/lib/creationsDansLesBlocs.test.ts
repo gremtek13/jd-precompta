@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { espaces, litterauxReunis, nomsDesListes } from '../test/blocsSql'
 import { fichiersDuSchema, fichiersPrepares } from '../test/schema'
 
@@ -149,12 +153,13 @@ const TABLES_DU_SOCLE = ['cotisations_declarees', 'documents_divers', 'ecritures
 export const CAS_NOMMES = {
   restrictive: 'la restrictive `deux_facteurs` sous la condition que `deux_facteurs_satisfaits()` soit en base, sur une table que le fichier '
     + 'crée : `deux_facteurs_exiges` est préparée (deuxFacteursDesTablesNeuves.test.ts exige la pose sous condition) ; rien ne se crée avant '
-    + 'elle, et l’inventaire ne la compte pas plus que la boucle de celle-ci (le cas « balayage »)',
+    + 'elle, et l’inventaire la compte comme la base depuis le 23/11/2026 (DF-INV-Q1 (A)) : effective seulement si la fonction est déjà là au '
+    + 'point du rejeu, `deux_facteurs_exiges` rejouée avant dans l’ordre des fichiers (éprouvé plus bas, par l’inventaire lui-même)',
   paire: 'la contrainte d’une paire de sources neuves du brouillon (`ecritures_brouillon`, une table du socle), posée par la seconde de la '
     + 'paire à se coller : socle.sql rend les contraintes du brouillon du catalogue, et le socle se régénère au collage — l’inventaire les compte',
-  balayage: 'la boucle `$policies$` de `deux_facteurs_exiges`, la restrictive sur chaque table de public présente : l’inventaire NE LES COMPTE '
-    + 'PAS (mesuré le 22/11/2026 : 107 policies sur la production, 125 avec les préparées ; les douze du socle rendues sans `as restrictive`) — '
-    + 'à décider avant son collage',
+  balayage: 'la boucle `$policies$` de `deux_facteurs_exiges`, la restrictive sur chaque table de public présente : l’inventaire la compte '
+    + 'depuis le 23/11/2026 (DF-INV-Q1 (A)) sur les tables que l’export a créées à ce point du rejeu — 108 sur la production du jour, 125 avec '
+    + 'les préparées, comme la base —, celle des douze du socle venant du socle rendu du catalogue, `as restrictive` (socle.sql) ; éprouvé plus bas',
   porteDesPreparees: 'le bloc `$preparees$` de la porte (en production depuis le 15/11/2026) : la porte sur la table d’une préparée qui portait '
     + 'déjà sa garde ; aucune ne l’était, rien ne s’est créé, et toute préparée exige désormais la porte en tête',
 } as const
@@ -435,5 +440,204 @@ end $fin$;`
       expect(juger(TABLE + "do $$ begin\n  -- execute 'create index neuve_x on public.neuve (id)';\n  null;\nend $$;").fautes).toEqual([])
       expect(juger(TABLE + "do $$ begin /* create index neuve_x on public.neuve (id) */ null; end $$;").fautes).toEqual([])
     })
+  })
+})
+
+// ─── L'INVENTAIRE COMPTE LES DEUX CAS DE LA RESTRICTIVE COMME LA BASE LES JOUERA (DF-INV-Q1, 23/11/2026) ───────────
+//
+// Le cabinet a tranché (A) le 23/11/2026 : corriger le contrôle avant de coller `deux_facteurs_exiges`. supabase/essais/inventaire.py
+// lit désormais trois formes de bloc, et elles seules (son en-tête) : le balayage de la migration (la restrictive sur chaque table
+// que l'export a créée à ce point du rejeu), la pose sous condition (effective seulement si `deux_facteurs_satisfaits()` est déjà
+// là), et le retrait de son retour. Ce bloc lance l'inventaire LUI-MÊME (python3, son fichier importé, sans bytecode écrit) :
+//   1. chaque fichier de l'export et des préparées : ce qu'il reconnaît égale, fichier par fichier, ce que le relevé ci-dessus range
+//      sous « balayage » et « restrictive » — une pose que le relevé admet et que l'inventaire ne lirait pas le fait échouer ;
+//   2. l'export d'aujourd'hui : l'inventaire avec ces règles égale celui où aucun bloc ne se lit (rien n'est encore en base) ;
+//   3. la migration rejouée la dernière, une table neuve avant ou après elle, son retour : ce que la base aurait ;
+//   4. des défauts plantés — la boucle, l'expression, la condition ou la branche changées — ne se lisent plus (ignorés, comme
+//      tout autre bloc), et une pose sur une table que rien n'a créée arrête le rejeu.
+// La preuve contre une base (réplique égale à la production, les trois ordres de collage) : HISTORIQUE.md, « DF-INV-Q1 ».
+
+const RACINE_DU_DEPOT = new URL('../../', import.meta.url).pathname
+const INVENTAIRE_PY = RACINE_DU_DEPOT + 'supabase/essais/inventaire.py'
+/** Le lanceur : l'inventaire importé de son fichier ; chaque travail rend l'inventaire (neutre : aucun bloc lu), ou les formes
+ *  reconnues fichier par fichier, ou l'arrêt du rejeu. */
+const LANCEUR = String.raw`
+import importlib.util, json, sys
+sys.dont_write_bytecode = True
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('inventaire_essaye', sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+forme = m.forme_deux_facteurs
+res = {}
+for nom, t in json.loads(sys.stdin.read()).items():
+    fichiers = [Path(p) for p in t['fichiers']]
+    try:
+        if t['quoi'] == 'formes':
+            res[nom] = {str(f): m.formes_deux_facteurs([f]) for f in fichiers}
+        else:
+            m.forme_deux_facteurs = (lambda brute: None) if t['quoi'] == 'neutre' else forme
+            res[nom] = sorted(m.inventaire(fichiers))
+    except SystemExit as e:
+        res[nom] = {'arret': str(e)}
+print(json.dumps(res))
+`
+type Formes = { balayage: number; sous_condition: number; retrait: number }
+type Travail = { quoi: 'inventaire' | 'neutre' | 'formes'; fichiers: string[] }
+
+function lancer(travaux: Record<string, Travail>): Record<string, unknown> {
+  const sortie = execFileSync('python3', ['-I', '-B', '-c', LANCEUR, INVENTAIRE_PY],
+    { input: JSON.stringify(travaux), encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+  return JSON.parse(sortie) as Record<string, unknown>
+}
+
+describe('l’inventaire de l’export compte la restrictive deux_facteurs comme la base la posera (DF-INV-Q1, 23/11/2026)', () => {
+  const abs = (chemin: string) => RACINE_DU_DEPOT + chemin
+  const MIGRATIONS = SCHEMA.filter((f) => !f.chemin.includes('/socle/')).map((f) => abs(f.chemin))
+  const SOCLE = SCHEMA.filter((f) => f.chemin.includes('/socle/')).map((f) => abs(f.chemin))
+  const RETOURS = readdirSync(abs('supabase/preparees/retour')).filter((n) => n.endsWith('.sql')).sort()
+    .map((n) => ({ chemin: `supabase/preparees/retour/${n}`, texte: readFileSync(abs(`supabase/preparees/retour/${n}`), 'utf8') }))
+  const DF = PREPAREES.find((f) => /\d{14}_deux_facteurs_exiges\.sql$/.test(f.chemin))
+  const RETOUR_DF = RETOURS.find((f) => /\d{14}_retour_deux_facteurs_exiges\.sql$/.test(f.chemin))
+  const expression = "as restrictive for all to authenticated '\n      || 'using ((select public.deux_facteurs_satisfaits())) with check ((select public.deux_facteurs_satisfaits()))'"
+  const POSE = (table: string, condition = "if to_regprocedure('public.deux_facteurs_satisfaits()') is not null then", branche = '') =>
+    `do $deux_facteurs$
+begin
+  ${condition}
+    execute 'create policy deux_facteurs on public.${table} ${expression};${branche}
+  end if;
+end
+$deux_facteurs$;
+`
+  const NEUVE = (pose: string) => `create table public.neuve (
+  id uuid primary key default gen_random_uuid()
+);
+alter table public.neuve enable row level security;
+${pose}`
+  /** Le texte de la migration, sa boucle `$policies$` seule transformée (le reste, gardes comprises, intact). */
+  const bouclePlantee = (texte: string, de: string, en: string) => {
+    const debut = texte.indexOf('do $policies$')
+    const fin = texte.indexOf('$policies$;', debut + 13)
+    const boucle = texte.slice(debut, fin)
+    expect(boucle).toContain(de)
+    return texte.slice(0, debut) + boucle.replace(de, en) + texte.slice(fin)
+  }
+  let dossier = ''
+  let r: Record<string, unknown> = {}
+  const inventaire = (nom: string) => r[nom] as string[]
+  const deuxFacteurs = (inv: string[]) => inv.filter((x) => x.startsWith('policy|') && x.endsWith('.deux_facteurs')).sort()
+
+  beforeAll(() => {
+    if (!DF || !RETOUR_DF) throw new Error('deux_facteurs_exiges ou son retour introuvable')
+    dossier = mkdtempSync(join(tmpdir(), 'inventaire-deux-facteurs-'))
+    const planter = (nom: string, texte: string) => {
+      const chemin = join(dossier, nom)
+      writeFileSync(chemin, texte)
+      return chemin
+    }
+    const df = planter('20261124100000_deux_facteurs_exiges.sql', DF.texte)
+    const retour = planter('20261124100100_retour_deux_facteurs_exiges.sql', RETOUR_DF.texte)
+    const neuve = planter('20261124100200_neuve.sql', NEUVE(POSE('neuve')))
+    const sans = (...apres: string[]) => [...MIGRATIONS, ...apres, ...SOCLE]
+    r = lancer({
+      formes: { quoi: 'formes', fichiers: [...SCHEMA, ...PREPAREES, ...RETOURS].map((f) => abs(f.chemin)) },
+      aujourdhui: { quoi: 'inventaire', fichiers: sans() },
+      aujourdhuiNeutre: { quoi: 'neutre', fichiers: sans() },
+      df: { quoi: 'inventaire', fichiers: sans(df) },
+      dfPuisNeuve: { quoi: 'inventaire', fichiers: sans(df, neuve) },
+      neuvePuisDf: { quoi: 'inventaire', fichiers: sans(neuve, df) },
+      neuveSeule: { quoi: 'inventaire', fichiers: sans(neuve) },
+      dfRetourNeuve: { quoi: 'inventaire', fichiers: sans(df, retour, neuve) },
+      boucleSansP: { quoi: 'inventaire', fichiers: sans(planter('20261124100000_df_relkind.sql',
+        bouclePlantee(DF.texte, "c.relkind in ('r', 'p')", "c.relkind in ('r')"))) },
+      bouclePermissive: { quoi: 'inventaire', fichiers: sans(planter('20261124100000_df_permissive.sql',
+        bouclePlantee(DF.texte, 'as restrictive', 'as permissive'))) },
+      conditionChangee: { quoi: 'inventaire', fichiers: sans(df, planter('20261124100200_neuve_condition.sql', NEUVE(POSE('neuve', 'if true then')))) },
+      brancheImpure: { quoi: 'inventaire', fichiers: sans(df, planter('20261124100200_neuve_branche.sql',
+        NEUVE(POSE('neuve', undefined, "\n    execute 'create index neuve_id on public.neuve (id)';")))) },
+      fantome: { quoi: 'inventaire', fichiers: sans(df, planter('20261124100200_fantome.sql', POSE('fantome'))) },
+    })
+  }, 120_000)
+
+  afterAll(() => {
+    if (dossier) rmSync(dossier, { recursive: true, force: true })
+  })
+
+  it('fichier par fichier, l’inventaire reconnaît ce que le relevé range sous « balayage » et « restrictive » ; le retrait, dans le seul retour de la migration', () => {
+    const formes = r.formes as Record<string, Formes>
+    const ecarts: string[] = []
+    for (const f of [...SCHEMA, ...PREPAREES]) {
+      const releveDuFichier = releveDUnFichier(f).cas
+      const lu = formes[abs(f.chemin)]
+      if (lu.balayage !== releveDuFichier.balayage || lu.sous_condition !== releveDuFichier.restrictive || lu.retrait !== 0) {
+        ecarts.push(`${f.chemin} : l’inventaire lit ${JSON.stringify(lu)}, le relevé ${JSON.stringify(releveDuFichier)}`)
+      }
+    }
+    expect(ecarts).toEqual([])
+    const total = (fichiers: { chemin: string }[]) => fichiers.reduce((t, f) => {
+      const lu = formes[abs(f.chemin)]
+      return { balayage: t.balayage + lu.balayage, sous_condition: t.sous_condition + lu.sous_condition, retrait: t.retrait + lu.retrait }
+    }, { balayage: 0, sous_condition: 0, retrait: 0 })
+    // Les nombres du relevé épinglé plus haut : un balayage, quarante-quatre tables sous condition (vingt-sept dans l'export,
+    // dix-sept dans les préparées depuis qu'EL2 est rangée, le 23/11/2026).
+    expect(total([...SCHEMA, ...PREPAREES])).toEqual({ balayage: 1, sous_condition: 44, retrait: 0 })
+    expect(RETOURS.filter((f) => formes[abs(f.chemin)].retrait > 0).map((f) => f.chemin)).toEqual([RETOUR_DF?.chemin])
+    expect(total(RETOURS)).toEqual({ balayage: 0, sous_condition: 0, retrait: 1 })
+  })
+
+  it('l’export d’aujourd’hui : aucune restrictive, et le même inventaire que si aucun bloc ne se lisait', () => {
+    expect(deuxFacteurs(inventaire('aujourdhui'))).toEqual([])
+    expect(inventaire('aujourdhui')).toEqual(inventaire('aujourdhuiNeutre'))
+    // Le plancher : l'inventaire de l'export entier, pas un fragment (3 468 objets le 23/11/2026).
+    expect(inventaire('aujourdhui').length).toBeGreaterThanOrEqual(3400)
+  })
+
+  it('la migration rejouée la dernière : la restrictive sur chaque table que l’export a créée, ses deux tables comprises, et sur storage.objects ; les douze du socle l’attendent de leur rendu', () => {
+    const inv = inventaire('df')
+    const tables = inv.filter((x) => x.startsWith('rls|')).map((x) => x.slice(4))
+    const attendues = tables.filter((t) => !TABLES_DU_SOCLE.includes(t)).map((t) => `policy|${t}.deux_facteurs`)
+    expect(deuxFacteurs(inv)).toEqual([...attendues, 'policy|objects.deux_facteurs'].sort())
+    expect(attendues).toEqual(expect.arrayContaining(['policy|exigences_deux_facteurs.deux_facteurs', 'policy|retraits_deux_facteurs.deux_facteurs']))
+    // Toutes les tables de l'export d'aujourd'hui moins les douze du socle, plus les deux de la migration : 108 le 23/11/2026.
+    expect(attendues.length).toBe(inventaire('aujourdhui').filter((x) => x.startsWith('rls|')).length - TABLES_DU_SOCLE.length + 2)
+    expect(attendues.length).toBeGreaterThanOrEqual(108)
+  })
+
+  it('une table neuve : posée par sa migration si la fonction est déjà là, par la boucle si elle vient avant ; sans la migration, ni l’une ni l’autre', () => {
+    expect(inventaire('dfPuisNeuve')).toContain('policy|neuve.deux_facteurs')
+    expect(inventaire('neuvePuisDf')).toContain('policy|neuve.deux_facteurs')
+    // Les deux ordres de collage laissent le même inventaire, comme la base (HISTORIQUE.md, « DF-INV-Q1 »).
+    expect(inventaire('neuvePuisDf')).toEqual(inventaire('dfPuisNeuve'))
+    expect(inventaire('neuveSeule')).toContain('rls|neuve')
+    expect(deuxFacteurs(inventaire('neuveSeule'))).toEqual([])
+  })
+
+  it('le retour retire toutes les restrictives et la fonction : une pose sous condition jouée après lui ne crée rien', () => {
+    const inv = inventaire('dfRetourNeuve')
+    expect(deuxFacteurs(inv)).toEqual([])
+    expect(inv).not.toContain('fonction|deux_facteurs_satisfaits/0')
+    expect(inv).toContain('rls|neuve')
+    expect(inv).toEqual(inventaire('neuveSeule'))
+  })
+
+  it('les défauts plantés : une boucle, une expression, une condition ou une branche changées ne se lisent plus ; une table que rien n’a créée arrête le rejeu', () => {
+    // La boucle qui ne balaierait plus que les tables ordinaires, ou poserait une permissive : ignorée — seule la restrictive de
+    // storage.objects, posée en clair, reste.
+    expect(deuxFacteurs(inventaire('boucleSansP'))).toEqual(['policy|objects.deux_facteurs'])
+    expect(deuxFacteurs(inventaire('bouclePermissive'))).toEqual(['policy|objects.deux_facteurs'])
+    // La pose sous une autre condition, ou d'une branche qui fait autre chose : ignorée, la table neuve sans restrictive.
+    expect(inventaire('conditionChangee')).toContain('rls|neuve')
+    expect(inventaire('conditionChangee')).not.toContain('policy|neuve.deux_facteurs')
+    expect(inventaire('brancheImpure')).not.toContain('policy|neuve.deux_facteurs')
+    expect(deuxFacteurs(inventaire('conditionChangee'))).toEqual(deuxFacteurs(inventaire('df')))
+    expect(r.fantome).toEqual({ arret: expect.stringMatching(/la restrictive deux_facteurs posée sur fantome, qu'aucune instruction n'a créée/) })
+  })
+
+  it('socle.sql rend une restrictive `as restrictive`, après la table et avant `for` : la base rebâtie du socle ne la pose pas permissive', () => {
+    // Le texte de la requête, ses commentaires retirés : la clause entre le nom de la table et `for`, une fois. Le rendu lui-même se
+    // prouve sur une réplique (le socle rendu du catalogue porte `as restrictive` sur les douze tables, HISTORIQUE.md, « DF-INV-Q1 »).
+    const socle = readFileSync(abs('supabase/essais/socle.sql'), 'utf8').replace(/--[^\n]*/g, '')
+    const rendu = espaces(socle.slice(socle.search(/select 'create policy "'/i), socle.indexOf('from pg_policies p join manquantes m')))
+    expect(rendu).toBe(`select 'create policy "' || p.policyname || '" on public.' || p.tablename || case when p.permissive = 'RESTRICTIVE' then ' as restrictive' else '' end || E'\\n for ' || lower(p.cmd) || ' to ' || array_to_string(p.roles, ', ') || coalesce(E'\\n using (' || p.qual || ')', '') || coalesce(E'\\n with check (' || p.with_check || ')', '') || ';'`)
   })
 })
