@@ -626,7 +626,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   module (`lib/ecritureLibre.ts`) ; EL5 (22/11/2026), la lecture (`lib/ecrituresLibresLecture.ts`, nulle = aucun calcul) passée à
   chaque moteur (`ecrituresLibresAppelants.test.ts`) et la section de l'onglet Écritures, derrière le même drapeau ; « Ma simulation »
   ne les compte pas et le dit (EL5-Q1) → « EL5 : LA LECTURE DES ÉCRITURES LIBRES » ; EL2 EN PRODUCTION depuis le 23/11/2026 (250, collée ; `ecritures_libres`, `ECRITURES_LIBRES_PREVUES` levé ; les quatre
-  sources neuves sœurs la tolèrent, `stocks.test.ts`) → « EL2 EN PRODUCTION » ; EL8 (22/11/2026) : la table au plan de sauvegarde, dans `restauration.sql`
+  sources neuves sœurs la tolèrent, `stocks.test.ts`) → « EL2 EN PRODUCTION » ; éprouvée au banc (`ecritures-libres/*`), la pièce citée
+  choisie parmi les validées lues en entier (ELQ8-Q1 ouverte) → « L'ÉCRITURE LIBRE ÉPROUVÉE DANS UN NAVIGATEUR » ; EL8 (22/11/2026) : la table au plan de sauvegarde, dans `restauration.sql`
   et `rls.sql` (LI), derrière le drapeau ; la porte posée en clair (md5 `55ffe78c…`), le tout prouvé sur une réplique égale à la
   production → « EL8 :
   L'ÉCRITURE LIBRE PRÊTE À COLLER » ; EL3 (22/11/2026) en module,

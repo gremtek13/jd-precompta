@@ -63,6 +63,7 @@
 // Une ligne de plus dit le compte avant le total.
 import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
+import { SECTION_LIBRE, ecritureLibrePassee, ecritureLibreRetiree, saisieLibreRemplie } from './ecrituresLibres.mjs'
 
 // LA CAISSE (ligne 26.6, étape C4) : `CAISSE=1` joue l'onglet Caisse et la fiche de son versement d'espèces, le drapeau
 // `CAISSE_EXPORTEE` (src/lib/caisse.ts) levé dans la copie de travail le temps du banc — jamais commité. Baissé, l'adresse
@@ -92,6 +93,46 @@ const FENETRE_FACTURE = `${VOILE_FACTURE} > .card`
 const FENETRE_ARTICLE = 'div[style*="position: fixed"] > .card:is([role="dialog"], [role="alertdialog"])'
 // La fenêtre du plan de trésorerie (Financement) : un voile `position: fixed` et sa carte, sans rôle de dialogue.
 const FENETRE_ARTICLE_OU_PLAN = 'div[style*="position: fixed"] > .card'
+// LA SECTION « ÉCRITURES DE L'EXPERT-COMPTABLE » (EL5), sur le cabinet infirmier : vide, une saisie équilibrée (la pièce citée
+// choisie), un déséquilibre refusé avant le clic, l'écriture passée relue dans la liste, son retrait (voir ecrituresLibres.mjs).
+const VISITES_DES_ECRITURES_LIBRES = [
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'ecritures-libres/vide',
+    apres: async (page) => {
+      const section = SECTION_LIBRE(page)
+      await section.getByText(/^Aucune écriture libre dans l’exercice/).waitFor({ timeout: 10000 })
+      await section.scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'ecritures-libres/saisie',
+    apres: async (page) => {
+      const section = await saisieLibreRemplie(page)
+      await section.getByText(/: équilibrée\.$/).waitFor({ timeout: 10000 })
+      await section.getByRole('button', { name: 'Passer l’écriture', exact: true }).scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'ecritures-libres/desequilibre',
+    apres: async (page) => {
+      const section = await saisieLibreRemplie(page, { desequilibre: true, piece: false })
+      await section.getByText(/^L’écriture n’est pas équilibrée/).waitFor({ timeout: 10000 })
+      await section.getByRole('button', { name: 'Passer l’écriture', exact: true }).scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'ecritures-libres/passee',
+    apres: async (page) => {
+      const section = await ecritureLibrePassee(page)
+      await section.getByText(/^Pièce citée : 05\/09\/2026 — Énergie Services/).scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'ecritures-libres/retiree',
+    apres: async (page) => { await (await ecritureLibreRetiree(page)).scrollIntoViewIfNeeded() },
+  },
+]
+
 const VISITES = [
   // L'onglet TVA sur le seul dossier assujetti tenu en trésorerie : sur le cabinet infirmier, exonéré,
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
@@ -1596,6 +1637,7 @@ const VISITES = [
       await page.getByLabel('Code à six chiffres').fill('12 34')
     },
   },
+  ...VISITES_DES_ECRITURES_LIBRES,
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -2497,7 +2539,11 @@ let boutonsSondes = 0
 let boutonsRecouverts = 0
 const visitesDuClient = passeClient === 'client-caisse' ? VISITES_CAISSE_CLIENT
   : passeClient === 'client-banque' ? [...VISITES_CLIENT, ...VISITES_BANQUE_CLIENT] : VISITES_CLIENT
-for (const { dossier, onglet, chemin, nom, apres, fenetre, nav, sansAssistant } of passeMembre ? VISITES_MEMBRE : passeClient ? visitesDuClient : VISITES) {
+// `VISITES=ecritures-libres` : ne jouer que les visites dont le nom commence ainsi (la mise au point d'un écran) ; le total le dit.
+const prefixe = process.env.VISITES ?? ''
+const jouees = (passeMembre ? VISITES_MEMBRE : passeClient ? visitesDuClient : VISITES).filter((v) => v.nom.startsWith(prefixe))
+if (prefixe !== '') console.log(`${jouees.length} visite(s) jouée(s) : celles qui commencent par « ${prefixe} »`)
+for (const { dossier, onglet, chemin, nom, apres, fenetre, nav, sansAssistant } of jouees) {
   await page.goto(`${BASE}${chemin ?? `#/dossiers/${dossier}/${onglet}`}`)
   await page.waitForTimeout(900)
   // Le bouton « Assistant » est celui d'un dossier : le tableau de bord n'en a pas (`sansAssistant`), son volet de droite reste fermé.

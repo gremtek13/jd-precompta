@@ -19,7 +19,8 @@ import {
   type EcrituresLibresDesExports, type LigneEnBaseDEcritureLibre,
 } from './ecrituresLibresDesExports'
 import { lireCompteSaisi } from './compteDeBilan'
-import { formatMoney } from './format'
+import { formatDate, formatMoney } from './format'
+import { piecesCitablesParUneRegularisation, type OptionDeCitation, type PieceACiter } from './justificatifsDeLInventaire'
 
 // ── La lecture ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -233,12 +234,70 @@ export function euros(centimes: number): string {
   return formatMoney(Number.isSafeInteger(centimes) ? centimes / 100 : Number.NaN)
 }
 
+// ── La pièce citée (EL-Q8 (A) : facultative) ────────────────────────────────────────────────────────────────────────────
+//
+// La base accepte toute pièce DE CE DOSSIER (`enregistrer_ecriture_libre`, étape 8). L'écran est PLUS STRICT : il ne propose que
+// les pièces VALIDÉES du dossier — celles que l'onglet Écritures lit en entier (`lireTout`) et que l'état des écritures libres
+// sait désigner (sa date de dépôt et son empreinte) ; une pièce « à valider » peut encore être un doublon, se corriger ou se
+// supprimer, et une pièce citée ne se supprime plus (la clé étrangère de la table la retient). Lue en partie ou refusée, la liste
+// ne s'offre pas, l'écran le dit, et la saisie part avec ce qu'elle cite déjà (rien, pour une nouvelle) : rien n'empêche
+// d'enregistrer sans pièce. Aucun refus avant le clic : ce que l'écran propose est du dossier, et la pièce déjà citée d'une
+// écriture relue l'est aussi — la base l'a vérifié en l'écrivant.
+//
+// Une pièce se désigne par sa date, son tiers et son montant TTC, son sens en plus — jamais par le nom de son fichier.
+
+/** Les pièces qu'une écriture libre peut citer : les validées de CE dossier, la plus récente d'abord (sans date à la fin). */
+export function piecesCitablesParUneEcritureLibre<P extends PieceACiter>(pieces: readonly P[], dossierId: string): P[] {
+  const gardees = pieces.filter((p) => p.dossier_id === dossierId && p.statut === 'validee')
+  return piecesCitablesParUneRegularisation({ pieces: gardees, factures: [] }) as P[]
+}
+
+const SENS_DES_PIECES: Readonly<Record<PieceACiter['type_piece'], string>> = {
+  achat: 'Dépense', vente: 'Recette', note_frais: 'Note de frais', autre: 'Autre pièce',
+}
+
+/** L'option d'une pièce dans le choix : sa date et son tiers en titre, son montant TTC et son sens en détail. */
+export function optionDeLaPieceDUneEcritureLibre(p: PieceACiter): OptionDeCitation {
+  const date = p.date_piece === null ? 'Sans date' : formatDate(p.date_piece)
+  const tiers = p.tiers === null || p.tiers.trim() === '' ? 'tiers non lu' : p.tiers.trim()
+  const montant = p.montant_ttc === null ? 'montant non lu' : `${formatMoney(p.montant_ttc)} TTC`
+  return {
+    citation: { genre: 'piece', id: p.id }, titre: `${date} — ${tiers}`, fichier: false,
+    detail: `${montant} · ${SENS_DES_PIECES[p.type_piece]}`,
+    champs: [p.tiers, p.date_piece === null ? null : formatDate(p.date_piece), p.montant_ttc, SENS_DES_PIECES[p.type_piece]],
+  }
+}
+
+/** Les options du choix : les pièces citables, dans leur ordre. */
+export function optionsDesPiecesDUneEcritureLibre(pieces: readonly PieceACiter[], dossierId: string): OptionDeCitation[] {
+  return piecesCitablesParUneEcritureLibre(pieces, dossierId).map(optionDeLaPieceDUneEcritureLibre)
+}
+
+/** L'option de la pièce citée, cherchée parmi les citables ; nulle si rien n'est cité, si les pièces ne sont pas lues en entier
+ *  (`pieces` nul), ou si elle ne s'y retrouve pas (une pièce du dossier repassée « à valider »). */
+export function optionDeLaPieceCitee(
+  pieceId: string | null, pieces: readonly PieceACiter[] | null, dossierId: string,
+): OptionDeCitation | null {
+  if (pieceId === null || pieces === null) return null
+  const p = piecesCitablesParUneEcritureLibre(pieces, dossierId).find((x) => x.id === pieceId)
+  return p === undefined ? null : optionDeLaPieceDUneEcritureLibre(p)
+}
+
+/** Ce que la liste et la confirmation disent de la pièce citée — jamais devinée : une pièce qui ne se retrouve pas se dit telle. */
+export function ligneDeLaPieceCitee(pieceId: string | null, pieces: readonly PieceACiter[] | null, dossierId: string): string {
+  if (pieceId === null) return 'Aucune pièce citée : l’état des écritures libres en tient lieu.'
+  if (pieces === null) return 'Pièce citée : celle qui est déjà citée (les pièces du dossier ne sont pas lues en entier).'
+  const o = optionDeLaPieceCitee(pieceId, pieces, dossierId)
+  return o === null ? 'Pièce citée : une pièce du dossier qui n’est pas parmi ses pièces validées.' : `Pièce citée : ${o.titre} (${o.detail}).`
+}
+
 /**
  * La confirmation, qui NOMME ce qui part : chaque ligne (compte, sens, montant, effet sur la 2035), les totaux, l'effet sur la
- * 2035, l'extourne, et les avertissements répétés. Un remplacement dit qu'il efface la version lue (EL-Q9 (A)).
+ * 2035, l'extourne, la pièce citée (`ligneDeLaPieceCitee`) et les avertissements répétés. Un remplacement dit qu'il efface la
+ * version lue (EL-Q9 (A)).
  */
 export function confirmationDeLEcriture(
-  f: FormulaireDEcritureLibre, mode: ModeComptableDeLEcriture, avertissements: readonly string[],
+  f: FormulaireDEcritureLibre, mode: ModeComptableDeLEcriture, avertissements: readonly string[], pieceCitee: string,
 ): string {
   const s = saisieDuFormulaire(f)
   const { debit, credit } = equilibreDeLaSaisie(s)
@@ -259,6 +318,7 @@ export function confirmationDeLEcriture(
     `Total : débit ${euros(debit)}, crédit ${euros(credit)}.`,
     effet,
     ...(s.avecExtourne ? ['Extournée au 1er janvier suivant, ligne par ligne au sens inverse.'] : []),
+    pieceCitee,
     ...avertissements.map((a) => `Attention : ${a}`),
   ].join('\n')
 }

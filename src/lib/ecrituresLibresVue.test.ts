@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 import { ECRITURES_LIBRES_PREVUES, refusDeLEcritureLibre } from './ecritureLibre'
+import type { PieceACiter } from './justificatifsDeLInventaire'
 import {
+  ligneDeLaPieceCitee, optionDeLaPieceCitee, optionDeLaPieceDUneEcritureLibre, optionsDesPiecesDUneEcritureLibre,
+  piecesCitablesParUneEcritureLibre,
   centimesDuMontant, confirmationDeLEcriture, confirmationDuRetrait, ecritureLibreDeLaLigne, ecrituresLibresPourLesMoteurs,
   effetSurLa2035, equilibreDeLaSaisie, formulaireDeLEcriture, formulaireVide, motifDesEcrituresLibres, saisieDuFormulaire,
   simulationTaitLesEcrituresLibres, type FormulaireDEcritureLibre,
@@ -40,14 +43,14 @@ describe('la saisie telle qu’elle part (EL5)', () => {
   })
 
   it('la confirmation nomme chaque ligne, les totaux et l’effet sur la 2035 ; un remplacement dit la version perdue', () => {
-    const texte = confirmationDeLEcriture(formulaire(), 'tresorerie', ['Un avertissement'])
+    const texte = confirmationDeLEcriture(formulaire(), 'tresorerie', ['Un avertissement'], 'Aucune pièce citée.')
     expect(texte).toContain('108000')
     expect(texte).toContain('626200')
     expect(texte).toContain('2035 : Fournitures de bureau')
     expect(texte).toContain('Total : débit')
     expect(texte).toContain('Effet sur la 2035')
     expect(texte).toContain('Attention : Un avertissement')
-    expect(confirmationDeLEcriture(formulaire({ id: 'e1', versionLue: 3 }), 'tresorerie', [])).toContain('version 3')
+    expect(confirmationDeLEcriture(formulaire({ id: 'e1', versionLue: 3 }), 'tresorerie', [], 'Aucune pièce citée.')).toContain('version 3')
   })
 })
 
@@ -91,5 +94,56 @@ describe('la lecture relue et passée aux moteurs (EL5)', () => {
     expect(simulationTaitLesEcrituresLibres('engagement', true)).toBe(false)
     expect(simulationTaitLesEcrituresLibres('tresorerie')).toBe(ECRITURES_LIBRES_PREVUES)
     expect(simulationTaitLesEcrituresLibres('engagement')).toBe(false)
+  })
+})
+
+describe('la pièce citée, facultative (EL-Q8 (A))', () => {
+  const piece = (o: Partial<PieceACiter> = {}): PieceACiter => ({
+    id: 'p1', dossier_id: 'd1', nom_fichier: 'facture-secrete.pdf', date_piece: '2025-06-12', tiers: 'Papeterie fictive',
+    montant_ttc: 42.5, type_piece: 'achat', statut: 'validee', ...o,
+  })
+  const PIECES = [
+    piece(),
+    piece({ id: 'p2', date_piece: '2025-09-01', tiers: 'Énergie fictive', montant_ttc: 120 }),
+    piece({ id: 'p3', date_piece: null, tiers: null, montant_ttc: null, type_piece: 'vente' }),
+    piece({ id: 'p4', statut: 'a_valider' }),
+    piece({ id: 'p5', dossier_id: 'd2' }),
+  ]
+
+  it('ne propose que les pièces VALIDÉES de CE dossier, la plus récente d’abord, une pièce sans date à la fin', () => {
+    expect(piecesCitablesParUneEcritureLibre(PIECES, 'd1').map((p) => p.id)).toEqual(['p2', 'p1', 'p3'])
+    expect(piecesCitablesParUneEcritureLibre(PIECES, 'd2').map((p) => p.id)).toEqual(['p5'])
+  })
+
+  it('désigne une pièce par sa date, son tiers et son montant, jamais par le nom de son fichier', () => {
+    const o = optionDeLaPieceDUneEcritureLibre(piece())
+    expect(o.titre).toBe('12/06/2025 — Papeterie fictive')
+    expect(o.detail).toMatch(/^42,50\s€ TTC · Dépense$/)
+    expect(o.fichier).toBe(false)
+    expect(JSON.stringify(o)).not.toContain('facture-secrete')
+    const sansRien = optionDeLaPieceDUneEcritureLibre(piece({ date_piece: null, tiers: '  ', montant_ttc: null, type_piece: 'vente' }))
+    expect(sansRien.titre).toBe('Sans date — tiers non lu')
+    expect(sansRien.detail).toBe('montant non lu · Recette')
+    expect(optionsDesPiecesDUneEcritureLibre(PIECES, 'd1').map((x) => x.citation.id)).toEqual(['p2', 'p1', 'p3'])
+  })
+
+  it('retrouve la pièce citée parmi les citables ; ni lue en entier, ni retrouvée, elle ne se devine pas', () => {
+    expect(optionDeLaPieceCitee(null, PIECES, 'd1')).toBeNull()
+    expect(optionDeLaPieceCitee('p1', null, 'd1')).toBeNull()
+    expect(optionDeLaPieceCitee('p4', PIECES, 'd1')).toBeNull()
+    expect(optionDeLaPieceCitee('p5', PIECES, 'd1')).toBeNull()
+    expect(optionDeLaPieceCitee('p1', PIECES, 'd1')?.titre).toBe('12/06/2025 — Papeterie fictive')
+  })
+
+  it('la ligne de la liste et de la confirmation dit chacun des quatre cas', () => {
+    expect(ligneDeLaPieceCitee(null, PIECES, 'd1')).toBe('Aucune pièce citée : l’état des écritures libres en tient lieu.')
+    expect(ligneDeLaPieceCitee('p1', null, 'd1')).toMatch(/déjà citée \(les pièces du dossier ne sont pas lues en entier\)/)
+    expect(ligneDeLaPieceCitee('p4', PIECES, 'd1')).toBe('Pièce citée : une pièce du dossier qui n’est pas parmi ses pièces validées.')
+    expect(ligneDeLaPieceCitee('p1', PIECES, 'd1')).toMatch(/^Pièce citée : 12\/06\/2025 — Papeterie fictive \(42,50\s€ TTC · Dépense\)\.$/)
+  })
+
+  it('la confirmation porte la ligne de la pièce citée', () => {
+    const ligne = ligneDeLaPieceCitee('p1', PIECES, 'd1')
+    expect(confirmationDeLEcriture(formulaire({ pieceCiteeId: 'p1' }), 'tresorerie', [], ligne).split('\n')).toContain(ligne)
   })
 })

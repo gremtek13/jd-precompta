@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import EcrituresLibresSection from './EcrituresLibresSection'
 import type { LectureDesEcrituresLibres } from '../../lib/ecrituresLibresVue'
 import type { EcritureLibreDeLEtat } from '../../lib/ecrituresLibresDesExports'
+import type { Piece } from '../../lib/types'
 
 // LA SECTION « ÉCRITURES DE L'EXPERT-COMPTABLE » (EL5) : ce qu'aucun calcul pur ne voit — une lecture partielle n'offre AUCUN
 // geste ; le refus du module se dit avant le clic et retient le bouton ; deux clics dans le même `act` ne font qu'UN appel ; la
@@ -33,12 +34,30 @@ const ECRITURE: EcritureLibreDeLEtat = {
 }
 const LUES: LectureDesEcrituresLibres = { dossierId: 'd1', etat: 'lues', ecritures: [ECRITURE], auteurs: new Map([['u1', 'expert@exemple.fr']]), motifDesAuteurs: null }
 
+// Des pièces VALIDÉES du dossier, telles que l'onglet les lit, et une d'un autre dossier qui ne doit jamais se proposer.
+const piece = (o: Partial<Piece>): Piece => ({
+  id: 'p1', dossier_id: 'd1', uploaded_by: null, source: 'upload', storage_path: 'd1/fictif.pdf', nom_fichier: 'fichier-fictif.pdf',
+  storage_hash: null, date_piece: '2025-06-12', tiers: 'Papeterie fictive', montant_ht: 42.5, montant_tva: 0, montant_ttc: 42.5,
+  devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null,
+  type_piece: 'achat', statut: 'validee', confiance: null, superpdp_invoice_id: null, flux_hote: null, flux_id: null,
+  lisible_path: null, identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null,
+  vente_hors_des_factures: false, created_at: '2025-06-13T09:00:00Z', updated_at: '2025-06-13T09:00:00Z', ...o,
+})
+const PIECES: Piece[] = [
+  piece({}),
+  piece({ id: 'p2', date_piece: '2025-09-01', tiers: 'Énergie fictive', montant_ttc: 120 }),
+  piece({ id: 'p9', dossier_id: 'd2', tiers: 'Autre dossier fictif' }),
+]
+
 const relire = vi.fn(async () => {})
-function monter(lecture: LectureDesEcrituresLibres | null, o: { ouverture: string | null | undefined } = { ouverture: null }) {
-  const { ouverture } = o
+function monter(
+  lecture: LectureDesEcrituresLibres | null,
+  o: { ouverture?: string | null | undefined; pieces?: Piece[]; piecesIncompletes?: string | null } = {},
+) {
+  const ouverture = 'ouverture' in o ? o.ouverture : null
   return render(
     <EcrituresLibresSection dossierId="d1" annee={2025} mode="tresorerie" lecture={lecture} frontiere={null} ouverture={ouverture}
-      categories={[]} pieces={[]} relecture={false} relire={relire} />,
+      categories={[]} pieces={o.pieces ?? []} piecesIncompletes={o.piecesIncompletes ?? null} relecture={false} relire={relire} />,
   )
 }
 
@@ -177,5 +196,73 @@ describe('EcrituresLibresSection (EL5)', () => {
     })
     expect(faux.rpcs[0].args).toMatchObject({ p_version_lue: 4 })
     expect((faux.rpcs[0].args.p_ecriture as { id: string }).id).toBe('e1')
+  })
+
+  describe('la pièce citée, facultative (EL-Q8 (A))', () => {
+    async function passer() {
+      await act(async () => {
+        fireEvent.click(screen.getByText('Passer l’écriture'))
+        await new Promise((r) => setTimeout(r, 5))
+      })
+    }
+
+    it('lues en entier : le choix ne propose que les pièces validées du dossier ; la pièce choisie part et la confirmation la nomme', async () => {
+      monter(LUES, { pieces: PIECES })
+      remplirUneEcritureEquilibree()
+      expect(screen.getByText(/Pièce justificative/)).toBeDefined()
+      fireEvent.click(screen.getByRole('button', { name: 'Choisir une pièce validée' }))
+      const liste = screen.getByRole('list', { name: 'Choisir une pièce validée' })
+      expect(liste.textContent).toContain('01/09/2025 — Énergie fictive')
+      expect(liste.textContent).toContain('12/06/2025 — Papeterie fictive')
+      expect(liste.textContent).not.toContain('Autre dossier fictif')
+      expect(liste.textContent).not.toContain('fichier-fictif.pdf')
+      fireEvent.click(screen.getByRole('button', { name: /01\/09\/2025 — Énergie fictive/ }))
+      expect(screen.getByRole('button', { name: 'Ne rien citer' })).toBeDefined()
+      await passer()
+      expect(faux.rpcs).toHaveLength(1)
+      expect((faux.rpcs[0].args.p_ecriture as { piece_citee_id: string | null }).piece_citee_id).toBe('p2')
+      expect(vi.mocked(window.confirm).mock.calls[0][0]).toContain('Pièce citée : 01/09/2025 — Énergie fictive')
+    })
+
+    it('sans pièce choisie, l’écriture part sans pièce, et la confirmation le dit', async () => {
+      monter(LUES, { pieces: PIECES })
+      remplirUneEcritureEquilibree()
+      await passer()
+      expect((faux.rpcs[0].args.p_ecriture as { piece_citee_id: string | null }).piece_citee_id).toBeNull()
+      expect(vi.mocked(window.confirm).mock.calls[0][0]).toContain('Aucune pièce citée')
+    })
+
+    it('lues en partie : aucun choix, le motif dit, et rien n’empêche de passer l’écriture sans pièce', async () => {
+      monter(LUES, { pieces: PIECES, piecesIncompletes: '3 ligne(s) lue(s) sur 9 annoncée(s)' })
+      remplirUneEcritureEquilibree()
+      expect(screen.getByText(/3 ligne\(s\) lue\(s\) sur 9/)).toBeDefined()
+      expect(screen.queryByRole('button', { name: 'Choisir une pièce validée' })).toBeNull()
+      expect((screen.getByText('Passer l’écriture') as HTMLButtonElement).disabled).toBe(false)
+      await passer()
+      expect((faux.rpcs[0].args.p_ecriture as { piece_citee_id: string | null }).piece_citee_id).toBeNull()
+    })
+
+    it('la liste nomme la pièce citée ; « Modifier » la garde, « Ne rien citer » la retire de ce qui part', async () => {
+      monter({ ...LUES, ecritures: [{ ...ECRITURE, piece_citee_id: 'p1' }] }, { pieces: PIECES })
+      expect(screen.getByText('Pièce citée : 12/06/2025 — Papeterie fictive (42,50 € TTC · Dépense).')).toBeDefined()
+      fireEvent.click(screen.getByText('Modifier'))
+      fireEvent.click(screen.getByRole('button', { name: 'Ne rien citer' }))
+      await act(async () => {
+        fireEvent.click(screen.getByText('Remplacer l’écriture'))
+        await new Promise((r) => setTimeout(r, 5))
+      })
+      expect((faux.rpcs[0].args.p_ecriture as { piece_citee_id: string | null }).piece_citee_id).toBeNull()
+    })
+
+    it('la pièce citée d’une écriture relue, les pièces lues en partie : elle reste citée et se dit sans être devinée', async () => {
+      monter({ ...LUES, ecritures: [{ ...ECRITURE, piece_citee_id: 'p1' }] }, { pieces: PIECES, piecesIncompletes: 'lecture refusée' })
+      expect(screen.getByText(/celle qui est déjà citée \(les pièces du dossier ne sont pas lues en entier\)/)).toBeDefined()
+      fireEvent.click(screen.getByText('Modifier'))
+      await act(async () => {
+        fireEvent.click(screen.getByText('Remplacer l’écriture'))
+        await new Promise((r) => setTimeout(r, 5))
+      })
+      expect((faux.rpcs[0].args.p_ecriture as { piece_citee_id: string | null }).piece_citee_id).toBe('p1')
+    })
   })
 })
