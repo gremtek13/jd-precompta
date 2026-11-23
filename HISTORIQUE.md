@@ -54644,3 +54644,24 @@ seules pièces VALIDÉES du dossier lues en entier par l'onglet, désignées par
 lues en partie, aucun choix, le motif dit, la saisie part sans pièce (ou avec la sienne). Aucun refus avant le clic : la base
 n'en a qu'un, la pièce d'un autre dossier, que l'écran ne propose jamais. La phrase « dont … par une écriture de
 l'expert-comptable » de la Projection a son test d'écran (EstimationTab.test.tsx). Question au cabinet : ELQ8-Q1 (offrir aussi les pièces « à valider » ?).
+
+### 23/11/2026 — DF-INV-Q1 : L'INVENTAIRE COMPTE LA RESTRICTIVE DE LA DOUBLE AUTHENTIFICATION, LE SOCLE LA REND `AS RESTRICTIVE`
+
+(Agent architecte ; rien en production, aucune migration changée ; une copie de `replique_227` portée à 250, puis supprimée.) Tranchée
+(A) le 23/11/2026 : corriger le contrôle et le fichier avant de coller `deux_facteurs_exiges`. `inventaire.py` lit trois formes de bloc,
+et elles seules, au texte du bloc entier (littéraux réunis, blancs ramenés) : le balayage de la migration (la restrictive sur chaque
+table que l'export a créée à ce point du rejeu ; les douze du socle la tiennent de leur rendu), la pose sous condition (effective si
+`deux_facteurs_satisfaits/0` est déjà dans l'inventaire), le retrait de son retour. L'export d'aujourd'hui : 252 fichiers, 3 468
+`4a6d01f1…`, inchangé. `socle.sql` rend une restrictive `as restrictive` (après la table) : 84 `e54200f4…`, inchangé des deux côtés.
+Les fondations de la reprise portent `auth.mfa_factors`, `auth.sessions`, `authenticator` et le droit de poser `pgrst.db_pre_request` :
+sans eux, `rejouer.py` s'arrêtait sur la garde de tête de la migration. Preuve : la copie à 249 égale à la production (neuf familles),
+à 250 les trois contrôles égaux (dérive `cdc9d7ff…`) ; la migration seule, 3 621 `e610e09c…` des deux côtés (108 policies manquaient
+aux fichiers) ; avant ou après les dix-neuf autres préparées (e7a refusée, REPET-Q1), 4 231 `27dac8e1…` des deux côtés (125
+manquaient) ; le socle rendu, `as restrictive` sur les douze tables ; le retour rend 3 468 et la signature de 250 ; chaque cas rejoué
+dans une grappe vide rend la signature de sa base (aucune `deux_facteurs` permissive ; une restrictive plantée au socle s'y rejoue
+restrictive). `creationsDansLesBlocs.test.ts` lance l'inventaire : ce qu'il reconnaît égale le relevé fichier par fichier, six
+cas, quatre défauts plantés ; dix mutations de l'inventaire et deux de `socle.sql` mordent. Au collage, la migration se range sous
+une version qui suit la dernière (comme EL2), et le socle se régénère (douze policies) : rangée sous 20261107160000, six tables
+créées après sans pose sous condition (`trace_des_droits`, `situations_publiees`, `lettres_de_mission`, `modeles_lettre_de_mission`,
+`honoraires_factures`, `honoraires_deposes`) manqueraient aux fichiers. AFF2-Q4 (A) consignée : le rôle des acomptes sur dividendes
+prendra le premier rang libre ; la conception 45 ne nommait pas le 660, rien n'y change.

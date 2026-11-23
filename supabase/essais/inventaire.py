@@ -35,11 +35,39 @@ migration lui échappent — pour le socle, `socle.py` compare les définitions 
 rejeu réel de l'export dans une base vide le dirait. Le corps d'un bloc `do` est une instruction qu'il
 ne lit pas : un objet qu'une migration y crée (un `execute`) existe en base sans exister ici — la
 porte d'accès de sept préparées, relevée le 22/11/2026 ; `src/lib/creationsDansLesBlocs.test.ts`
-refuse désormais une telle création, hors de cas nommés (dont la restrictive `deux_facteurs` de la
-double authentification, que cet inventaire ne compte pas). Le nom d'une contrainte anonyme est DÉDUIT des
+refuse désormais une telle création, hors de cas nommés. Le nom d'une contrainte anonyme est DÉDUIT des
 règles de Postgres (`table_col_check`, `table_col_fkey`, `table_a_b_key`…) : une règle mal déduite se
 voit, puisqu'elle fait diverger les deux moitiés.
+
+LA RESTRICTIVE DE LA DOUBLE AUTHENTIFICATION, SEULE EXCEPTION (DF-INV-Q1, tranchée (A) le 23/11/2026) : la
+policy `deux_facteurs` se pose dans des blocs, et ces blocs-là, et eux seuls, se comptent ici comme la base
+les jouera. Deux formes de pose et une de retrait, reconnues au texte du bloc entier (ses littéraux réunis
+comme SQL les lit, ses blancs ramenés, en minuscules), à l'expression exacte de la restrictive
+(`forme_deux_facteurs`) :
+  - le BALAYAGE de `deux_facteurs_exiges` (supabase/preparees/, son bloc `$policies$`) : la restrictive sur
+    chaque table de public présente — sa condition, `relnamespace = public and relkind in ('r', 'p')`,
+    rejouée sur l'état de l'export à ce point : les tables qu'une migration a créées et qu'aucune n'a
+    supprimées. Les douze du socle, rejoué après les migrations, n'y sont pas encore : leur restrictive
+    vient du socle lui-même, rendu du catalogue par `socle.sql` (`as restrictive`) une fois la migration
+    collée — sans ce rendu, les deux moitiés divergent de leurs douze policies, et `socle.py` le dit aussi ;
+  - la POSE SOUS CONDITION (`if to_regprocedure('public.deux_facteurs_satisfaits()') is not null then` puis
+    la restrictive sur des tables nommées, par `execute`, en instruction, ou par `foreach … array[…]` et
+    `%I`) : effective seulement si la fonction est déjà là au point du rejeu
+    (`fonction|deux_facteurs_satisfaits/0` dans l'inventaire), c'est-à-dire si `deux_facteurs_exiges` a été
+    rejouée AVANT dans l'ordre des fichiers ; sinon rien, comme en base. Une table nommée que rien n'a créée
+    arrête le rejeu : la base refuserait la migration ;
+  - le RETRAIT de son retour (supabase/preparees/retour/, son bloc `$policies$` : `drop policy
+    deux_facteurs` sur chaque table qui la porte) : toutes les `deux_facteurs` sortent, celle de
+    `storage.objects` comprise — le reste du retour (fonctions, tables) est en clair.
+Un ordre des fichiers qui n'est pas celui de l'application change ce que comptent ces règles : une préparée
+posée en simulation dans supabase/schema/ y prend un nom qui la range à sa place (après la dernière migration
+appliquée, dans l'ordre où elle se collera). Toute autre forme de bloc reste ignorée, comme avant, et le
+scanner de `src/lib/creationsDansLesBlocs.test.ts` la refuse ; le même test lance cet inventaire et exige que
+ces règles reconnaissent, fichier par fichier, tout ce que le scanner admet sous ces deux cas (« balayage »,
+« restrictive »), puis les éprouve sur des fichiers plantés.
 """
+from __future__ import annotations
+
 import hashlib
 import re
 import sys
@@ -152,6 +180,85 @@ def instructions(texte: str) -> list[str]:
     return [r for r in res if r]
 
 
+# ── La restrictive de la double authentification, dans un bloc `do` (DF-INV-Q1, voir l'en-tête) ──
+
+EXPRESSION_DF = ('as restrictive for all to authenticated using ((select public.deux_facteurs_satisfaits())) '
+                 'with check ((select public.deux_facteurs_satisfaits()))')
+_E = re.escape(EXPRESSION_DF)
+# Le balayage de `deux_facteurs_exiges` : sa boucle telle quelle, le nom de sa variable et sa balise libres.
+BALAYAGE_DF = re.compile(
+    r"do (\$\w*\$) declare (\w+) regclass; begin for \2 in select c\.oid::regclass from pg_class c"
+    r" where c\.relnamespace = 'public'::regnamespace and c\.relkind in \('r', 'p'\) order by c\.relname collate \"c\""
+    r" loop execute format\( ?'create policy deux_facteurs on %s " + _E + r"', \2\); end loop; end \1")
+# La pose sous condition : la condition seule en tête, ses poses dans la branche, rien d'autre.
+SOUS_CONDITION_DF = re.compile(
+    r"do (\$\w*\$) (?:declare (\w+) text; )?begin"
+    r" if to_regprocedure\('public\.deux_facteurs_satisfaits\(\)'\) is not null then (.+?) end if; end \1")
+POSES_DF = (
+    re.compile(r"execute 'create policy deux_facteurs on public\.(\w+) " + _E + r"';"),
+    re.compile(r"create policy deux_facteurs on public\.(\w+) " + _E + r";"),
+    re.compile(r"foreach (\w+) in array array\[((?:'\w+', )*'\w+')\] loop"
+               r" execute format\( ?'create policy deux_facteurs on public\.%i " + _E + r"', (\w+)\); end loop;"),
+)
+# Le retrait du retour de `deux_facteurs_exiges` : chaque `deux_facteurs` que porte le catalogue.
+RETRAIT_DF = re.compile(
+    r"do (\$\w*\$) declare (\w+) regclass; begin for \2 in select p\.polrelid::regclass from pg_policy p"
+    r" where p\.polname = 'deux_facteurs' order by 1 loop execute format\( ?'drop policy deux_facteurs on %s', \2\);"
+    r" end loop; end \1")
+
+
+def bloc_normalise(brute: str) -> str:
+    """Un bloc tel que les formes le lisent : deux littéraux consécutifs réunis (`'a' || 'b'`, et `'a'` suivi de `'b'` à la
+    ligne : PostgreSQL, « Lexical Structure », String Constants), les blancs ramenés à une espace, en minuscules."""
+    texte = re.sub(r"'\s*\|\|\s*'", '', brute)
+    texte = re.sub(r"'[ \t]*\r?\n\s*'", '', texte)
+    return re.sub(r'\s+', ' ', texte).strip().lower()
+
+
+def forme_deux_facteurs(brute: str) -> tuple[str, list[str]] | None:
+    """La forme d'un bloc `do` qui pose ou retire la restrictive `deux_facteurs` : ('balayage', []), ('sous_condition',
+    [tables nommées]) ou ('retrait', []) ; None pour tout autre bloc, que l'inventaire ne lit pas."""
+    b = bloc_normalise(brute)
+    if BALAYAGE_DF.fullmatch(b):
+        return 'balayage', []
+    if RETRAIT_DF.fullmatch(b):
+        return 'retrait', []
+    m = SOUS_CONDITION_DF.fullmatch(b)
+    if not m:
+        return None
+    variable, branche, i, tables = m.group(2), m.group(3), 0, []
+    while i < len(branche):
+        for k, motif in enumerate(POSES_DF):
+            p = motif.match(branche, i)
+            if p:
+                break
+        else:
+            return None
+        if k == 2:
+            if not (p.group(1) == p.group(3) == variable):
+                return None
+            tables += re.findall(r"'(\w+)'", p.group(2))
+        else:
+            tables.append(p.group(1))
+        i = p.end()
+        if i < len(branche):
+            if branche[i] != ' ':
+                return None
+            i += 1
+    return 'sous_condition', tables
+
+
+def formes_deux_facteurs(fichiers: list[Path]) -> dict[str, int]:
+    """Ce que les règles de la restrictive reconnaissent dans des fichiers, sans rien rejouer : les balayages, les tables
+    nommées sous condition, les retraits (confronté au scanner de creationsDansLesBlocs.test.ts)."""
+    compte = {'balayage': 0, 'sous_condition': 0, 'retrait': 0}
+    for f in fichiers:
+        for brute in instructions(f.read_text(encoding='utf-8')):
+            if re.match(r'do\s', brute, re.I) and (forme := forme_deux_facteurs(brute)):
+                compte[forme[0]] += len(forme[1]) if forme[0] == 'sous_condition' else 1
+    return compte
+
+
 def inconnue(fichier: Path, forme: str, texte: str) -> SystemExit:
     """Une forme que l'export n'a jamais portée : on s'arrête plutôt que de deviner.
 
@@ -170,6 +277,9 @@ def inventaire(fichiers: list[Path]) -> set[str]:
     # déclencheur ordinaire peut porter le nom d'une contrainte de sa table, les deux noms ne se partageant rien.
     de_contrainte: set[str] = set()
     rls: set[str] = set()
+    # Les tables de public qu'une instruction a créées et qu'aucune n'a supprimées, au point du rejeu : ce que balaie la
+    # boucle de `deux_facteurs_exiges` (pg_class, relkind 'r' ou 'p').
+    tables: set[str] = set()
 
     def contraintes_de_colonne(t: str, col: str, definition: str) -> None:
         # Une contrainte de colonne peut porter son nom (`constraint nom check (…)`) : c'est alors lui que Postgres
@@ -194,9 +304,25 @@ def inventaire(fichiers: list[Path]) -> set[str]:
             s = re.sub(r'\s+', ' ', brute).strip()
             low = s.lower()
 
+            # Un bloc `do` : seules les trois formes de la restrictive se lisent (voir l'en-tête) ; tout autre bloc, rien.
+            if re.match(r'do\s', low):
+                forme = forme_deux_facteurs(brute)
+                if forme and forme[0] == 'balayage':
+                    inv.update(f'policy|{t}.deux_facteurs' for t in tables)
+                elif forme and forme[0] == 'sous_condition' and 'fonction|deux_facteurs_satisfaits/0' in inv:
+                    for t in forme[1]:
+                        if t not in tables:
+                            raise SystemExit(f'{f.name} : la restrictive deux_facteurs posée sur {t}, qu\'aucune instruction '
+                                             'n\'a créée à ce point du rejeu : la base refuserait la migration')
+                        inv.add(f'policy|{t}.deux_facteurs')
+                elif forme and forme[0] == 'retrait':
+                    inv.difference_update({x for x in inv if x.startswith('policy|') and x.endswith('.deux_facteurs')})
+                continue
+
             m = re.match(r'create table (?:if not exists )?(?:public\.)?"?(\w+)"? \(', low)
             if m:
                 t = m.group(1)
+                tables.add(t)
                 corps = entrees(groupe(low, low.index('(')))
                 cols = []
                 for e in corps:
@@ -267,6 +393,7 @@ def inventaire(fichiers: list[Path]) -> set[str]:
                 inv.difference_update({x for x in inv if x.split('|', 1)[1].startswith(t + '.')})
                 colonnes.pop(t, None)
                 rls.discard(t)
+                tables.discard(t)
                 continue
 
             m = re.match(r'create (?:unique )?index (?:concurrently )?(?:if not exists )?"?(\w+)"? on (?:only )?(?:public\.)?"?(\w+)"?', low)
