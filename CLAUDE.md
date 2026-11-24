@@ -117,7 +117,7 @@ L'expert-comptable ne se sollicite plus : ce qui manque se cherche dans les sour
   toute migration : y ajouter son fichier et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle,
   inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock), v62 depuis le 20/11/2026, plafond de coût mensuel par cabinet ; aucun
+  - `agent-comptable` — assistant IA (Bedrock), v63 depuis le 24/11/2026, plafond de coût mensuel par cabinet ; aucun
     nom de cabinet (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant
     un dossier basculé, une garde provisoire (VF9a), que VF9c a levée — elle ne ferme plus qu'une source des ventes
     illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES OUTILS
@@ -629,7 +629,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   chaque moteur (`ecrituresLibresAppelants.test.ts`) et la section de l'onglet Écritures, derrière le même drapeau ; « Ma simulation »
   ne les compte pas et le dit (EL5-Q1) → « EL5 : LA LECTURE DES ÉCRITURES LIBRES » ; EL2 EN PRODUCTION depuis le 23/11/2026 (250, collée ; `ecritures_libres`, `ECRITURES_LIBRES_PREVUES` levé ; les quatre
   sources neuves sœurs la tolèrent, `stocks.test.ts`) → « EL2 EN PRODUCTION » ; éprouvée au banc (`ecritures-libres/*`), la pièce citée
-  choisie parmi les validées lues en entier (ELQ8-Q1 ouverte) → « L'ÉCRITURE LIBRE ÉPROUVÉE DANS UN NAVIGATEUR » ; EL6 (24/11/2026) : le détail de la Balance et du Bilan marque « écriture libre n° EL… » (`lib/ecrituresLibresDuDetail.ts`), la preuve d'un compte dit leur part et propose leur pièce citée, l'ensemble propose leur relecture, l'assistant nomme leurs lignes par leur numéro et les décrit (`lister_ecritures_libres`, au jeton de l'appelant), jamais libellé, motif ni `compte_lib` ; `agent-comptable` à redéployer → « EL6 : L'ÉCRITURE LIBRE DANS LE DÉTAIL DES COMPTES » ; EL8 (22/11/2026) : la table au plan de sauvegarde, dans `restauration.sql`
+  choisie parmi les validées lues en entier (ELQ8-Q1 ouverte) → « L'ÉCRITURE LIBRE ÉPROUVÉE DANS UN NAVIGATEUR » ; EL6 (24/11/2026) : le détail de la Balance et du Bilan marque « écriture libre n° EL… » (`lib/ecrituresLibresDuDetail.ts`), la preuve d'un compte dit leur part et propose leur pièce citée, l'ensemble propose leur relecture, l'assistant nomme leurs lignes par leur numéro et les décrit (`lister_ecritures_libres`, au jeton de l'appelant), jamais libellé, motif ni `compte_lib` ; `agent-comptable` redéployée le 24/11/2026 (v63, au commit `c9912ce3`) → « EL6 : L'ÉCRITURE LIBRE DANS LE DÉTAIL DES COMPTES » ; EL8 (22/11/2026) : la table au plan de sauvegarde, dans `restauration.sql`
   et `rls.sql` (LI), derrière le drapeau ; la porte posée en clair (md5 `55ffe78c…`), le tout prouvé sur une réplique égale à la
   production → « EL8 :
   L'ÉCRITURE LIBRE PRÊTE À COLLER » ; EL3 (22/11/2026) en module,

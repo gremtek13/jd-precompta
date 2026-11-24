@@ -54727,3 +54727,9 @@ le programme de l'Ensemble se propose ; six visites `ecritures-libres/*` de plus
 : 0 débordement à 1 440, 1 280, 1 024, 720 et 390 px. Un défaut vu à l'œil, que le banc admet (il recoupe un morceau après un trait
 d'union) : sur téléphone, le détail du Bilan coupait « EL2026- / 0002 ». Chaque numéro se pose désormais dans un `.numero-entier`
 (`components/NumerosEntiers.tsx`), dans la Balance, le Bilan et la fiche d'un solde de la Révision ; le texte des modules est inchangé.
+
+### 24/11/2026 — L'ASSISTANT REDÉPLOYÉ (V63) APRÈS EL6
+
+`agent-comptable` redéployée le 24/11/2026 par sa ligne d'import, au commit `c9912ce34a582dc1eeb9fbd5c4e3a57473fa5cba` (celui d'EL6 sur
+`main`), `verify_jwt` à faux comme `supabase/config.toml` : version 63. Sans session, elle répond 401. L'outil `lister_ecritures_libres`
+est donc en ligne ; aucun appel réel de l'assistant sur une écriture libre n'a encore été fait (le dossier `test` n'en porte pas).
