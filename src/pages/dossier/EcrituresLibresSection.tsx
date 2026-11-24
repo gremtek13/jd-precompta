@@ -1,5 +1,12 @@
 import { useRef, useState } from 'react'
-import { enregistrerEcritureLibre, retirerEcritureLibre } from '../../lib/ecrituresLibresLecture'
+import { contrePasserEcritureLibre, enregistrerEcritureLibre, retirerEcritureLibre } from '../../lib/ecrituresLibresLecture'
+import {
+  CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE, composerLaContrePassation, contrePassationPourLaBase, estFigee, porteUnPoste,
+  refusDeLEcritureAContrePasser, refusDeLaContrePassation, saisieProposeeDeLaContrePassation, type SaisieDeContrePassation,
+} from '../../lib/contrePassationDesEcrituresLibres'
+import {
+  confirmationDeLaContrePassation, confirmationDuRetraitDUneContrePassation, mentionDeLaContrePassation, saisieDeLaContrePassation,
+} from '../../lib/contrePassationDesEcrituresLibresVue'
 import { aujourdHuiAParis, formatDate } from '../../lib/format'
 import { telechargerTexte } from '../../lib/fec'
 import { telechargerUnPdf } from '../../lib/apercu'
@@ -35,6 +42,14 @@ import type { Categorie, Piece } from '../../lib/types'
 // - La pièce citée, facultative (EL-Q8 (A)) : un choix parmi les pièces VALIDÉES du dossier que l'onglet a lues EN ENTIER
 //   (`optionsDesPiecesDUneEcritureLibre`), par le choix commun de l'inventaire (`ChoixDuJustificatif`) ; lues en partie, aucun
 //   choix, le motif dit, et la saisie part avec ce qu'elle cite déjà. La liste nomme la pièce citée de chaque écriture.
+// - La contre-passation (EL7), sous `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` seulement (baissé : la section d'EL5, à
+//   l'identique) : une écriture FIGÉE par la validation de son exercice ne s'offre plus à « Modifier » ni à « Retirer », que la
+//   base refuserait ; elle s'offre à « Contre-passer », sauf ce que son état retient, dit avant le clic (extournée, déjà
+//   contre-passée). Le formulaire propose le premier jour de l'exercice ouvert, le libellé qui nomme l'écriture d'origine, hors de
+//   la 2035 ; le motif est obligatoire ; les refus du module se disent avant le clic ; la confirmation NOMME les lignes au sens
+//   inverse, les totaux et l'effet sur la 2035 ; le geste passe par `contre_passer_ecriture_libre` seule, sous son verrou `useRef`,
+//   relâché après la relecture. Une contre-passation ne se modifie pas : ouverte, elle se retire (l'écriture d'origine redevient à
+//   contre-passer) ; la liste dit qui contre-passe qui.
 export default function EcrituresLibresSection({
   dossierId, annee, mode, lecture, frontiere, ouverture, categories, pieces, piecesIncompletes, relecture, relire,
 }: {
@@ -60,6 +75,9 @@ export default function EcrituresLibresSection({
   const [enCours, setEnCours] = useState(false)
   const enregistrementEnCours = useRef(false)
   const retraitEnCours = useRef(false)
+  // La contre-passation en saisie (EL7) : l'écriture visée et la saisie, telle qu'elle partira.
+  const [contrePassation, setContrePassation] = useState<{ id: string; saisie: SaisieDeContrePassation } | null>(null)
+  const contrePassationEnCours = useRef(false)
 
   const lue = lecture !== null && lecture.dossierId === dossierId ? lecture : null
   const exercice = typeof annee === 'number' ? annee : null
@@ -78,6 +96,8 @@ export default function EcrituresLibresSection({
   }
 
   const toutes = lue.ecritures
+  // La contre-passation (EL7) : sa migration en base, le drapeau levé ; baissé, la section d'EL5, rien de plus.
+  const contrePassationOfferte = CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE
   const ecritures = exercice === null ? [] : ecrituresDeLExercice(toutes, exercice)
   const contexte = contexteDuJugement(mode, frontiere, ouverture, aujourdHuiAParis())
   const saisie = formulaire === null ? null : saisieDuFormulaire(formulaire)
@@ -124,7 +144,10 @@ export default function EcrituresLibresSection({
   async function retirer(id: string) {
     if (retraitEnCours.current) return
     const e = ecritures.find((x) => x.id === id)
-    if (!e || !window.confirm(confirmationDuRetrait(e))) return
+    // Une contre-passation (EL7, le drapeau levé) : sa confirmation dit aussi l'écriture qui redevient à contre-passer.
+    const confirmation = !e ? '' : contrePassationOfferte && (e.contre_passe_id ?? null) !== null
+      ? confirmationDuRetraitDUneContrePassation(e, toutes) : confirmationDuRetrait(e)
+    if (!e || !window.confirm(confirmation)) return
     retraitEnCours.current = true
     setEnCours(true)
     setMessage(null)
@@ -138,6 +161,36 @@ export default function EcrituresLibresSection({
       await relire()
     } finally {
       retraitEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  // La contre-passation (EL7) : la saisie TELLE QU'ELLE PART, jugée par le module, composée, confirmée, puis la fonction seule.
+  const visee = contrePassation === null ? null : toutes.find((x) => x.id === contrePassation.id) ?? null
+  const refusDeLaSaisie = visee === null || contrePassation === null || contexte === null ? []
+    : refusDeLaContrePassation(visee, contrePassation.saisie, contexte, toutes)
+  function changerLaContrePassation(change: Partial<SaisieDeContrePassation>) {
+    setContrePassation((c) => c === null ? c : { ...c, saisie: { ...c.saisie, ...change } })
+  }
+  async function contrePasser() {
+    if (contrePassationEnCours.current) return
+    if (contrePassation === null || visee === null || contexte === null) return
+    const proposees = composerLaContrePassation(visee, contrePassation.saisie, contexte, toutes)
+    if (proposees === null) return
+    if (!window.confirm(confirmationDeLaContrePassation(visee, contrePassation.saisie, mode))) return
+    contrePassationEnCours.current = true
+    setEnCours(true)
+    setMessage(null)
+    try {
+      const refusDeLaBase = await contrePasserEcritureLibre(visee.id, visee.version, contrePassationPourLaBase(contrePassation.saisie), proposees)
+      if (refusDeLaBase !== null) setMessage({ genre: 'erreur', texte: `L’écriture n’a pas été contre-passée : ${refusDeLaBase}` })
+      else {
+        setContrePassation(null)
+        setMessage({ genre: 'ok', texte: `Écriture libre ${referenceDeLEcritureLibre(visee)} contre-passée.` })
+      }
+      await relire()
+    } finally {
+      contrePassationEnCours.current = false
       setEnCours(false)
     }
   }
@@ -182,42 +235,62 @@ export default function EcrituresLibresSection({
                   <tr><th>Numéro</th><th>Date</th><th>Libellé et lignes</th><th>Version</th><th /></tr>
                 </thead>
                 <tbody>
-                  {ecritures.map((e) => (
-                    <tr key={e.id}>
-                      <td data-libelle="Numéro" style={{ whiteSpace: 'nowrap' }}>{referenceDeLEcritureLibre(e)}</td>
-                      <td data-libelle="Date" style={{ whiteSpace: 'nowrap' }}>{formatDate(e.date)}</td>
-                      <td data-libelle="Libellé et lignes">
-                        {/* Un seul bloc : la cellule repliée en fiche est une rangée (le libellé, puis son contenu). */}
-                        <div>
-                          <div>{e.libelle}{e.avec_extourne ? ' (extournée au 1er janvier suivant)' : ''}</div>
-                          <ul style={{ margin: 0, paddingLeft: 18 }}>
-                            {e.lignes.map((l, i) => (
-                              <li key={i}>
-                                {l.compte}{l.compte_lib ? ` ${l.compte_lib}` : ''} : {l.sens === 'debit' ? 'débit' : 'crédit'} {euros(l.centimes)}
-                                {mode === 'tresorerie' && classeDeResultat(l.compte) !== null ? ` — 2035 : ${effetDeLaLigne(l, mode)}` : ''}
-                              </li>
-                            ))}
-                          </ul>
-                          <div className="muted">Motif : {e.motif}</div>
-                          {e.piece_citee_id !== null && <div className="muted">{ligneDeLaPieceCitee(e.piece_citee_id, citables, dossierId)}</div>}
-                        </div>
-                      </td>
-                      <td data-libelle="Version">{e.version}, le {instantAParis(instantDeLaVersion(e))}, par {auteurDeLaVersion(e, lue.auteurs)}</td>
-                      <td>
-                        <div className="actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          <button type="button" className="btn btn-outline btn-sm" disabled={geler}
-                            onClick={() => { setMessage(null); setFormulaire(formulaireDeLEcriture(e)) }}>Modifier</button>
-                          <button type="button" className="btn btn-danger btn-sm" disabled={geler} onClick={() => retirer(e.id)}>Retirer</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {ecritures.map((e) => {
+                    // EL7, le drapeau levé : une écriture figée se contre-passe (ni « Modifier » ni « Retirer », que la base
+                    // refuserait) ; une contre-passation ne se modifie pas. Baissé : les deux gestes d'EL5 sur toute écriture.
+                    const figee = contrePassationOfferte && estFigee(e, frontiere)
+                    const contrePasse = contrePassationOfferte && (e.contre_passe_id ?? null) !== null
+                    const retenue = figee ? refusDeLEcritureAContrePasser(e, toutes, frontiere) : []
+                    const mention = contrePassationOfferte ? mentionDeLaContrePassation(e, toutes) : null
+                    return (
+                      <tr key={e.id}>
+                        <td data-libelle="Numéro" style={{ whiteSpace: 'nowrap' }}>{referenceDeLEcritureLibre(e)}</td>
+                        <td data-libelle="Date" style={{ whiteSpace: 'nowrap' }}>{formatDate(e.date)}</td>
+                        <td data-libelle="Libellé et lignes">
+                          {/* Un seul bloc : la cellule repliée en fiche est une rangée (le libellé, puis son contenu). */}
+                          <div>
+                            <div>{e.libelle}{e.avec_extourne ? ' (extournée au 1er janvier suivant)' : ''}</div>
+                            <ul style={{ margin: 0, paddingLeft: 18 }}>
+                              {e.lignes.map((l, i) => (
+                                <li key={i}>
+                                  {l.compte}{l.compte_lib ? ` ${l.compte_lib}` : ''} : {l.sens === 'debit' ? 'débit' : 'crédit'} {euros(l.centimes)}
+                                  {mode === 'tresorerie' && classeDeResultat(l.compte) !== null ? ` — 2035 : ${effetDeLaLigne(l, mode)}` : ''}
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="muted">Motif : {e.motif}</div>
+                            {e.piece_citee_id !== null && <div className="muted">{ligneDeLaPieceCitee(e.piece_citee_id, citables, dossierId)}</div>}
+                            {mention !== null && <div className="muted">{mention}</div>}
+                          </div>
+                        </td>
+                        <td data-libelle="Version">{e.version}, le {instantAParis(instantDeLaVersion(e))}, par {auteurDeLaVersion(e, lue.auteurs)}</td>
+                        <td>
+                          <div className="actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {!figee && !contrePasse && (
+                              <button type="button" className="btn btn-outline btn-sm" disabled={geler || contrePassation !== null}
+                                onClick={() => { setMessage(null); setFormulaire(formulaireDeLEcriture(e)) }}>Modifier</button>
+                            )}
+                            {!figee && <button type="button" className="btn btn-danger btn-sm" disabled={geler} onClick={() => retirer(e.id)}>Retirer</button>}
+                            {figee && retenue.length === 0 && frontiere !== null && (
+                              <button type="button" className="btn btn-outline btn-sm" disabled={geler || formulaire !== null || contexte === null}
+                                onClick={() => { setMessage(null); setContrePassation({ id: e.id, saisie: saisieProposeeDeLaContrePassation(e, frontiere) }) }}>
+                                Contre-passer
+                              </button>
+                            )}
+                          </div>
+                          {figee && <p className="muted" style={{ margin: '4px 0 0' }}>Figée par la validation de {e.exercice}.</p>}
+                          {/* Ce que l'état de l'écriture retient, dit avant le clic ; « déjà contre-passée », la mention le dit. */}
+                          {retenue.filter((r) => r.cle !== 'dejaContrePassee').map((r) => <p key={r.cle} className="muted" style={{ margin: '4px 0 0' }}>{r.message}</p>)}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-            <button type="button" className="btn btn-outline btn-sm" disabled={geler || formulaire !== null || contexte === null}
+            <button type="button" className="btn btn-outline btn-sm" disabled={geler || formulaire !== null || contrePassation !== null || contexte === null}
               onClick={() => { setMessage(null); setFormulaire(formulaireVide(`${exercice}-12-31`)) }}>Nouvelle écriture libre</button>
             <button type="button" className="btn btn-outline btn-sm" onClick={telechargerCsv}>État des écritures libres (CSV)</button>
             <button type="button" className="btn btn-outline btn-sm" onClick={telechargerPdf}>État des écritures libres (PDF)</button>
@@ -326,6 +399,60 @@ export default function EcrituresLibresSection({
               {formulaire.id === null ? 'Passer l’écriture' : 'Remplacer l’écriture'}
             </button>
             <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => setFormulaire(null)}>Abandonner</button>
+          </div>
+        </form>
+      )}
+
+      {contrePassationOfferte && contrePassation !== null && visee !== null && (
+        <form style={{ marginTop: 16 }} onSubmit={(ev) => { ev.preventDefault(); void contrePasser() }} aria-label="Contre-passation de l’écriture libre">
+          <h4 style={{ marginTop: 0 }}>Contre-passer {referenceDeLEcritureLibre(visee)} du {formatDate(visee.date)}</h4>
+          <p className="muted">
+            Une écriture libre neuve, dans un exercice ouvert, qui cite celle-ci et porte ses lignes au sens inverse. La 2035 de
+            {' '}{visee.exercice}, validée, ne change pas.
+          </p>
+          <ul style={{ margin: '0 0 8px', paddingLeft: 18 }} aria-label="Lignes de la contre-passation">
+            {saisieDeLaContrePassation(visee, contrePassation.saisie).lignes.map((l, i) => (
+              <li key={i}>
+                {l.compte}{l.compteLib ? ` ${l.compteLib}` : ''} : {l.sens === 'debit' ? 'débit' : 'crédit'} {euros(l.centimes)}
+                {mode === 'tresorerie' && classeDeResultat(l.compte) !== null ? ` — 2035 : ${l.poste2035 ?? 'hors de la 2035'}` : ''}
+              </li>
+            ))}
+          </ul>
+          <div className="field-row" style={{ flexWrap: 'wrap' }}>
+            <label className="field">Date de la contre-passation
+              <input type="date" value={contrePassation.saisie.date} onChange={(ev) => changerLaContrePassation({ date: ev.target.value })} />
+            </label>
+            <label className="field" style={{ flex: 1 }}>Libellé de la contre-passation
+              <input type="text" value={contrePassation.saisie.libelle} maxLength={200}
+                onChange={(ev) => changerLaContrePassation({ libelle: ev.target.value })} />
+            </label>
+          </div>
+          <p className="muted">{AVERTISSEMENT_DU_LIBELLE}</p>
+          <label className="field">Motif de la contre-passation (au cabinet seul, jamais au FEC)
+            <textarea value={contrePassation.saisie.motif} maxLength={2000} rows={2}
+              onChange={(ev) => changerLaContrePassation({ motif: ev.target.value })} />
+          </label>
+          {mode === 'tresorerie' && porteUnPoste(visee) && (
+            <fieldset style={{ border: 'none', padding: 0, margin: '8px 0', minWidth: 0 }}>
+              <legend>Effet sur la 2035 de {contrePassation.saisie.date.slice(0, 4)}</legend>
+              <label style={{ display: 'block' }}>
+                <input type="radio" name="effet-de-la-contre-passation" checked={contrePassation.saisie.horsDeLa2035}
+                  onChange={() => changerLaContrePassation({ horsDeLa2035: true })} />{' '}
+                Hors de la 2035 : elle corrige les comptes, pas la 2035 (recommandé)
+              </label>
+              <label style={{ display: 'block' }}>
+                <input type="radio" name="effet-de-la-contre-passation" checked={!contrePassation.saisie.horsDeLa2035}
+                  onChange={() => changerLaContrePassation({ horsDeLa2035: false })} />{' '}
+                Les postes de l’écriture d’origine, au sens inverse : la 2035 de cette année compte la correction
+              </label>
+            </fieldset>
+          )}
+          {refusDeLaSaisie.map((r) => <p key={r.cle} className="error-text">{r.message}</p>)}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={geler || contexte === null || refusDeLaSaisie.length > 0}>
+              Contre-passer l’écriture
+            </button>
+            <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => setContrePassation(null)}>Abandonner</button>
           </div>
         </form>
       )}

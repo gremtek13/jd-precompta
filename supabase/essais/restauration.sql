@@ -1241,6 +1241,22 @@ begin
   end if;
 end $$;
 
+-- ══ La contre-passation des écritures libres (ligne 26.9, EL7) ══ Au plan du code quand
+-- `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` est levé — c'est-à-dire quand sa migration est en base : la colonne
+-- `contre_passe_id` d'`ecritures_libres` (une contre-passation cite l'écriture qu'elle contre-passe, de son dossier) part par
+-- VAGUES, l'écriture d'origine d'abord — la garde de la colonne lit sa cible à l'insertion, et une contre-passation ne se
+-- remplace pas : elle ne part pas à NULL pour se compléter ensuite. Aucune table, aucun rang, aucun chemin de plus. Joué après
+-- le bloc des écritures libres, qui met leur table au plan, et avant celui des options, qui reste le dernier ; sa vague vient la
+-- dernière, comme dans la liste du code. Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts
+-- confronte ce bloc au plan prévu du code.
+do $$
+begin
+  if exists (select 1 from pg_attribute a where a.attrelid = to_regclass('public.ecritures_libres') and a.attname = 'contre_passe_id'
+               and not a.attisdropped) then
+    insert into essai_restauration._vagues (table_nom, colonne) values ('ecritures_libres','contre_passe_id');
+  end if;
+end $$;
+
 -- ══ Les options des cabinets (conception 56, OPT1) ══ Au plan du code quand `OPTIONS_DES_CABINETS_PREVUES` est levé —
 -- c'est-à-dire quand leur migration est en base : le script met leur table juste après `copies_des_fichiers`
 -- (ORDRE_RESTAURATION_PREVU : une table du cabinet, hors de l'export d'un dossier), les tables qui suivent reculant d'un

@@ -39,6 +39,7 @@ import { OPTIONS_DES_CABINETS_EN_BASE, TABLES_DES_OPTIONS_DES_CABINETS } from '.
 import { FACTURES_ASSURANCE_MALADIE_EN_BASE } from './importDuFactureAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssuranceMaladie'
 import { ECRITURES_LIBRES_PREVUES, TABLES_DES_ECRITURES_LIBRES } from './ecritureLibre'
+import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import {
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
@@ -1062,6 +1063,28 @@ function blocDesEcrituresLibres(texte: string): BlocDesArticles {
 /** Le plan que le script joue quand la table des écritures libres existe : la sienne après sa table d'ancrage. */
 const avecLesEcrituresLibres = avecLesArticles
 
+// LA CONTRE-PASSATION DES ÉCRITURES LIBRES (ligne 26.9, EL7, préparée) : un bloc à part, joué après celui des écritures libres et
+// avant celui des options, ne pose qu'une VAGUE (`contre_passe_id`) quand la colonne existe — aucune table, aucun rang, aucun
+// chemin ; sa vague vient la dernière, comme dans la liste du code.
+const MARQUE_DE_LA_CONTRE_PASSATION = '-- ══ La contre-passation des écritures libres (ligne 26.9, EL7) ══'
+
+function blocDeLaContrePassation(texte: string): { vagues: { table: string; colonne: string }[]; conditionne: boolean; ailleurs: boolean } {
+  const debut = texte.indexOf(MARQUE_DE_LA_CONTRE_PASSATION)
+  const corps = debut < 0 ? '' : texte.slice(debut, texte.indexOf('end $$;', debut))
+  const vagues = /insert into essai_restauration\._vagues \(table_nom, colonne\) values\s*([^;]*);/.exec(corps)?.[1] ?? ''
+  return {
+    vagues: [...vagues.matchAll(/\('(\w+)','(\w+)'\)/g)].map((m) => ({ table: m[1], colonne: m[2] })),
+    conditionne: corps.includes("if exists (select 1 from pg_attribute a where a.attrelid = to_regclass('public.ecritures_libres') and a.attname = 'contre_passe_id'"),
+    // Une table, un rang ou un chemin posés par ce bloc : il ne doit rien poser d'autre que sa vague.
+    ailleurs: /essai_restauration\._(ordre|chemins)/.test(corps),
+  }
+}
+
+/** Le plan que le script joue quand la colonne de la contre-passation existe : sa vague, après les autres. */
+function avecLaContrePassation(plan: PlanDeLEssai, bloc: { vagues: { table: string; colonne: string }[] }): PlanDeLEssai {
+  return { ...plan, vagues: [...plan.vagues, ...bloc.vagues] }
+}
+
 // LES OPÉRATIONS D'INVENTAIRE (ligne 35, INV2) : un bloc à part, joué en dernier, met leur table juste après
 // `notes_internes`, avant les pièces hors de France ; son chemin ; aucune vague.
 const MARQUE_DE_L_INVENTAIRE = "-- ══ Les opérations d'inventaire (ligne 35, INV2) ══"
@@ -1206,13 +1229,13 @@ const avecLesAchatsDuClient = avecLesArticles
 /** Le plan que le script joue avec les tables des huit blocs, dans l'ordre où il les joue : les articles, les adresses
  *  de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des droits,
  *  les devis. */
-const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesOptionsDesCabinets(avecLesEcrituresLibres(avecLAssociationAssuranceMaladie(avecLeFactureAssuranceMaladie(avecLesPaiementsAssuranceMaladie(avecLaHausse(avecLesExercices(avecLInventaire(avecLInventaire(avecLInventaire(avecLesStocks(avecLAffectation(avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesCopiesDesFichiers(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
+const avecLesBlocs = (texte: string): PlanDeLEssai => avecLesOptionsDesCabinets(avecLaContrePassation(avecLesEcrituresLibres(avecLAssociationAssuranceMaladie(avecLeFactureAssuranceMaladie(avecLesPaiementsAssuranceMaladie(avecLaHausse(avecLesExercices(avecLInventaire(avecLInventaire(avecLInventaire(avecLesStocks(avecLAffectation(avecLesSaisies2035E(avecLesDocumentsEtDemandes(avecLesAchatsDuClient(avecLesNotesDeFrais(avecLaCaisse(avecLesHonorairesDeposes(avecLesHonorairesFactures(avecLesLettresDeMission(avecLeModeleDuCabinet(avecLesOriginauxLiberes(avecLesCopiesDesFichiers(avecLesComptesBancaires(avecLaPieceDUneReprise(avecLaNumerotation(avecLesFacturesReprises(avecLesParametresDesCotisations(avecLesSaisies2035(
   avecLesPrevisionsPubliees(avecLesSituations(avecLesDevis(avecLesOuverturesAttestees(avecLesAdressesRetirees(avecLaTrace(avecLaCaisse(avecLeJournal(avecLesParametres(avecLesContacts(avecLesAdresses(avecLesArticles(planDeLEssai(texte),
     blocDesArticles(texte)), blocDesAdresses(texte)), blocDesContacts(texte)), blocDesParametres(texte)), blocDuJournal(texte)),
   blocDeLaCaisse(texte)), blocDeLaTrace(texte)), blocDesAdressesRetirees(texte)), blocDesOuverturesAttestees(texte)), blocDesDevis(texte)), blocDesSituations(texte)), blocDesPrevisionsPubliees(texte)), blocDesSaisies2035(texte)),
   blocDesParametresDesCotisations(texte)), blocDesFacturesReprises(texte)), blocDeLaNumerotation(texte)), blocDeLaPieceDUneReprise(texte)), blocDesComptesBancaires(texte)), blocDesCopiesDesFichiers(texte)), blocDesOriginauxLiberes(texte)), blocDuModeleDuCabinet(texte)), blocDesLettresDeMission(texte)), blocDesHonorairesFactures(texte)), blocDesHonorairesDeposes(texte)), blocDuDepart(texte)), blocDesNotesDeFrais(texte)), blocDesAchatsDuClient(texte)), blocDesDocumentsEtDemandes(texte)), blocDesSaisies2035E(texte)), blocDeLAffectation(texte)), blocDesStocks(texte)), blocDeLInventaire(texte)), blocDesProvisions(texte)), blocDesDeclarations(texte)), blocDesExercices(texte)), blocDeLaHausse(texte)),
   blocDesPaiementsAssuranceMaladie(texte)), blocDuFactureAssuranceMaladie(texte)), blocDeLAssociationAssuranceMaladie(texte)),
-  blocDesEcrituresLibres(texte)), blocDesOptionsDesCabinets(texte))
+  blocDesEcrituresLibres(texte)), blocDeLaContrePassation(texte)), blocDesOptionsDesCabinets(texte))
 
 /** Chaque écart entre ce que le script recopie et ce que le code exécute, dit en une phrase. */
 function ecartsAuCode(
@@ -1357,9 +1380,12 @@ describe('l’essai de restauration rejoue le plan du code', () => {
   const ecrituresLibres = blocDesEcrituresLibres(texteDeLEssai)
   const avecLesEcrituresLibresDuJour = ECRITURES_LIBRES_PREVUES
     ? avecLesEcrituresLibres(avecLAssociationAMDuJour, ecrituresLibres) : avecLAssociationAMDuJour
+  const contrePassation = blocDeLaContrePassation(texteDeLEssai)
+  const avecLaContrePassationDuJour = CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE
+    ? avecLaContrePassation(avecLesEcrituresLibresDuJour, contrePassation) : avecLesEcrituresLibresDuJour
   const options = blocDesOptionsDesCabinets(texteDeLEssai)
   const courant = OPTIONS_DES_CABINETS_EN_BASE
-    ? avecLesOptionsDesCabinets(avecLesEcrituresLibresDuJour, options) : avecLesEcrituresLibresDuJour
+    ? avecLesOptionsDesCabinets(avecLaContrePassationDuJour, options) : avecLaContrePassationDuJour
 
   it('le bloc de l’association des paiements de l’assurance maladie : sa table, après `lignes_bancaires`, conditionné, son chemin, joué après le facturé et avant les options (NOE5, NOE8)', () => {
     expect(associationAM).toEqual({
@@ -1402,6 +1428,21 @@ describe('l’essai de restauration rejoue le plan du code', () => {
     expect(blocDesEcrituresLibres(ailleurs).ancre).toBe('notes_internes')
     expect(ecartsAuCode(avecLesBlocs(ailleurs), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS,
       TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES).join('\n')).toContain('_ordre diffère')
+  })
+
+  it('le bloc de la contre-passation : sa seule vague, la dernière du code, conditionnée par la colonne, joué après les écritures libres et avant les options (EL7)', () => {
+    expect(contrePassation).toEqual({ vagues: [{ table: 'ecritures_libres', colonne: 'contre_passe_id' }], conditionne: true, ailleurs: false })
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.at(-1)).toEqual(contrePassation.vagues[0])
+    expect(texteDeLEssai.indexOf(MARQUE_DE_LA_CONTRE_PASSATION)).toBeGreaterThan(texteDeLEssai.indexOf(MARQUE_DES_ECRITURES_LIBRES))
+    expect(texteDeLEssai.indexOf(MARQUE_DE_LA_CONTRE_PASSATION)).toBeLessThan(texteDeLEssai.indexOf(MARQUE_DES_OPTIONS_DES_CABINETS))
+    // La vague du jour suit le drapeau ; le bloc ôté, il ne conditionne plus rien, et le plan prévu que le script joue n'est
+    // plus celui du code.
+    expect(courant.vagues.some((v) => v.colonne === 'contre_passe_id')).toBe(CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE)
+    const sansLeBloc = texteDeLEssai.replace("and a.attname = 'contre_passe_id'", "and a.attname = 'autre_colonne'")
+    expect(blocDeLaContrePassation(sansLeBloc).conditionne).toBe(false)
+    const sansLaVague = texteDeLEssai.replace("values ('ecritures_libres','contre_passe_id');", "values ('ecritures_libres','piece_citee_id');")
+    expect(ecartsAuCode(avecLesBlocs(sansLaVague), ORDRE_RESTAURATION_PREVU, CHEMINS_DOSSIER_PREVUS,
+      TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES).join('\n')).toContain('_vagues vaut')
   })
 
   it('le bloc des options des cabinets : sa table, après `copies_des_fichiers`, conditionnée, son chemin de cabinet, joué en dernier (OPT1)', () => {

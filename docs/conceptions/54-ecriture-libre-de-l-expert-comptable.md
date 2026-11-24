@@ -156,7 +156,7 @@ une garde à part (EL2b, EL-Q11).
 |---|---|---|
 | `id` | uuid | clé primaire |
 | `dossier_id` | uuid not null | `references dossiers on delete cascade` |
-| `numero` | integer not null | attribué par la fonction, croissant par dossier et par année de `date`, jamais réutilisé (un retrait laisse un trou, qui n'est pas un trou de la numérotation du FEC) ; unicité TOTALE `(dossier_id, exercice, numero)` |
+| `numero` | integer not null | attribué par la fonction, croissant par dossier et par année de `date`, jamais réutilisé (un retrait laisse un trou, qui n'est pas un trou de la numérotation du FEC) — relevé le 24/11/2026 (EL7) : en base, le plus haut de l'année plus un, si bien que le numéro de la DERNIÈRE écriture retirée se reprend (EL7-Q2) ; unicité TOTALE `(dossier_id, exercice, numero)` |
 | `exercice` | integer not null | l'année civile de `date` (check) |
 | `date` | date not null | la date de l'écriture, la même pour toutes ses lignes (§ 3.3) |
 | `libelle` | text not null | 1 à 200 caractères, sans saut de ligne ni caractère de contrôle ; part au FEC (EcritureLib) — § 3.5 |
@@ -164,7 +164,7 @@ une garde à part (EL2b, EL-Q11).
 | `lignes` | jsonb not null | un tableau de 2 à 200 lignes `{ rang, compte, sens, centimes, poste_2035 }` (§ 3.2) ; la forme jugée par la fonction, un `check (jsonb_typeof(lignes) = 'array')` en base |
 | `piece_citee_id` | uuid | facultative ; `references pieces` sans action, une pièce du même dossier (contrôle) |
 | `avec_extourne` | boolean not null | (EL2, 17/11/2026, au lieu d'une `extourne_de_id`) l'écriture du 31 décembre porte ELLE-MÊME son extourne au 1er janvier suivant : ses lignes inverses s'écrivent au brouillon à cette date, sous « Extourne — » et le libellé. La paire naît, change et se retire ensemble par construction (le patron d'INV2), sans clé auto-référencée ni seconde ligne à geler |
-| `contre_passe_id` | uuid | facultative ; `references ecritures_libres`, une écriture libre VALIDÉE du même dossier qu'elle contre-passe — posée par EL7, pas par EL2 (rien ne l'écrit avant) |
+| `contre_passe_id` | uuid | facultative ; `references ecritures_libres`, une écriture libre VALIDÉE du même dossier qu'elle contre-passe — posée par EL7, pas par EL2 (rien ne l'écrit avant) ; préparée le 24/11/2026 (§ 7.2) |
 | `version` | integer not null default 1 | incrémentée à chaque remplacement ; la saisie retient la version lue |
 | `cree_par`, `cree_le`, `modifie_par`, `modifie_le` | | posés par la fonction (`auth.uid()`, `now()`), jamais par l'appelant |
 
@@ -553,7 +553,7 @@ EXCEPTION tracée, jamais un retour silencieux : la version validée ne dispara�
 | EL4 | La 2035 (la source neuve, ses contributions), la concordance (le motif déclaré, `concorde` hors des écarts déclarés si EL-Q6 (A)), `prealablesValidation.ts`, Clôture, la situation intermédiaire et l'estimation ; un test qui garde la CA3 aveugle | 2 | le même | EL2 | oui |
 | EL5 | L'écran : une section « Écritures de l'expert-comptable » de l'onglet Écritures — la liste de l'exercice, lue en entier (partielle : aucun geste) ; la saisie compte par compte au chef seul (un membre la lit, sans formulaire), l'équilibre affiché, les avertissements sous chaque ligne, le poste proposé, l'extourne proposée ; une confirmation qui NOMME les lignes, les totaux et l'effet sur la 2035 ; un verrou `useRef` par geste ; ses tests d'écran | 2 | `ECRITURES_LIBRES_EXPORTEES` baissé | EL3, EL4 | oui |
 | EL6 | Le détail de la balance et du bilan, la révision (preuve, travail), l'assistant (lecture sans libellé) et son redéploiement | 1 | — | EL5 | non |
-| EL7 | La contre-passation d'une écriture validée, d'un geste, dans un exercice ouvert (`contre_passe_id`) | 0,5 | — | EL5 | non |
+| EL7 — **préparée le 24/11/2026** (§ 7.2) | La contre-passation d'une écriture validée, d'un geste, dans un exercice ouvert (`contre_passe_id`) | 0,5 | `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` baissé | EL5 | non |
 | EL8 | La mise en production : la table au plan de sauvegarde derrière `ECRITURES_LIBRES_PREVUES` AVEC son bloc de l'essai de restauration (restauration.sql, que restaurationEssai.test.ts confronte au plan prévu), le bloc de `rls.sql` ; simulation (fichiers posés, drapeaux levés, suite entière), collage par le cabinet (les fonctions suppriment), les trois contrôles de l'export, `rejouer.py`, essais rejoués, drapeaux levés | 0,5 | levés | EL2 à EL5 | oui |
 | EL9 | Le dégel d'un exercice validé par le chef (EL-Q10 (B), § 6.1) : `degels_d_exercice`, `degeler_exercice`, la relecture des gardes qui lisent la frontière, l'archive au plan de sauvegarde et au paquet d'archive, l'écran (le motif, l'écart avant la revalidation) | 2 | `DEGEL_PREVU` baissé | EL10-Q1 à Q7 | selon EL10-Q7 |
 
@@ -591,6 +591,24 @@ qu'il connaît.
 - **Le banc** : une copie de `replique_227` portée à 236 : l'essai 67 sur 67, six mutations sur six qui mordent ; le retour puis
   EL2 de nouveau ; EL2 avant puis après les quatre sœurs, les dix paires posées dans les deux ordres, l'essai juste ; l'essai
   d'INV2 92 sur 92 et 14 mutations sur 14 à côté d'EL2.
+
+### 7.2 EL7, le 24/11/2026 : la contre-passation, préparée
+
+- **« Validée »** : une écriture libre n'a pas de statut à elle ; elle se valide avec son exercice — sa date au plus tard à la
+  frontière de la validation, ou une de ses lignes validée, le gel qu'EL2 lit déjà. Après, elle se contre-passe.
+- **La migration** (`supabase/preparees/20261124120000_contre_passation_des_ecritures_libres.sql`, sans instruction de suppression :
+  l'outil peut l'appliquer) : `contre_passe_id` (vers la même table, sans action, une contrainte d'unicité TOTALE, jamais avec une
+  extourne) ; `contre_passer_ecriture_libre(p_id, p_version_lue, p_contre_passation, p_ecritures)` — l'accès avant toute lecture
+  (`admin_du_dossier`), la version lue, l'écriture figée, sans extourne (son extourne la défait déjà), pas déjà contre-passée ; une
+  date d'un exercice ouvert (proposée : le lendemain de la frontière, PCG art. 1031-4) ; l'effet sur la 2035, un choix sans défaut
+  (les postes d'origine au sens inverse, ou hors de la 2035) ; le libellé et le motif obligatoires ; les lignes au sens inverse
+  recomposées et comparées en multiensemble ; le numéro de son année, l'auteur posé par la base ; une garde à part qui tient la
+  colonne (son chemin, la réinsertion du super-administrateur, le même dossier ; ni remplacement ni lien changé ; l'écriture
+  contre-passée ne change ni ne se retire). Le retrait d'une contre-passation ouverte : `retirer_ecriture_libre`, telle quelle.
+- **Écarts à la conception, choisis** : la pièce citée de l'écriture d'origine n'est pas recopiée (la contre-passation se justifie
+  par son motif et l'état) ; une écriture extournée ne se contre-passe pas ; une contre-passation figée se contre-passe à son tour.
+- **Les moteurs** : la 2035, le FEC, la piste d'audit et l'état la lisent comme une écriture libre ordinaire, sans changement ;
+  son libellé proposé (« Contre-passation de EL2025-0003 — … ») nomme l'écriture d'origine jusqu'au FEC.
 
 ## 8. Les risques
 

@@ -37,6 +37,11 @@ export interface EcritureLibreDesExports {
   cree_le: string
   modifie_par: string | null
   modifie_le: string | null
+  // L'écriture libre qu'elle contre-passe (EL7, migration `contre_passation_des_ecritures_libres`, préparée) : FACULTATIVE, et
+  // c'est la vérité des deux côtés de la migration — la colonne n'est lue que son drapeau levé
+  // (`CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE`, lib/contrePassationDesEcrituresLibres.ts) ; nulle sur toute autre écriture.
+  // Aucun export ni moteur ne la lit : une contre-passation est une écriture libre ordinaire (contrePassationDansLesMoteurs.test.ts).
+  contre_passe_id?: string | null
 }
 
 /** Une écriture libre telle que l'état la lit : le motif en plus, pour lui seul. */

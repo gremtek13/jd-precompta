@@ -42,6 +42,7 @@ import { SITUATIONS_PUBLIEES_EXPORTEES } from './situationsPubliees'
 import { PREVISIONS_PUBLIEES_PREVUES } from './previsionsPubliees'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
 import { LETTRES_DE_MISSION_PREVUES } from './lettresDeMission'
+import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import { derniereDefinitionSql } from '../test/schema'
 
 // Ces tests sont la RÉPÉTITION de la restauration. Une sauvegarde jamais restaurée n'est pas une
@@ -151,6 +152,8 @@ describe('ordre de restauration', () => {
       // La prévision de trésorerie publiée (C8-Q2, préparée) : le jour où sa migration est en base.
       ...(PREVISIONS_PUBLIEES_PREVUES ? ['previsions_publiees.remplace_id'] : []),
       ...(LETTRES_DE_MISSION_PREVUES ? ['modeles_lettre_de_mission.remplace_id', 'lettres_de_mission.remplace_id'] : []),
+      // La contre-passation d'une écriture libre (EL7, préparée) : le jour où sa migration est en base.
+      ...(CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE ? ['ecritures_libres.contre_passe_id'] : []),
     ])
   })
 

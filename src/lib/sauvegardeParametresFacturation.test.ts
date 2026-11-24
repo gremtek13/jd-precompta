@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { PARAMETRES_FACTURATION_EXPORTES } from './parametresFacturation'
+import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import {
   auPlanAujourdHui,
   auPlanDesParametresFacturation,
+  auxVaguesDeLaContrePassation,
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
   CLES_PRIMAIRES,
@@ -62,7 +64,8 @@ describe('le filtre du plan, côté paramètres de facturation', () => {
       ...TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((a) => a.table),
     ])
     for (const table of TABLES_DES_PARAMETRES_FACTURATION) expect(nommees.has(table), table).toBe(PARAMETRES_FACTURATION_EXPORTES)
-    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES).toEqual(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => auPlanAujourdHui(a.table)))
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES).toEqual(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES
+      .filter((a) => auPlanAujourdHui(a.table) && auxVaguesDeLaContrePassation(a, CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE)))
     // Sa clé est la clé commune : aucune ligne dans les clés déclarées, prévues ou non.
     expect(Object.keys(CLES_PRIMAIRES_PREVUES)).not.toContain('parametres_facturation')
     expect(Object.keys(CLES_PRIMAIRES)).not.toContain('parametres_facturation')

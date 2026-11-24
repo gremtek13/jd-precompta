@@ -40,6 +40,12 @@ export type LectureDesEcrituresLibres =
 export const COLONNES_DES_ECRITURES_LIBRES =
   'id, dossier_id, exercice, numero, date, libelle, motif, lignes, avec_extourne, piece_citee_id, version, cree_par, cree_le, modifie_par, modifie_le'
 
+/** Les colonnes lues, selon que la migration de la contre-passation (EL7) est en base : la sienne en plus, sinon celles d'hier
+ *  — PostgREST refuserait une colonne qui n'existe pas. */
+export function colonnesDesEcrituresLibres(contrePassation: boolean): string {
+  return contrePassation ? `${COLONNES_DES_ECRITURES_LIBRES}, contre_passe_id` : COLONNES_DES_ECRITURES_LIBRES
+}
+
 const texte = (v: unknown): v is string => typeof v === 'string'
 const texteNonVide = (v: unknown): v is string => typeof v === 'string' && v !== ''
 const entier = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v)
@@ -77,10 +83,14 @@ export function ecritureLibreDeLaLigne(ligne: unknown, dossierId: string): Ecrit
   if (!Array.isArray(r.lignes) || r.lignes.length < 2) return null
   const lignes = r.lignes.map(ligneLue)
   if (lignes.some((l) => l === null)) return null
+  // La contre-passation (EL7) : lue le drapeau levé seulement ; absente de la ligne, la clé n'entre pas dans l'écriture relue.
+  const contrePasse = r.contre_passe_id === undefined ? undefined : r.contre_passe_id ?? null
+  if (contrePasse !== undefined && contrePasse !== null && (!texteNonVide(contrePasse) || contrePasse === r.id)) return null
   return {
     id: r.id, dossier_id: r.dossier_id, exercice: r.exercice, numero: r.numero, date: r.date, libelle: r.libelle, motif: r.motif,
     lignes: lignes as LigneEnBaseDEcritureLibre[], avec_extourne: r.avec_extourne, piece_citee_id: piece, version: r.version,
     cree_par: r.cree_par, cree_le: r.cree_le, modifie_par: modifiePar, modifie_le: modifieLe,
+    ...(contrePasse === undefined ? {} : { contre_passe_id: contrePasse }),
   }
 }
 
@@ -328,7 +338,9 @@ export function confirmationDuRetrait(e: EcritureLibreDesExports): string {
   const debit = e.lignes.filter((l) => l.sens === 'debit').reduce((t, l) => t + l.centimes, 0)
   return `Retirer l’écriture libre ${referenceDeLEcritureLibre(e)} du ${dateCourte(e.date)} : « ${e.libelle} » (${e.lignes.length} lignes, `
     + `${euros(debit)} au débit et au crédit)${e.avec_extourne ? ', et son extourne au 1er janvier suivant' : ''} ? `
-    + 'Ses lignes quittent le brouillon ; son numéro ne se réutilise pas.'
+    // Le numéro suit `enregistrer_ecriture_libre` (le plus haut de l'année, plus un) : un retrait laisse un trou, sauf celui de la
+    // dernière écriture de l'année, que la suivante reprend (relevé le 24/11/2026, EL7 ; EL7-Q2) — la phrase d'avant le niait.
+    + 'Ses lignes quittent le brouillon ; son numéro reste un trou, sauf si elle est la dernière de son année : la suivante le reprend.'
 }
 
 function dateCourte(date: string): string {

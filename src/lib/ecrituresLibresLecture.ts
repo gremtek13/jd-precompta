@@ -1,5 +1,6 @@
+import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import { ECRITURES_LIBRES_PREVUES } from './ecritureLibre'
-import { COLONNES_DES_ECRITURES_LIBRES, ecritureLibreDeLaLigne, type LectureDesEcrituresLibres } from './ecrituresLibresVue'
+import { colonnesDesEcrituresLibres, ecritureLibreDeLaLigne, type LectureDesEcrituresLibres } from './ecrituresLibresVue'
 import { lireTout } from './lectureComplete'
 import { messageErreur } from './messageErreur'
 import { equipeNommable, type MembreLu } from './ouverturesAttestees'
@@ -24,13 +25,16 @@ export function lireLesEcrituresLibres(dossierId: string): Promise<LectureDesEcr
   return lireLesEcrituresLibresSelon(dossierId, ECRITURES_LIBRES_PREVUES)
 }
 
-/** La même lecture, selon que la table est en base : les deux états du drapeau, que les tests jouent. */
-export async function lireLesEcrituresLibresSelon(dossierId: string, prevues: boolean): Promise<LectureDesEcrituresLibres> {
+/** La même lecture, selon que la table est en base, et la colonne de la contre-passation (EL7) : les états des deux drapeaux,
+ *  que les tests jouent. */
+export async function lireLesEcrituresLibresSelon(
+  dossierId: string, prevues: boolean, contrePassation: boolean = CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE,
+): Promise<LectureDesEcrituresLibres> {
   if (!prevues) return { dossierId, etat: 'absentes' }
   let ecritures: EcritureLibreDeLEtat[]
   try {
     const lecture = await lireTout<unknown>((debut, fin) =>
-      supabase.from('ecritures_libres').select(COLONNES_DES_ECRITURES_LIBRES, { count: 'exact' })
+      supabase.from('ecritures_libres').select(colonnesDesEcrituresLibres(contrePassation), { count: 'exact' })
         .eq('dossier_id', dossierId).order('exercice').order('numero').order('id').range(debut, fin),
     )
     if (!lecture.complete) return { dossierId, etat: 'illisibles', motif: lecture.motif ?? 'lecture incomplète' }
@@ -75,5 +79,16 @@ export async function enregistrerEcritureLibre(
 /** Retire une écriture libre et ses lignes au brouillon, contre la version lue. */
 export async function retirerEcritureLibre(id: string, versionLue: number): Promise<string | null> {
   const { error } = await supabase.rpc('retirer_ecriture_libre', { p_id: id, p_version_lue: versionLue })
+  return error ? messageErreur(error, 'raison inconnue') : null
+}
+
+/** Contre-passe une écriture libre figée (EL7), contre la version lue : `p_contre_passation` et `p_ecritures` tels que le module
+ *  les compose (lib/contrePassationDesEcrituresLibres.ts). Le refus de la base, en clair, ou nul quand elle a écrit. */
+export async function contrePasserEcritureLibre(
+  id: string, versionLue: number, contrePassation: unknown, ecritures: unknown,
+): Promise<string | null> {
+  const { error } = await supabase.rpc('contre_passer_ecriture_libre', {
+    p_id: id, p_version_lue: versionLue, p_contre_passation: contrePassation, p_ecritures: ecritures,
+  })
   return error ? messageErreur(error, 'raison inconnue') : null
 }
