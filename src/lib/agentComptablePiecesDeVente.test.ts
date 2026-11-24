@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { muter } from '../test/fonctionsEdge'
 import { fichiersDuSchema, fichiersPrepares, relationsDuSchema } from '../test/schema'
 import { libelleDeLEclatement } from './ouvertureEclatee'
+import { referenceDeLEcritureLibre } from './ecrituresLibresDesExports'
 
 // LE CLIENT D'UNE PIÈCE DE VENTE NE PART PAS AU MODÈLE (VF9C-Q1 : la réponse (A) du cabinet du 28/10/2026 ; chantier EC-Q3,
 // ligne 28.65). NI QUI A PAYÉ UN CRÉDIT DU RELEVÉ, NI LE LIBELLÉ D'UNE LIGNE RATTACHÉE À RIEN (VF9CQ1 : les réponses (A) du
@@ -83,6 +84,9 @@ interface Bloc {
   RATTACHEMENT_DE_L_OUVERTURE: string
   nomDeLOuvertureEclatee: (compte: unknown, date: unknown) => string | null
   libelleDUneLigneDOuverture: (ligne: Record<string, unknown>) => string | null
+  referenceDUneLigneLibre: (exercice: number, numero: number) => string
+  nomDUneLigneLibre: (ecriture: Record<string, unknown>, date: unknown) => string | null
+  libelleDUneLigneLibre: (ligne: Record<string, unknown>) => string | null
 }
 
 const NOMS = [
@@ -91,9 +95,10 @@ const NOMS = [
   'RACINES_DES_COMPTES_D_UN_CLIENT', 'nomDUnDebitDuReleve', 'debitQuiRendLArgentDUnClient',
   'MOTS_D_UNE_OPERATION_DE_CAISSE', 'nomDUneOperationDeCaisse', 'libelleDUneLigneDeCaisse',
   'RATTACHEMENT_DE_L_OUVERTURE', 'nomDeLOuvertureEclatee', 'libelleDUneLigneDOuverture',
+  'referenceDUneLigneLibre', 'nomDUneLigneLibre', 'libelleDUneLigneLibre',
 ] as const
 /** Les types que le bloc déclare : ce qu'il nomme d'une pièce, d'un mouvement, des factures, des encaissements et d'une opération de caisse ; ce qu'il lit d'une ligne d'un mouvement. */
-const TYPES_DU_BLOC = ['PieceNommee', 'MouvementNomme', 'LigneDuMouvementLue', 'OperationDeCaisseNommee', 'FactureNommeeRow', 'EncaissementNommeRow', 'VentesNommees']
+const TYPES_DU_BLOC = ['PieceNommee', 'MouvementNomme', 'LigneDuMouvementLue', 'OperationDeCaisseNommee', 'FactureNommeeRow', 'EncaissementNommeRow', 'VentesNommees', 'EcritureLibreNommee']
 
 /** Le bloc transpilé puis exécuté SEUL, en mode strict : il ne voit rien du reste du fichier. */
 function executer(code: string): Bloc {
@@ -107,15 +112,10 @@ const deployee = executer(bloc(sourceDeployee()))
  * Les clés étrangères du brouillon que l'assistant ne juge pas ENCORE, chacune avec la table qu'elle vise et sa raison :
  * une ligne qui ne cite qu'elles passe pour rattachée à rien, et se tait — rien d'elle ne part au modèle, ni son libellé
  * ni sa source. L'étape qui jugera la source d'une clé la fait passer d'ici aux RATTACHEMENTS du bloc, et redéploie. Vide
- * depuis l'étape C5 de la caisse (ligne 26.6), qui en a fait passer `operation_caisse_id` aux rattachements ; depuis EL8
- * (22/11/2026), la clé de l'écriture libre, que sa migration (EL2) range dans l'export le jour de son collage.
+ * depuis l'étape C5 de la caisse (ligne 26.6), qui en a fait passer `operation_caisse_id` aux rattachements ; de nouveau vide
+ * depuis EL6 (24/11/2026), qui y a fait passer `ecriture_libre_id`, l'écriture libre de l'expert-comptable, en attente depuis EL8.
  */
-const EN_ATTENTE_DE_L_ASSISTANT: readonly (readonly [colonne: string, parent: string, raison: string])[] = [
-  ['ecriture_libre_id', 'ecritures_libres',
-    'L’écriture libre de l’expert-comptable (ligne 26.9, EL2) : l’assistant la jugera à EL6, sans son libellé ni son motif '
-    + '(conception 54, § 5.9) ; jusque-là, sa ligne passe pour rattachée à rien, et rien d’elle ne part au modèle que son compte, '
-    + 'son sens, son montant et sa date.'],
-]
+const EN_ATTENTE_DE_L_ASSISTANT: readonly (readonly [colonne: string, parent: string, raison: string])[] = []
 
 // ── LE BLOC : CE QU'IL REND, CAS PAR CAS ────────────────────────────────────────────────────────────────────────────────
 
@@ -133,8 +133,9 @@ const piece = (o: Record<string, unknown>) => ({
 const ligne = (o: Record<string, unknown>) => ({
   date: '2026-01-20', compte: '706000', libelle: 'Client fictif', sens: 'credit', montant: 100, piece_id: ID_PIECE,
   ligne_bancaire_id: null, facture_id: null, encaissement_id: null, immobilisation_id: null, vehicule_id: null,
-  declaration_tva_id: null, cotisation_id: null, operation_caisse_id: null,
-  pieces: { type_piece: 'vente', date_piece: '2026-01-15', montant_ttc: 120 }, lignes_bancaires: null, operations_caisse: null, ...o,
+  declaration_tva_id: null, cotisation_id: null, operation_caisse_id: null, ecriture_libre_id: null,
+  pieces: { type_piece: 'vente', date_piece: '2026-01-15', montant_ttc: 120 }, lignes_bancaires: null, operations_caisse: null,
+  ecritures_libres: null, ...o,
 })
 /** Une ligne sans pièce : celle d'un mouvement, d'une vente facturée, d'une écriture composée, ou rattachée à rien. */
 const sansPiece = (o: Record<string, unknown>) => ligne({ piece_id: null, pieces: null, ...o })
@@ -283,6 +284,50 @@ const CAS_DE_L_OUVERTURE: readonly (readonly [nom: string, rendu: (b: Bloc) => u
     vue(dOuverture({}), null, null)],
   ['une ligne d’une autre source, la clé de l’ouverture nulle : jugée comme hier',
     (b) => b.ecritureVueParLeModele({ ...dotation(), ouverture_compte_bancaire_id: null, comptes_bancaires: null }, null), vue(dotation(), 'Dotation 2026 — Bien fictif')],
+]
+
+/**
+ * La ligne d'une écriture libre de l'expert-comptable (EL6), lue avec son écriture embarquée, sous un libellé saisi qui nomme
+ * quelqu'un : ni lui ni le motif ne partent ; la ligne se nomme par son numéro et sa date, sa source est « ecriture_libre ».
+ */
+const ECRITURE_LIBRE = { exercice: 2026, numero: 3, date: '2026-12-31' }
+const deLEcritureLibre = (ecriture: unknown, o: Record<string, unknown> = {}) => sansPiece({
+  ecriture_libre_id: 'el-3', ecritures_libres: ecriture, date: '2026-12-31', compte: '622600', sens: 'debit', montant: 300,
+  libelle: 'Rétrocession — Patient fictif Ombreval', ...o,
+})
+const NOM_DE_L_ECRITURE_LIBRE = 'Écriture libre EL2026-0003 du 31/12/2026'
+const CAS_DE_L_ECRITURE_LIBRE: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu: unknown])[] = [
+  ['le numéro : quatre chiffres', (b) => b.referenceDUneLigneLibre(2026, 3), 'EL2026-0003'],
+  ['le numéro : au-delà de 9999, tous ses chiffres', (b) => b.referenceDUneLigneLibre(2027, 12345), 'EL2027-12345'],
+  ['le nom : la constatation, à la date de l’écriture', (b) => b.nomDUneLigneLibre(ECRITURE_LIBRE, '2026-12-31'), NOM_DE_L_ECRITURE_LIBRE],
+  ['le nom : l’extourne, à sa date', (b) => b.nomDUneLigneLibre(ECRITURE_LIBRE, '2027-01-01'), 'Extourne de l\'écriture libre EL2026-0003 au 01/01/2027'],
+  ['le nom : un rang qui n’est pas un entier', (b) => b.nomDUneLigneLibre({ ...ECRITURE_LIBRE, numero: 3.5 }, '2026-12-31'), null],
+  ['le nom : un rang nul', (b) => b.nomDUneLigneLibre({ ...ECRITURE_LIBRE, numero: 0 }, '2026-12-31'), null],
+  ['le nom : un rang en texte', (b) => b.nomDUneLigneLibre({ ...ECRITURE_LIBRE, numero: '3' }, '2026-12-31'), null],
+  ['le nom : un exercice non lu', (b) => b.nomDUneLigneLibre({ numero: 3, date: '2026-12-31' }, '2026-12-31'), null],
+  ['le nom : une date d’un autre exercice', (b) => b.nomDUneLigneLibre({ ...ECRITURE_LIBRE, date: '2025-12-31' }, '2025-12-31'), null],
+  ['le nom : un instant au lieu d’une date', (b) => b.nomDUneLigneLibre({ ...ECRITURE_LIBRE, date: '2026-12-31T10:00:00Z' }, '2026-12-31'), null],
+  ['le nom : une ligne sans date', (b) => b.nomDUneLigneLibre(ECRITURE_LIBRE, null), null],
+  ['la ligne : son nom, jamais le libellé saisi, et sa source, d’un dossier qui ne lit pas ses ventes',
+    (b) => b.ecritureVueParLeModele(deLEcritureLibre(ECRITURE_LIBRE), null), vue(deLEcritureLibre(null), NOM_DE_L_ECRITURE_LIBRE, 'ecriture_libre')],
+  ['la ligne, d’un dossier qui lit ses ventes : de même', (b) => b.ecritureVueParLeModele(deLEcritureLibre(ECRITURE_LIBRE), VENTES),
+    vue(deLEcritureLibre(null), NOM_DE_L_ECRITURE_LIBRE, 'ecriture_libre')],
+  ['la ligne de l’extourne', (b) => b.ecritureVueParLeModele(deLEcritureLibre(ECRITURE_LIBRE, { date: '2027-01-01', sens: 'credit' }), null),
+    vue(deLEcritureLibre(null, { date: '2027-01-01', sens: 'credit' }), 'Extourne de l\'écriture libre EL2026-0003 au 01/01/2027', 'ecriture_libre')],
+  ['une écriture que la lecture n’a pas rendue : aucun libellé, sa source', (b) => b.ecritureVueParLeModele(deLEcritureLibre(null), null),
+    vue(deLEcritureLibre(null), null, 'ecriture_libre')],
+  ['une écriture rendue en liste : aucun libellé', (b) => b.ecritureVueParLeModele(deLEcritureLibre([ECRITURE_LIBRE]), null), vue(deLEcritureLibre(null), null, 'ecriture_libre')],
+  ['une écriture rendue avec son libellé et son motif : ni l’un ni l’autre ne part',
+    (b) => b.ecritureVueParLeModele(deLEcritureLibre({ ...ECRITURE_LIBRE, libelle: 'Patient fictif Ombreval', motif: 'Patient fictif Ombreval' }), null),
+    vue(deLEcritureLibre(null), NOM_DE_L_ECRITURE_LIBRE, 'ecriture_libre')],
+  ['une ligne lue sans son écriture embarquée : rattachée à rien, aucun libellé', (b) => b.ecritureVueParLeModele(sans(deLEcritureLibre(ECRITURE_LIBRE), 'ecritures_libres'), null),
+    vue(deLEcritureLibre(null), null)],
+  ['une ligne lue sans sa clé : rattachée à rien', (b) => b.ecritureVueParLeModele(sans(deLEcritureLibre(ECRITURE_LIBRE), 'ecriture_libre_id'), null),
+    vue(deLEcritureLibre(null), null)],
+  ['une dotation lue sans l’écriture libre embarquée : aucun libellé non plus', (b) => b.ecritureVueParLeModele(sans(dotation(), 'ecritures_libres'), null), vue(dotation(), null)],
+  ['une dotation lue sans la clé de l’écriture libre : rattachée à rien, aucun libellé', (b) => b.ecritureVueParLeModele(sans(dotation(), 'ecriture_libre_id'), null), vue(dotation(), null)],
+  ['la ligne seule : le nom de son écriture', (b) => b.libelleDUneLigneLibre(deLEcritureLibre(ECRITURE_LIBRE)), NOM_DE_L_ECRITURE_LIBRE],
+  ['une ligne d’une autre source n’a pas la source de l’écriture libre', (b) => b.ecritureVueParLeModele(dotation(), null), vue(dotation(), 'Dotation 2026 — Bien fictif')],
 ]
 
 const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu: unknown])[] = [
@@ -489,6 +534,7 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
     (b) => b.debitQuiRendLArgentDUnClient(surLesLignes(...lignesDuMouvement('607000', '401700', '104100', '512000'))), false],
   ['la reconnaissance, seule : une ligne propre sur un produit suffit, quel que soit son rang', (b) => b.debitQuiRendLArgentDUnClient(surLesLignes(...lignesDuMouvement('512000', '627000', '708000'))), true],
   ...CAS_DE_L_OUVERTURE,
+  ...CAS_DE_L_ECRITURE_LIBRE,
   // Ce qui est rendu tel quel l'est vraiment : ni copie ni clé ajoutée.
   ['une pièce d’achat : le même objet', (b) => {
     const p = piece({ type_piece: 'achat' })
@@ -497,6 +543,7 @@ const CAS: readonly (readonly [nom: string, rendu: (b: Bloc) => unknown, attendu
 ]
 
 /** Les cas où le bloc ne rend pas ce qui est attendu. */
+// (Les cas de l'écriture libre, EL6, sont dans CAS_DE_L_ECRITURE_LIBRE, plus haut.)
 function ecarts(b: Bloc): string[] {
   return CAS.flatMap(([nom, rendu, attendu]) => {
     try {
@@ -574,6 +621,22 @@ describe('agent-comptable / bloc PIÈCES DE VENTE (le seul passage vers le modè
     expect(declarees.filter((r) => r.parent === 'comptes_bancaires').map((r) => r.colonne)).toEqual([deployee.RATTACHEMENT_DE_L_OUVERTURE])
   })
 
+  // EL6 : le numéro d'une écriture libre est celui que l'application imprime au FEC et sur l'état (src/lib).
+  it('le numéro d’une écriture libre : celui de referenceDeLEcritureLibre (src/lib/ecrituresLibresDesExports.ts)', () => {
+    for (const [exercice, numero] of [[2026, 1], [2026, 42], [2025, 9999], [2027, 10000], [2000, 123456]] as const) {
+      expect(deployee.referenceDUneLigneLibre(exercice, numero)).toBe(referenceDeLEcritureLibre({ exercice, numero }))
+    }
+  })
+
+  // EL6 : la clé de l'écriture libre, déclarée vers sa table par sa migration, une seule entre les deux tables — l'embarquement
+  // `ecritures_libres(exercice, numero, date)` ne se fait que par elle.
+  it('la clé de l’écriture libre : un rattachement, vers ecritures_libres, la seule entre les deux tables', () => {
+    const relations = relationsDuSchema(fichiersDuSchema())
+    expect(deployee.RATTACHEMENTS_D_UNE_LIGNE).toContain('ecriture_libre_id')
+    expect(relations.filter((r) => r.enfant === 'ecritures_brouillon' && r.parent === 'ecritures_libres').map((r) => r.colonne)).toEqual(['ecriture_libre_id'])
+    expect(relations.filter((r) => r.enfant === 'ecritures_libres' && r.parent === 'ecritures_brouillon')).toEqual([])
+  })
+
   // Le nom d'une ligne de l'ouverture est le libellé que la base compose, tel que l'application le redit.
   it('le nom de l’ouverture éclatée : celui de libelleDeLEclatement (src/lib/ouvertureEclatee.ts)', () => {
     for (const [compte, annee] of [['512100', 2026], ['512999', 2027], ['512001', 2000]] as const) {
@@ -625,12 +688,28 @@ describe('le bloc PIÈCES DE VENTE sait encore échouer', () => {
     ['ecritureVueParLeModele : un type inconnu qui garde son libellé',
       'montant_ttc: lue.montant_ttc ?? null }) : null\n', 'montant_ttc: lue.montant_ttc ?? null }) : libelleDuBrouillon(ligne)\n'],
     // VF9CQ1.
-    ['ecritureVueParLeModele : la source rendue à un dossier qui ne lit pas ses ventes', '  return ventes === null ? vue : { ...vue, source }\n', '  return { ...vue, source }\n'],
-    ['ecritureVueParLeModele : la source tue d’un dossier qui lit ses ventes', '  return ventes === null ? vue : { ...vue, source }\n', '  return vue\n'],
+    ['ecritureVueParLeModele : la source rendue à un dossier qui ne lit pas ses ventes', '  return ventes === null && source !== "ecriture_libre" ? vue : { ...vue, source }\n', '  return { ...vue, source }\n'],
+    ['ecritureVueParLeModele : la source tue d’un dossier qui lit ses ventes', '  return ventes === null && source !== "ecriture_libre" ? vue : { ...vue, source }\n', '  return vue\n'],
+    ['ecritureVueParLeModele : la source de l’écriture libre tue d’un dossier qui ne lit pas ses ventes', '  return ventes === null && source !== "ecriture_libre" ? vue : { ...vue, source }\n', '  return ventes === null ? vue : { ...vue, source }\n'],
     ['RATTACHEMENTS_D_UNE_LIGNE : le mouvement en sort', '  "piece_id", "ligne_bancaire_id", "facture_id",', '  "piece_id", "facture_id",'],
-    ['RATTACHEMENTS_D_UNE_LIGNE : la cotisation en sort', '"declaration_tva_id",\n  "cotisation_id", "operation_caisse_id",\n]', '"declaration_tva_id",\n  "operation_caisse_id",\n]'],
+    ['RATTACHEMENTS_D_UNE_LIGNE : la cotisation en sort', '"declaration_tva_id",\n  "cotisation_id", "operation_caisse_id",', '"declaration_tva_id",\n  "operation_caisse_id",'],
     // Étape C5 : la caisse.
-    ['RATTACHEMENTS_D_UNE_LIGNE : la caisse en sort (la clé oubliée)', '  "cotisation_id", "operation_caisse_id",\n]', '  "cotisation_id",\n]'],
+    ['RATTACHEMENTS_D_UNE_LIGNE : la caisse en sort (la clé oubliée)', '  "cotisation_id", "operation_caisse_id", "ecriture_libre_id",\n]', '  "cotisation_id", "ecriture_libre_id",\n]'],
+    // EL6 : l'écriture libre.
+    ['RATTACHEMENTS_D_UNE_LIGNE : l’écriture libre en sort (la clé oubliée)', '  "cotisation_id", "operation_caisse_id", "ecriture_libre_id",\n]', '  "cotisation_id", "operation_caisse_id",\n]'],
+    ['referenceDUneLigneLibre : trois chiffres', 'referenceDUneLigneLibre(exercice: number, numero: number): string {\n  return `EL${exercice}-${String(numero).padStart(4, "0")}`',
+      'referenceDUneLigneLibre(exercice: number, numero: number): string {\n  return `EL${exercice}-${String(numero).padStart(3, "0")}`'],
+    ['nomDUneLigneLibre : la date telle que la base l’écrit', '    ? `Écriture libre ${reference} du ${enClair(date)}`', '    ? `Écriture libre ${reference} du ${date}`'],
+    ['nomDUneLigneLibre : l’extourne prise pour la constatation', '  return dateDeLaLigne === date\n', '  return true\n'],
+    ['nomDUneLigneLibre : un rang nul accepté', ' || numero < 1) return null\n  if (typeof date', ') return null\n  if (typeof date'],
+    ['nomDUneLigneLibre : une date d’un autre exercice acceptée', ' || Number(date.slice(0, 4)) !== exercice) return null\n  if (typeof dateDeLaLigne', ') return null\n  if (typeof dateDeLaLigne'],
+    ['nomDUneLigneLibre : une ligne sans date acceptée', '  if (typeof dateDeLaLigne !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(dateDeLaLigne)) return null\n', ''],
+    ['libelleDUneLigneLibre : le libellé du brouillon, faute d’écriture lue',
+      '  if (ecriture === null || typeof ecriture !== "object") return null\n  return nomDUneLigneLibre', '  if (ecriture === null || typeof ecriture !== "object") return libelleDuBrouillon(ligne)\n  return nomDUneLigneLibre'],
+    ['libelleDUneLigneLibre : le libellé saisi de l’écriture', '  return nomDUneLigneLibre(ecriture as', '  return ((ecriture as { libelle?: string }).libelle ?? null) ?? nomDUneLigneLibre(ecriture as'],
+    ['libelleEtSource : l’écriture libre sous le libellé du brouillon', '{ libelle: libelleDUneLigneLibre(ligne), source: "ecriture_libre" }', '{ libelle: libelleDuBrouillon(ligne), source: "ecriture_libre" }'],
+    ['libelleEtSource : la source de l’écriture libre perdue', '{ libelle: libelleDUneLigneLibre(ligne), source: "ecriture_libre" }', '{ libelle: libelleDUneLigneLibre(ligne), source: null }'],
+    ['libelleEtSource : une ligne lue sans son écriture embarquée jugée quand même', ' || !("ecritures_libres" in ligne)', ''],
     ['nomDUnCreditDuReleve : la date telle que la base l’écrit',
       '    ? `du ${mouvement.date.slice(8, 10)}/${mouvement.date.slice(5, 7)}/${mouvement.date.slice(0, 4)}`\n', '    ? `du ${mouvement.date}`\n'],
     ['nomDUnCreditDuReleve : un instant pris pour une date', '/^\\d{4}-\\d{2}-\\d{2}$/.test(mouvement.date)', '/^\\d{4}-\\d{2}-\\d{2}/.test(mouvement.date)'],
@@ -747,7 +826,8 @@ function code(source: string): string {
 // Les outils, chacun dans sa branche de `executerOutil` : le scanner les connaît tous, et un outil qu'il ne connaît pas est
 // une faute — ses lectures seraient jugées sous le nom d'un autre.
 // `lister_inventaire` (INV7, ligne 35) : offert le drapeau de l'inventaire levé seulement, sa branche existe dans les deux états.
-const OUTILS = ['resume_dossier', 'lister_comptes', 'lister_ecritures', 'lister_pieces', 'points_a_traiter', 'lister_inventaire'] as const
+// `lister_ecritures_libres` (EL6) : les écritures libres de l'expert-comptable, lues hors des outils au jeton de l'appelant.
+const OUTILS = ['resume_dossier', 'lister_comptes', 'lister_ecritures', 'lister_pieces', 'points_a_traiter', 'lister_inventaire', 'lister_ecritures_libres'] as const
 const HORS_DES_OUTILS = 'hors des outils'
 
 /**
@@ -766,6 +846,9 @@ const QUI_NOMMENT: Readonly<Record<string, readonly string[]>> = {
   // (le litige, la créance dépréciée) — l'assistant ne les lit pas (INV7-Q1).
   operations_inventaire: ['objet'],
   provisions: ['objet'],
+  // EL6 : le libellé et le motif d'une écriture libre, et ses lignes (le libellé saisi d'un compte, `compte_lib`, y vit) — des
+  // textes de l'expert qui peuvent nommer un client.
+  ecritures_libres: ['libelle', 'motif', 'lignes'],
 }
 /**
  * Ce qui ne se lit jamais, ni déclaré ni passé : le client d'une facture (VF9c) ; le libellé de la banque (VF9CQ1 : il ne
@@ -776,6 +859,7 @@ const JAMAIS = [
   'ecritures_brouillon.piece_ref', 'ecritures_brouillon.comp_aux_num', 'ecritures_brouillon.comp_aux_lib',
   'comptes_bancaires.libelle', 'comptes_bancaires.fin_d_identifiant',
   'operations_inventaire.objet', 'provisions.objet',
+  'ecritures_libres.libelle', 'ecritures_libres.motif',
 ]
 
 type Passage = 'pieceVueParLeModele' | 'ecritureVueParLeModele'
@@ -787,6 +871,7 @@ const CE_QUE_LE_PASSAGE_LIT: Readonly<Record<Passage, readonly string[]>> = {
     'ecritures_brouillon.libelle', ...deployee.RATTACHEMENTS_D_UNE_LIGNE.map((c) => `ecritures_brouillon.${c}`),
     'pieces.type_piece', 'pieces.date_piece', 'pieces.montant_ttc', 'lignes_bancaires.date', 'lignes_bancaires.montant',
     'lignes_bancaires.encaissements_de_factures', 'operations_caisse.genre', 'operations_caisse.date', 'operations_caisse.montant',
+    'ecritures_libres.exercice', 'ecritures_libres.numero', 'ecritures_libres.date',
   ],
 }
 /**
@@ -802,7 +887,9 @@ const MOUVEMENT_EMBARQUE = 'lignes_bancaires(date, montant, encaissements_de_fac
  * catégorie, dont le libellé est un texte du cabinet, ni les encaissements qu'elle reconnaît, ni sa pièce, ni ses auteurs.
  */
 const OPERATION_EMBARQUEE = 'operations_caisse(genre, date, montant)'
-const EMBARQUES = ['pieces(type_piece, date_piece, montant_ttc)', MOUVEMENT_EMBARQUE, OPERATION_EMBARQUEE]
+/** L'écriture libre de chaque ligne (EL6) : son exercice, son rang, sa date — à gauche, et rien d'autre : ni son libellé ni son motif. */
+const ECRITURE_LIBRE_EMBARQUEE = 'ecritures_libres(exercice, numero, date)'
+const EMBARQUES = ['pieces(type_piece, date_piece, montant_ttc)', MOUVEMENT_EMBARQUE, OPERATION_EMBARQUEE, ECRITURE_LIBRE_EMBARQUEE]
 /** MCB5g : la source de l'ouverture éclatée et le 512 de son compte bancaire, à gauche et rien d'autre, le drapeau levé seulement. */
 const OUVERTURE_EMBARQUEE = ['ouverture_compte_bancaire_id', 'comptes_bancaires(compte)'] as const
 /** L'appel du passage, tel que l'outil le fait sur ses lignes lues : une fois, et lui seul. */
@@ -835,6 +922,12 @@ const LECTURES_QUI_NOMMENT: readonly LectureDeclaree[] = [
       + 'qui en sort — le libellé d’une ligne de pièce de vente, d’un crédit et d’un débit qui rend ou défait l’argent d’un client '
       + 'recomposé, celui d’une ligne rattachée à rien tu, celui d’une ligne de caisse recomposé de son opération ; le mouvement lu '
       + 'avec son classement et les comptes de ses lignes',
+  },
+  {
+    zone: 'lister_ecritures_libres', table: 'ecritures_libres', nomme: ['ecritures_libres.lignes'], nombre: 1, passage: null,
+    raison: 'les écritures libres de l’expert-comptable, lues au jeton de l’appelant pour lister_ecritures_libres (EL6) : leurs lignes '
+      + 'jsonb portent le libellé saisi d’un compte (compte_lib), que le bloc ÉCRITURES LIBRES juge sans le recopier — il écrit ce qui '
+      + 'sort de chaque ligne, son compte, son sens, ses centimes et son poste (agentComptableEcrituresLibres.test.ts)',
   },
   {
     zone: 'points_a_traiter', table: 'pieces', nomme: ['pieces.tiers'], nombre: 2, passage: null,
@@ -1003,6 +1096,7 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
     expect(lectures.filter((l) => l.nomme.length > 0).map((l) => `${l.zone} · ${l.table} · ${l.nomme.join(', ')}`)).toEqual([
       'lister_ecritures · ecritures_brouillon · ecritures_brouillon.libelle',
       'lister_pieces · pieces · pieces.nom_fichier, pieces.tiers',
+      'lister_ecritures_libres · ecritures_libres · ecritures_libres.lignes',
       'points_a_traiter · pieces · pieces.tiers',
       'points_a_traiter · pieces · pieces.tiers',
       'points_a_traiter · ecritures_brouillon · ecritures_brouillon.libelle',
@@ -1029,7 +1123,7 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
   // Un scanner qui rend « aucune faute » sur la vraie source n'a rien prouvé tant qu'on ne l'a pas vu en rendre : chaque
   // défaut ci-dessous est posé dans la vraie source, en mémoire.
   const source = sourceDeployee()
-  const SELECTION_DES_LIGNES = 'piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"'
+  const SELECTION_DES_LIGNES = 'piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, ecriture_libre_id, ecritures_libres(exercice, numero, date), operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"'
   /**
    * Depuis MCB5g, `lister_ecritures` lit ses lignes sous deux sélections (le drapeau des comptes bancaires : levé, la source de
    * l'ouverture éclatée et le 512 de son compte) : une ancre qui paraît dans les deux se plante dans CHACUNE, à part — le
@@ -1096,7 +1190,7 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
     ['les lignes du mouvement désignées sous une forme que le scanner ne sait pas lire', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon!ligne_bancaire_id(compte, facture_id, encaissement_id))"']])],
     ['les lignes du mouvement lues en entier (*)', () => chacune(source, [['ecritures_brouillon(compte, facture_id, encaissement_id))"', 'ecritures_brouillon(*))"']])],
     ['le mouvement de chaque ligne embarquant aussi ses encaissements', () => chacune(source, [['encaissement_id))"', 'encaissement_id), encaissements_factures(id))"']])],
-    ...['ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id', 'operation_caisse_id'].map((c) => [
+    ...['ligne_bancaire_id', 'facture_id', 'encaissement_id', 'immobilisation_id', 'vehicule_id', 'declaration_tva_id', 'cotisation_id', 'operation_caisse_id', 'ecriture_libre_id'].map((c) => [
       `le rattachement ${c} non lu`, () => chacune(source, [[SELECTION_DES_LIGNES, SELECTION_DES_LIGNES.replace(`, ${c}`, '')]]),
     ] as const),
     // Le relevé se lit sous deux formes depuis MCB5 (la colonne `compte_bancaire_id`, le drapeau levé seulement) : chacune
@@ -1120,6 +1214,21 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
     ['l’opération de caisse lue avec la pièce qu’elle paie', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse(genre, date, montant, pieces(tiers))']])],
     ['l’opération de caisse en jointure interne : une ligne sans opération disparaîtrait', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse!inner(genre, date, montant)']])],
     ['l’opération de caisse lue en entier (*)', () => chacune(source, [[OPERATION_EMBARQUEE, 'operations_caisse(*)']])],
+    // EL6 : l'écriture libre de chaque ligne — son exercice, son rang, sa date, rien d'autre, à gauche ; et la lecture de l'outil.
+    ['l’écriture libre de chaque ligne oubliée', () => chacune(source, [[`, ${ECRITURE_LIBRE_EMBARQUEE}, operations_caisse(`, ', operations_caisse(']])],
+    ['l’écriture libre lue avec son libellé', () => chacune(source, [[ECRITURE_LIBRE_EMBARQUEE, 'ecritures_libres(exercice, numero, date, libelle)']])],
+    ['l’écriture libre lue avec son motif', () => chacune(source, [[ECRITURE_LIBRE_EMBARQUEE, 'ecritures_libres(exercice, numero, date, motif)']])],
+    ['l’écriture libre lue sans son rang', () => chacune(source, [[ECRITURE_LIBRE_EMBARQUEE, 'ecritures_libres(exercice, date)']])],
+    ['l’écriture libre en jointure interne : une ligne sans elle disparaîtrait', () => chacune(source, [[ECRITURE_LIBRE_EMBARQUEE, 'ecritures_libres!inner(exercice, numero, date)']])],
+    ['l’écriture libre lue en entier (*)', () => chacune(source, [[ECRITURE_LIBRE_EMBARQUEE, 'ecritures_libres(*)']])],
+    ['lister_ecritures_libres lit le libellé', () => chacune(source, [[
+      'select("id, dossier_id, exercice, numero, date, lignes, avec_extourne, piece_citee_id"', 'select("id, dossier_id, exercice, numero, date, libelle, lignes, avec_extourne, piece_citee_id"']])],
+    ['lister_ecritures_libres lit le motif', () => chacune(source, [[
+      'select("id, dossier_id, exercice, numero, date, lignes, avec_extourne, piece_citee_id"', 'select("id, dossier_id, exercice, numero, date, motif, lignes, avec_extourne, piece_citee_id"']])],
+    ['lister_ecritures_libres lit la table entière (*)', () => chacune(source, [[
+      'select("id, dossier_id, exercice, numero, date, lignes, avec_extourne, piece_citee_id"', 'select("*"']])],
+    ['une seconde lecture des lignes d’une écriture libre, ailleurs', () => chacune(source, [[
+      'admin.from("categories").select("id, libelle", { count: "exact" })', 'admin.from("ecritures_libres").select("id, lignes", { count: "exact" })']])],
     // Étape C13 : les opérations de caisse que lit points_a_traiter, sans rien qui nomme.
     ['les paiements par la caisse lus avec le tiers de leur pièce', () => chacune(source, [[
       'admin.from("operations_caisse").select("id, genre, piece_id, date, montant, retire_le, remplace_id",',

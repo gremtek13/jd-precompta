@@ -20,6 +20,9 @@ import type { DossierTab } from '../../lib/ongletsDossier'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { useEcrituresLibres } from '../../lib/useEcrituresLibres'
+import { ecrituresLibresPourLesMoteurs } from '../../lib/ecrituresLibresVue'
+import { marquesDesEcrituresLibres } from '../../lib/ecrituresLibresDuDetail'
 
 // LE BILAN DE L'EXERCICE CHOISI (ligne 33 de la feuille de route) : ses rubriques sont celles du 2033-A-SD, et il se
 // calcule dans `lib/bilan.ts` depuis les soldes de l'exercice — son ouverture et ses écritures, celles de la Balance
@@ -76,7 +79,9 @@ const VIDE = '—'
 // Une ligne du détail : le compte, son libellé, son montant dans le sens de la rubrique, et ce qui le distingue ; puis,
 // quand la colonne de l'exercice précédent s'établit, son montant de N−1 — un compte présent d'un seul côté a sa ligne,
 // vide de l'autre. Le sens inhabituel et les tiers sont ceux de N : la ligne parle de l'exercice affiché.
-function LigneDuDetail({ c, precedent }: { c: CompteDuDetail; precedent: number | null }) {
+// La marque d'une écriture libre (EL6) : la part du compte que les écritures libres de l'exercice affiché y portent, sous leurs
+// numéros — celles de N seulement, comme le sens inhabituel et les tiers.
+function LigneDuDetail({ c, precedent, marque }: { c: CompteDuDetail; precedent: number | null; marque: string | null }) {
   const colonne = c.colonne === 'amortissements' ? ' (amortissements et dépréciations)' : ''
   const raison = c.n?.raison ?? c.precedent?.raison ?? null
   return (
@@ -86,6 +91,7 @@ function LigneDuDetail({ c, precedent }: { c: CompteDuDetail; precedent: number 
       {precedent !== null && <span className="muted">{` (${precedent} : ${c.precedent ? euros(c.precedent.centimes) : VIDE})`}</span>}
       {c.n?.inhabituel && <span className="muted">{' — solde de l’autre sens que le sien'}</span>}
       {raison && <span className="muted">{` — ${raison}`}</span>}
+      {marque && <span className="muted">{` — ${marque}`}</span>}
       {c.n?.tiers && (
         <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
           {c.n.tiers.map((t) => (
@@ -99,14 +105,18 @@ function LigneDuDetail({ c, precedent }: { c: CompteDuDetail; precedent: number 
   )
 }
 
-function DetailParCompte({ rubriques, precedent }: { rubriques: RubriqueDuDetail[]; precedent: number | null }) {
+function DetailParCompte({ rubriques, precedent, marques }: {
+  rubriques: RubriqueDuDetail[]; precedent: number | null; marques: ReadonlyMap<string, string>
+}) {
   return (
     <ul style={{ margin: '0 0 12px', paddingLeft: 20 }}>
       {rubriques.map((r) => (
         <li key={r.id}>
           <strong>{r.libelle}</strong>
           <ul style={{ margin: '4px 0 10px', paddingLeft: 20 }}>
-            {r.comptes.map((c) => <LigneDuDetail key={`${c.compte}-${c.colonne}`} c={c} precedent={precedent} />)}
+            {r.comptes.map((c) => (
+              <LigneDuDetail key={`${c.compte}-${c.colonne}`} c={c} precedent={precedent} marque={marques.get(c.compte) ?? null} />
+            ))}
           </ul>
         </li>
       ))}
@@ -487,6 +497,18 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
     }
   }, [lectures, annee, anneesValidees, modele, aujourdHui])
 
+  // LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL6 ; lib/ecrituresLibresDuDetail.ts) : le bilan les compte déjà — il lit tout le
+  // brouillon ; le détail d'un compte dit la part que celles de l'exercice y portent, sous leurs numéros. Pas encore revenues ou
+  // illisibles, la part se dit quand même, « numéro non lu » ; les montants n'en dépendent pas.
+  const { lu: lectureDesLibres } = useEcrituresLibres(dossierId)
+  const marquesLibres = useMemo(() => {
+    if (!lectures || typeof annee !== 'number') return new Map<string, string>()
+    const debut = `${annee}-01-01`
+    const fin = `${annee}-12-31`
+    return marquesDesEcrituresLibres(lectures.ecritures.filter((e) => e.date >= debut && e.date <= fin),
+      ecrituresLibresPourLesMoteurs(lectureDesLibres, dossierId))
+  }, [lectures, annee, lectureDesLibres, dossierId])
+
   if (!lectures) {
     return <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
   }
@@ -600,9 +622,9 @@ export default function BilanTab({ dossierId, modele, onNavigate }: {
       <details className="card" style={{ marginTop: 20 }}>
         <summary>Détail par compte</summary>
         <h4>Actif</h4>
-        <DetailParCompte rubriques={detailDuBilan(bilan.actif, bilanPrecedent?.actif ?? null)} precedent={anneePrecedente} />
+        <DetailParCompte rubriques={detailDuBilan(bilan.actif, bilanPrecedent?.actif ?? null)} precedent={anneePrecedente} marques={marquesLibres} />
         <h4>Passif</h4>
-        <DetailParCompte rubriques={detailDuBilan(bilan.passif, bilanPrecedent?.passif ?? null)} precedent={anneePrecedente} />
+        <DetailParCompte rubriques={detailDuBilan(bilan.passif, bilanPrecedent?.passif ?? null)} precedent={anneePrecedente} marques={marquesLibres} />
         <p className="muted" style={{ marginBottom: 0 }}>
           {`Résultat de l’exercice : ${euros(bilan.resultat)}`}
           {bilanPrecedent ? ` (${bilanPrecedent.exercice} : ${euros(bilanPrecedent.resultat)})` : ''}

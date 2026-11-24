@@ -211,6 +211,36 @@ describe('BilanTab', () => {
     expect(faux.colonnes.pieces).toBe('id, tiers')
   })
 
+  // EL6 : une ligne du brouillon qui vient d'une écriture libre de l'expert-comptable est comptée comme toute autre ; le détail du
+  // compte la marque sous son numéro, jamais sous le libellé saisi — ni « rattachée à rien ». Lue en partie, « numéro non lu ».
+  const ECRITURE_LIBRE = {
+    id: 'el-7', dossier_id: 'd1', exercice: 2026, numero: 7, date: '2026-12-31', libelle: 'Écart — Patient fictif Ombreval',
+    motif: 'Motif saisi — Patient fictif Ombreval', avec_extourne: false, piece_citee_id: null, version: 1, cree_par: 'u-expert',
+    cree_le: '2027-01-10T10:00:00Z', modifie_par: null, modifie_le: null,
+    lignes: [
+      { compte: '471000', sens: 'debit', centimes: 4200, poste_2035: null, compte_lib: null },
+      { compte: '512000', sens: 'credit', centimes: 4200, poste_2035: null, compte_lib: null },
+    ],
+  }
+  it.each([[false, 'dont écriture libre n° EL2026-0007 : 42,00 € au débit'], [true, 'dont écriture libre (numéro non lu) : 42,00 € au débit']])(
+    'le détail d’un compte marque la part d’une écriture libre (lecture refusée : %s)',
+    async (refusee, marque) => {
+      societeFictive()
+      faux.tables.ecritures_brouillon.push(...ecrire('2026-12-31', [['471000', 'D', 42], ['512000', 'C', 42]], {
+        libelle: 'Écart — Patient fictif Ombreval', ecriture_libre_id: 'el-7',
+      }))
+      faux.tables.ecritures_libres = [ECRITURE_LIBRE]
+      if (refusee) faux.refusees.add('ecritures_libres')
+      rendre()
+      await act(async () => {})
+      fireEvent.click(screen.getByText('Détail par compte'))
+      const lignes = [...document.querySelectorAll('li')].map((li) => (li.textContent ?? '').replace(/\s/g, ' '))
+      expect(lignes.some((t) => t.startsWith('471000') && t.endsWith(marque))).toBe(true)
+      expect(document.body.textContent).not.toContain('Ombreval')
+      expect(document.body.textContent).not.toMatch(/rattachée à rien/)
+    },
+  )
+
   it('suit l’exercice choisi en tête du dossier, sans relire', async () => {
     societeFictive()
     faux.tables.ecritures_brouillon.push(...ecrire('2025-06-01', [['512000', 'D', 10], ['101000', 'C', 10]]))
@@ -507,7 +537,8 @@ describe('BilanTab — la colonne de l’exercice précédent', () => {
     rendre({ valides: [2025] })
     await act(async () => {})
     const lues = faux.appels
-    expect(lues).toBe(5)
+    // Cinq lectures du bilan, et celle des écritures libres de l'expert-comptable (EL6 : le détail d'un compte les marque).
+    expect(lues).toBe(6)
     expect(enTetes(screen.getAllByRole('table')[0])).toContain('Net 2025')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Choisir 2025' })) })
     expect(faux.appels).toBe(lues)
@@ -562,7 +593,8 @@ describe('BilanTab — l’ouverture confrontée à la clôture de l’exercice 
       + 'compte et rubrique par rubrique, au centime (code de commerce, art. L123-19 ; PCG, art. 112-2). Le report garde '
       + 'le résultat de l’exercice 2025 avant répartition, au 120000 pour un bénéfice, au 129000 pour une perte (PCG, '
       + 'art. 112-2) : son affectation ne s’écrit pas encore dans l’application.')
-    expect(faux.appels).toBe(5)
+    // Cinq lectures du bilan, et celle des écritures libres de l'expert-comptable (EL6).
+    expect(faux.appels).toBe(6)
   })
 
   it('un écart d’un centime : la rubrique, puis le compte, chacun de ses deux côtés', async () => {

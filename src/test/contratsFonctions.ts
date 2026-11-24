@@ -2841,6 +2841,149 @@ const SCENARIOS_DE_L_INVENTAIRE: Scenario[] = [
     'tresorerie', inventaireBaisse),
 ]
 
+// LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE DANS L'ASSISTANT (EL6 ; blocs ÉCRITURES LIBRES et PIÈCES DE VENTE d'agent-comptable).
+// Un dossier qui porte une écriture libre de 2025 avec son extourne au 1er janvier 2026, l'une de ses lignes comptée sous un poste
+// de la 2035, l'autre sur un compte d'attente dont l'expert a saisi le libellé ; son libellé, son motif, le libellé du compte et
+// celui de ses lignes au brouillon portent un MARQUEUR, qui ne doit jamais parvenir au modèle ; un dossier voisin porte aussi une
+// écriture libre. Le modèle appelle lister_ecritures_libres, lister_ecritures et lister_comptes, puis répond.
+export const MARQUEUR_DES_ECRITURES_LIBRES = 'Aldegonde Kerjean'
+const OUTILS_DES_ECRITURES_LIBRES = [
+  { id: 'libres', name: 'lister_ecritures_libres', input: {} },
+  { id: 'ecritures', name: 'lister_ecritures', input: {} },
+  { id: 'comptes', name: 'lister_comptes', input: { annee: 2025 } },
+]
+
+/** Le monde des écritures libres, sur le dossier du scénario, dans le mode demandé. */
+export function mondeDesEcrituresLibres(m: Monde, mode: 'engagement' | 'tresorerie') {
+  const dossier = lignes(m, 'dossiers').find((d) => d.id === D)!
+  Object.assign(dossier, { mode_comptable: mode })
+  const EL = '1e800000-0000-4000-8000-000000000003'
+  const ecriture = (id: string, dossierId: string, o: Record<string, unknown>) => ({
+    id, dossier_id: dossierId, exercice: 2025, numero: 3, date: '2025-12-31', libelle: `Rétrocession — ${MARQUEUR_DES_ECRITURES_LIBRES}`,
+    motif: `Décidé avec ${MARQUEUR_DES_ECRITURES_LIBRES}`, avec_extourne: true, piece_citee_id: null, version: 1,
+    cree_par: PERSONNES.chef.id, cree_le: '2026-01-20T10:00:00Z', modifie_par: null, modifie_le: null, ...o,
+  })
+  const poste = mode === 'tresorerie' ? 'Honoraires rétrocédés' : null
+  m.base.ecritures_libres = [
+    ecriture(EL, D, {
+      piece_citee_id: 'c13f0000-0000-4000-8000-0000000000fe',
+      lignes: [
+        { compte: '622600', sens: 'debit', centimes: 30000, poste_2035: poste, compte_lib: null },
+        { compte: '471900', sens: 'credit', centimes: 30000, poste_2035: null, compte_lib: `Attente — ${MARQUEUR_DES_ECRITURES_LIBRES}` },
+      ],
+    }),
+    ecriture('1e800000-0000-4000-8000-000000000009', ID.dossierVoisin, {
+      numero: 1, lignes: [
+        { compte: '622600', sens: 'debit', centimes: 99900, poste_2035: poste, compte_lib: null },
+        { compte: '471900', sens: 'credit', centimes: 99900, poste_2035: null, compte_lib: null },
+      ],
+    }),
+  ]
+  const ligne = (date: string, compte: string, sens: string, montant: number) => ({
+    id: identifiantGenere(), dossier_id: D, date, compte, sens, montant, statut: 'brouillon', ecriture_libre_id: EL,
+    libelle: `${date === '2025-12-31' ? '' : 'Extourne — '}Rétrocession — ${MARQUEUR_DES_ECRITURES_LIBRES}`, piece_id: null,
+    ligne_bancaire_id: null, facture_id: null, encaissement_id: null, immobilisation_id: null, vehicule_id: null,
+    declaration_tva_id: null, cotisation_id: null, operation_caisse_id: null,
+  })
+  m.base.ecritures_brouillon = [
+    ligne('2025-12-31', '622600', 'debit', 300), ligne('2025-12-31', '471900', 'credit', 300),
+    ligne('2026-01-01', '622600', 'credit', 300), ligne('2026-01-01', '471900', 'debit', 300),
+  ]
+  let tour = 0
+  m.modele = (demande) => {
+    ;(m.notes.demandesAuModele ??= []).push(demande)
+    tour += 1
+    if (tour > 1) return reponseModele('Voici les écritures libres.')
+    return {
+      content: OUTILS_DES_ECRITURES_LIBRES.map((o) => ({ type: 'tool_use', id: o.id, name: o.name, input: o.input })),
+      stop_reason: 'tool_use', usage: { input_tokens: 10, output_tokens: 10 },
+    }
+  }
+}
+
+/** Ce que le modèle a reçu de chaque outil des écritures libres, et tout ce qui lui a été envoyé, en texte. */
+export function ceQueLeModeleARecuDesEcrituresLibres(m: Monde) {
+  return { resultats: resultatsDesOutils(m), demandes: JSON.stringify(m.notes.demandesAuModele ?? []) }
+}
+
+/** Le scénario des écritures libres, dans un mode, jugé par `verifier` sur ce que le modèle a reçu. */
+export function scenarioDesEcrituresLibres(
+  nom: string, mode: 'engagement' | 'tresorerie',
+  verifier: (recu: ReturnType<typeof ceQueLeModeleARecuDesEcrituresLibres>, monde: Monde) => string[],
+  apres?: (m: Monde) => void,
+): Scenario {
+  return {
+    nom,
+    preparer: (m) => { mondeDesEcrituresLibres(m, mode); apres?.(m) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+    attendu: {
+      statut: 200, depenses: ['modèle', 'modèle'],
+      verifier: (_r, m) => {
+        const recu = ceQueLeModeleARecuDesEcrituresLibres(m)
+        const manquants = OUTILS_DES_ECRITURES_LIBRES.filter((o) => !recu.resultats[o.id]).map((o) => o.id)
+        return manquants.length > 0 ? [`outils sans résultat : ${manquants.join(', ')}`] : verifier(recu, m)
+      },
+    },
+  }
+}
+
+/** Ce qui vaut toujours : aucun texte saisi par l'expert ne parvient au modèle, et la table se lit au jeton de l'appelant. */
+function rienDeSaisi(recu: ReturnType<typeof ceQueLeModeleARecuDesEcrituresLibres>, monde: Monde): string[] {
+  const fautes: string[] = []
+  if (recu.demandes.includes(MARQUEUR_DES_ECRITURES_LIBRES)) fautes.push('un texte saisi par l’expert (libellé, motif, libellé d’un compte) est parvenu au modèle')
+  const lues = monde.journal.filter((e): e is Extract<typeof e, { genre: 'lecture' }> => e.genre === 'lecture' && e.table === 'ecritures_libres')
+  if (lues.length !== 1 || lues[0].role !== 'authentifie') fautes.push(`les écritures libres ne se lisent pas une fois au jeton de l’appelant : ${JSON.stringify(lues.map((l) => l.role))}`)
+  return fautes
+}
+
+function ecrituresLibresLues(mode: 'engagement' | 'tresorerie') {
+  return (recu: ReturnType<typeof ceQueLeModeleARecuDesEcrituresLibres>, monde: Monde): string[] => {
+    const fautes = rienDeSaisi(recu, monde)
+    const ligne = (compte: string, sens: string, posteDe: string | null) => ({ compte, sens, montant: 300, ...(mode === 'tresorerie' ? { poste_2035: posteDe } : {}) })
+    const attendu = {
+      ecritures_libres: 'lues', nombre: 1,
+      ecritures: [{
+        numero: 'EL2025-0003', exercice: 2025, date: '2025-12-31', extourne_au: '2026-01-01', piece_citee: true,
+        lignes: [ligne('622600', 'debit', 'Honoraires rétrocédés'), { compte: '471900', sens: 'credit', montant: 300 }],
+      }],
+      ...(mode === 'tresorerie' ? { lignes_de_resultat_hors_de_la_2035: 0 } : {}),
+    }
+    if (JSON.stringify(recu.resultats.libres) !== JSON.stringify(attendu)) fautes.push(`lister_ecritures_libres : ${JSON.stringify(recu.resultats.libres)}`)
+    const vues = (recu.resultats.ecritures.ecritures ?? []) as { libelle: unknown; source?: unknown; date: unknown }[]
+    const noms = vues.map((e) => `${String(e.date)} ${String(e.libelle)} ${String(e.source)}`).sort()
+    const attendus = [
+      '2025-12-31 Écriture libre EL2025-0003 du 31/12/2025 ecriture_libre', '2025-12-31 Écriture libre EL2025-0003 du 31/12/2025 ecriture_libre',
+      '2026-01-01 Extourne de l\'écriture libre EL2025-0003 au 01/01/2026 ecriture_libre', '2026-01-01 Extourne de l\'écriture libre EL2025-0003 au 01/01/2026 ecriture_libre',
+    ]
+    if (JSON.stringify(noms) !== JSON.stringify(attendus)) fautes.push(`lister_ecritures : ${JSON.stringify(noms)}`)
+    const comptes = (recu.resultats.comptes.comptes ?? []) as { compte: string; total_debit?: unknown }[]
+    if (!comptes.some((c) => c.compte === '622600')) fautes.push(`lister_comptes ne compte pas la ligne de l'écriture libre : ${JSON.stringify(comptes).slice(0, 200)}`)
+    return fautes
+  }
+}
+
+export const SCENARIOS_DES_ECRITURES_LIBRES: Scenario[] = [
+  scenarioDesEcrituresLibres('EL6, un dossier en trésorerie qui porte une écriture libre : son numéro, ses comptes, ses montants et ses postes, jamais ce qui a été saisi (EL6)',
+    'tresorerie', ecrituresLibresLues('tresorerie')),
+  scenarioDesEcrituresLibres('EL6, un dossier en engagement qui porte une écriture libre : sans poste de la 2035, jamais ce qui a été saisi (EL6)',
+    'engagement', ecrituresLibresLues('engagement')),
+  scenarioDesEcrituresLibres('EL6, les écritures libres lues en partie : l’outil le dit et ne compte rien, rien de saisi au modèle (EL6)',
+    'tresorerie', (recu, monde) => [
+      ...rienDeSaisi(recu, monde),
+      ...(JSON.stringify(Object.keys(recu.resultats.libres)) === '["erreur"]'
+        && texteDe(recu.resultats.libres.erreur).startsWith('Les écritures libres de ce dossier n\'ont pas pu être lues en entier (lecture interrompue après 0 ligne(s) : panne fictive)')
+        ? [] : [`lister_ecritures_libres : ${JSON.stringify(recu.resultats.libres).slice(0, 200)}`]),
+    ],
+    (m) => { m.pannes.push({ table: 'ecritures_libres', operation: 'select', erreur: { message: 'panne fictive' } }) }),
+  scenarioDesEcrituresLibres('EL6, une écriture libre lue sous une forme que la base n’écrit pas : illisibles, rien de compté (EL6)',
+    'tresorerie', (recu, monde) => [
+      ...rienDeSaisi(recu, monde),
+      ...(texteDe(recu.resultats.libres.erreur).includes('une écriture libre lue n\'a pas la forme que la base écrit')
+        ? [] : [`lister_ecritures_libres : ${JSON.stringify(recu.resultats.libres).slice(0, 200)}`]),
+    ],
+    (m) => { (lignes(m, 'ecritures_libres').find((e) => e.dossier_id === D)!.lignes as Record<string, unknown>[])[0].centimes = 0 }),
+]
+
 const AGENT_COMPTABLE: ContratFonction = {
   slug: 'agent-comptable',
   navigateur: true,
@@ -2849,6 +2992,7 @@ const AGENT_COMPTABLE: ContratFonction = {
     preflight(),
     ...sansSession('agent-comptable', QUESTION),
     ...SCENARIOS_DE_L_INVENTAIRE,
+    ...SCENARIOS_DES_ECRITURES_LIBRES,
     {
       nom: 'les identifiants AWS absents : 500 qui nomme les secrets, rien de demandé',
       env: { AWS_ACCESS_KEY_ID: undefined },

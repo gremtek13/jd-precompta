@@ -26,6 +26,9 @@ import { lireLesSoldesReportes } from '../../lib/soldesReportesLecture'
 import ComptesDeTiersCard from './ComptesDeTiersCard'
 import { lireLesFacturesDesLignes } from '../../lib/lettragesLecture'
 import { porteUneSourceDeVente, type FacturesDesLignes } from '../../lib/ventesFactureesDesExports'
+import { useEcrituresLibres } from '../../lib/useEcrituresLibres'
+import { ecrituresLibresPourLesMoteurs } from '../../lib/ecrituresLibresVue'
+import { marquesDesEcrituresLibres } from '../../lib/ecrituresLibresDuDetail'
 
 // Aucune vente facturée à ranger : un dossier en trésorerie, ou dont le brouillon n'en porte aucune.
 const SANS_FACTURE: FacturesDesLignes = { factures: [], encaissements: [] }
@@ -222,6 +225,15 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
   const balance = useMemo(
     () => calculerBalance(ecrituresFiltrees, categories, aNouveauxFiltres),
     [ecrituresFiltrees, categories, aNouveauxFiltres],
+  )
+  // LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL6 ; lib/ecrituresLibresDuDetail.ts) : la balance les compte déjà — elle lit
+  // tout le brouillon ; la ligne d'un compte dit la part qui en vient, sous leurs numéros. Lues à part (le drapeau baissé,
+  // l'absence sans requête) ; pas encore revenues ou illisibles, la part se dit quand même, « numéro non lu » — jamais une ligne
+  // venue de nulle part, et les montants n'en dépendent pas.
+  const { lu: lectureDesLibres } = useEcrituresLibres(dossierId)
+  const marquesLibres = useMemo(
+    () => marquesDesEcrituresLibres(ecrituresFiltrees, ecrituresLibresPourLesMoteurs(lectureDesLibres, dossierId)),
+    [ecrituresFiltrees, lectureDesLibres, dossierId],
   )
 
   // LES COMPTES DE TIERS (lib/lettrage.ts), en engagement seulement : arrêtés au 31 décembre de l'exercice choisi
@@ -469,7 +481,10 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
               {lignesAffichees.map((l) => (
                 <tr key={l.compte}>
                   <td data-libelle="Compte" style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{l.compte}</td>
-                  <td data-libelle="Libellé">{l.libelle}</td>
+                  <td data-libelle="Libellé">
+                    {l.libelle}
+                    {marquesLibres.has(l.compte) && <div className="cellule-suite muted">{marquesLibres.get(l.compte)}</div>}
+                  </td>
                   <td data-libelle="Écritures">{l.nbEcritures}</td>
                   <td data-libelle="Débit">{formatMoney(l.totalDebit)}</td>
                   <td data-libelle="Crédit">{formatMoney(l.totalCredit)}</td>

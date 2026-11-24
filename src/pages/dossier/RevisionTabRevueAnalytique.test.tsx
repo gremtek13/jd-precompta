@@ -42,6 +42,7 @@ const faux = vi.hoisted(() => ({
   refusees: new Set<string>(),
   // Une promesse que chaque LECTURE attend : le temps de voir l'écran avant toute réponse, ou pendant une relecture.
   attente: null as Promise<void> | null,
+  libresSansAttente: false,
   lectures: {} as Record<string, number>,
   appels: [] as { nom: string; args: Record<string, unknown> }[],
   reponseRpc: null as null | ((nom: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>),
@@ -84,7 +85,9 @@ vi.mock('../../lib/supabase', async () => {
         const r = reponse()
         return { data: (r.data as unknown[] | null)?.[0] ?? null, error: r.error }
       }),
-      then: (suite: (r: unknown) => unknown) => (faux.attente ?? Promise.resolve()).then(reponse).then(suite),
+      // Les écritures libres de l'expert-comptable (EL6) se lisent à part de l'onglet : `libresSansAttente` les laisse revenir
+      // pendant que les autres lectures attendent.
+      then: (suite: (r: unknown) => unknown) => ((faux.libresSansAttente && table === 'ecritures_libres' ? null : faux.attente) ?? Promise.resolve()).then(reponse).then(suite),
     })
     return c
   }
@@ -255,6 +258,7 @@ beforeEach(() => {
   faux.tables = {}
   faux.refusees = new Set()
   faux.attente = null
+  faux.libresSansAttente = false
   faux.lectures = {}
   faux.appels = []
   faux.reponseRpc = rpcCommeLaBase
@@ -1417,8 +1421,9 @@ describe('RevisionTab, revue analytique — les ventes facturées', () => {
     await attendreLaSection()
     expect(texte(ligneDuTableau(POSTE))).toContain('1 000,00 €')
     // Un autre dossier s'ouvre dans le même onglet, et ses lectures ne sont pas revenues : la revue ne compte pas les ventes
-    // facturées du dossier quitté pour lui.
+    // facturées du dossier quitté pour lui. Ses écritures libres, lues à part, reviennent : sans elles, l'onglet attendrait (EL6).
     faux.attente = new Promise<void>(() => {})
+    faux.libresSansAttente = true
     vue.rerender(
       <FournisseurPanneauDroit>
         <ExercicesValidesProvider exercices={[exerciceValide(2024)]} relire={async () => {}}>

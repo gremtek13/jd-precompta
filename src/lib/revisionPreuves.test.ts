@@ -1213,3 +1213,66 @@ describe('la preuve de l’inventaire (INV6)', () => {
       .toEqual(preuve('428200', 12000, { modele: ENGAGEMENT, ecritures: CONSTATEE, inventaire: { etat: 'sans_objet' } }))
   })
 })
+
+// ── LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL6 ; conception 54, § 5.8) ────────────────────────────────────────────────
+// Sur tout compte de bilan où l'exercice porte une écriture libre, la preuve dit la part, sous les numéros, ce qu'elle n'établit
+// pas, et propose la pièce citée ; son verdict et ce qu'elle attend sont ceux d'hier. Rien de saisi n'entre dans le texte.
+describe('la part des écritures libres dans la preuve d’un compte (EL6)', () => {
+  const LIBRE = {
+    id: 'el-5', dossier_id: 'd1', exercice: 2025, numero: 5, date: '2025-12-31', libelle: `${MARQUE_SAISIE} écriture libre`,
+    lignes: [], avec_extourne: false, piece_citee_id: 'p-citee', version: 1, cree_par: 'u', cree_le: '2026-01-10T10:00:00Z',
+    modifie_par: null, modifie_le: null,
+  }
+  const LUES = { etat: 'lues' as const, auteurs: new Map(), ecritures: [LIBRE, { ...LIBRE, id: 'el-1', exercice: 2024, numero: 1, date: '2024-12-31', piece_citee_id: null }] }
+  const SUR_L_ATTENTE = [
+    ecriture({ id: 'l1', compte: '471000', date: '2025-12-31', sens: 'debit', montant: 120, ecriture_libre_id: 'el-5' }),
+    ecriture({ id: 'l2', compte: '108000', date: '2025-12-31', sens: 'credit', montant: 120, ecriture_libre_id: 'el-5' }),
+    // L'extourne de 2024 au 1er janvier 2025 : la même écriture, à une autre date.
+    ecriture({ id: 'l3', compte: '471000', date: '2025-01-01', sens: 'credit', montant: 20, ecriture_libre_id: 'el-1' }),
+    ecriture({ id: 'l4', compte: '471000', date: '2025-03-01', sens: 'debit', montant: 7, piece_id: 'p9' }),
+  ]
+
+  it('un compte sans preuve à lui : le fait, une ligne par écriture sous son numéro, la pièce citée proposée, le verdict d’hier', () => {
+    const p = preuve('471000', 10700, { ecritures: SUR_L_ATTENTE, ecrituresLibres: LUES })
+    const hier = preuve('471000', 10700, { ecritures: SUR_L_ATTENTE.map((e) => ({ ...e, ecriture_libre_id: null })) })
+    expect(p.verdict).toBe(hier.verdict)
+    expect(p.attenduCentimes).toBe(hier.attenduCentimes)
+    const f = faitDe(p, 'ecritures-libres')!
+    expect(f.montantCentimes).toBe(10000)
+    expect(f.nombre).toBe(2)
+    expect(f.texte.replace(/\s/g, ' ')).toBe('2 écritures libres de l’expert-comptable portent 100,00 € au débit sur ce compte (n° EL2024-0001, '
+      + 'EL2025-0005) : elles disent une décision, pas un fait extérieur. Cette preuve ne les établit pas : chacune se justifie par '
+      + 'l’état des écritures libres et, s’il y en a une, par sa pièce citée.')
+    expect(p.detail).toEqual([
+      { libelle: 'Extourne de l’écriture libre EL2024-0001 du 01/01/2025', montantCentimes: -2000, reference: { type: 'ecriture-libre', id: 'el-1' } },
+      { libelle: 'Écriture libre EL2025-0005 du 31/12/2025', montantCentimes: 12000, reference: { type: 'ecriture-libre', id: 'el-5' } },
+    ])
+    expect(p.sourcesProposees).toEqual([{ pieceId: 'p-citee', documentId: null, raison: 'La pièce que cite une écriture libre de l’expert-comptable sur ce compte.' }])
+    expect(JSON.stringify(p)).not.toContain(MARQUE_SAISIE)
+  })
+
+  it('l’instantané d’une preuve qui porte la part se relit sans deviner', () => {
+    const p = preuve('108000', -12000, { ecritures: SUR_L_ATTENTE, ecrituresLibres: LUES })
+    const i = instantaneDeLaPreuve(p)
+    expect(i).not.toBeNull()
+    expect(lireInstantaneDePreuve(JSON.parse(JSON.stringify(i)))).toEqual(i)
+  })
+
+  it('le compte de l’exploitant : la part à elle dans sa composition, et le fait, sans redire chaque écriture au détail', () => {
+    const p = preuve('108000', -12000, { ecritures: SUR_L_ATTENTE, ecrituresLibres: LUES })
+    expect(p.detail.map((l) => l.libelle)).toEqual(['Écritures libres de l’expert-comptable (1)'])
+    expect(p.detail[0].montantCentimes).toBe(-12000)
+    expect(cles(p)).toEqual(['ecritures-libres'])
+  })
+
+  it('une écriture que la lecture ne rend pas : « au numéro non lu », aucune source ; un compte sans elle : la preuve d’hier', () => {
+    const p = preuve('471000', 10700, { ecritures: SUR_L_ATTENTE, ecrituresLibres: { etat: 'absentes' } })
+    expect(p.detail.map((l) => l.libelle)).toEqual(['Écriture libre au numéro non lu du 01/01/2025', 'Écriture libre au numéro non lu du 31/12/2025'])
+    expect(p.sourcesProposees).toEqual([])
+    expect(faitDe(p, 'ecritures-libres')!.texte).not.toContain('n° ')
+    const sansElles = SUR_L_ATTENTE.filter((e) => !e.ecriture_libre_id)
+    expect(preuve('471000', 700, { ecritures: sansElles, ecrituresLibres: LUES })).toEqual(preuve('471000', 700, { ecritures: sansElles }))
+    // Une écriture libre d'un autre exercice ne compte pas dans celui-ci.
+    expect(preuve('471000', 0, { annee: 2026, ecritures: SUR_L_ATTENTE, ecrituresLibres: LUES }).faits).toEqual([])
+  })
+})

@@ -516,6 +516,9 @@ const POLITIQUES_LECTURE: Record<string, Politique> = {
   provisions: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
   inventaires_declares: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
   ecritures_brouillon: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
+  // LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL6), que l'assistant lit au jeton de l'appelant : `ecritures_libres_lecture`
+  // (migration EL2, `admin_du_dossier`), le cabinet du dossier seul.
+  ecritures_libres: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
 }
 
 /** Qui appelle une fonction SQL : le compte de la session (nul sous une clé seule), et le rôle sous lequel PostgREST la sert. */
