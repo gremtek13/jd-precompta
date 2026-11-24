@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import { ECRITURES_LIBRES_PREVUES } from './ecritureLibre'
 import { lireLesEcrituresLibres, lireLesEcrituresLibresSelon } from './ecrituresLibresLecture'
-import { ecrituresLibresPourLesMoteurs } from './ecrituresLibresVue'
+import { colonnesDesEcrituresLibres, ecrituresLibresPourLesMoteurs } from './ecrituresLibresVue'
+import { migrationRangee } from '../test/schema'
 
 // LA LECTURE DES ÉCRITURES LIBRES (EL5). Drapeau baissé : AUCUN appel au réseau, l'absence. Levé : la table et SON dossier, le
 // compte annoncé, un tri total terminé par la clé primaire, la lecture jusqu'au bout ; lue en partie, refusée ou levée, une ligne
@@ -117,6 +119,34 @@ describe('lireLesEcrituresLibres', () => {
     if (lu.etat === 'lues') {
       expect(lu.auteurs.size).toBe(0)
       expect(lu.motifDesAuteurs).toContain('l’équipe')
+    }
+  })
+})
+
+// LA COLONNE DE LA CONTRE-PASSATION (EL7, migration préparée) : lue son drapeau levé seulement — PostgREST refuserait une colonne
+// qui n'existe pas —, et la valeur par défaut du paramètre est ce drapeau (le chemin par défaut, éprouvé à part).
+describe('lireLesEcrituresLibres — la colonne de la contre-passation (EL7)', () => {
+  it('par défaut, le drapeau : baissé aujourd’hui, les colonnes d’hier, aucune clé `contre_passe_id` dans l’écriture relue', async () => {
+    expect(CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE).toBe(migrationRangee('contre_passation_des_ecritures_libres'))
+    const lu = await lireLesEcrituresLibresSelon('d1', true)
+    expect(faux.requetes[0].colonnes).toBe(colonnesDesEcrituresLibres(CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE))
+    if (!CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE) {
+      expect(faux.requetes[0].colonnes).not.toContain('contre_passe_id')
+      expect(lu.etat === 'lues' && 'contre_passe_id' in lu.ecritures[0]).toBe(false)
+    }
+  })
+
+  it('levé : la colonne demandée, la contre-passation relue ; nulle sur une écriture ordinaire', async () => {
+    faux.tables.ecritures_libres = [ligne({ contre_passe_id: null }), ligne({ id: 'e2', numero: 2, date: '2026-01-01', exercice: 2026, contre_passe_id: 'e1' })]
+    const lu = await lireLesEcrituresLibresSelon('d1', true, true)
+    expect(faux.requetes[0].colonnes).toBe(`${colonnesDesEcrituresLibres(false)}, contre_passe_id`)
+    expect(lu.etat === 'lues' && lu.ecritures.map((e) => [e.id, e.contre_passe_id])).toEqual([['e1', null], ['e2', 'e1']])
+  })
+
+  it('une contre-passation d’une autre forme — un texte vide, un nombre, elle-même — rend la lecture illisible', async () => {
+    for (const v of ['', 7, 'e1']) {
+      faux.tables.ecritures_libres = [ligne({ contre_passe_id: v })]
+      expect(await lireLesEcrituresLibresSelon('d1', true, true), String(v)).toMatchObject({ etat: 'illisibles' })
     }
   })
 })

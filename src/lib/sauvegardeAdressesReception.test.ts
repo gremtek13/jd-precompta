@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
+import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import {
   auPlanAujourdHui,
   auPlanDesAdressesReception,
+  auxVaguesDeLaContrePassation,
   CHEMINS_DOSSIER,
   CHEMINS_DOSSIER_PREVUS,
   CLES_PRIMAIRES,
@@ -59,8 +61,9 @@ describe('le filtre du plan, côté adresses de réception', () => {
       ...TABLES_AUTO_REFERENCEES_PAR_VAGUES.map((a) => a.table),
     ])
     for (const table of TABLES_DES_ADRESSES_RECEPTION) expect(nommees.has(table), table).toBe(ADRESSES_RECEPTION_EXPORTEES)
-    // Les vagues du jour sont les vagues prévues, filtrées comme le reste.
-    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES).toEqual(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => auPlanAujourdHui(a.table)))
+    // Les vagues du jour sont les vagues prévues, filtrées comme le reste — celle de la contre-passation (EL7) par son drapeau.
+    expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES).toEqual(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES
+      .filter((a) => auPlanAujourdHui(a.table) && auxVaguesDeLaContrePassation(a, CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE)))
     // Leur clé est la clé commune : aucune ligne dans les clés déclarées, prévues ou non.
     expect(Object.keys(CLES_PRIMAIRES_PREVUES)).not.toContain('adresses_reception')
     expect(Object.keys(CLES_PRIMAIRES)).not.toContain('adresses_reception')

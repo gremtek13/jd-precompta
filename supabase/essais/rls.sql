@@ -207,6 +207,10 @@
 --      client du dossier, un membre non assigné et l'anonyme rien ; le client n'enregistre, ne retire, n'écrit ni ne réécrit
 --      rien, ni l'écriture ni ses lignes au brouillon ; le super-administrateur réinsère (la restauration) ; le catalogue. Quatre
 --      mutations, dont l'enregistrement sans son contrôle d'accès ; avant la migration, une ligne « EN ATTENTE ».
+--  20. La contre-passation d'une écriture libre (bloc XL, en fin de fichier ; migration `contre_passation_des_ecritures_libres`,
+--      EL7, ligne 26.9, préparée) : ni le client du dossier, ni un membre non assigné, ni l'anonyme ne contre-passent ; le chef
+--      passe le contrôle d'accès (contrôle positif, rien d'écrit) ; le catalogue. Une mutation, la fonction sans son contrôle
+--      d'accès ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -12979,6 +12983,151 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $li$;
+
+-- ══ XL. La contre-passation d'une écriture libre (ligne 26.9, EL7 ; migration `contre_passation_des_ecritures_libres`, PRÉPARÉE) ═
+-- Une fonction `security definer` qui ÉCRIT dans la table des écritures libres et dans le brouillon : elle contourne la RLS, et
+-- seul son contrôle d'accès (`admin_du_dossier`, EL-Q1) tient le client et le membre à qui le dossier n'est pas assigné. Le
+-- reste (les refus sous leurs mots, la composition, le gel, la garde de la colonne) : `contrePassationDesEcrituresLibres.sql`,
+-- sur une réplique.
+--   XL1. Dans un dossier jetable du cabinet du dossier du client, le chef enregistre une écriture libre d'un exercice ouvert ; le
+--        client, qui y a un accès, ne la contre-passe pas, ni un membre de l'équipe à qui le dossier n'est pas assigné, ni
+--        l'anonyme (42501) ; le chef passe le contrôle d'accès et bute sur l'état de l'écriture (23514 : elle n'est pas figée)
+--        — le contrôle POSITIF, sans rien écrire ni valider.
+--   XL2. Le catalogue : la fonction exécutable par authenticated, ni par anon ni par PUBLIC ; sa garde, par personne.
+-- Ce qui n'est pas borné au dossier jetable ne se lit pas. Une mutation, qui doit mordre : M-XL1 (la fonction sans son contrôle
+-- d'accès : le client le passe, et bute sur l'état de l'écriture). Avant la migration, une ligne dit que le bloc attend.
+do $xl$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  dossier uuid := 'a1100000-0000-4000-8000-0000000000e2';
+  -- L'écriture du bloc LI (un reclassement de 1,00 € en trésorerie), puis sa contre-passation telle que l'application la donne
+  -- (`contrePassationPourLaBase`) et l'écriture qu'elle en compose (`composerLaContrePassation`) ; contrePassationEnBase.test.ts
+  -- confronte les deux au module.
+  ecriture jsonb := '{"id":null,"date":"2025-06-30","libelle":"Essai de la RLS","motif":"Essai de la RLS.","piece_citee_id":null,"avec_extourne":false,"lignes":[{"compte":"606400","sens":"debit","centimes":100,"poste_2035":"Fournitures de bureau","compte_lib":null},{"compte":"606300","sens":"credit","centimes":100,"poste_2035":"Petit outillage","compte_lib":null}]}';
+  ecritures jsonb := '[{"date":"2025-06-30","journal":"OD","libelle":"Essai de la RLS","lignes":[{"compte":"606400","sens":"debit","centimes":100},{"compte":"606300","sens":"credit","centimes":100}]}]';
+  contre_passation jsonb := '{"date":"2026-01-01","libelle":"Contre-passation de EL2025-0001 — Essai de la RLS","motif":"Essai de la RLS.","hors_de_la_2035":true}';
+  proposee jsonb := '[{"date":"2026-01-01","journal":"OD","libelle":"Contre-passation de EL2025-0001 — Essai de la RLS","lignes":[{"compte":"606400","sens":"credit","centimes":100},{"compte":"606300","sens":"debit","centimes":100}]}]';
+  non_figee constant text := '23514 Seule une écriture libre d’un exercice validé se contre-passe : avant la validation, elle se modifie ou se retire.';
+  id_ecriture uuid; du_client text; du_membre text; de_l_anon text; du_chef text; ouverte text; erreur text;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regprocedure('public.contre_passer_ecriture_libre(uuid, integer, jsonb, jsonb)') is null then
+    insert into rls_verdict values ('XL. la contre-passation des écritures libres : EN ATTENTE de la migration contre_passation_des_ecritures_libres',
+      'ecritures_libres', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : un dossier en trésorerie du cabinet du dossier du client, que le client voit, que le membre ne suit pas ──
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva)
+      select dossier, 'Essai RLS des contre-passations', d.cabinet_id, 'tresorerie', 'franchise' from dossiers d where d.id = dossier_du_client;
+    insert into memberships (user_id, dossier_id, role)
+      select client, dossier, m.role from memberships m where m.user_id = client and m.dossier_id = dossier_du_client limit 1;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    id_ecriture := enregistrer_ecriture_libre(dossier, ecriture, ecritures, null);
+    reset role;
+    construit := true;
+
+    -- XL1 : le client du dossier, le membre à qui il n'est pas assigné, l'anonyme, puis le chef.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform contre_passer_ecriture_libre(id_ecriture, 1, contre_passation, proposee);
+      du_client := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if du_client is null then du_client := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      perform contre_passer_ecriture_libre(id_ecriture, 1, contre_passation, proposee);
+      du_membre := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if du_membre is null then du_membre := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      perform contre_passer_ecriture_libre(id_ecriture, 1, contre_passation, proposee);
+      de_l_anon := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if de_l_anon is null then de_l_anon := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      perform contre_passer_ecriture_libre(id_ecriture, 1, contre_passation, proposee);
+      du_chef := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if du_chef is null then du_chef := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'XL1. ni le client du dossier, ni un membre à qui le dossier n''est pas assigné, ni l''anonyme ne contre-passent une écriture libre ; le chef passe le contrôle d''accès et bute sur l''état de l''écriture (le contrôle positif)',
+      'cible', 'ecritures_libres',
+      'observe', 'le client : ' || coalesce(du_client, '?') || ' | le membre non assigné : ' || coalesce(du_membre, '?')
+        || ' | l''anonyme : ' || coalesce(de_l_anon, '?') || ' | le chef : ' || coalesce(du_chef, '?'),
+      'ok', du_client = '42501 Accès refusé à cette écriture libre.' and du_membre = '42501 Accès refusé à cette écriture libre.'
+        and de_l_anon like '42501 %' and du_chef = non_figee);
+
+    -- M-XL1 : la fonction sans son contrôle d'accès (elle contourne la RLS : seul ce contrôle tient le client).
+    begin
+      execute replace(pg_get_functiondef('public.contre_passer_ecriture_libre(uuid, integer, jsonb, jsonb)'::regprocedure),
+        'or not coalesce(public.admin_du_dossier(v_dossier_id), false)', '');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        perform contre_passer_ecriture_libre(id_ecriture, 1, contre_passation, proposee);
+        ouverte := 'ACCEPTÉ';
+      exception when others then ouverte := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-XL1 — la contre-passation sans son contrôle d''accès (admin_du_dossier)',
+      'attendu', 'le client passe l''accès et bute sur l''état de l''écriture', 'observe', coalesce(ouverte, '?'),
+      'mord', coalesce(ouverte = non_figee or ouverte = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- XL2 : le catalogue.
+  verdicts := verdicts || jsonb_build_object('controle', 'XL2. la contre-passation exécutable par authenticated seul, sa garde par personne (lecture du catalogue)',
+    'cible', 'ecritures_libres',
+    'observe', (select has_function_privilege('authenticated', p.oid, 'execute')::text || '/' || has_function_privilege('anon', p.oid, 'execute')::text
+                 || '/' || exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)::text
+                 from pg_proc p where p.oid = to_regprocedure('public.contre_passer_ecriture_libre(uuid, integer, jsonb, jsonb)'))
+      || ' ; garde ' || coalesce((select has_function_privilege('authenticated', p.oid, 'execute')::text || '/'
+                 || has_function_privilege('anon', p.oid, 'execute')::text
+                 from pg_proc p where p.oid = to_regprocedure('public.garder_contre_passation_des_ecritures_libres()')), '?'),
+    'ok', coalesce((select has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+                      and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+                    from pg_proc p where p.oid = to_regprocedure('public.contre_passer_ecriture_libre(uuid, integer, jsonb, jsonb)')), false)
+      and coalesce((select not has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+                    from pg_proc p where p.oid = to_regprocedure('public.garder_contre_passation_des_ecritures_libres()')), false));
+  verdicts := verdicts || jsonb_build_object('controle', 'XL. le jeu d''essai de la contre-passation s''est construit', 'cible', 'un dossier en trésorerie du cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $xl$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

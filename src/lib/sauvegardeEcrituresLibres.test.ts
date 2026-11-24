@@ -69,21 +69,23 @@ describe('le filtre du plan, côté écritures libres', () => {
 })
 
 describe('le plan prévu, écritures libres comprises', () => {
-  it('la table y entre une fois : l’ordre, le chemin direct ; ni vague, ni seconde passe, ni clé à part', () => {
+  it('la table y entre une fois : l’ordre, le chemin direct ; ni seconde passe, ni clé à part ; une seule vague, celle d’EL7', () => {
     for (const table of TABLES) {
       expect(ORDRE_RESTAURATION_PREVU.filter((t) => t === table), table).toHaveLength(1)
       expect(CHEMINS_DOSSIER_PREVUS[table], table).toEqual({ acces: 'direct' })
-      expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => a.table === table), table).toEqual([])
+      // La contre-passation (EL7, sa migration préparée, sauvegardeContrePassation.test.ts) : sa colonne part par vagues.
+      expect(TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => a.table === table), table)
+        .toEqual([{ table: 'ecritures_libres', colonne: 'contre_passe_id' }])
       expect(TABLES_AUTO_REFERENCEES.filter((a) => a.table === table), table).toEqual([])
       expect(Object.keys(CLES_PRIMAIRES_PREVUES), table).not.toContain(table)
     }
-    // Aucune auto-référence dans la migration : `contre_passe_id` n'entre qu'à EL7, qui la déclarera par vagues ou en deux
-    // passes ce jour-là (conception 54, § 3.9).
+    // Aucune auto-référence dans la migration EL2 : `contre_passe_id` entre par celle d'EL7 (conception 54, § 3.9).
     expect(MIGRATION).not.toMatch(/contre_passe_id\s+uuid/)
   })
 
   it('ses relations sont les clés étrangères de la migration, à leur action, et celle de la colonne du brouillon', () => {
-    const siennes = RELATIONS_PREVUES.filter((r) => r.enfant === 'ecritures_libres')
+    // La relation de la contre-passation (EL7) vient de SA migration : sauvegardeContrePassation.test.ts la juge.
+    const siennes = RELATIONS_PREVUES.filter((r) => r.enfant === 'ecritures_libres' && r.colonne !== 'contre_passe_id')
       .map((r) => `${r.colonne} → ${r.parent} (${r.aLaSuppression})`).sort()
     expect(siennes).toEqual(clesDeLaTable('ecritures_libres'))
     expect(siennes).toEqual(['dossier_id → dossiers (cascade)', 'piece_citee_id → pieces (bloque)'])

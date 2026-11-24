@@ -38,9 +38,11 @@ import { EXERCICES_DECALES_PREVUS } from './exercices'
 import { AFFECTATION_PREVUE } from './affectationDuResultat'
 import { OPTIONS_DES_CABINETS_EN_BASE } from './modulesDuCabinet'
 import { ECRITURES_LIBRES_PREVUES } from './ecritureLibre'
+import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
+  auGrapheDeLaContrePassation,
   auGrapheDeLEnvoiDesDevis,
   auGrapheDesAcomptes,
   auGrapheDesExemplaires,
@@ -133,7 +135,8 @@ describe('le filtre du plan', () => {
     // (sauvegardeOuverturesAttestees.test.ts) ; depuis BOR3, celui du facturé à l'assurance maladie
     // (sauvegardeFacturesAssuranceMaladie.test.ts) ; depuis NOE8, celui de l'association des paiements de l'assurance maladie
     // (sauvegardeAssociationsAssuranceMaladie.test.ts) ; depuis EL8, celui des écritures libres, et le graphe retire la clé du
-    // brouillon vers une écriture libre (sauvegardeEcrituresLibres.test.ts).
+    // brouillon vers une écriture libre (sauvegardeEcrituresLibres.test.ts) ; depuis EL7, le graphe retire la relation de la
+    // contre-passation d'une écriture libre tant que sa migration n'est pas exportée (sauvegardeContrePassation.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -177,7 +180,8 @@ describe('le filtre du plan', () => {
         && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)
         && auGrapheDesStocks(r, STOCKS_PREVUS)
         && auGrapheDeLAffectation(r, AFFECTATION_PREVUE)
-        && auGrapheDesEcrituresLibres(r, ECRITURES_LIBRES_PREVUES)))
+        && auGrapheDesEcrituresLibres(r, ECRITURES_LIBRES_PREVUES)
+        && auGrapheDeLaContrePassation(r, CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE)))
     expect(ORDRE_RESTAURATION).toEqual(ORDRE_RESTAURATION_PREVU.filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CHEMINS_DOSSIER)).toEqual(Object.keys(CHEMINS_DOSSIER_PREVUS).filter((t) => auPlanAujourdHui(t)))
     expect(Object.keys(CLES_PRIMAIRES)).toEqual(Object.keys(CLES_PRIMAIRES_PREVUES).filter((t) => auPlanAujourdHui(t)))

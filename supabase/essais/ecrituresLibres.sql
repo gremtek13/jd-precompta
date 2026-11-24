@@ -380,8 +380,13 @@ begin
     || ' ' || (select string_agg(tgname::text, ',' order by tgname collate "C") from pg_trigger
                where tgrelid = 'public.ecritures_libres'::regclass and not tgisinternal)
     into texte;
+  -- La garde de la contre-passation (EL7, migration `contre_passation_des_ecritures_libres`, préparée) tire après celle de la
+  -- table, quand sa migration est en base : son essai est supabase/essais/contrePassationDesEcrituresLibres.sql.
   perform pg_temp.verdict('EL-F1. la RLS, la lecture et la restauration, la porte devant la garde', texte,
-    texte = 'true ecritures_libres_lecture:r,ecritures_libres_restauration:a _acces_avant_les_gardes,ecritures_libres_garde');
+    texte = 'true ecritures_libres_lecture:r,ecritures_libres_restauration:a _acces_avant_les_gardes,ecritures_libres_garde'
+      || case when exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_libres'::regclass
+                             and a.attname = 'contre_passe_id' and not a.attisdropped)
+              then ',ecritures_libres_garde_de_la_contre_passation' else '' end);
   select has_function_privilege('anon', 'public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)', 'execute')::text
     || has_function_privilege('anon', 'public.retirer_ecriture_libre(uuid, integer)', 'execute')::text
     || has_function_privilege('authenticated', 'public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)', 'execute')::text

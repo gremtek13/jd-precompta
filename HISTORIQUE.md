@@ -54702,3 +54702,21 @@ montants, postes et la présence de la pièce — jamais le libellé, le motif n
 dans l'assistant. Les quatre empreintes de `agentComptableAuPlan` relevées : sans les trois différences voulues (l'outil, la
 phrase de la consigne, celle de `lister_ecritures`), celles d'avant à l'identique. Dix mutations des écrans, de la révision et du
 détail mordent ; les dérives des deux blocs et cinq mutations HTTP aussi. À redéployer : `agent-comptable`.
+
+### 24/11/2026 — EL7 : LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE VALIDÉE (PRÉPARÉE, PAS APPLIQUÉE ; LIGNE 26.9)
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 250, puis supprimée.) « Validée » : une écriture libre
+se valide avec son exercice (sa date au plus tard à la frontière, ou une ligne validée), le gel d'EL2. La préparée
+`20261124120000_contre_passation_des_ecritures_libres` (aucune instruction de suppression : l'outil peut l'appliquer ;
+`CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` baissé) pose `ecritures_libres.contre_passe_id` (vers la même table, sans action,
+unique, jamais avec une extourne), `contre_passer_ecriture_libre` (l'accès avant toute lecture, la version lue ; figée, sans
+extourne — son extourne la défait déjà —, pas déjà contre-passée ; une date d'un exercice ouvert ; l'effet sur la 2035 sans défaut ;
+le motif obligatoire ; les lignes inverses recomposées et comparées en multiensemble ; l'auteur posé par la base) et une garde à part,
+après celle de la table. Le retrait d'une contre-passation ouverte : `retirer_ecriture_libre`, telle quelle. Module, écran (figée :
+« Contre-passer » au lieu de « Modifier » et « Retirer », le lendemain de la frontière et hors de la 2035 proposés), lecture de la
+colonne et plan de sauvegarde (relation, vague) derrière le drapeau ; la 2035, le FEC et l'état la lisent comme une écriture
+ordinaire (avec et sans le lien, le même résultat). Réplique : inventaire 3 475 `d2c8a451…` des deux côtés, socle 84 inchangé ;
+l'essai 50 sans faute, 12 mutations sur 12 ; `rls.sql` 291/0, 174/174 (bloc XL), le banc du leurre SÛR ; restauration IDENTIQUE
+(108 tables, la paire en deux vagues) ; `ecrituresLibres.sql` 67/0 (EL-F1 apprend la garde) ; le retour rend la signature de 250.
+Relevé en passant : le numéro d'une écriture libre est le plus haut de l'année plus un — la dernière retirée se reprend ; la
+confirmation du retrait le niait, corrigée (EL7-Q2). Questions : EL7-migration, EL7-Q1, EL7-Q2.

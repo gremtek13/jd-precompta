@@ -50,6 +50,7 @@ import { OPTIONS_DES_CABINETS_EN_BASE, TABLES_DES_OPTIONS_DES_CABINETS } from '.
 import { FACTURES_ASSURANCE_MALADIE_EN_BASE } from './importDuFactureAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssuranceMaladie'
 import { ECRITURES_LIBRES_PREVUES, TABLES_DES_ECRITURES_LIBRES } from './ecritureLibre'
+import { COLONNE_DE_LA_CONTRE_PASSATION, CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -691,8 +692,8 @@ export function auPlanDesOptionsDesCabinets(table: string, prevues: boolean): bo
 // avant les notes internes — après la pièce qu'elle cite, avant le brouillon qui la cite et bien avant les exercices validés,
 // dont le gel refuserait une écriture réinsérée après eux (sa garde juge la date d'une insertion contre la frontière de la
 // validation) ; une place qu'aucun voisin ne fixe, hors du bloc des pièces hors de France, de la caisse et du brouillon, qui se
-// tient d'un seul tenant. Son chemin, direct ; sa clé, la commune ; aucune vague : `contre_passe_id`, auto-référencée, n'entre
-// qu'à EL7. La restauration la réinsère par la porte que sa policy ouvre au super-administrateur (`ecritures_libres_restauration`),
+// tient d'un seul tenant. Son chemin, direct ; sa clé, la commune ; sa vague, `contre_passe_id`, n'entre qu'avec EL7 (plus bas,
+// `auGrapheDeLaContrePassation`). La restauration la réinsère par la porte que sa policy ouvre au super-administrateur (`ecritures_libres_restauration`),
 // son auteur, ses instants et sa version tels qu'ils ont été écrits, et ses lignes par celle que la garde des lignes lui ouvre, à
 // sa date ou au 1er janvier qui suit pour son extourne. sauvegardeEcrituresLibres.test.ts éprouve le plan prévu et le plan du
 // jour, sous chaque état du drapeau.
@@ -700,6 +701,25 @@ export function auPlanDesOptionsDesCabinets(table: string, prevues: boolean): bo
 /** Une table au plan, côté écritures libres : toutes, sauf la sienne tant que sa migration n'est pas en base. */
 export function auPlanDesEcrituresLibres(table: string, prevues: boolean): boolean {
   return prevues || !(TABLES_DES_ECRITURES_LIBRES as readonly string[]).includes(table)
+}
+
+// LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE (ligne 26.9, EL7 ; migration `contre_passation_des_ecritures_libres`, PRÉPARÉE le
+// 24/11/2026) : une colonne de la table des écritures libres, `contre_passe_id`, qui cite l'écriture libre qu'elle contre-passe, de
+// son dossier, sans action à la suppression (une écriture contre-passée ne part pas avant sa contre-passation ; les deux partent
+// avec leur dossier). Une relation de la table vers ELLE-MÊME : ses lignes partent par VAGUES (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`)
+// — l'écriture d'origine d'abord : la garde de la colonne lit sa cible à l'insertion, et une contre-passation ne se remplace pas,
+// elle ne part donc pas à NULL pour se compléter ensuite. Sous le drapeau de la migration
+// (`CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE`), baissé : la relation et la vague ne sont pas au plan du jour, et `select('*')` ne
+// rend pas la colonne. Aucune table de plus, aucun rang. sauvegardeContrePassation.test.ts éprouve les deux états.
+
+/** Une relation au graphe du jour, côté contre-passation : la sienne attend sa migration. */
+export function auGrapheDeLaContrePassation(r: Pick<Relation, 'enfant' | 'colonne'>, prevue: boolean): boolean {
+  return prevue || !(r.enfant === 'ecritures_libres' && r.colonne === COLONNE_DE_LA_CONTRE_PASSATION)
+}
+
+/** Une vague au plan du jour, côté contre-passation : la sienne attend sa migration. */
+export function auxVaguesDeLaContrePassation(a: { table: string; colonne: string }, prevue: boolean): boolean {
+  return prevue || !(a.table === 'ecritures_libres' && a.colonne === COLONNE_DE_LA_CONTRE_PASSATION)
 }
 
 /** Une relation au graphe du jour, côté écritures libres : celles de sa table, et celle du brouillon vers une écriture libre,
@@ -1136,6 +1156,9 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'ecritures_libres', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'ecritures_libres', parent: 'pieces', colonne: 'piece_citee_id', aLaSuppression: 'bloque' },
   { enfant: 'ecritures_brouillon', parent: 'ecritures_libres', colonne: 'ecriture_libre_id', aLaSuppression: 'bloque' },
+  // La contre-passation d'une écriture libre (EL7 ; migration `contre_passation_des_ecritures_libres`, préparée) : l'écriture
+  // qu'elle contre-passe, de la même table, sans action (par vagues à la restauration).
+  { enfant: 'ecritures_libres', parent: 'ecritures_libres', colonne: 'contre_passe_id', aLaSuppression: 'bloque' },
 ]
 
 // Le graphe tel que la base l'a AUJOURD'HUI : sans les relations des devis, des articles, des adresses de réception, des
@@ -1149,7 +1172,8 @@ export const RELATIONS: readonly Relation[] = RELATIONS_PREVUES
     && auGrapheDeLInventaire(r, INVENTAIRE_PREVU)
     && auGrapheDesStocks(r, STOCKS_PREVUS)
     && auGrapheDeLAffectation(r, AFFECTATION_PREVUE)
-    && auGrapheDesEcrituresLibres(r, ECRITURES_LIBRES_PREVUES))
+    && auGrapheDesEcrituresLibres(r, ECRITURES_LIBRES_PREVUES)
+    && auGrapheDeLaContrePassation(r, CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE))
 
 // Les liens qu'une GARDE tient, et non une clé étrangère (ligne 41, étape R1, migration revision_des_soldes). Une preuve
 // de la révision cite une pièce ou un document de son dossier : la garde `garder_revision_preuve` le vérifie à
@@ -1583,12 +1607,17 @@ export const TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES: readonly { table: strin
   // (`remplace_id`) ; jamais réécrits, ils ne partent pas à NULL, et leur garde lit la version remplacée.
   { table: 'modeles_lettre_de_mission', colonne: 'remplace_id' },
   { table: 'lettres_de_mission', colonne: 'remplace_id' },
+  // La contre-passation d'une écriture libre (ligne 26.9, EL7, préparée) : elle cite l'écriture qu'elle contre-passe
+  // (`contre_passe_id`) ; jamais remplacée, elle ne part pas à NULL, et la garde de la colonne lit sa cible à l'insertion.
+  { table: 'ecritures_libres', colonne: 'contre_passe_id' },
 ]
 
 // Les vagues telles qu'elles s'appliquent AUJOURD'HUI : sans celle des adresses de réception, ni celle des paramètres de
-// facturation, tant que leur migration n'est pas exportée.
+// facturation, tant que leur migration n'est pas exportée ; sans celle de la contre-passation tant que la sienne ne l'est pas
+// (sa table, elle, est au plan).
 export const TABLES_AUTO_REFERENCEES_PAR_VAGUES: readonly { table: string; colonne: string }[] =
-  TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => auPlanAujourdHui(a.table))
+  TABLES_AUTO_REFERENCEES_PAR_VAGUES_PREVUES.filter((a) => auPlanAujourdHui(a.table)
+    && auxVaguesDeLaContrePassation(a, CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE))
 
 // Les vagues d'une table auto-référencée : la première ne pointe aucune ligne de la sauvegarde, chaque suivante ne
 // pointe que des lignes des précédentes, par chacune des colonnes données. Une ligne qui pointe une ligne ABSENTE de la

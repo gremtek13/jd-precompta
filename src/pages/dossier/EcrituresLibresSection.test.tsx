@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import EcrituresLibresSection from './EcrituresLibresSection'
 import type { LectureDesEcrituresLibres } from '../../lib/ecrituresLibresVue'
@@ -13,7 +13,14 @@ const faux = vi.hoisted(() => ({
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   erreur: null as { message: string } | null,
   tables: [] as string[],
+  // Le drapeau de la contre-passation (EL7) : baissé pour les tests d'EL5, qui gardent ainsi leur état éprouvé quel que soit
+  // celui du dépôt ; levé par ceux d'EL7, plus bas.
+  contrePassation: false,
 }))
+vi.mock('../../lib/contrePassationDesEcrituresLibres', async (original) => {
+  const m = await original<typeof import('../../lib/contrePassationDesEcrituresLibres')>()
+  return { ...m, get CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE() { return faux.contrePassation } }
+})
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     rpc: (nom: string, args: Record<string, unknown>) => {
@@ -82,6 +89,7 @@ beforeEach(() => {
   faux.rpcs = []
   faux.erreur = null
   faux.tables = []
+  faux.contrePassation = false
   relire.mockClear()
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
@@ -264,5 +272,155 @@ describe('EcrituresLibresSection (EL5)', () => {
       })
       expect((faux.rpcs[0].args.p_ecriture as { piece_citee_id: string | null }).piece_citee_id).toBe('p1')
     })
+  })
+})
+
+// EL7 : LA CONTRE-PASSATION D'UNE ÉCRITURE FIGÉE, le drapeau levé. Ce qu'aucun calcul pur ne voit : une écriture figée ne s'offre
+// plus à « Modifier » ni à « Retirer », elle s'offre à « Contre-passer » ; ce que son état retient se dit avant le clic ; le
+// formulaire propose, le refus du module retient le bouton ; deux clics dans le même `act` ne font qu'UN appel, par la fonction
+// seule, contre la version lue ; la confirmation nomme ce qui part ; une contre-passation ne se modifie pas, elle se retire.
+describe('EcrituresLibresSection — la contre-passation (EL7)', () => {
+  const CONTRE: EcritureLibreDeLEtat = {
+    ...ECRITURE, id: 'c1', exercice: 2026, numero: 1, date: '2026-01-01', libelle: 'Contre-passation de EL2025-0001 — Part privée',
+    motif: 'Le téléphone était personnel.', version: 1, contre_passe_id: 'e1',
+    lignes: [
+      { compte: '108000', sens: 'credit', centimes: 12000, poste_2035: null, compte_lib: null },
+      { compte: '626200', sens: 'debit', centimes: 12000, poste_2035: null, compte_lib: null },
+    ],
+  }
+  const lues = (ecritures: EcritureLibreDeLEtat[]): LectureDesEcrituresLibres => ({ ...LUES, ecritures })
+  function monterFigee(lecture: LectureDesEcrituresLibres, o: { annee?: number; frontiere?: string | null } = {}) {
+    return render(
+      <EcrituresLibresSection dossierId="d1" annee={o.annee ?? 2025} mode="tresorerie" lecture={lecture}
+        frontiere={'frontiere' in o ? o.frontiere ?? null : '2025-12-31'} ouverture={null} categories={[]} pieces={[]}
+        piecesIncompletes={null} relecture={false} relire={relire} />,
+    )
+  }
+  const ouvrir = () => fireEvent.click(screen.getByText('Contre-passer'))
+  const motif = (texte: string) => fireEvent.change(screen.getByLabelText(/^Motif de la contre-passation/), { target: { value: texte } })
+  const lignesProposees = () => screen.getByRole('list', { name: 'Lignes de la contre-passation' }).textContent ?? ''
+
+  beforeEach(() => { faux.contrePassation = true })
+
+  it('le drapeau baissé, la même écriture figée : les deux gestes d’EL5, aucune contre-passation', () => {
+    faux.contrePassation = false
+    monterFigee(LUES)
+    expect(screen.getByText('Modifier')).toBeDefined()
+    expect(screen.getByText('Retirer')).toBeDefined()
+    expect(screen.queryByText('Contre-passer')).toBeNull()
+  })
+
+  it('levé : une écriture figée ne se modifie ni ne se retire, elle se contre-passe ; ouverte, ses gestes d’hier', () => {
+    monterFigee(LUES)
+    expect(screen.queryByText('Modifier')).toBeNull()
+    expect(screen.queryByText('Retirer')).toBeNull()
+    expect(screen.getByText('Contre-passer')).toBeDefined()
+    expect(screen.getByText('Figée par la validation de 2025.')).toBeDefined()
+    cleanup()
+    monterFigee(LUES, { frontiere: null })
+    expect(screen.getByText('Modifier')).toBeDefined()
+    expect(screen.queryByText('Contre-passer')).toBeNull()
+  })
+
+  it('le formulaire propose le premier jour de l’exercice ouvert et le libellé ; le motif manque : le refus retient le bouton', () => {
+    monterFigee(LUES)
+    ouvrir()
+    expect((screen.getByLabelText('Date de la contre-passation') as HTMLInputElement).value).toBe('2026-01-01')
+    expect((screen.getByLabelText('Libellé de la contre-passation') as HTMLInputElement).value).toBe('Contre-passation de EL2025-0001 — Part privée')
+    expect(screen.getByText(/Le motif de l’écriture tient en 1 à 2 000 caractères/)).toBeDefined()
+    const bouton = screen.getByText('Contre-passer l’écriture') as HTMLButtonElement
+    expect(bouton.disabled).toBe(true)
+    fireEvent.click(bouton)
+    expect(faux.rpcs).toHaveLength(0)
+    // Les lignes au sens inverse, hors de la 2035 d'emblée.
+    expect(lignesProposees()).toContain('108000 : crédit')
+    expect(lignesProposees()).toContain('626200 : débit 120,00')
+    expect(lignesProposees()).toContain('2035 : hors de la 2035')
+  })
+
+  it('une date de l’exercice validé se refuse avant le clic', () => {
+    monterFigee(LUES)
+    ouvrir()
+    motif('Elle était fausse.')
+    fireEvent.change(screen.getByLabelText('Date de la contre-passation'), { target: { value: '2025-12-31' } })
+    expect(screen.getByText(/Cette date est dans un exercice validé/)).toBeDefined()
+    expect((screen.getByText('Contre-passer l’écriture') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('deux clics dans le même act : UN appel, par la fonction seule, contre la version lue ; la confirmation nomme ce qui part', async () => {
+    monterFigee(LUES)
+    ouvrir()
+    motif('  Elle était fausse.  ')
+    const bouton = screen.getByText('Contre-passer l’écriture')
+    await act(async () => {
+      fireEvent.click(bouton)
+      fireEvent.click(bouton)
+      await new Promise((r) => setTimeout(r, 5))
+    })
+    expect(faux.rpcs).toHaveLength(1)
+    expect(faux.rpcs[0]).toEqual({ nom: 'contre_passer_ecriture_libre', args: {
+      p_id: 'e1', p_version_lue: 4,
+      p_contre_passation: { date: '2026-01-01', libelle: 'Contre-passation de EL2025-0001 — Part privée', motif: 'Elle était fausse.', hors_de_la_2035: true },
+      p_ecritures: [{ date: '2026-01-01', journal: 'OD', libelle: 'Contre-passation de EL2025-0001 — Part privée',
+        lignes: [{ compte: '108000', sens: 'credit', centimes: 12000 }, { compte: '626200', sens: 'debit', centimes: 12000 }] }],
+    } })
+    const confirmation = vi.mocked(window.confirm).mock.calls[0][0] as string
+    expect(confirmation).toContain('Contre-passer l’écriture libre EL2025-0001 du 30/06/2025')
+    expect(confirmation).toContain('La 2035 de 2025, validée, ne change pas')
+    expect(confirmation).toContain('Motif : Elle était fausse.')
+    expect(relire).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Écriture libre EL2025-0001 contre-passée.')).toBeDefined()
+    expect(faux.tables).toEqual([])
+  })
+
+  it('les postes de l’écriture d’origine, au sens inverse : le choix part tel quel', async () => {
+    monterFigee(LUES)
+    ouvrir()
+    motif('Elle était fausse.')
+    fireEvent.click(screen.getByLabelText(/Les postes de l’écriture d’origine/))
+    expect(lignesProposees()).toContain('2035 : Fournitures de bureau')
+    await act(async () => {
+      fireEvent.click(screen.getByText('Contre-passer l’écriture'))
+      await new Promise((r) => setTimeout(r, 5))
+    })
+    expect((faux.rpcs[0].args.p_contre_passation as { hors_de_la_2035: boolean }).hors_de_la_2035).toBe(false)
+  })
+
+  it('une confirmation refusée n’écrit rien ; le refus de la base se dit', async () => {
+    vi.mocked(window.confirm).mockReturnValue(false)
+    monterFigee(LUES)
+    ouvrir()
+    motif('Elle était fausse.')
+    fireEvent.click(screen.getByText('Contre-passer l’écriture'))
+    expect(faux.rpcs).toHaveLength(0)
+    vi.mocked(window.confirm).mockReturnValue(true)
+    faux.erreur = { message: 'Cette écriture libre a déjà sa contre-passation : une écriture ne se contre-passe qu’une fois.' }
+    await act(async () => {
+      fireEvent.click(screen.getByText('Contre-passer l’écriture'))
+      await new Promise((r) => setTimeout(r, 5))
+    })
+    expect(screen.getByText(/L’écriture n’a pas été contre-passée : Cette écriture libre a déjà sa contre-passation/)).toBeDefined()
+  })
+
+  it('ce que l’état retient se dit avant le clic : extournée, ou déjà contre-passée (la mention le dit)', () => {
+    monterFigee(lues([{ ...ECRITURE, date: '2025-12-31', avec_extourne: true }]))
+    expect(screen.queryByText('Contre-passer')).toBeNull()
+    expect(screen.getByText(/son extourne la défait déjà/)).toBeDefined()
+    cleanup()
+    monterFigee(lues([ECRITURE, CONTRE]))
+    expect(screen.queryByText('Contre-passer')).toBeNull()
+    expect(screen.getByText('Contre-passée par EL2026-0001 du 01/01/2026.')).toBeDefined()
+  })
+
+  it('une contre-passation ouverte ne se modifie pas : elle se retire, et sa confirmation dit l’écriture qui redevient à contre-passer', async () => {
+    monterFigee(lues([ECRITURE, CONTRE]), { annee: 2026 })
+    expect(screen.getByText('Contre-passe EL2025-0001 du 30/06/2025.')).toBeDefined()
+    expect(screen.queryByText('Modifier')).toBeNull()
+    await act(async () => {
+      fireEvent.click(screen.getByText('Retirer'))
+      await new Promise((r) => setTimeout(r, 5))
+    })
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_ecriture_libre', args: { p_id: 'c1', p_version_lue: 1 } }])
+    expect(vi.mocked(window.confirm).mock.calls[0][0]).toContain('L’écriture EL2025-0001 qu’elle contre-passe redevient à contre-passer.')
   })
 })

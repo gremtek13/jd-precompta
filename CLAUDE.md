@@ -644,6 +644,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`ecrituresLibresHorsDeLaCa3.test.ts`) → « L'ÉCRITURE LIBRE DE
   L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION », « EXP58-Q3 ET NOE4-Q1 »,
   « EL3 : L'ÉCRITURE LIBRE DANS LE FEC », « EL4 : L'ÉCRITURE LIBRE DANS LA 2035 », « EL4-Q1 : LES COTISATIONS DE L'ESTIMATION ».
+  EL7 (24/11/2026), la contre-passation d'une écriture figée, préparée (`contre_passe_id`, `contre_passer_ecriture_libre` et sa garde ; l'outil
+  peut l'appliquer), écran et sauvegarde derrière `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` baissé → « EL7 : LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE VALIDÉE ».
 - **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
   (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
   les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».
