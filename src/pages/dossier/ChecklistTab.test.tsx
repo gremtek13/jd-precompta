@@ -42,9 +42,10 @@ vi.mock('../../lib/caisseLecture', async (original) => {
 })
 afterEach(() => { caisseDuTest.lecture = null })
 
-// LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE (NOE6) : leur drapeau joué par un accesseur (baissé par défaut, l'état
-// d'aujourd'hui) et leur lecture remplacée — rien d'autre de l'écran ne la lit.
-const assuranceMaladieDuTest = vi.hoisted(() => ({ leve: false, lecture: null as unknown }))
+// LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE (NOE6) : leur drapeau joué par un accesseur (levé par défaut, l'état
+// d'aujourd'hui depuis le 24/11/2026 ; baissé dans les cas qui le disent) et leur lecture remplacée — rien d'autre de l'écran
+// ne la lit. Sans lecture posée (nulle), aucun point de plus.
+const assuranceMaladieDuTest = vi.hoisted(() => ({ leve: true, lecture: null as unknown }))
 vi.mock('../../lib/controlesAssuranceMaladie', async (original) => {
   const vrai = await original<typeof import('../../lib/controlesAssuranceMaladie')>()
   return { ...vrai, get CONTROLES_ASSURANCE_MALADIE_PREVUS() { return assuranceMaladieDuTest.leve } }
@@ -53,7 +54,7 @@ vi.mock('../../lib/paiementsAssuranceMaladieLecture', async (original) => {
   const vrai = await original<typeof import('../../lib/paiementsAssuranceMaladieLecture')>()
   return { ...vrai, lireLesPaiementsAssuranceMaladie: () => Promise.resolve(assuranceMaladieDuTest.lecture) }
 })
-afterEach(() => { assuranceMaladieDuTest.leve = false; assuranceMaladieDuTest.lecture = null })
+afterEach(() => { assuranceMaladieDuTest.leve = true; assuranceMaladieDuTest.lecture = null })
 
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
@@ -3228,13 +3229,14 @@ describe('ChecklistTab — les saisies du client dans sa caisse', () => {
 describe('les contrôles des paiements de l’assurance maladie (NOE6)', () => {
   const POINT = /dans la période d’un import, qu’aucun paiement importé ne justifie/
   const ANCRE = /non rapprochée\(s\)/
-  function monterAvec(codeNaf: string | null, imports = [{ id: 'i1', dossier_id: 'dossier-de-test', periode_du: '2026-03-01', periode_au: '2026-03-31' }]) {
-    poser({ lignes: [ligne({ id: 'cpam', date: '2026-03-04', libelle: 'VIR CPAM FICTIF', montant: 123.45, statut: 'non_rapprochee', piece_id: null })] })
-    assuranceMaladieDuTest.lecture = {
+  function monterAvec(codeNaf: string | null, imports = [{ id: 'i1', dossier_id: 'dossier-de-test', periode_du: '2026-03-01', periode_au: '2026-03-31' }],
+    lecture: unknown = {
       dossierId: 'dossier-de-test', etat: 'lus',
       imports: { lignes: imports, complete: true },
       paiements: { lignes: [], complete: true }, associations: { lignes: [], complete: true },
-    }
+    }) {
+    poser({ lignes: [ligne({ id: 'cpam', date: '2026-03-04', libelle: 'VIR CPAM FICTIF', montant: 123.45, statut: 'non_rapprochee', piece_id: null })] })
+    assuranceMaladieDuTest.lecture = lecture
     return render(
       <AvecExercicesValides annees={[]}>
         <ChecklistTab codeNaf={codeNaf} ventesParLesFactures={false} dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" modele={TRESORERIE} onNavigate={() => {}} />
@@ -3251,6 +3253,7 @@ describe('les contrôles des paiements de l’assurance maladie (NOE6)', () => {
   })
 
   it('le drapeau baissé : rien, comme hier', async () => {
+    assuranceMaladieDuTest.leve = false
     monterAvec('86.90E')
     await screen.findByText(ANCRE)
     expect(screen.queryByText(POINT)).toBeNull()
@@ -3262,5 +3265,21 @@ describe('les contrôles des paiements de l’assurance maladie (NOE6)', () => {
     await screen.findByText(ANCRE)
     expect(screen.queryByText(POINT)).toBeNull()
     expect(screen.queryByText(/hors des périodes importées/)).toBeNull()
+  })
+
+  // Une lecture des paiements refusée ne tait que leurs cinq points : jamais « les données du dossier » entières — la Vue
+  // d'ensemble d'un dossier que la section n'offre pas reste celle d'hier, et celle d'un dossier de santé dit ce qui se tait.
+  it('les paiements refusés, un dossier hors de la santé : aucun bandeau, comme hier', async () => {
+    monterAvec('62.01Z', [], { dossierId: 'dossier-de-test', etat: 'echec', motif: 'refus de la base' })
+    await screen.findByText(ANCRE)
+    expect(screen.queryByText(/Les données du dossier n'ont pas pu être lues/)).toBeNull()
+    expect(screen.queryByText(/assurance maladie/)).toBeNull()
+  })
+
+  it('les paiements refusés, un dossier de santé : leurs points se taisent, et la Vue d’ensemble le dit d’eux seuls', async () => {
+    monterAvec('86.90E', [], { dossierId: 'dossier-de-test', etat: 'echec', motif: 'refus de la base' })
+    expect(await screen.findByText(/Les paiements de l’assurance maladie ne se lisent pas \(refus de la base\).*leur silence ne prouve rien/)).toBeTruthy()
+    expect(screen.queryByText(/Les données du dossier n'ont pas pu être lues/)).toBeNull()
+    expect(screen.queryByText(POINT)).toBeNull()
   })
 })

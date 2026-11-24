@@ -21,7 +21,8 @@
 //
 // OFFERTS SOUS LA RÈGLE DE LA SECTION (lib/sectionAssuranceMaladie.ts : un code NAF de santé ou de la liste fermée, ou un import
 // déjà en base), le module « Paiements de l'assurance maladie » ouvert au cabinet, et les drapeaux de NOE3 et de NOE5 levés —
-// derrière `CONTROLES_ASSURANCE_MALADIE_PREVUS`, que la session lève.
+// sous `CONTROLES_ASSURANCE_MALADIE_PREVUS`, levé le 24/11/2026. Leur silence se dit à part (`phraseDuSilence`), jamais dans
+// « les données du dossier » : une lecture refusée des paiements ne tait pas la révision entière.
 //
 // LA PISTE D'AUDIT (NOE-Q7, NOE-E3 : « La piste d'audit seule ») : la colonne du justificatif d'une écriture d'un crédit
 // associé, justifiée par le relevé, cite le paiement — « Paiement de l'assurance maladie du JJ/MM/AAAA, N factures » —, aucun
@@ -48,9 +49,10 @@ import {
 import { sectionAssuranceMaladie, type ImportsDeLaSection } from './sectionAssuranceMaladie'
 import type { Categorie, EcritureBrouillon, ImportAssuranceMaladie, LigneBancaire, VentilationBancaire } from './types'
 
-/** Baissé : la Vue d'ensemble et la Révision ne lisent ni ne disent rien des paiements de l'assurance maladie, et la piste
- *  d'audit est celle d'hier, au caractère près. Levé par la session, avec la relecture de ce lot. */
-export const CONTROLES_ASSURANCE_MALADIE_PREVUS = false
+/** Levé le 24/11/2026, après la relecture adverse du lot (HISTORIQUE.md, « 24/11/2026 — NOE6 RELU ET SON DRAPEAU LEVÉ »).
+ *  Baissé, la Vue d'ensemble et la Révision ne liraient ni ne diraient rien des paiements de l'assurance maladie, et la piste
+ *  d'audit serait celle d'hier, au caractère près — état gardé éprouvé par un accesseur dans les tests, tant que son code vit. */
+export const CONTROLES_ASSURANCE_MALADIE_PREVUS = true
 
 /** Les trois drapeaux ensemble : l'import (NOE3), l'association (NOE5), les contrôles (NOE6). */
 export const controlesOfferts = (controles: boolean) =>
@@ -205,6 +207,21 @@ export function controlesDeLAssuranceMaladie(e: EntreeDesControles): ControlesDe
 
   // Le contrôle 1 : le crédit sans paiement, dans la période d'un import ou hors de toute ; le paiement sans crédit quand le
   // relevé va au-delà de sa date, hors des exercices que rien ne rouvre (tous ses crédits possibles y tombent).
+  //
+  // ET PAS QUAND SON CRÉDIT EST PEUT-ÊTRE DANS UN EXERCICE VALIDÉ (relecture du 24/11/2026) : un crédit figé ne s'associe plus
+  // (la base le refuse) et le rapprochement ne le propose pas ; le paiement du 29 décembre que verse le crédit du 30 resterait
+  // libre pour toujours, dit « qu'aucun crédit du relevé ne verse » tant que l'exercice suivant n'est pas validé. Un crédit d'un
+  // exercice validé, dans la fenêtre du paiement, de son montant ou au libellé de l'assurance maladie : on ne sait pas, on se
+  // tait — jamais « aucun crédit » d'un crédit qu'on ne peut plus juger.
+  // Le libellé se lit une fois par crédit figé, jamais par paire (un relevé de 3 000 mouvements, des centaines de paiements).
+  const creditsFiges = e.releve.lignes
+    .filter((m) => /^\d{4}-\d{2}-\d{2}$/.test(m.date) && validees.has(anneeDe(m.date)) && (centimesDuMouvement(m.montant) ?? 0) > 0)
+    .map((m) => ({ date: m.date, centimes: centimesDuMouvement(m.montant), assuranceMaladie: nommeLAssuranceMaladie(libelleExploitable(m)) }))
+  const verseDansUnExerciceValide = (c: { journee: string; montantCentimes: number }) => {
+    if (creditsFiges.length === 0) return false
+    const fin = ajouterJours(c.journee, JOURS_APRES_LA_JOURNEE)
+    return creditsFiges.some((m) => c.journee <= m.date && m.date <= fin && (m.centimes === c.montantCentimes || m.assuranceMaladie))
+  }
   const periodes = lu.imports.lignes.map((i) => ({ du: i.periode_du, au: ajouterJours(i.periode_au, JOURS_APRES_LA_JOURNEE) }))
   const dansUnImport = (date: string) => periodes.some((p) => p.du <= date && date <= p.au)
   const creditsSansPaiement: ControlesCalcules['creditsSansPaiement'][number][] = []
@@ -221,7 +238,8 @@ export function controlesDeLAssuranceMaladie(e: EntreeDesControles): ControlesDe
         creditsSansPaiement.push(c)
         break
       case 'paiement_sans_credit':
-        if (c.releveCouvre && !(validees.has(anneeDe(c.journee)) && validees.has(anneeDe(ajouterJours(c.journee, JOURS_APRES_LA_JOURNEE))))) {
+        if (c.releveCouvre && !(validees.has(anneeDe(c.journee)) && validees.has(anneeDe(ajouterJours(c.journee, JOURS_APRES_LA_JOURNEE))))
+          && !verseDansUnExerciceValide(c)) {
           paiementsSansCredit.push(c)
         }
         break
@@ -293,6 +311,10 @@ function enumeres(elements: readonly string[]): string {
   return reste > 0 ? `${cites} et ${pluriel(reste, 'autre')}` : cites
 }
 
+/** « Le crédit du » d'un seul, « Les crédits du » de plusieurs (relecture du 24/11/2026 : « Les crédits du 22/09/2026 » d'un seul). */
+const lesDu = (n: number, singulier: string, plurielDuMot: string, genre: 'm' | 'f' = 'm') =>
+  n > 1 ? `Les ${plurielDuMot} du` : `${genre === 'f' ? 'La' : 'Le'} ${singulier} du`
+
 const creditDit = (c: { date: string; montantCentimes: number }) => `${formatDate(c.date)} (${montantDit(c.montantCentimes)})`
 
 export const LIBELLE_CREDITS_SANS_PAIEMENT =
@@ -307,13 +329,13 @@ export const LIBELLE_EXERCICES_EN_ECART =
 
 export function detailDesCreditsSansPaiement(c: ControlesCalcules): string | undefined {
   if (c.creditsSansPaiement.length === 0) return undefined
-  return `Les crédits du ${enumeres(c.creditsSansPaiement.map(creditDit))}. Dans Banque, la fiche du crédit dit ce que les `
+  return `${lesDu(c.creditsSansPaiement.length, 'crédit', 'crédits')} ${enumeres(c.creditsSansPaiement.map(creditDit))}. Dans Banque, la fiche du crédit dit ce que les `
     + 'paiements importés de ces jours-là font. S’il rembourse le praticien comme assuré, c’est un virement personnel.'
 }
 
 export function detailDesCreditsHorsDesImports(c: ControlesCalcules): string | undefined {
   if (c.creditsHorsDesImports.length === 0) return undefined
-  return `Les crédits du ${enumeres(c.creditsHorsDesImports.map(creditDit))}. Les paiements de ces jours-là s’importent `
+  return `${lesDu(c.creditsHorsDesImports.length, 'crédit', 'crédits')} ${enumeres(c.creditsHorsDesImports.map(creditDit))}. Les paiements de ces jours-là s’importent `
     + 'dans Banque, section « Paiements de l’assurance maladie ».'
 }
 
@@ -321,7 +343,7 @@ export function detailDesPaiementsSansCredit(c: ControlesCalcules): string | und
   if (c.paiementsSansCredit.length === 0) return undefined
   const dits = [...c.paiementsSansCredit].sort((a, b) => b.ancienneteJours - a.ancienneteJours)
     .map((p) => `${formatDate(p.journee)} (${montantDit(p.montantCentimes)}, il y a ${pluriel(p.ancienneteJours, 'jour')})`)
-  return `Les journées comptables du ${enumeres(dits)}, les plus anciennes d’abord. Un mois du relevé manque peut-être ; `
+  return `${lesDu(dits.length, 'journée comptable', 'journées comptables', 'f')} ${enumeres(dits)}${dits.length > 1 ? ', les plus anciennes d’abord' : ''}. Un mois du relevé manque peut-être ; `
     + 'sinon, le virement n’est pas arrivé.'
 }
 
@@ -330,7 +352,7 @@ export function detailDesAssociationsARevoir(c: ControlesCalcules): string | und
   const dits = c.associationsARevoir.map((a) => a.genre === 'association_incoherente'
     ? `${formatDate(a.date)} (les paiements ne font plus son montant)`
     : `${formatDate(a.date)} (${a.raison === 'ventes' ? 'classé par des encaissements de factures' : a.raison === 'personnel' ? 'classé en virement personnel' : 'écarté'})`)
-  return `Les crédits du ${enumeres(dits)}. Dans Banque, la fiche du crédit défait l’association.`
+  return `${lesDu(dits.length, 'crédit', 'crédits')} ${enumeres(dits)}. Dans Banque, la fiche du crédit défait l’association.`
 }
 
 export function detailDesExercicesEnEcart(c: ControlesCalcules): string | undefined {
@@ -348,6 +370,14 @@ export function detailDesExercicesEnEcart(c: ControlesCalcules): string | undefi
     return `Exercice ${x.annee} (à la date du crédit) : paiements associés ${montantDit(x.paiementsAssociesCentimes)}, crédits de `
       + `l’assurance maladie classés en recette ${montantDit(x.creditsEnRecetteCentimes)}${causes.length > 0 ? ` — crédits ${causes.join(' ; ')}` : ''}.${aClasser}`
   }).join(' ')
+}
+
+/** Ce que la Vue d'ensemble et la Révision disent d'un calcul MUET (une lecture partielle ou refusée), À PART de « les données
+ *  du dossier » : seuls ces cinq points se taisent, jamais la révision entière (relecture du 24/11/2026). Nul hors du silence —
+ *  et sans objet (la section non offerte, le module fermé), rien ne se dit. */
+export function phraseDuSilence(c: ControlesDeLAssuranceMaladie): string | null {
+  if (c.etat !== 'muet') return null
+  return `${c.raison} Les points des paiements de l’assurance maladie se taisent donc : leur silence ne prouve rien. Recharge la page.`
 }
 
 /** Les nombres des cinq points, zéro hors d'un calcul (sans objet ou muet : la lecture partielle se dit ailleurs). */

@@ -192,12 +192,12 @@ function dossier2025() {
   }
 }
 
-function rendre(o: { annee?: ValeurAnnee; valides?: number[]; onNavigate?: (t: DossierTab) => void } = {}) {
+function rendre(o: { annee?: ValeurAnnee; valides?: number[]; onNavigate?: (t: DossierTab) => void; codeNaf?: string | null } = {}) {
   return render(
     <FournisseurPanneauDroit>
       <ContexteDossier annee={o.annee ?? 2025} valides={o.valides ?? []}>
         <RevisionTab
-          codeNaf={null} dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false}
+          codeNaf={o.codeNaf ?? null} dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false}
           onNavigate={o.onNavigate ?? (() => {})}
         />
       </ContexteDossier>
@@ -290,6 +290,22 @@ describe('RevisionTab — rien avant d’avoir lu, rien sur une lecture partiell
     expect(screen.queryByRole('button', { name: /Ouvrir le cycle/ })).toBeNull()
     expect(screen.queryByText('à justifier')).toBeNull()
   })
+
+  // LES PAIEMENTS DE L'ASSURANCE MALADIE (NOE6) : refusés, ils ne taisent que leurs cinq points du cycle Recettes — jamais la
+  // révision entière, et rien du tout d'un dossier que la section n'offre pas.
+  it.each(['imports_assurance_maladie', 'paiements_assurance_maladie', 'paiements_assurance_maladie_mouvements'])(
+    'la table %s refusée : la révision reste offerte ; un dossier de santé dit que ces points se taisent', async (table) => {
+      dossier2025()
+      faux.refusees.add(table)
+      const { unmount } = rendre()
+      expect(await screen.findByRole('button', { name: 'Ouvrir le compte 512000' })).toBeDefined()
+      expect(screen.queryByText(/Les données du dossier n'ont pas pu être lues/)).toBeNull()
+      expect(screen.queryByText(/assurance maladie/)).toBeNull()
+      unmount()
+      rendre({ codeNaf: '86.90E' })
+      expect(await screen.findByRole('button', { name: 'Ouvrir le compte 512000' })).toBeDefined()
+      expect(screen.getByText(/assurance maladie.*leur silence ne prouve rien/)).toBeDefined()
+    })
 
   it('les relevés qui ne bouclent pas, illisibles, suspendent aussi la révision', async () => {
     dossier2025()

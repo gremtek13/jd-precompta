@@ -54665,3 +54665,20 @@ une version qui suit la dernière (comme EL2), et le socle se régénère (douze
 créées après sans pose sous condition (`trace_des_droits`, `situations_publiees`, `lettres_de_mission`, `modeles_lettre_de_mission`,
 `honoraires_factures`, `honoraires_deposes`) manqueraient aux fichiers. AFF2-Q4 (A) consignée : le rôle des acomptes sur dividendes
 prendra le premier rang libre ; la conception 45 ne nommait pas le 660, rien n'y change.
+
+### 24/11/2026 — NOE6 RELU ET SON DRAPEAU LEVÉ
+
+Relecture adverse de NOE6, puis `CONTROLES_ASSURANCE_MALADIE_PREVUS` levé (ses deux états gardés par accesseur). Deux défauts
+corrigés, chacun par un test d'abord rouge : (1) une lecture des paiements refusée ou partielle entrait dans `lectureIncomplete`
+de la Vue d'ensemble (`lib/checklistLecture.ts`) — le bandeau « Les données du dossier » sur TOUT dossier, même sans activité de
+santé ni import, et la Révision entière suspendue ; elle n'en sort plus : le calcul muet se dit à part (`phraseDuSilence`, dans
+ChecklistTab et RevisionTab), et un dossier que la section n'offre pas reste celui d'hier. (2) Le paiement de fin d'année dont
+le crédit tombe dans un exercice VALIDÉ (non associable, la base le refuse) se disait « qu'aucun crédit ne verse » jusqu'à la
+validation suivante : il se tait quand un crédit figé, dans sa fenêtre, a son montant ou le libellé de l'assurance maladie.
+Les détails disent « Le crédit du » d'un seul. Vérifié : aucun libellé, nom ni numéro dans les mots ou la piste ; muet sur
+toute lecture partielle, la piste refusée ; aucun préalable de la validation ; le FEC hors de portée (relevé de `src/lib`) ;
+le SNIR absent ; un dossier hors de la santé identique à l'égalité stricte, drapeau baissé ou levé (points et piste d'audit,
+CSV compris) ; aucune branche client. Mutations : quatre, toutes tuées. Banc (`noe6` dans vitrine.mjs, un import fictif du
+cabinet infirmier dans le faux Supabase) : Vue d'ensemble et cycle Recettes, ordinateur et téléphone ; `debordements.mjs` à 0
+sur checklist et révision aux cinq largeurs. Restent, non bloquants : le relevé couvert jugé sur tous les comptes à la fois,
+une lecture refusée qui refuse aussi la piste d'un dossier sans santé, l'écart d'un exercice importé en partie (NOE6R-Q1).

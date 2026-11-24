@@ -79,6 +79,8 @@ const LECTEURS_PERMIS: Readonly<Record<string, string>> = {
     + 'dire avant le clic la fermeture de l’assurance maladie que la base refuserait ; aucun montant, rien de compté',
   'src/lib/optionsDuCabinetVue.test.ts': 'les essais de l’écran des modules, qui confrontent cette lecture au critère de la migration',
   'src/pages/OptionsDesCabinets.test.tsx': 'les essais de l’écran des modules, dont le faux client rend les associations',
+  'src/pages/dossier/RevisionTab.test.tsx': 'les essais de la Révision (NOE6), dont le faux client REFUSE chacune des trois tables : '
+    + 'leurs points se taisent seuls, la révision demeure',
 }
 
 function fichiers(dossier: string): string[] {

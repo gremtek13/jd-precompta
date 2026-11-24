@@ -595,10 +595,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`components/FactureAssuranceMaladie.tsx`, à côté de NOE4, même règle et même module) → « BOR4 : L'ÉCRAN D'IMPORT DU FACTURÉ ».
   BOR5 (20/11/2026), le dû contre le payé, estimé, en compte courant par organisme (`lib/duContrePaye.ts`, pur ; la section du cabinet sous
   `DU_CONTRE_PAYE_PREVU` baissé, et, pour le client « Banque », dans « Ma banque », DU-Q3) → « BOR5 : CE QUE L'ASSURANCE MALADIE DOIT ».
-  NOE6 (20/11/2026), sans migration, derrière `CONTROLES_ASSURANCE_MALADIE_PREVUS` baissé (`lib/controlesAssuranceMaladie.ts`, pur) :
+  NOE6 (20/11/2026), sans migration, `CONTROLES_ASSURANCE_MALADIE_PREVUS` levé le 24/11/2026 après sa relecture adverse (leur silence
+  dit à part, jamais dans « les données du dossier ») (`lib/controlesAssuranceMaladie.ts`, pur) :
   cinq attentions de la Vue d'ensemble et de la Révision (cycle recettes), jamais préalables, sous la règle de la section et le module ;
   le contrôle de l'exercice à la date du CRÉDIT ; le SNIR jamais comparé (NOE-E1) ; la piste d'audit cite le paiement associé
-  (journée, factures ; lue en partie, l'export se refuse), le FEC inchangé → « NOE6 : LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE ».
+  (journée, factures ; lue en partie, l'export se refuse), le FEC inchangé → « NOE6 : LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE », « NOE6 RELU ET SON DRAPEAU LEVÉ ».
   BOR6, première partie (20/11/2026, BOR-Q9 (A)), `REFUS_DES_BORDEREAUX_PREVU` levé, éprouvé dans un navigateur : un PDF qui a la forme d'un
   bordereau de télétransmission (`porteLaFormeDUnBordereau`, BOR1) se refuse dans les quatre préparateurs d'un fichier choisi
   (`sansBordereau`, `refusDesBordereauxAuDepot.test.ts`), avant tout envoi ; restent `receive-email`, l'état des paiements, une

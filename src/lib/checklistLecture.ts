@@ -62,14 +62,6 @@ export interface LectureDeLaChecklist extends Omit<DonneesDeLaChecklist, 'releve
   caisse: LectureDeLaCaisse
 }
 
-/** Le motif d'une lecture des paiements de l'assurance maladie qui n'est pas entière, ou nul. */
-function motifDesPaiements(lu: Awaited<ReturnType<typeof lireLesPaiementsAssuranceMaladie>> | null): string | null {
-  if (lu === null || lu.etat === 'sans_banque') return null
-  if (lu.etat === 'echec') return `les paiements de l’assurance maladie : ${lu.motif}`
-  const partielle = [lu.imports, lu.paiements, ...(lu.associations ? [lu.associations] : [])].find((l) => !l.complete)
-  return partielle ? `les paiements de l’assurance maladie : ${partielle.motif ?? 'lecture incomplète'}` : null
-}
-
 // `ventesParLesFactures` : le réglage du dossier, sans valeur par défaut — un dossier qui a basculé lit aussi ses ventes
 // facturées (étape VF5f) ; un autre, rien de plus. `plan` : le plan du dossier (ligne 43, conception § 2.4), obligatoire —
 // l'ouverture de la banque se cherche au compte de SA banque.
@@ -238,9 +230,10 @@ export async function lireLaChecklist(
       // Les comptes bancaires illisibles (MCB4) : les mois manquants suivent la règle du dossier, les ruptures se taisent.
       ?? (comptesBancaires.etat === 'illisible' ? `les comptes bancaires du dossier : ${comptesBancaires.motif}` : null)
       // L'inventaire lu en partie (INV6) : ses points se taisent, la révision n'en propose aucune preuve, et la liste le dit.
-      ?? (lectureInventaire.etat === 'incomplete' ? `l’inventaire du dossier : ${lectureInventaire.motif}` : null)
-      // Les paiements de l'assurance maladie (NOE6) : refusés ou lus en partie, leurs contrôles se taisent, et la liste le dit.
-      ?? motifDesPaiements(lectureAssuranceMaladie),
+      ?? (lectureInventaire.etat === 'incomplete' ? `l’inventaire du dossier : ${lectureInventaire.motif}` : null),
+    // Les paiements de l'assurance maladie (NOE6) n'entrent PAS ici (relecture du 24/11/2026) : refusés ou lus en partie, ils ne
+    // taisent que leurs cinq points, que `phraseDuSilence` dit à part — et rien d'un dossier que la section n'offre pas. Ici,
+    // ils suspendaient la révision entière et la Vue d'ensemble de tout dossier, même sans activité de santé.
     // L'inventaire lu en entier, ou sans objet (le drapeau baissé, ou lu en partie : le motif est dit au-dessus).
     inventaire: lectureInventaire.etat === 'lu' ? lectureInventaire.inventaire : { etat: 'sans_objet' },
     // Nuls les drapeaux baissés : aucun point de plus. Le relevé lu en entier, ou le rapprochement se tait.
