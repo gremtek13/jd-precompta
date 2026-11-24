@@ -389,6 +389,12 @@
 -- de `replique_227` portée à 243 : sans préparée, IDENTIQUE (100 tables, 20 lignes, 200 clés) ; NOE3, NOE5, OPT1 et BOR3
 -- appliquées et trois associations semées par la fonction de NOE5, le script d'avant s'arrêtait sur ses clés, celui-ci rend
 -- IDENTIQUE (107 tables, 30 lignes dont les trois associations, 213 clés) ; ancré avant le mouvement, il s'arrête en 23503.
+--
+-- 24/11/2026, EXP-Q4 : `reglages_d_export` (préparée) entre au plan quand sa table existe (le bloc « Les réglages de l'export
+-- vers un logiciel comptable », ci-dessous), juste après `hausses_vues_avec_le_client`. Sur une copie de `replique_227` portée à
+-- 250 : sans la préparée, IDENTIQUE (108 tables, 20 lignes, 216 clés) ; avec elle et un réglage semé dans `test` par sa
+-- fonction, IDENTIQUE (109 tables, 21 lignes dont le réglage, 217 clés). Rejoué après l'entrée du bloc d'EL7 : les mêmes ; la
+-- préparée d'EL7 appliquée aussi, IDENTIQUE (109 tables, 21 lignes, 218 clés).
 \set ON_ERROR_STOP on
 drop schema if exists essai_restauration cascade;
 create schema essai_restauration;
@@ -1254,6 +1260,26 @@ begin
   if exists (select 1 from pg_attribute a where a.attrelid = to_regclass('public.ecritures_libres') and a.attname = 'contre_passe_id'
                and not a.attisdropped) then
     insert into essai_restauration._vagues (table_nom, colonne) values ('ecritures_libres','contre_passe_id');
+  end if;
+end $$;
+
+-- ══ Les réglages de l'export vers un logiciel comptable (EXP-Q4) ══ Au plan du code quand `REGLAGES_D_EXPORT_PREVUS` est
+-- levé — c'est-à-dire quand sa migration est en base : le script met sa table juste après `hausses_vues_avec_le_client`
+-- (ORDRE_RESTAURATION_PREVU : après le dossier, une place qu'aucun voisin ne fixe ; le bloc de l'alerte du chiffre d'affaires,
+-- joué plus haut, l'y a mise), les tables qui suivent reculant d'un rang ; son chemin. Aucune vague. Sa clé vers le dossier se
+-- recopie alors comme les autres. Joué après le bloc de la contre-passation (EL7) et avant celui des options des cabinets, qui
+-- reste le dernier. Absente de la base, rien n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au
+-- plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.reglages_d_export') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'hausses_vues_avec_le_client';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'reglages_d_export');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('reglages_d_export','direct',null,null);
   end if;
 end $$;
 

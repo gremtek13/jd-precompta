@@ -252,6 +252,12 @@ vi.mock('../../lib/profilsDExport', async (original) => {
   return { ...vrai, get EXPORT_VERS_UN_LOGICIEL_OFFERT() { return drapeauExport.leve ?? false } }
 })
 afterEach(() => { drapeauExport.leve = undefined })
+// Les réglages gardés de l'export (EXP-Q4, `REGLAGES_D_EXPORT_PREVUS`) : BAISSÉS ici, quel que soit le vrai — l'export que l'onglet
+// monte se joue avec les réglages proposés d'hier ; les réglages gardés sont éprouvés par ExportVersUnLogiciel.test.tsx.
+vi.mock('../../lib/reglagesDExport', async (original) => {
+  const vrai = await original<typeof import('../../lib/reglagesDExport')>()
+  return { ...vrai, get REGLAGES_D_EXPORT_PREVUS() { return false } }
+})
 
 // LA CAISSE (ligne 26.6, étape C3b) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
 // réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.

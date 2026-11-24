@@ -345,13 +345,16 @@ describe('les essais de la base, rejoués en production', () => {
     // préparée) : il crée des dossiers, des écritures libres et des exercices validés fictifs, suspend les déclencheurs d'une table
     // le temps d'une sous-transaction, mute des fonctions, une garde et une contrainte. Ce qui contourne la RLS se rejoue partout :
     // le bloc XL de rls.sql.
+    // Le quarantième, reglagesDExport, le 24/11/2026 (EXP-Q4, migration `reglages_d_export`, préparée) : il crée des dossiers
+    // fictifs, écrit en direct sous le propriétaire, et mute la fonction, la garde, deux policies et la liste fermée. Son
+    // catalogue et ses profils se rejouent partout : le bloc RX de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'associationPaiementsAssuranceMaladieSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'contrePassationDesEcrituresLibres (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'ecrituresLibres (son en-tête)', 'exercicesDuDossier (son en-tête)', 'facturesAssuranceMaladieSuppression (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'hausseDuChiffreDAffairesSuppression (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'optionsDesCabinetsEnCours (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'provisions (son en-tête)',
-      'recompositionDesVentes (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
+      'recompositionDesVentes (son en-tête)', 'reglagesDExport (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
       'situationsPublieesMutations (une méta-commande de psql)', 'stocks (son en-tête)', 'traceDesDroitsSuppression (son en-tête)',
       'validationDeLInventaire (son en-tête)',
     ])

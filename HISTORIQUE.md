@@ -54733,3 +54733,24 @@ d'union) : sur téléphone, le détail du Bilan coupait « EL2026- / 0002 ». Ch
 `agent-comptable` redéployée le 24/11/2026 par sa ligne d'import, au commit `c9912ce34a582dc1eeb9fbd5c4e3a57473fa5cba` (celui d'EL6 sur
 `main`), `verify_jwt` à faux comme `supabase/config.toml` : version 63. Sans session, elle répond 401. L'outil `lister_ecritures_libres`
 est donc en ligne ; aucun appel réel de l'assistant sur une écriture libre n'a encore été fait (le dossier `test` n'en porte pas).
+
+### 24/11/2026 — EXP-Q4 : LES RÉGLAGES DE L'EXPORT GARDÉS PAR DOSSIER (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) EXP-Q4 (A) du 18/11/2026 : « un réglage par dossier, saisi par le cabinet, sans défaut ».
+`20261124160000_reglages_d_export` (par l'outil, `44d7903d…`) : une ligne par dossier et par logiciel, les trois réglages de la
+conception 57 (§ 0 point 12) en COLONNES TYPÉES, nulles « à saisir » — la longueur des comptes (6 à 12), la forme des tiers
+(`nos_auxiliaires`, ou `sans_auxiliaires` comme ACD écrit un BNC), le code de chacun des cinq journaux ; un jsonb n'aurait rien
+typé de plus. Le logiciel : une liste fermée qu'une fonction immuable tient pour la contrainte (`logiciels_d_export()`, `acd`), et
+qu'un `create or replace` étend sans collage. `enregistrer_reglages_d_export` (definer) : l'accès d'abord (`admin_du_dossier`,
+aucune branche client), sept refus dans l'ordre du module, la version lue sous verrou, l'auteur posé ; une garde invoker (la
+fonction, ou la réinsertion du super-administrateur), donc sans la porte. `lib/reglagesDExport.ts` : le profil, ou ce qui reste à
+saisir ; `profilsDExport` gagne la forme des tiers ; l'écran lit, préremplit, enregistre sous verrou puis relit, une lecture ratée
+ne préremplissant rien, l'export à la main restant possible — derrière `REGLAGES_D_EXPORT_PREVUS` baissé. Sur une copie de
+`replique_227` portée à 250 (les trois contrôles aux valeurs attendues) : l'essai 53 sur 53, 8 mutations sur 8 ; `rls.sql` 0 sur
+1 346, 177 mutations, bloc RX compris ; restauration IDENTIQUE (109 tables) ; en simulation, dérive 251, socle 84 `e54200f4…`,
+inventaire 3 500 `5ad6ef4a…` des deux côtés ; le retour rend la signature de 250. Questions : EXPQ4-migration, EXPQ4-Q1, EXPQ4-Q2.
+Rejoué le même jour à la suite d'EL7 (sa préparée entrée entre-temps ; la mienne inchangée, `44d7903d…`) : le bloc RX après le bloc
+XL, celui de la restauration après celui de la contre-passation. Sur une nouvelle copie portée à 250, même signature : sans les
+deux préparées, `rls.sql` 0 sur 1 336, 173 mutations, restauration IDENTIQUE (108 tables) ; avec la mienne seule, 0 sur 1 347,
+177 mutations (XL en attente), IDENTIQUE (109 tables) ; les deux s'appliquent dans les deux ordres, à la même signature, et
+ensemble `rls.sql` rend 0 sur 1 349 et 178 mutations, les deux essais 53 et 50 sans faute, la restauration IDENTIQUE (218 clés).

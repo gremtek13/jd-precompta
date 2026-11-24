@@ -51,6 +51,7 @@ import { FACTURES_ASSURANCE_MALADIE_EN_BASE } from './importDuFactureAssuranceMa
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssuranceMaladie'
 import { ECRITURES_LIBRES_PREVUES, TABLES_DES_ECRITURES_LIBRES } from './ecritureLibre'
 import { COLONNE_DE_LA_CONTRE_PASSATION, CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
+import { REGLAGES_D_EXPORT_PREVUS, TABLES_DES_REGLAGES_D_EXPORT } from './reglagesDExport'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -722,6 +723,21 @@ export function auxVaguesDeLaContrePassation(a: { table: string; colonne: string
   return prevue || !(a.table === 'ecritures_libres' && a.colonne === COLONNE_DE_LA_CONTRE_PASSATION)
 }
 
+// LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP-Q4 (A) ; migration `reglages_d_export`, PRÉPARÉE le 24/11/2026,
+// supabase/preparees/20261124160000_reglages_d_export.sql) : la longueur des comptes, la forme des comptes de tiers et les
+// codes des journaux qu'un dossier garde pour un logiciel. Sous le drapeau de la migration (`REGLAGES_D_EXPORT_PREVUS`,
+// src/lib/reglagesDExport.ts), baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde. Sa
+// relation au dossier (cascade), son rang (juste après les marques de l'alerte du chiffre d'affaires, une place qu'aucun voisin
+// ne fixe, après le dossier), son chemin, direct ; aucune vague ; sa clé est la commune, `id`. La restauration la réinsère par
+// la porte que sa policy et sa garde ouvrent au super-administrateur (`reglages_d_export_restauration`), sa version, son auteur
+// et son instant tels qu'ils ont été écrits. sauvegardeReglagesDExport.test.ts éprouve le plan prévu et le plan du jour, sous
+// chaque état du drapeau.
+
+/** Une table au plan, côté réglages d'export : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDesReglagesDExport(table: string, prevus: boolean): boolean {
+  return prevus || !(TABLES_DES_REGLAGES_D_EXPORT as readonly string[]).includes(table)
+}
+
 /** Une relation au graphe du jour, côté écritures libres : celles de sa table, et celle du brouillon vers une écriture libre,
  *  attendent la migration, comme la table. */
 export function auGrapheDesEcrituresLibres(r: Pick<Relation, 'enfant' | 'parent'>, prevues: boolean): boolean {
@@ -770,6 +786,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDeLAffectation(table, AFFECTATION_PREVUE)
     && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_EN_BASE)
     && auPlanDesEcrituresLibres(table, ECRITURES_LIBRES_PREVUES)
+    && auPlanDesReglagesDExport(table, REGLAGES_D_EXPORT_PREVUS)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -961,6 +978,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   // L'alerte de hausse du chiffre d'affaires (préparée) : le seuil et les marques de son dossier.
   { enfant: 'seuils_du_chiffre_d_affaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'hausses_vues_avec_le_client', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // Les réglages de l'export vers un logiciel comptable (EXP-Q4, préparée) : ceux de son dossier.
+  { enfant: 'reglages_d_export', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   // Les paiements de l'assurance maladie (NOE3, en production) : l'import et ses paiements, à leur dossier ; le paiement à son
   // import, en cascade (sa garde le tient dans le dossier de son import).
   { enfant: 'imports_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -1422,6 +1441,9 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   // table que toute base porte — l'essai de restauration l'y ancre.
   'seuils_du_chiffre_d_affaires',
   'hausses_vues_avec_le_client',
+  // Les réglages de l'export vers un logiciel comptable (EXP-Q4, préparée) : après le dossier ; une place qu'aucun voisin ne
+  // fixe — l'essai de restauration la met après `hausses_vues_avec_le_client`.
+  'reglages_d_export',
   'regles_bancaires_ignorees',
   'soldes_reportes',
   'sous_dossiers',
@@ -2024,6 +2046,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   previsions_publiees: { acces: 'direct' },
   seuils_du_chiffre_d_affaires: { acces: 'direct' },
   hausses_vues_avec_le_client: { acces: 'direct' },
+  reglages_d_export: { acces: 'direct' },
   imports_assurance_maladie: { acces: 'direct' },
   paiements_assurance_maladie: { acces: 'direct' },
   paiements_assurance_maladie_mouvements: { acces: 'direct' },

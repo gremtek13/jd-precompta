@@ -7,8 +7,9 @@ import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from './cheminDuDossier
 // UN SEUL MOTEUR, DES PROFILS QUI METTENT EN FORME. Le fichier part du FEC RÉGLEMENTAIRE tel que l'onglet Écritures le
 // produit (`numeroterFec`, le rendu des banques, puis `formaterFec`) : ce module le RELIT colonne par colonne et ne fait que
 // le réécrire selon le profil — l'encodage, la longueur des comptes, les codes des journaux, la numérotation continue, les
-// quatre champs du BNC, les à-nouveaux. Il ne recalcule aucune écriture, aucun montant, aucune date, aucune pièce : un
-// export qui contredirait le FEC contredirait ce que la validation fige. Le FEC lui-même ne change pas d'un octet.
+// quatre champs du BNC, les à-nouveaux, la forme des comptes de tiers. Il ne recalcule aucune écriture, aucun montant, aucune
+// date, aucune pièce : un export qui contredirait le FEC contredirait ce que la validation fige. Le FEC lui-même ne change pas
+// d'un octet. Les réglages d'un dossier, gardés en base (EXP-Q4 (A)), se lisent et se jugent dans lib/reglagesDExport.ts.
 //
 // LE PROFIL « ACD » (relevé sur un FEC produit par ACD pour un BNC, 17/11/2026, § 3.1 de la recherche) : tabulation, CRLF,
 // Windows-1252, décimale à virgule et dates AAAAMMJJ (celles du FEC, inchangées), comptes complétés de zéros à la longueur
@@ -88,6 +89,20 @@ export const QUATRE_CHAMPS_DANS_L_EXPORT: readonly { id: QuatreChampsDansLExport
   { id: 'vides', libelle: 'Les quatre champs vides' },
 ]
 
+/**
+ * La forme des comptes de tiers dans le fichier (EXP-Q4 (A), le troisième réglage du dossier, § 0 point 12 de la recherche) :
+ * `nos_auxiliaires`, CompAuxNum et CompAuxLib comme le FEC les écrit (la racine du plan du dossier, F, FI ou C, puis la clé du
+ * tiers — l'import du logiciel a ses propres cases pour les racines) ; `sans_auxiliaires`, les deux colonnes vides, chaque
+ * ligne sur son compte collectif, comme ACD écrit le FEC d'un BNC (relevé du 17/11/2026 : « aucun auxiliaire »). Une autre
+ * forme — des racines remplacées par celles du logiciel — attend un fichier d'exemple (EXP-E1) : on ne la devine pas.
+ */
+export type FormeDesTiers = 'nos_auxiliaires' | 'sans_auxiliaires'
+
+export const FORMES_DES_TIERS: readonly { id: FormeDesTiers; libelle: string }[] = [
+  { id: 'nos_auxiliaires', libelle: 'Nos comptes auxiliaires, comme le FEC les écrit' },
+  { id: 'sans_auxiliaires', libelle: 'Sans compte auxiliaire (CompAuxNum et CompAuxLib vides), comme ACD écrit le FEC d’un BNC' },
+]
+
 export interface ReglagesDuProfil {
   /** Le nombre de caractères d'un compte général dans le logiciel, de 6 à 12 ; les comptes se complètent de zéros à droite. */
   longueurDesComptes: number
@@ -96,17 +111,23 @@ export interface ReglagesDuProfil {
   quatreChamps: QuatreChampsDansLExport
   /** Sans le journal des à-nouveaux : le logiciel a déjà ses propres à-nouveaux, les importer les doublerait. */
   sansANouveaux: boolean
+  formeDesTiers: FormeDesTiers
 }
 
 export const LONGUEUR_DES_COMPTES_MIN = 6
 export const LONGUEUR_DES_COMPTES_MAX = 12
 
-/** Ce que l'écran PROPOSE pour ACD : huit chiffres (le FEC relevé), nos codes de journaux, nos valeurs, les à-nouveaux. */
+/**
+ * Ce que l'écran PROPOSE pour ACD tant que les réglages ne se gardent pas en base (`REGLAGES_D_EXPORT_PREVUS` baissé,
+ * lib/reglagesDExport.ts) : huit chiffres (le FEC relevé), nos codes de journaux, nos valeurs, les à-nouveaux, nos
+ * auxiliaires. Les réglages gardés, eux, n'ont aucune valeur par défaut (EXP-Q4 (A)).
+ */
 export const REGLAGES_PROPOSES_ACD: ReglagesDuProfil = {
   longueurDesComptes: 8,
   journaux: {},
   quatreChamps: 'nos_valeurs',
   sansANouveaux: false,
+  formeDesTiers: 'nos_auxiliaires',
 }
 
 /** Combien de refus l'écran nomme un par un ; le reste se compte. */
@@ -175,6 +196,8 @@ export function mettreEnFormePourAcd(fec: string, reglages: ReglagesDuProfil): E
   const iModeRglt = colonne('ModeRglt')
   const iNatOp = colonne('NatOp')
   const iIdClient = colonne('IdClient')
+  const iCompAuxNum = colonne('CompAuxNum')
+  const iCompAuxLib = colonne('CompAuxLib')
 
   const numeros = new Map<string, number>()
   const comptes = new Map<string, string>()
@@ -217,6 +240,11 @@ export function mettreEnFormePourAcd(fec: string, reglages: ReglagesDuProfil): E
       champs[iNatOp] = ''
       champs[iIdClient] = ''
       if (reglages.quatreChamps === 'vides') { champs[iDateRglt] = ''; champs[iModeRglt] = '' }
+    }
+    // Sans auxiliaire : la ligne reste sur son compte collectif (le 401, le 411 du plan), ses montants et sa pièce inchangés.
+    if (reglages.formeDesTiers === 'sans_auxiliaires') {
+      if (iCompAuxNum >= 0) champs[iCompAuxNum] = ''
+      if (iCompAuxLib >= 0) champs[iCompAuxLib] = ''
     }
 
     const ligne = champs.join('\t')

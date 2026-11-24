@@ -809,7 +809,10 @@ const SANS_LECTURE_AU_MONTAGE: Record<string, string> = {
     + '(lib/paquetDArchiveLecture.ts : lue en partie, aucun paquet ; PaquetDArchiveBouton.test.tsx) ; n’écrit rien en base',
   'pages/dossier/ExportVersUnLogiciel.tsx': 'drapeau `EXPORT_VERS_UN_LOGICIEL_OFFERT` baissé : l’onglet Écritures ne le monte pas ; '
     + 'levé, il reçoit le FEC de l’onglet, aux mêmes préalables, mesure le poids des justificatifs sur la case cochée et ne les lit '
-    + 'qu’au clic « Télécharger l’archive » (ExportVersUnLogiciel.test.tsx) ; n’écrit rien en base',
+    + 'qu’au clic « Télécharger l’archive » (ExportVersUnLogiciel.test.tsx) ; drapeau `REGLAGES_D_EXPORT_PREVUS` baissé, il ne lit ni '
+    + 'n’écrit rien en base ; levé, il lit les réglages gardés du dossier au clic qui l’ouvre, « Lecture… » sans formulaire tant '
+    + 'qu’ils ne sont pas revenus, rien de prérempli ni d’enregistrement offert sur une lecture ratée ou partielle, et n’écrit '
+    + 'qu’au clic « Enregistrer ces réglages », par la fonction de la base, puis relit',
   'pages/dossier/AjouterDocumentsModal.tsx': 'lit et dépose sur un dépôt de fichiers',
   'pages/dossier/ImportDossierModal.tsx': 'lit et dépose sur le choix d’un dossier de fichiers',
   'pages/dossier/CategoriserTiersModal.tsx': 'reçoit pièces, catégories et règles de PiecesTab ; écrit sur un clic',
