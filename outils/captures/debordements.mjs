@@ -63,7 +63,7 @@
 // Une ligne de plus dit le compte avant le total.
 import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
-import { SECTION_LIBRE, ecritureLibrePassee, ecritureLibreRetiree, saisieLibreRemplie } from './ecrituresLibres.mjs'
+import { SECTION_LIBRE, ecritureLibrePassee, ecritureLibreRetiree, ecrituresLibresSemees, ensembleDeLExerciceClos, panneauFerme, saisieLibreRemplie } from './ecrituresLibres.mjs'
 
 // LA CAISSE (ligne 26.6, étape C4) : `CAISSE=1` joue l'onglet Caisse et la fiche de son versement d'espèces, le drapeau
 // `CAISSE_EXPORTEE` (src/lib/caisse.ts) levé dans la copie de travail le temps du banc — jamais commité. Baissé, l'adresse
@@ -130,6 +130,48 @@ const VISITES_DES_ECRITURES_LIBRES = [
   {
     dossier: 'd1', onglet: 'ecritures', nom: 'ecritures-libres/retiree',
     apres: async (page) => { await (await ecritureLibreRetiree(page)).scrollIntoViewIfNeeded() },
+  },
+  // EL6 : deux écritures libres passées (le 108000 et le 486000, l'une avec son extourne ; `ecrituresLibresSemees`), puis leur
+  // marque sous le libellé d'un compte de la Balance, au bout de sa ligne dans le détail du Bilan, le fait de la preuve d'un compte
+  // de la Révision et la référence de son détail ; enfin le travail « écritures libres » du programme de l'Ensemble, sur l'exercice
+  // 2025 terminé de la société (d8, `ensembleDeLExerciceClos`).
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'ecritures-libres/semees',
+    apres: async (page) => { await ecrituresLibresSemees(page); await SECTION_LIBRE(page).scrollIntoViewIfNeeded() },
+  },
+  {
+    dossier: 'd1', onglet: 'statistiques', nom: 'ecritures-libres/balance',
+    apres: async (page) => {
+      await page.getByText(/^dont écriture libre n° EL2026-0002/).first().waitFor({ timeout: 10000 })
+      await page.getByText(/^dont écriture libre n° EL2026-0001/).first().scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'bilan', nom: 'ecritures-libres/bilan',
+    apres: async (page) => {
+      await page.getByText('Détail par compte', { exact: true }).click()
+      await page.getByText(/dont écriture libre n° EL2026-0002/).first().scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'revision', nom: 'ecritures-libres/revision-preuve',
+    apres: async (page) => {
+      await page.getByRole('button', { name: 'Ouvrir le compte 108000', exact: true }).click()
+      await page.getByText(/^1 écriture libre de l’expert-comptable porte/).first().scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'revision', nom: 'ecritures-libres/revision-detail',
+    apres: async (page) => {
+      await panneauFerme(page)
+      await page.getByRole('button', { name: 'Ouvrir le compte 486000', exact: true }).click()
+      await page.getByText(/^Le détail \(/).first().click()
+      await page.getByText(/État des écritures libres 2026, n° EL2026-0002/).first().scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd8', onglet: 'revision', nom: 'ecritures-libres/revision-ensemble',
+    apres: async (page) => { await ensembleDeLExerciceClos(page) },
   },
 ]
 

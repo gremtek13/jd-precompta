@@ -11,6 +11,7 @@ import {
 import { instantaneDeLaPreuve, lireInstantaneDePreuve, soldeEnMots, type DocumentPourRevision, type TypeDeReference } from '../../lib/revisionPreuves'
 import { LONGUEUR_MAX_MOTIF, LONGUEUR_MAX_PRECISION } from '../../lib/revisionSoldes'
 import type { EtatDecisionRevision, Piece, PorteeDecisionRevision, RevisionJustification, RevisionPreuve } from '../../lib/types'
+import { NumerosEntiers } from '../../components/NumerosEntiers'
 import {
   CAUSES_A_REVOIR, ETAT_DU_SOLDE, LIBELLES_DES_DECISIONS, PASTILLE_DU_VERDICT, PASTILLE_DE_LA_DECISION,
 } from '../../lib/revisionLibelles'
@@ -169,7 +170,7 @@ export default function FicheSolde(p: PropsFicheSolde) {
           <p className="fiche-mouvement-note"><strong>Elle n’établit pas : </strong>{c.preuve.netablitPas}</p>
           {c.preuve.faits.length > 0 && (
             <ul className="fiche-mouvement-note" style={{ margin: 0, paddingLeft: 18 }}>
-              {c.preuve.faits.map((f, n) => <li key={`${f.cle}-${n}`}>{f.texte}</li>)}
+              {c.preuve.faits.map((f, n) => <li key={`${f.cle}-${n}`}><NumerosEntiers texte={f.texte} /></li>)}
             </ul>
           )}
           {c.preuve.detail.length > 0 && (
@@ -180,9 +181,9 @@ export default function FicheSolde(p: PropsFicheSolde) {
                   const nom = l.reference ? p.nommer(l.reference) : null
                   return (
                     <li key={`${l.reference?.id ?? 'ligne'}-${n}`}>
-                      {l.libelle}
+                      <NumerosEntiers texte={l.libelle} />
                       {l.montantCentimes !== null && ` — ${euros(l.montantCentimes)}`}
-                      {nom && <span className="nom-fichier">{` — ${nom}`}</span>}
+                      {nom && <span className="nom-fichier">{' — '}<NumerosEntiers texte={nom} /></span>}
                     </li>
                   )
                 })}

@@ -54720,3 +54720,10 @@ l'essai 50 sans faute, 12 mutations sur 12 ; `rls.sql` 291/0, 174/174 (bloc XL),
 (108 tables, la paire en deux vagues) ; `ecrituresLibres.sql` 67/0 (EL-F1 apprend la garde) ; le retour rend la signature de 250.
 Relevé en passant : le numéro d'une écriture libre est le plus haut de l'année plus un — la dernière retirée se reprend ; la
 confirmation du retrait le niait, corrigée (EL7-Q2). Questions : EL7-migration, EL7-Q1, EL7-Q2.
+
+24/11/2026 — EL6 vu dans un navigateur. Au banc, deux écritures libres fictives passées par l'écran sur le cabinet infirmier (le
+108000 ; le 486000 du 31 décembre, hors de la 2035 avec son extourne) et une sur l'exercice 2025 terminé de la société (d8), seul où
+le programme de l'Ensemble se propose ; six visites `ecritures-libres/*` de plus (`ecrituresLibresSemees`, `ensembleDeLExerciceClos`)
+: 0 débordement à 1 440, 1 280, 1 024, 720 et 390 px. Un défaut vu à l'œil, que le banc admet (il recoupe un morceau après un trait
+d'union) : sur téléphone, le détail du Bilan coupait « EL2026- / 0002 ». Chaque numéro se pose désormais dans un `.numero-entier`
+(`components/NumerosEntiers.tsx`), dans la Balance, le Bilan et la fiche d'un solde de la Révision ; le texte des modules est inchangé.
