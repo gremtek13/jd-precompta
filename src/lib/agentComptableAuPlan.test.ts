@@ -16,7 +16,8 @@ const contexte: Contexte = { entetesDuNavigateur: [] }
 const contrat = CONTRATS.find((c) => c.slug === 'agent-comptable')!
 // Les scénarios de l'inventaire (INV7) posent leur propre mode, que `bnc` et `societe` écraseraient : le contrat et
 // agentComptableInventaire.test.ts les jugent. Les autres rendent, le drapeau de l'inventaire baissé, ce qu'ils rendaient.
-const SCENARIOS = contrat.scenarios.map((s) => s.nom).filter((nom) => !nom.endsWith('(INV7)'))
+// Ni ceux de l'inventaire (INV7), ni ceux des écritures libres (EL6), qui rejouent leur monde à eux.
+const SCENARIOS = contrat.scenarios.map((s) => s.nom).filter((nom) => !nom.endsWith('(INV7)') && !nom.endsWith('(EL6)'))
 
 /** Le BNC en trésorerie : le dirigeant au compte de l'exploitant, exonéré. */
 function bnc(m: Monde) {
@@ -72,11 +73,16 @@ const consigneDe = (x: Rendu) => {
 // la 2035 et non en BK, en trésorerie comme en engagement, et de même quand l'échéance est payée depuis le compte personnel ».
 // La lecture du plan (le rôle exigé) et la colonne `montant_autres_impots` lue ne changent aucun rendu : aucune échéance du
 // monde fictif ne porte de part. Les deux états de la constante se jouent dans agentComptableAutresImpots.test.ts.
+// Les quatre relevées de nouveau le 24/11/2026 (EL6, les écritures libres de l'expert-comptable) : la source rejouée hors du
+// dépôt sans ses trois différences voulues — l'outil `lister_ecritures_libres` offert, la phrase de la consigne sur l'écriture
+// libre, celle de la description de `lister_ecritures` — rendait les quatre empreintes d'avant (eec4bec7…, 0d1cecda…, ac601d1b…,
+// 07f8093d…), à l'identique : la clé et l'écriture embarquées que `lister_ecritures` lit de plus, et le bloc PIÈCES DE VENTE qui
+// les juge, ne changent aucun rendu d'un monde sans écriture libre. Les deux états se jouent dans agentComptableEcrituresLibres.test.ts.
 const EMPREINTES = {
-  bnc: 'eec4bec7ce24fbb929f01f966c59de171a8e7456c74e4b5cbe73ed47023b69ef',
-  societe: '0d1cecda7823107d9df961ad49a73a003cd54faf641bc90120b8f13c09675e18',
-  consigneBnc: 'ac601d1bd397717202d3771933f86d2ca1ea017f144670aa20625e3680ac30ab',
-  consigneSociete: '07f8093df2b47cafe09c065927d0af4d0d802de126a30942c749c2b8251c121a',
+  bnc: 'f5ca6b6bccc0ac42cbc8d4e869ceff4a282e246e121d84cef64420714fe871ae',
+  societe: 'fa6099550faffce2b723ba03317f5b9f295e5a3754600f44b4891bc588ba73d8',
+  consigneBnc: '5fb275bc1979ab48726661e8cf177425894d8c8197a1500186e1e80dbe036819',
+  consigneSociete: 'eb07415bede4b25958941f6db6d96f668e3fe37fc66e97800be8845e6bdcbfc6',
 }
 
 describe('agent-comptable ferme le dossier dont le plan ne se lit pas, avant toute dépense', () => {

@@ -8,7 +8,7 @@ import {
   cyclesDeLExercice, ETATS_DE_CONCLUSION, ETATS_DU_CYCLE, exercicePourLesCycles, LIBELLE_DE_L_AVIS, LIBELLE_DE_L_ETAT,
   LIBELLE_DE_LA_NATURE, lireProgramme, LONGUEUR_MAX_A_SUIVRE, LONGUEUR_MAX_CONCLUSION, LONGUEUR_MAX_NOTE_DE_TRAVAIL,
   LONGUEUR_MAX_OBSERVATION, LONGUEUR_MAX_TEXTE_DE_NOTE, LONGUEUR_MAX_TRAVAIL, MOTIF_CODE_DE_TRAVAIL, NATURES_DE_NOTE,
-  NOMBRE_MAX_DE_TRAVAUX, pointsASuivre, PROGRAMME_DES_CYCLES, programmeDeDepart, programmePropose, REFUS_CONCLURE_CYCLE,
+  NOMBRE_MAX_DE_TRAVAUX, pointsASuivre, PROGRAMME_DES_CYCLES, TRAVAIL_DES_ECRITURES_LIBRES, programmeDeDepart, programmePropose, REFUS_CONCLURE_CYCLE,
   REFUS_NOTER_REVISION, REFUS_REVOIR_CYCLE, refusDeConclureCycle, refusDeNoterRevision, refusDeRevoirCycle,
   TAILLE_MAX_DU_PROGRAMME, type ArgumentsConclureCycle, type ArgumentsNoterRevision, type ArgumentsRevoirCycle,
   type ContexteDesCycles, type DonneesDesCycles,
@@ -395,7 +395,7 @@ describe('les arguments, tels que supabase-js les envoie', () => {
     expect([...signature[1].matchAll(/(p_\w+)/g)].map((m) => m[1])).toEqual(Object.keys(a))
     // Ce qui part passe les refus du module : le programme proposé tel quel, une conclusion de chaque cycle.
     for (const c of CYCLES_DE_REVISION) {
-      const x = argumentsDeConclureCycle(DOSSIER, 2025, { cycle: c, etat: 'revise', conclusion: 'R', aSuivre: null, remplaceId: null, travaux: programmePropose(c, false) })
+      const x = argumentsDeConclureCycle(DOSSIER, 2025, { cycle: c, etat: 'revise', conclusion: 'R', aSuivre: null, remplaceId: null, travaux: programmePropose(c, false, false) })
       expect(refusDeConclureCycle(x, contexte({ conclusions: [] })), c).toBeNull()
     }
   })
@@ -429,7 +429,7 @@ describe('le programme de travail proposé (§ 4.4)', () => {
         expect(t.travail.trim(), t.code).not.toBe('')
       }
     }
-    expect(programmePropose('emprunts', false)).toEqual(PROGRAMME_DES_CYCLES.emprunts.map((t) => ({ ...t, fait: false, note: null })))
+    expect(programmePropose('emprunts', false, false)).toEqual(PROGRAMME_DES_CYCLES.emprunts.map((t) => ({ ...t, fait: false, note: null })))
   })
 
   it('le cycle « ensemble » ne présume pas la mission (Q5) et ne cite aucun seuil', () => {
@@ -459,24 +459,24 @@ describe('le programme de travail proposé (§ 4.4)', () => {
   })
 
   it('part de la conclusion courante, complétée des travaux proposés depuis ; sinon du programme proposé', () => {
-    expect(programmeDeDepart('emprunts', null, false)).toEqual({ travaux: programmePropose('emprunts', false), repris: false })
+    expect(programmeDeDepart('emprunts', null, false, false)).toEqual({ travaux: programmePropose('emprunts', false, false), repris: false })
     const courante = { travaux: [{ code: 'emprunts-tableau', travail: 'Ancien libellé', fait: true, note: 'Obtenu' }, { travail: 'Ajouté', fait: false }] }
-    const depart = programmeDeDepart('emprunts', courante, false)
+    const depart = programmeDeDepart('emprunts', courante, false, false)
     expect(depart.repris).toBe(true)
     expect(depart.travaux.slice(0, 2)).toEqual([
       { code: 'emprunts-tableau', travail: 'Ancien libellé', fait: true, note: 'Obtenu' },
       { code: null, travail: 'Ajouté', fait: false, note: null },
     ])
     expect(depart.travaux.slice(2).map((t) => t.code)).toEqual(['emprunts-capital', 'emprunts-interets'])
-    expect(programmeDeDepart('emprunts', { travaux: { illisible: true } }, false)).toEqual({ travaux: programmePropose('emprunts', false), repris: false })
+    expect(programmeDeDepart('emprunts', { travaux: { illisible: true } }, false, false)).toEqual({ travaux: programmePropose('emprunts', false, false), repris: false })
   })
 
   // INV6 (conception 35, § 5.5, R4) : l'inventaire offert ajoute la séparation des exercices aux dépenses et aux recettes, les
   // provisions aux tiers — à la suite, sous des codes stables que la fonction accepte ; fermé, le programme d'hier.
   it('l’inventaire offert ajoute ses travaux aux dépenses, aux recettes et aux tiers, et à eux seuls', () => {
     for (const c of CYCLES_DE_REVISION) {
-      const ajoutes = programmePropose(c, true).slice(PROGRAMME_DES_CYCLES[c].length)
-      expect(programmePropose(c, true).slice(0, PROGRAMME_DES_CYCLES[c].length)).toEqual(programmePropose(c, false))
+      const ajoutes = programmePropose(c, true, false).slice(PROGRAMME_DES_CYCLES[c].length)
+      expect(programmePropose(c, true, false).slice(0, PROGRAMME_DES_CYCLES[c].length)).toEqual(programmePropose(c, false, false))
       expect(ajoutes.map((t) => t.code)).toEqual(
         c === 'depenses' ? ['depenses-separation-exercices'] : c === 'recettes' ? ['recettes-separation-exercices']
           : c === 'tiers' ? ['tiers-provisions'] : [],
@@ -486,12 +486,35 @@ describe('le programme de travail proposé (§ 4.4)', () => {
         expect(t.code!.startsWith(`${c}-`)).toBe(true)
         expect([...t.travail].length).toBeLessThanOrEqual(LONGUEUR_MAX_TRAVAIL)
       }
-      const x = argumentsDeConclureCycle(DOSSIER, 2025, { cycle: c, etat: 'revise', conclusion: 'R', aSuivre: null, remplaceId: null, travaux: programmePropose(c, true) })
+      const x = argumentsDeConclureCycle(DOSSIER, 2025, { cycle: c, etat: 'revise', conclusion: 'R', aSuivre: null, remplaceId: null, travaux: programmePropose(c, true, false) })
       expect(refusDeConclureCycle(x, contexte({ conclusions: [] })), c).toBeNull()
     }
     // Une conclusion d'avant l'inventaire repart d'elle, complétée du travail neuf.
-    const depart = programmeDeDepart('tiers', { travaux: programmePropose('tiers', false) }, true)
+    const depart = programmeDeDepart('tiers', { travaux: programmePropose('tiers', false, false) }, true, false)
     expect(depart.travaux.map((t) => t.code).at(-1)).toBe('tiers-provisions')
+  })
+
+  // EL6 (conception 54, § 5.8, R4) : un exercice qui porte une écriture libre ajoute leur relecture à l'ensemble, à la fin, et à
+  // lui seul — sous un code stable que la fonction accepte ; sans écriture libre, le programme d'hier.
+  it('les écritures libres de l’exercice ajoutent leur relecture à l’ensemble, et à lui seul', () => {
+    for (const c of CYCLES_DE_REVISION) {
+      for (const inventaire of [false, true]) {
+        const avec = programmePropose(c, inventaire, true)
+        const sans = programmePropose(c, inventaire, false)
+        expect(avec.slice(0, sans.length)).toEqual(sans)
+        expect(avec.slice(sans.length).map((t) => t.code)).toEqual(c === 'ensemble' ? [TRAVAIL_DES_ECRITURES_LIBRES.code] : [])
+        const x = argumentsDeConclureCycle(DOSSIER, 2025, { cycle: c, etat: 'revise', conclusion: 'R', aSuivre: null, remplaceId: null, travaux: avec })
+        expect(refusDeConclureCycle(x, contexte({ conclusions: [] })), c).toBeNull()
+      }
+    }
+    expect(TRAVAIL_DES_ECRITURES_LIBRES.code).toMatch(MOTIF_CODE_DE_TRAVAIL)
+    expect(TRAVAIL_DES_ECRITURES_LIBRES.code.startsWith('ensemble-')).toBe(true)
+    expect([...TRAVAIL_DES_ECRITURES_LIBRES.travail].length).toBeLessThanOrEqual(LONGUEUR_MAX_TRAVAIL)
+    // Une conclusion de l'ensemble d'avant la première écriture libre repart d'elle, complétée du travail neuf ; déjà là, une fois.
+    const depart = programmeDeDepart('ensemble', { travaux: programmePropose('ensemble', false, false) }, false, true)
+    expect(depart.travaux.map((t) => t.code).at(-1)).toBe(TRAVAIL_DES_ECRITURES_LIBRES.code)
+    const deja = programmeDeDepart('ensemble', { travaux: programmePropose('ensemble', false, true) }, false, true)
+    expect(deja.travaux.filter((t) => t.code === TRAVAIL_DES_ECRITURES_LIBRES.code)).toHaveLength(1)
   })
 })
 

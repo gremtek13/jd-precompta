@@ -61,6 +61,7 @@ import { anneesDActivite } from '../../lib/dossierPermanentEcran'
 import FicheDossierPermanent from './FicheDossierPermanent'
 import { useEcrituresLibres } from '../../lib/useEcrituresLibres'
 import { ecrituresLibresPourLesMoteurs } from '../../lib/ecrituresLibresVue'
+import { referenceDeLEcritureLibre } from '../../lib/ecrituresLibresDesExports'
 
 // LA RÉVISION DES SOLDES DE BILAN D'UN EXERCICE (ligne 41, étape R3 ; conception du 09/10/2026, HISTORIQUE.md, « LA
 // RÉVISION DES COMPTES : LA CONCEPTION », § 4.1 à 4.3). Chaque solde de bilan au 31 décembre se JUSTIFIE par une pièce,
@@ -756,6 +757,29 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       </>
     )
   }
+  // LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL6) : la preuve d'un compte dit la part qu'elles y portent et propose leur pièce
+  // citée ; le programme de l'ensemble ajoute leur relecture. Illisibles, la révision ne dit rien, comme d'une autre lecture
+  // partielle ; pas encore revenues, elle attend — une preuve sans elles tairait la décision de l'expert.
+  const libresDeLaRevision = ecrituresLibresPourLesMoteurs(lectureDesLibres, dossierId)
+  if (lectureDesLibres?.etat === 'illisibles') {
+    return (
+      <>
+        <div className="card">
+          <BandeauLecturePartielle
+            quoi="Les écritures de l’expert-comptable"
+            accord="lues"
+            motif={lectureDesLibres.motif}
+            consequence="La révision ne dit rien d’une lecture incomplète — ni l’état d’un solde ou d’un cycle, ni sa preuve —, et n’offre aucune décision, conclusion, note ni revue. Recharge la page."
+          />
+        </div>
+        {sectionDuPermanent}
+        {voletDuPermanent}
+      </>
+    )
+  }
+  if (libresDeLaRevision === null) {
+    return <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
+  }
   if (typeof annee !== 'number') {
     // Les années que l'en-tête du dossier offrirait : aucune, et il n'a pas de sélecteur à proposer — c'est un dossier neuf.
     const aucuneAnnee = anneesDActivite({
@@ -810,6 +834,8 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     decisions: lecture.decisions, preuves: lecture.preuves,
     // L'inventaire (INV6) : celui de la Vue d'ensemble, lu en entier — lu en partie, `lectureIncomplete` l'a dit plus haut.
     inventaire: lecture.checklist.inventaire,
+    // Les écritures libres (EL6), lues en entier : illisibles ou pas encore revenues, l'écran s'est arrêté plus haut.
+    ecrituresLibres: libresDeLaRevision,
   }
   const revision = revisionDeLExercice(donnees, controlesPourLaRevision(points, annee))
   // Ce qu'il faut pour dire les refus de `justifier_solde` : l'accès est celui de la session — cet onglet ne s'ouvre que
@@ -863,8 +889,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     // La caisse d'un autre dossier — une lecture d'avant un changement de dossier — ne vaut pas, comme les ventes facturées.
     ...(etatDeLaCaisse.etat === 'en_attente'
       ? [{ quoi: 'La caisse du dossier', accord: 'lue' as const, motif: 'la lecture rendue est celle d’un autre dossier' }] : []),
-    ...(lectureDesLibres?.etat === 'illisibles'
-      ? [{ quoi: 'Les écritures de l’expert-comptable', accord: 'lues' as const, motif: lectureDesLibres.motif }] : []),
+    // Les écritures de l'expert-comptable illisibles (EL5) : depuis EL6, la révision entière s'arrête plus haut sur elles.
   ]
   const donneesDeLaRevue = donneesDeLaRevueAnalytique(annee, anneeCourante, modele, assujettiTva, {
     dossier: lecture.checklist, reprise: lecture.reprise, reportes: lecture.reportes, exercicesValides: exercices,
@@ -875,7 +900,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     recettesDeCaisse: recettesPourLesMoteurs(etatDeLaCaisse),
     // Les paiements de pièces par la caisse (étape C9a), de la même lecture : aucun tant que la migration n'est pas en base.
     paiementsParLaCaisse: paiementsParLaCaisseDuDossier(lecture.caisse, dossierId),
-    ecrituresLibres: ecrituresLibresPourLesMoteurs(lectureDesLibres, dossierId),
+    ecrituresLibres: libresDeLaRevision,
   })
   const lectureDeLaRevueIncomplete = motifsDeLaRevue.length > 0
     ? motifsDeLaRevue.map((m) => `${m.quoi} : ${m.motif}`).join(' ; ')
@@ -910,6 +935,11 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
       }
       case 'a-nouveau': return lecture?.reprise.find((a) => a.id === reference.id)?.libelle ?? null
       case 'solde-reporte': return lecture?.reportes.find((s) => s.id === reference.id)?.libelle ?? null
+      // Une écriture libre se nomme par son numéro, jamais par son libellé ni son motif, des textes de l'expert (EL6).
+      case 'ecriture-libre': {
+        const e = libresDeLaRevision?.etat === 'lues' ? libresDeLaRevision.ecritures.find((x) => x.id === reference.id) : undefined
+        return e ? `État des écritures libres ${e.exercice}, n° ${referenceDeLEcritureLibre(e)}` : null
+      }
     }
   }
 
@@ -1093,6 +1123,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
             exercice={cycles.exercice}
             contexte={contexteDesCycles}
             inventaireOffert={inventaireDesControles(lecture.checklist.inventaire, modele.mode).etat === 'lu'}
+            ecrituresLibres={libresDeLaRevision.etat === 'lues' && libresDeLaRevision.ecritures.some((e) => e.exercice === annee)}
             utilisateur={session?.user.id ?? null}
             occupe={cycleOccupe || enCours || revueOccupee || permanentOccupe}
             erreur={erreurCycle !== null && erreurCycle.cycle === cycleAffiche.cycle ? erreurCycle : null}

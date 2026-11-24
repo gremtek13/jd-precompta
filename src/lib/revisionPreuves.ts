@@ -23,6 +23,7 @@ import {
   attenduDeLInventaire, compteProuveParLInventaire, declarationDeLExercice, inventaireDesControles, type InventaireDesControles,
 } from './inventaireDesControles'
 import { LIBELLES_DES_NATURES } from './inventaireEcran'
+import { indexDesEcrituresLibres, referenceDeLEcritureLibre, type EcrituresLibresDesExports } from './ecrituresLibresDesExports'
 
 // LES PREUVES QUE L'APPLICATION PROPOSE POUR UN SOLDE DE BILAN (ligne 41, étape R2 ; conception du 09/10/2026,
 // HISTORIQUE.md, « LA RÉVISION DES COMPTES : LA CONCEPTION », § 3.6). Un module PUR : il ne lit rien en base, n'appelle
@@ -84,6 +85,10 @@ export interface DonneesDesPreuves {
   // baissé ou en trésorerie — les preuves d'hier, au caractère près —, ou lu en entier : les comptes qu'il écrit (486, 487,
   // 408, 418, 151, 491) se prouvent par lui. Sans défaut : la lecture de la Vue d'ensemble le porte, la Révision le lui prend.
   inventaire: { etat: 'sans_objet' } | Extract<InventaireDesControles, { etat: 'lu' }>
+  // LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL6 ; conception 54, § 5.8 ; lib/ecrituresLibresDesExports.ts), LUES EN ENTIER, ou
+  // absentes (le drapeau baissé) : la part qu'elles portent sur un compte se dit dans sa preuve, sous leurs numéros, et leur pièce
+  // citée se propose. Sans défaut : une lecture partielle ne se passe pas — l'écran retient alors la révision entière.
+  ecrituresLibres: EcrituresLibresDesExports
 }
 
 // ── Ce qu'une preuve rend ─────────────────────────────────────────────────────────────────────────────────────────
@@ -126,6 +131,8 @@ export const CLES_DE_FAITS = [
   'empreinte-intacte',
   // L'inventaire (ligne 35, INV6).
   'inventaire-non-declare', 'regularisations-a-recomposer',
+  // Les écritures libres de l'expert-comptable (EL6), sur tout compte.
+  'ecritures-libres',
 ] as const
 export type CleDeFait = (typeof CLES_DE_FAITS)[number]
 
@@ -137,7 +144,7 @@ export interface FaitDeLaPreuve {
 }
 
 export const TYPES_DE_REFERENCE = [
-  'releve', 'mouvement', 'ecriture', 'bien', 'emprunt', 'declaration', 'a-nouveau', 'solde-reporte',
+  'releve', 'mouvement', 'ecriture', 'bien', 'emprunt', 'declaration', 'a-nouveau', 'solde-reporte', 'ecriture-libre',
 ] as const
 export type TypeDeReference = (typeof TYPES_DE_REFERENCE)[number]
 
@@ -1021,7 +1028,7 @@ function preuveDeLOuverture(compte: string, soldeCentimes: number, d: DonneesDes
 
 export type PartDeLExploitant =
   | 'ouverture' | 'prelevements' | 'apports' | 'csg-crds' | 'cotisations-payees-personnellement' | 'forfaits-kilometriques'
-  | 'notes-de-frais' | 'parts-personnelles' | 'mouvements-affectes' | 'pieces' | 'autres'
+  | 'notes-de-frais' | 'parts-personnelles' | 'mouvements-affectes' | 'pieces' | 'ecritures-libres' | 'autres'
 
 export const LIBELLES_DES_PARTS: Readonly<Record<PartDeLExploitant, string>> = {
   ouverture: 'Ouverture de l’exercice',
@@ -1034,12 +1041,15 @@ export const LIBELLES_DES_PARTS: Readonly<Record<PartDeLExploitant, string>> = {
   'parts-personnelles': 'Parts personnelles des ventilations',
   'mouvements-affectes': 'Mouvements affectés à ce compte',
   pieces: 'Pièces rangées à ce compte',
+  'ecritures-libres': 'Écritures libres de l’expert-comptable',
   autres: 'Autres écritures',
 }
 
 // La source d'une écriture du compte de l'exploitant, lue sur ce qui l'a produite — une écriture n'a qu'une source
 // (`ecritures_brouillon_*_sans_autre_source`), et un mouvement qu'un lien (`lignes_bancaires_un_seul_rapprochement`).
 function partDeLEcriture(e: EcritureBrouillon, lignes: ReadonlyMap<string, LigneBancaire>, pieces: ReadonlyMap<string, PiecePourRevision>): PartDeLExploitant {
+  // Une écriture libre n'a aucune autre source (`ecritures_brouillon_libre_sans_autre_source`) : sa part à elle (EL6).
+  if (e.ecriture_libre_id) return 'ecritures-libres'
   if (e.cotisation_id) return 'cotisations-payees-personnellement'
   if (e.vehicule_id) return 'forfaits-kilometriques'
   if (e.ligne_bancaire_id) {
@@ -1114,8 +1124,68 @@ function preuveDeLInventaire(compte: string, soldeCentimes: number, d: DonneesDe
   return conclure('inventaire', compte, d, soldeCentimes, attendu.attenduCentimes, verdictForce, raison, faits, detail, sources)
 }
 
+// ── Les écritures libres de l'expert-comptable (EL6) ───────────────────────────────────────────────────────────────
+
+// UNE ÉCRITURE LIBRE EST UNE PREUVE PROPOSÉE DES COMPTES QU'ELLE TOUCHE, QUI DIT UNE DÉCISION, PAS UN FAIT EXTÉRIEUR (conception 54,
+// § 5.8). Sur tout compte de bilan où les écritures libres de l'exercice portent une part, la preuve du compte la dit — un fait,
+// une ligne de détail par écriture, sous son numéro (« EL2026-0003 », l'extourne nommée), et la pièce citée de chacune parmi les
+// sources proposées —, sans changer son verdict : ce que la preuve attend se calcule comme hier, et le cabinet juge si la part de
+// l'expert explique un écart. Ce qu'elle n'établit pas se dit dans le fait : la décision se justifie par l'état des écritures
+// libres et, s'il y en a une, par sa pièce citée, que la preuve ne relit pas. Rien de saisi n'entre dans le texte : ni le libellé,
+// ni le motif, ni le libellé d'un compte — des numéros, des dates et des montants. Une ligne dont l'écriture n'est pas dans la
+// lecture se compte « au numéro non lu ».
+function partDesEcrituresLibres(preuve: PreuveProposee, compte: string, d: DonneesDesPreuves): PreuveProposee {
+  const lignes = ecrituresDeLExercice(d).filter((e) => e.compte === compte && !!e.ecriture_libre_id)
+  if (lignes.length === 0) return preuve
+  const index = indexDesEcrituresLibres(d.ecrituresLibres)
+  const parEcriture = new Map<string, { centimes: number; date: string; extourne: boolean }>()
+  for (const e of lignes) {
+    const libre = index.get(e.ecriture_libre_id as string)
+    // La clé : l'écriture et sa date — la constatation et l'extourne d'une même écriture sont deux lignes de détail.
+    const cle = `${e.ecriture_libre_id}|${e.date}`
+    const p = parEcriture.get(cle) ?? { centimes: 0, date: e.date, extourne: libre !== undefined && e.date !== libre.date }
+    parEcriture.set(cle, { ...p, centimes: p.centimes + signe(e) * centimes(e.montant) })
+  }
+  const total = sommeEcritures(lignes)
+  // Dans l'ordre des dates, puis des numéros : l'extourne du 1er janvier avant la constatation du 31 décembre.
+  const detail: LigneDeDetail[] = [...parEcriture].sort(([a, pa], [b, pb]) => (pa.date < pb.date ? -1 : pa.date > pb.date ? 1 : a < b ? -1 : a > b ? 1 : 0))
+    .map(([cle, p]) => {
+      const id = cle.split('|')[0]
+      const libre = index.get(id)
+      const nom = libre === undefined ? 'Écriture libre au numéro non lu'
+        : `${p.extourne ? 'Extourne de l’écriture libre' : 'Écriture libre'} ${referenceDeLEcritureLibre(libre)}`
+      return { libelle: `${nom} du ${formatDate(p.date)}`, montantCentimes: p.centimes, reference: { type: 'ecriture-libre' as const, id } }
+    })
+  const references = [...new Set([...parEcriture.keys()].map((c) => index.get(c.split('|')[0])).filter((x) => x !== undefined)
+    .sort((a, b) => a.exercice - b.exercice || a.numero - b.numero).map(referenceDeLEcritureLibre))]
+  const nombre = new Set(lignes.map((e) => e.ecriture_libre_id)).size
+  const numeros = references.length > 0 ? ` (n° ${references.join(', ')})` : ''
+  const texte = `${pluriel(nombre, 'écriture libre de l’expert-comptable porte', 'écritures libres de l’expert-comptable portent')} `
+    + `${soldeEnMots(total)} sur ce compte${numeros} : ${accord(nombre, 'elle dit', 'elles disent')} une décision, pas un fait `
+    + `extérieur. Cette preuve ne ${accord(nombre, 'l’établit', 'les établit')} pas : ${accord(nombre, 'elle se justifie', 'chacune se justifie')} `
+    + 'par l’état des écritures libres et, s’il y en a une, par sa pièce citée.'
+  const citees = [...new Set([...parEcriture.keys()].map((c) => index.get(c.split('|')[0])?.piece_citee_id ?? null)
+    .filter((x): x is string => x !== null))]
+  const dejaProposees = new Set(preuve.sourcesProposees.map((s) => s.pieceId))
+  const sources: SourceProposee[] = citees.filter((pieceId) => !dejaProposees.has(pieceId)).map((pieceId) => ({
+    pieceId, documentId: null, raison: 'La pièce que cite une écriture libre de l’expert-comptable sur ce compte.',
+  }))
+  return {
+    ...preuve,
+    faits: [...preuve.faits, fait('ecritures-libres', texte, total, nombre)],
+    // Le compte de l'exploitant dit déjà sa part, ligne par ligne de ses sources : le détail n'y redit pas chaque écriture.
+    detail: preuve.type === 'decomposition-exploitant' ? preuve.detail : [...preuve.detail, ...detail],
+    sourcesProposees: [...preuve.sourcesProposees, ...sources],
+  }
+}
+
 /** La preuve que l'application propose pour un compte de bilan, à son solde de fin d'exercice (en centimes). */
 export function preuveDuCompte(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
+  return partDesEcrituresLibres(preuveDuCompteSeul(compte, soldeCentimes, d), compte, d)
+}
+
+// La preuve d'hier, sans la part des écritures libres : un compte qui n'en porte aucune la garde au caractère près.
+function preuveDuCompteSeul(compte: string, soldeCentimes: number, d: DonneesDesPreuves): PreuveProposee {
   // Le 512 propre d'un compte bancaire autre que le principal (MCB-Q1) se prouve par le relevé, comme celui du rôle `banque`.
   const tenuParUnCompteBancaire = d.comptesBancaires.etat === 'lus'
     && d.comptesBancaires.comptes.some((c) => !c.principal && c.compte === compte)

@@ -160,13 +160,27 @@ export interface TravailDuProgramme {
 }
 
 /**
+ * LE TRAVAIL DES ÉCRITURES LIBRES DE L'EXERCICE (EL6 ; conception 54, § 5.8, R4) : proposé à l'ensemble — le cycle de la clôture
+ * de la conception, qui n'a pas de carte à lui (§ 2.1 de la révision : la note de synthèse, les contrôles, la concordance y sont)
+ * —, quand l'exercice en porte au moins une. Il ne tranche rien : il demande de relire chaque écriture avec ce qui la justifie.
+ */
+export const TRAVAIL_DES_ECRITURES_LIBRES: TravailPropose = {
+  code: 'ensemble-ecritures-libres',
+  travail: 'Relire les écritures libres de l’exercice, une à une, avec l’état des écritures libres et leurs pièces citées : chacune dit une décision de l’expert-comptable, pas un fait extérieur.',
+}
+
+/**
  * Le programme proposé d'un cycle, prêt à cocher : rien n'est fait, aucune note. `inventaireOffert` (ligne 35, INV6 ;
  * lib/inventaireDesControles.ts) : l'inventaire lu d'un dossier en engagement, l'onglet offert — la séparation des exercices
- * aux dépenses et aux recettes, les provisions aux tiers s'ajoutent, à la suite ; faux, le programme d'hier. Sans défaut.
+ * aux dépenses et aux recettes, les provisions aux tiers s'ajoutent, à la suite ; faux, le programme d'hier. `ecrituresLibres`
+ * (EL6) : l'exercice porte au moins une écriture libre de l'expert-comptable — leur relecture s'ajoute à l'ensemble, à la fin ;
+ * faux, le programme d'hier. Sans défaut, l'un comme l'autre.
  */
-export function programmePropose(cycle: CycleRevision, inventaireOffert: boolean): TravailDuProgramme[] {
-  return [...PROGRAMME_DES_CYCLES[cycle], ...travauxDeLInventaire(cycle, inventaireOffert)]
-    .map((t) => ({ code: t.code, travail: t.travail, fait: false, note: null }))
+export function programmePropose(cycle: CycleRevision, inventaireOffert: boolean, ecrituresLibres: boolean): TravailDuProgramme[] {
+  return [
+    ...PROGRAMME_DES_CYCLES[cycle], ...travauxDeLInventaire(cycle, inventaireOffert),
+    ...(ecrituresLibres && cycle === 'ensemble' ? [TRAVAIL_DES_ECRITURES_LIBRES] : []),
+  ].map((t) => ({ code: t.code, travail: t.travail, fait: false, note: null }))
 }
 
 // ── Relire un programme, sans deviner ─────────────────────────────────────────────────────────────────────────────
@@ -218,16 +232,16 @@ export function lireProgramme(travaux: unknown): LectureDuProgramme {
  * programme ne se relit pas, le programme proposé — et `repris` le dit.
  */
 export function programmeDeDepart(
-  cycle: CycleRevision, courante: Pick<RevisionConclusion, 'travaux'> | null, inventaireOffert: boolean,
+  cycle: CycleRevision, courante: Pick<RevisionConclusion, 'travaux'> | null, inventaireOffert: boolean, ecrituresLibres: boolean,
 ): {
   travaux: TravailDuProgramme[]
   repris: boolean
 } {
   const lu = courante === null ? null : lireProgramme(courante.travaux)
-  if (lu === null || !lu.lisible) return { travaux: programmePropose(cycle, inventaireOffert), repris: false }
+  if (lu === null || !lu.lisible) return { travaux: programmePropose(cycle, inventaireOffert, ecrituresLibres), repris: false }
   const codes = new Set(lu.travaux.map((t) => t.code).filter((c) => c !== null))
   return {
-    travaux: [...lu.travaux, ...programmePropose(cycle, inventaireOffert).filter((t) => t.code === null || !codes.has(t.code))],
+    travaux: [...lu.travaux, ...programmePropose(cycle, inventaireOffert, ecrituresLibres).filter((t) => t.code === null || !codes.has(t.code))],
     repris: true,
   }
 }

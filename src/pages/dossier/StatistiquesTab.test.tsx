@@ -147,6 +147,43 @@ describe('StatistiquesTab — Balance des comptes', () => {
     expect(screen.queryByText(/lecture partielle|n'ont pas pu être lues/)).toBeNull()
   })
 
+  // EL6 : la ligne d'un compte dit la part que les écritures libres de l'expert-comptable y portent, sous leurs numéros — jamais
+  // le libellé saisi ; illisibles, « numéro non lu ». Les totaux n'en dépendent pas.
+  it.each([[false, 'dont écriture libre n° EL2025-0002 : 80,00 € au débit'], [true, 'dont écriture libre (numéro non lu) : 80,00 € au débit']])(
+    'marque la part d’une écriture libre de l’expert-comptable (lecture refusée : %s)',
+    async (refusee, marque) => {
+      faux.plafond = null
+      faux.parTable.ecritures_brouillon = [
+        ecriture('606100', 'debit', 120), ecriture('512000', 'credit', 120),
+        { ...ecriture('471000', 'debit', 80, '2025-12-31'), libelle: 'Écart — Patient fictif Ombreval', ecriture_libre_id: 'el-2' },
+        { ...ecriture('108000', 'credit', 80, '2025-12-31'), libelle: 'Écart — Patient fictif Ombreval', ecriture_libre_id: 'el-2' },
+      ]
+      faux.parTable.categories = []
+      faux.parTable.pieces = []
+      faux.parTable.ecritures_libres = [{
+        id: 'el-2', dossier_id: 'dossier-de-test', exercice: 2025, numero: 2, date: '2025-12-31', libelle: 'Écart — Patient fictif Ombreval',
+        motif: 'Motif — Patient fictif Ombreval', avec_extourne: false, piece_citee_id: null, version: 1, cree_par: 'u-expert',
+        cree_le: '2026-01-10T10:00:00Z', modifie_par: null, modifie_le: null,
+        lignes: [
+          { compte: '471000', sens: 'debit', centimes: 8000, poste_2035: null, compte_lib: null },
+          { compte: '108000', sens: 'credit', centimes: 8000, poste_2035: null, compte_lib: null },
+        ],
+      }]
+      if (refusee) faux.erreurs.ecritures_libres = 'permission denied'
+      render(
+        <ContexteDossier valides={faux.valides} annee="toutes">
+          <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('tresorerie')} />
+        </ContexteDossier>,
+      )
+      const ligne = (await screen.findByText('471000')).closest('tr')!
+      await waitFor(() => expect((ligne.querySelector('td[data-libelle="Libellé"]')!.textContent ?? '').replace(/\s/g, ' ')).toContain(marque))
+      expect(screen.getByText('606100').closest('tr')!.querySelector('.cellule-suite')).toBeNull()
+      expect(document.body.textContent).not.toContain('Ombreval')
+      expect(piedDuTableau().children[3].textContent).toContain('équilibré')
+      delete faux.parTable.ecritures_libres
+    },
+  )
+
   // SUR TÉLÉPHONE, LE TABLEAU SE REPLIE EN FICHES (07/10/2026) : six colonnes dans une carte de 360 pixels coupaient les
   // mots en leur milieu (« 10100 / 0 », « Amortisse / ments », vu sur capture). Replié, chaque valeur garde le libellé
   // de sa colonne — c'est `data-libelle` qui le porte, et l'enveloppe qui décide du repli.

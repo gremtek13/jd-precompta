@@ -54682,3 +54682,23 @@ CSV compris) ; aucune branche client. Mutations : quatre, toutes tuées. Banc (`
 cabinet infirmier dans le faux Supabase) : Vue d'ensemble et cycle Recettes, ordinateur et téléphone ; `debordements.mjs` à 0
 sur checklist et révision aux cinq largeurs. Restent, non bloquants : le relevé couvert jugé sur tous les comptes à la fois,
 une lecture refusée qui refuse aussi la piste d'un dossier sans santé, l'écart d'un exercice importé en partie (NOE6R-Q1).
+
+### 24/11/2026 — EL6 : L'ÉCRITURE LIBRE DANS LE DÉTAIL DES COMPTES, LA RÉVISION ET L'ASSISTANT (LIGNE 26.9)
+
+(Agent architecte ; rien en base, aucune migration.) Le détail d'un compte : `lib/ecrituresLibresDuDetail.ts` dit, compte par
+compte, la part des lignes qui portent `ecriture_libre_id` et leurs numéros (« dont écriture libre n° EL2026-0003 : 300,00 € au
+débit », l'extourne nommée, « numéro non lu » quand la lecture manque) ; la Balance la met sous le libellé du compte, le détail
+du Bilan au bout de sa ligne (l'exercice affiché seul). Relevé avant : ni la Checklist ni la piste ne disaient d'une telle ligne
+« rattachée à rien » (EL3 l'avait sortie de `rupturesPisteAudit` et d'`absenceFec`) ; seul l'assistant la taisait ainsi. La
+révision : `DonneesDesPreuves.ecrituresLibres`, obligatoire ; la preuve de tout compte de bilan touché gagne le fait
+`ecritures-libres` (« elle dit une décision, pas un fait extérieur ; cette preuve ne l'établit pas »), une ligne de détail par
+écriture (référence `ecriture-libre`, résolue par l'écran en « État des écritures libres AAAA, n° … ») et sa pièce citée parmi les
+sources proposées, le verdict inchangé ; le 108 a sa part « Écritures libres » ; illisibles, l'onglet s'arrête sur son bandeau ;
+le travail `ensemble-ecritures-libres` s'ajoute à l'ensemble (le « cycle de clôture » de la conception n'existe pas) quand
+l'exercice en porte. L'assistant : `ecriture_libre_id` rejoint les rattachements (EN_ATTENTE vidé), la ligne se nomme « Écriture
+libre EL… du … » / « Extourne de l'écriture libre EL… au … », source `ecriture_libre` pour tout dossier ; l'outil
+`lister_ecritures_libres` (bloc ÉCRITURES LIBRES) lit la table au jeton de l'appelant et n'en rend que numéro, dates, comptes,
+montants, postes et la présence de la pièce — jamais le libellé, le motif ni `compte_lib` ; aucun moteur de la 2035 n'est copié
+dans l'assistant. Les quatre empreintes de `agentComptableAuPlan` relevées : sans les trois différences voulues (l'outil, la
+phrase de la consigne, celle de `lister_ecritures`), celles d'avant à l'identique. Dix mutations des écrans, de la révision et du
+détail mordent ; les dérives des deux blocs et cinq mutations HTTP aussi. À redéployer : `agent-comptable`.

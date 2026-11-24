@@ -4011,6 +4011,103 @@ async function lireLInventaireDuDossier(
   }
 }
 
+// ── DÉBUT ÉCRITURES LIBRES ───────────────────────────────────────────────────────────────────────
+// LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE, POUR LE MODÈLE (EL6 ; conception docs/conceptions/54-ecriture-libre-de-l-expert-
+// comptable.md, § 5.9). Une écriture libre (journal OD, ligne 26.9) est la décision de l'expert : des lignes qu'il saisit, chacune
+// sur un compte, au débit ou au crédit, et, en trésorerie, sur une ligne de charge ou de produit, le poste de la 2035 sous lequel
+// elle compte ou nul (« hors de la 2035 ») ; une extourne au 1er janvier qui suit, peut-être ; une pièce citée, peut-être.
+// L'assistant la LIT, au jeton de l'appelant (la policy `ecritures_libres_lecture` : le cabinet du dossier seul), et n'en écrit
+// jamais.
+//
+// CE QUI NE PART JAMAIS AU MODÈLE (la règle de VF9CQ1) : le libellé et le motif de l'écriture, et le libellé saisi d'un compte que
+// l'application ne nomme pas (`compte_lib`, dans chaque ligne de la colonne `lignes`) — des textes libres du cabinet, qui peuvent
+// nommer un client, chez un praticien un patient ; ni la pièce citée par son nom de fichier ou son tiers — sa seule présence. Les
+// deux premiers ne se LISENT pas ; le troisième vit dans la colonne jsonb des lignes, que la base ne découpe pas : ce bloc ÉCRIT ce
+// qui sort de chaque ligne (son compte, son sens, ses centimes, son poste), plutôt que d'en retirer ce qui ne sort pas.
+//
+// LE CÔTÉ FERMÉ : une écriture qui n'a pas la forme que la base écrit (un rang, un exercice, une date, une ligne) rend toute la
+// lecture illisible — l'outil le dit et ne compte rien —, comme une lecture partielle ou rendue d'un autre dossier.
+//
+// LES TOTAUX : aucun moteur de la 2035 ni de la situation n'est copié dans l'assistant ; la balance (`lister_comptes`) lit tout le
+// brouillon, les lignes des écritures libres comprises. L'effet d'une ligne sur la 2035 se lit à son poste, ici.
+// src/lib/agentComptableEcrituresLibres.test.ts extrait ce bloc, l'exécute seul et le confronte à src/lib.
+
+// Une ligne d'une écriture libre telle que le modèle la reçoit : son compte, son sens, ses centimes et son poste — rien d'autre.
+interface LigneLibreDuModele { compte: string; sens: "debit" | "credit"; centimes: number; poste_2035: string | null }
+// Une écriture libre telle que le bloc la relit : ni libellé, ni motif, ni auteur ; de sa pièce citée, sa seule présence.
+interface EcritureLibreDuModele {
+  id: string; exercice: number; numero: number; date: string; avec_extourne: boolean; piece_citee: boolean; lignes: LigneLibreDuModele[]
+}
+
+// Le numéro d'une écriture libre : celui de `referenceDeLEcritureLibre` (src/lib/ecrituresLibresDesExports.ts), et du bloc PIÈCES
+// DE VENTE (`referenceDUneLigneLibre`) — « EL2026-0003 ».
+function numeroDeLEcritureLibre(exercice: number, numero: number): string {
+  return `EL${exercice}-${String(numero).padStart(4, "0")}`
+}
+
+// Une ligne de la colonne `lignes`, relue dans la forme que la base écrit (le commentaire de la colonne, migration EL2) : un compte
+// des classes 1 à 7 de six à dix chiffres, un sens, des centimes entiers positifs, un poste nul ou non vide ; le libellé saisi d'un
+// compte, s'il y en a un, se juge (un texte, ou nul) et ne se recopie pas. Nulle sinon.
+function ligneLibreCrue(v: unknown): LigneLibreDuModele | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null
+  const l = v as Record<string, unknown>
+  if (typeof l.compte !== "string" || !/^[1-7][0-9]{5,9}$/.test(l.compte)) return null
+  if (l.sens !== "debit" && l.sens !== "credit") return null
+  if (typeof l.centimes !== "number" || !Number.isSafeInteger(l.centimes) || l.centimes <= 0) return null
+  const poste = l.poste_2035 ?? null
+  if (poste !== null && (typeof poste !== "string" || poste === "")) return null
+  const lib = l.compte_lib ?? null
+  if (lib !== null && typeof lib !== "string") return null
+  return { compte: l.compte, sens: l.sens, centimes: l.centimes, poste_2035: poste as string | null }
+}
+
+// Les écritures libres lues, relues une à une ; nulles si l'une n'a pas la forme que la base écrit, ou n'est pas de ce dossier.
+function ecrituresLibresCrues(lues: readonly Record<string, unknown>[], dossierId: string): EcritureLibreDuModele[] | null {
+  const crues: EcritureLibreDuModele[] = []
+  for (const r of lues) {
+    if (typeof r.id !== "string" || r.id === "" || r.dossier_id !== dossierId) return null
+    if (typeof r.exercice !== "number" || !Number.isSafeInteger(r.exercice)) return null
+    if (typeof r.numero !== "number" || !Number.isSafeInteger(r.numero) || r.numero < 1) return null
+    if (typeof r.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(r.date) || Number(r.date.slice(0, 4)) !== r.exercice) return null
+    if (typeof r.avec_extourne !== "boolean") return null
+    const piece = r.piece_citee_id ?? null
+    if (piece !== null && (typeof piece !== "string" || piece === "")) return null
+    if (!Array.isArray(r.lignes) || r.lignes.length < 2) return null
+    const lignes = r.lignes.map(ligneLibreCrue)
+    if (lignes.some((l) => l === null)) return null
+    crues.push({
+      id: r.id, exercice: r.exercice, numero: r.numero, date: r.date, avec_extourne: r.avec_extourne, piece_citee: piece !== null,
+      lignes: lignes as LigneLibreDuModele[],
+    })
+  }
+  return crues.sort((a, b) => a.exercice - b.exercice || a.numero - b.numero || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+}
+
+// Ce que `lister_ecritures_libres` rend au modèle, ÉCRIT ici : par écriture, son numéro, son exercice, sa date, le jour de son
+// extourne ou nul, la présence d'une pièce citée, et chaque ligne — compte, sens, montant en euros, et, en trésorerie, sur une
+// ligne de charge ou de produit, son poste de la 2035 ou « hors de la 2035 ». En trésorerie, le nombre de lignes de résultat hors
+// de la 2035. Un exercice demandé ne garde que ses écritures ; leur extourne, datée de l'exercice suivant, se dit avec elles.
+function ecrituresLibresVuesParLeModele(
+  ecritures: readonly EcritureLibreDuModele[], mode: "tresorerie" | "engagement", annee: number | null,
+): Record<string, unknown> {
+  const retenues = annee === null ? ecritures : ecritures.filter((e) => e.exercice === annee)
+  const deResultat = (compte: string) => compte.startsWith("6") || compte.startsWith("7")
+  const vues = retenues.map((e) => ({
+    numero: numeroDeLEcritureLibre(e.exercice, e.numero), exercice: e.exercice, date: e.date,
+    extourne_au: e.avec_extourne ? `${e.exercice + 1}-01-01` : null, piece_citee: e.piece_citee,
+    lignes: e.lignes.map((l) => ({
+      compte: l.compte, sens: l.sens, montant: l.centimes / 100,
+      ...(mode === "tresorerie" && deResultat(l.compte) ? { poste_2035: l.poste_2035 ?? "hors de la 2035" } : {}),
+    })),
+  }))
+  const horsDeLa2035 = retenues.reduce((n, e) => n + e.lignes.filter((l) => deResultat(l.compte) && l.poste_2035 === null).length, 0)
+  return {
+    nombre: vues.length, ecritures: vues,
+    ...(mode === "tresorerie" ? { lignes_de_resultat_hors_de_la_2035: horsDeLa2035 } : {}),
+  }
+}
+// ── FIN ÉCRITURES LIBRES ─────────────────────────────────────────────────────────────────────────
+
 // ---- Outils -----------------------------------------------------------------------------------
 // Chaque outil ferme sur `admin` (client service-role) et `dossierId`/`dossier` (déjà vérifiés par
 // le serveur, jamais fournis par le modèle) : aucun paramètre d'outil ne permet de sortir de ce
@@ -4049,6 +4146,18 @@ const OUTIL_DE_L_INVENTAIRE = {
   },
 }
 
+// L'OUTIL DES ÉCRITURES LIBRES (EL6 ; bloc ÉCRITURES LIBRES) : il lit, il n'écrit rien, et ne dit jamais le libellé ni le motif
+// d'une écriture, ni le libellé saisi d'un compte, des textes du cabinet qui peuvent nommer un client.
+const OUTIL_DES_ECRITURES_LIBRES = {
+  name: "lister_ecritures_libres",
+  description: "Les écritures libres de l'expert-comptable (onglet Écritures, journal OD, numérotées « EL<exercice>-<rang> », par exemple EL2026-0003) : des écritures qu'il passe lui-même, sans pièce ni mouvement du relevé, justifiées par l'état des écritures libres de l'exercice et, quand il y en a une, par une pièce qu'elles citent. Par écriture : numero, exercice, date, extourne_au (le 1er janvier de l'extourne qui la contre-passe, ou null), piece_citee (une pièce du dossier la fonde), et ses lignes — compte, sens, montant en euros, et pour un dossier en trésorerie, sur une ligne de charge (classe 6) ou de produit (classe 7), poste_2035 : le poste de la 2035 sous lequel elle compte, à sa date, ou « hors de la 2035 » quand l'expert l'en a sortie ; en trésorerie aussi lignes_de_resultat_hors_de_la_2035. Le libellé et le motif saisis par l'expert ne sont pas transmis : nomme une écriture par son numéro, sa date, ses comptes et ses montants. Ces lignes sont déjà dans lister_comptes et lister_ecritures (source « ecriture_libre ») : ce n'est pas une anomalie, ni une écriture rattachée à rien. N'écrit rien : l'assistant ne passe jamais une écriture libre.",
+  input_schema: {
+    type: "object" as const,
+    properties: { annee: { type: "integer", description: "Un seul exercice (ex: 2025) ; tous si omis." } },
+    additionalProperties: false,
+  },
+}
+
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "resume_dossier",
@@ -4070,6 +4179,8 @@ const TOOLS: Anthropic.Tool[] = [
       // MCB5g : la phrase de l'ouverture éclatée, le drapeau des comptes bancaires levé seulement ; baissé, la description d'hier.
       // INV7 : la ligne d'une écriture d'inventaire, le drapeau de l'inventaire levé seulement ; baissé, la description d'hier.
       + (INVENTAIRE_EXPORTE ? " Une ligne d'une écriture d'inventaire (journal OD, une régularisation du 31 décembre ou son extourne du 1er janvier suivant) part aussi sans libellé : il porte l'objet saisi par le cabinet, qui n'est pas transmis — ce n'est pas l'écriture restée d'une pièce supprimée ; lister_inventaire la décrit par sa nature, ses comptes et son montant." : "")
+      // EL6 : la ligne d'une écriture libre de l'expert-comptable, nommée par son numéro, jamais par ce qu'il a saisi.
+      + " Celui d'une ligne d'une écriture libre de l'expert-comptable (source « ecriture_libre », journal OD) se recompose de son numéro et de sa date (« Écriture libre EL2026-0003 du 31/12/2026 », « Extourne de l'écriture libre EL2026-0003 au 01/01/2027 ») : le libellé et le motif saisis par l'expert ne sont pas transmis ; lister_ecritures_libres la décrit."
       + (COMPTES_BANCAIRES_PREVUS ? " Celui d'une ligne qui éclate au 1er janvier l'ouverture de la banque entre les comptes bancaires se recompose du 512 du compte qu'elle ouvre et du jour du relevé (« Ouverture du 512100 au relevé du 31/12/AAAA ») : le nom du compte bancaire n'est pas transmis." : ""),
     input_schema: {
       type: "object",
@@ -4104,6 +4215,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   // INV7 : l'outil de l'inventaire, offert le drapeau levé seulement (bloc INVENTAIRE) ; baissé, la liste d'hier.
   ...(INVENTAIRE_EXPORTE ? [OUTIL_DE_L_INVENTAIRE] : []),
+  OUTIL_DES_ECRITURES_LIBRES,
 ]
 
 // Enveloppe d'un outil de liste plafonnée. Le plafond est nécessaire (une réponse d'outil part dans
@@ -4409,10 +4521,21 @@ function avertissementDesVentes(enDefaut: { lues: SourceEnDefautRow[] } | { moti
 // la ligne lue, qui se juge comme hier — une telle ligne, si la restauration en écrivait une, serait rattachée à rien, et se
 // tairait. C'est pourquoi elle n'est pas parmi les RATTACHEMENTS, que toute ligne doit porter.
 //
+// L'ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE NE DIT NI SON LIBELLÉ NI SON MOTIF (EL6 ; conception 54, § 5.9 ; la règle de VF9CQ1).
+// Une écriture libre (journal OD, ligne 26.9) porte un libellé et un motif que l'expert a saisis, des textes libres du cabinet qui
+// peuvent nommer un client — chez un praticien, un patient —, et ses lignes au brouillon reprennent le libellé. Aucun ne part au
+// modèle : la ligne se nomme par le numéro de son écriture, composé de son exercice et de son rang comme l'application l'écrit
+// (`referenceDeLEcritureLibre`, src/lib/ecrituresLibresDesExports.ts : « EL2026-0003 »), et par sa date (« Écriture libre
+// EL2026-0003 du 31/12/2026 » ; « Extourne de l'écriture libre EL2026-0003 au 01/01/2027 » pour la ligne du 1er janvier qui
+// suit), lus par la clé étrangère (`ecritures_libres` : son exercice, son rang, sa date, rien d'autre), et sa source est
+// `ecriture_libre`, pour tout dossier. Le côté fermé : une écriture que la lecture n'a pas rendue, ou qui n'a pas la forme que la
+// base écrit, aucun libellé. La base garantit qu'une telle ligne n'a aucune autre source (contrainte
+// `ecritures_brouillon_libre_sans_autre_source`) ; `lister_ecritures_libres` (bloc ÉCRITURES LIBRES) décrit l'écriture.
+//
 // LA SOURCE D'UNE LIGNE se lit dans ses RATTACHEMENTS (`RATTACHEMENTS_D_UNE_LIGNE` : chaque clé étrangère de
 // `ecritures_brouillon` vers ce qui l'a produite, le dossier excepté), dans l'ordre de VF9c : la facture ou l'avoir,
 // l'encaissement, la pièce, le mouvement (une ligne de pièce ou de vente facturée ne recopie jamais le libellé de la banque),
-// l'opération de caisse (étape C5), l'ouverture éclatée (MCB5g), puis une écriture que l'application compose sans eux (une dotation, un forfait
+// l'opération de caisse (étape C5), l'ouverture éclatée (MCB5g), l'écriture libre (EL6), puis une écriture que l'application compose sans eux (une dotation, un forfait
 // kilométrique, une liquidation de TVA, une cotisation payée depuis le compte personnel), qui garde le sien. Le côté fermé : une ligne lue sans l'un de ses
 // rattachements, ou sans sa pièce, son mouvement et son opération de caisse embarqués, n'a aucun libellé ; un mouvement que la lecture n'a pas rendu,
 // ou dont le montant ne dit pas le sens, n'en donne aucun ; ni la ligne d'une vente facturée d'un dossier qui ne lit pas ses
@@ -4448,15 +4571,19 @@ interface VentesNommees {
   classes: ReadonlySet<string>
 }
 
+// Une écriture libre de l'expert-comptable telle que le modèle nomme ses lignes (EL6) : son exercice, son rang, sa date — ni son
+// libellé, ni son motif, ni ses lignes, ni sa pièce citée, ni ses auteurs.
+interface EcritureLibreNommee { exercice: number; numero: number; date: string }
+
 // Les types d'une pièce dont le tiers n'est pas un client — un fournisseur, le dirigeant, un autre : ils partent comme avant.
 const TYPES_DONT_LE_TIERS_SE_DIT: readonly string[] = ["achat", "note_frais", "autre"]
 
 // Les RATTACHEMENTS d'une ligne du brouillon : chaque clé étrangère vers ce qui l'a produite — la pièce, le mouvement, la
 // facture ou l'avoir, l'encaissement, le bien, le véhicule, la déclaration de TVA, l'échéance de cotisation, l'opération de
-// caisse (étape C5).
+// caisse (étape C5), l'écriture libre de l'expert-comptable (EL6).
 const RATTACHEMENTS_D_UNE_LIGNE: readonly string[] = [
   "piece_id", "ligne_bancaire_id", "facture_id", "encaissement_id", "immobilisation_id", "vehicule_id", "declaration_tva_id",
-  "cotisation_id", "operation_caisse_id",
+  "cotisation_id", "operation_caisse_id", "ecriture_libre_id",
 ]
 
 // La source d'une écriture qui éclate l'ouverture de la banque (MCB5g) : lue le drapeau des comptes bancaires levé seulement.
@@ -4520,6 +4647,28 @@ function nomDeLOuvertureEclatee(compte: unknown, date: unknown): string | null {
   if (typeof compte !== "string" || !/^512\d{3}$/.test(compte)) return null
   if (typeof date !== "string" || !/^\d{4}-01-01$/.test(date)) return null
   return `Ouverture du ${compte} au relevé du 31/12/${String(Number(date.slice(0, 4)) - 1).padStart(4, "0")}`
+}
+
+// Le numéro d'une écriture libre (EL6) : « EL<exercice>-<rang sur quatre chiffres> », un rang au-delà de 9999 gardant tous ses
+// chiffres — celui de `referenceDeLEcritureLibre` (src/lib/ecrituresLibresDesExports.ts), que le FEC et l'état impriment.
+function referenceDUneLigneLibre(exercice: number, numero: number): string {
+  return `EL${exercice}-${String(numero).padStart(4, "0")}`
+}
+
+// Le nom d'une ligne d'une ÉCRITURE LIBRE (EL6) : son numéro et la date de l'écriture ; la ligne d'une autre date — l'extourne du
+// 1er janvier qui suit, la seule que la base écrive — « Extourne de l'écriture libre … au <sa date> ». Aucun d'une écriture qui
+// n'a pas la forme que la base écrit : un exercice ou un rang qui ne sont pas des entiers, une date mal formée ou d'un autre
+// exercice, ou une ligne sans date.
+function nomDUneLigneLibre(ecriture: Partial<Record<keyof EcritureLibreNommee, unknown>>, dateDeLaLigne: unknown): string | null {
+  const { exercice, numero, date } = ecriture
+  if (typeof exercice !== "number" || !Number.isSafeInteger(exercice) || typeof numero !== "number" || !Number.isSafeInteger(numero) || numero < 1) return null
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number(date.slice(0, 4)) !== exercice) return null
+  if (typeof dateDeLaLigne !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dateDeLaLigne)) return null
+  const enClair = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
+  const reference = referenceDUneLigneLibre(exercice, numero)
+  return dateDeLaLigne === date
+    ? `Écriture libre ${reference} du ${enClair(date)}`
+    : `Extourne de l'écriture libre ${reference} au ${enClair(dateDeLaLigne)}`
 }
 
 // Ce débit rend-il ou défait-il l'argent d'un client, tel que la base l'a écrit (VF9CQ1B) — le mouvement lu avec son
@@ -4597,6 +4746,14 @@ function libelleDUneLigneDOuverture(ligne: Record<string, unknown>): string | nu
   return nomDeLOuvertureEclatee((compte as { compte?: unknown }).compte, ligne.date)
 }
 
+// Le libellé d'une ligne d'une ÉCRITURE LIBRE (EL6), lue avec son écriture (`ecritures_libres`, par la clé étrangère de
+// `ecriture_libre_id`) : son nom, jamais le libellé du brouillon ; aucun d'une écriture que la lecture n'a pas rendue.
+function libelleDUneLigneLibre(ligne: Record<string, unknown>): string | null {
+  const ecriture = ligne.ecritures_libres
+  if (ecriture === null || typeof ecriture !== "object") return null
+  return nomDUneLigneLibre(ecriture as Partial<Record<keyof EcritureLibreNommee, unknown>>, ligne.date)
+}
+
 // Le libellé et la SOURCE d'une ligne, dans l'ordre de ses rattachements (VF9c) : la facture ou l'avoir, l'encaissement — leur
 // libellé se RECOMPOSE de leur numéro, comme l'application l'écrit moins son client, et ne se dit pas quand la lecture ne les
 // a pas rendus, ou d'un dossier qui ne lit pas ses ventes —, la pièce, le mouvement — ses encaissements le classent, ou non —,
@@ -4605,7 +4762,7 @@ function libelleDUneLigneDOuverture(ligne: Record<string, unknown>): string | nu
 // rattachée à rien (VF9CQ1-Q2).
 function libelleEtSource(ligne: Record<string, unknown>, ventes: VentesNommees | null): { libelle: string | null; source: string | null } {
   if (!RATTACHEMENTS_D_UNE_LIGNE.every((c) => c in ligne) || !("pieces" in ligne) || !("lignes_bancaires" in ligne)
-    || !("operations_caisse" in ligne)) {
+    || !("operations_caisse" in ligne) || !("ecritures_libres" in ligne)) {
     return { libelle: null, source: null }
   }
   const numero = (f: FactureNommeeRow) => f.numero ?? "sans numéro"
@@ -4626,6 +4783,7 @@ function libelleEtSource(ligne: Record<string, unknown>, ventes: VentesNommees |
   }
   if (ligne.operation_caisse_id != null) return { libelle: libelleDUneLigneDeCaisse(ligne), source: "caisse" }
   if (ligne[RATTACHEMENT_DE_L_OUVERTURE] != null) return { libelle: libelleDUneLigneDOuverture(ligne), source: "ouverture_eclatee" }
+  if (ligne.ecriture_libre_id != null) return { libelle: libelleDUneLigneLibre(ligne), source: "ecriture_libre" }
   if (ligne.immobilisation_id != null || ligne.vehicule_id != null || ligne.declaration_tva_id != null || ligne.cotisation_id != null) {
     return { libelle: libelleDuBrouillon(ligne), source: null }
   }
@@ -4635,13 +4793,14 @@ function libelleEtSource(ligne: Record<string, unknown>, ventes: VentesNommees |
 // Ce que le modèle reçoit d'une ligne du brouillon, ÉCRIT ici : ses colonnes d'hier — la date, le compte, le libellé, le sens,
 // le montant, la pièce — et, d'un dossier qui lit ses ventes facturées (`ventes`, VF9c), sa source : la pièce, la facture,
 // l'avoir, l'encaissement, le mouvement que ses encaissements classent, l'opération de caisse (étape C5), l'ouverture éclatée
-// (MCB5g), ou rien (`null`)
-// pour une autre écriture sans pièce que la consigne décrit. Rien de ce qui n'a été lu que pour décider ne part : ni la pièce,
-// ni le mouvement, ni l'opération de caisse, ni le compte bancaire embarqués, ni les rattachements.
+// (MCB5g), l'écriture libre (EL6), ou rien (`null`)
+// pour une autre écriture sans pièce que la consigne décrit. La source d'une écriture libre se dit aussi d'un dossier qui ne lit
+// pas ses ventes : elle seule ; ses autres lignes partent comme hier. Rien de ce qui n'a été lu que pour décider ne part : ni la
+// pièce, ni le mouvement, ni l'opération de caisse, ni le compte bancaire, ni l'écriture libre embarqués, ni les rattachements.
 function ecritureVueParLeModele(ligne: Record<string, unknown>, ventes: VentesNommees | null): Record<string, unknown> {
   const { libelle, source } = libelleEtSource(ligne, ventes)
   const vue = { date: ligne.date, compte: ligne.compte, libelle, sens: ligne.sens, montant: ligne.montant, piece_id: ligne.piece_id }
-  return ventes === null ? vue : { ...vue, source }
+  return ventes === null && source !== "ecriture_libre" ? vue : { ...vue, source }
 }
 // ── FIN PIÈCES DE VENTE ──────────────────────────────────────────────────────────────────────────
 
@@ -4822,7 +4981,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // source d'une écriture qui éclate l'ouverture de la banque, avec le 512 de son compte bancaire, par la clé étrangère de
     // `ouverture_compte_bancaire_id` : rien d'autre du compte, ni son libellé ni la fin de son identifiant. Baissé, la
     // sélection d'hier, à l'octet près.
-    let q = admin.from("ecritures_brouillon").select(COMPTES_BANCAIRES_PREVUS ? "date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id)), ouverture_compte_bancaire_id, comptes_bancaires(compte)" : "date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))", { count: "exact" }).eq("dossier_id", dossierId)
+    let q = admin.from("ecritures_brouillon").select(COMPTES_BANCAIRES_PREVUS ? "date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, ecriture_libre_id, ecritures_libres(exercice, numero, date), operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id)), ouverture_compte_bancaire_id, comptes_bancaires(compte)" : "date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, facture_id, encaissement_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, operation_caisse_id, ecriture_libre_id, ecritures_libres(exercice, numero, date), operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))", { count: "exact" }).eq("dossier_id", dossierId)
     if (typeof input.compte === "string" && input.compte) q = q.eq("compte", input.compte)
     if (date_debut) q = q.gte("date", date_debut).lte("date", date_fin!)
     const { data, error, count } = await q.order("date", { ascending: false }).limit(limite)
@@ -4909,6 +5068,22 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       ventes,
       "Les ventes facturées n'y sont pas distinguées : l'exemplaire d'une facture y paraît comme une pièce de vente, alors que c'est sa facture qui compte la vente — n'additionne pas ces pièces et ne conclus rien sur les ventes de ce dossier, renvoie à la Vue d'ensemble.",
     )
+  }
+
+  if (nom === "lister_ecritures_libres") {
+    // EL6 (bloc ÉCRITURES LIBRES) : lues au jeton de l'appelant ; illisibles, l'outil le dit et ne compte rien.
+    const annee = typeof input.annee === "number" && Number.isInteger(input.annee) ? input.annee : null
+    // La policy de la table décide — le cabinet du dossier seul. Les colonnes que le bloc lit, nommées : ni le libellé, ni le
+    // motif, ni les auteurs. Lue en partie, rendue d'un autre dossier ou sous une forme que la base n'écrit pas : illisibles.
+    const r = await lireTout<Record<string, unknown>>((debut, fin) =>
+      ctx.appelant.from("ecritures_libres").select("id, dossier_id, exercice, numero, date, lignes, avec_extourne, piece_citee_id", { count: "exact" })
+        .eq("dossier_id", dossierId).order("exercice").order("numero").order("id").range(debut, fin))
+    const crues = r.complete ? ecrituresLibresCrues(r.lignes, dossierId) : null
+    if (crues === null) {
+      const motif = r.complete ? "une écriture libre lue n'a pas la forme que la base écrit, ou n'est pas de ce dossier" : r.motif ?? "lecture partielle"
+      return { erreur: `Les écritures libres de ce dossier n'ont pas pu être lues en entier (${motif}) : ne tire aucune conclusion sur elles ni sur leur effet, dis à l'utilisateur qu'elles sont indisponibles et renvoie-le à l'onglet Écritures.` }
+    }
+    return { ecritures_libres: "lues", ...ecrituresLibresVuesParLeModele(crues, ctx.modele.mode, annee) }
   }
 
   if (nom === "lister_inventaire") {
@@ -5643,6 +5818,7 @@ Règles impératives :
 - Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le ${plan.dotations_amortissements} au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035.${CUMUL_REPRIS_PREVU ? " Celle d'un bien repris qui porte le cumul de son ancien tableau d'amortissement continue depuis lui : la valeur nette restante répartie sur la durée qui reste du plan." : ""} Ce n'est pas une anomalie.
 - Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du ${plan.indemnites_kilometriques}, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : `${plan.exploitant} Compte de l'exploitant`} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
 - Une DÉCLARATION DE TVA enregistrée s'écrit au dernier jour de sa période, sans pièce ni mouvement, au journal des opérations diverses : sa LIQUIDATION retire la TVA collectée (${plan.tva_collectee}) et déductible (${plan.tva_deductible}, ${plan.tva_immobilisations}) de la période, porte la TVA à payer au ${plan.tva_a_decaisser} TVA à décaisser — un crédit reporté au ${plan.credit_tva_a_reporter}, un remboursement demandé au ${plan.remboursement_tva_demande} — et l'arrondi à l'euro de la CA3 au ${plan.arrondi_charge} ou au ${plan.arrondi_produit}. Son PRÉLÈVEMENT, rapproché de la déclaration, débite le ${plan.tva_a_decaisser} face au ${plan.banque} ; le REMBOURSEMENT d'un crédit par le Trésor crédite le ${plan.remboursement_tva_demande} : ni charge ni recette, et rien de cela n'est une anomalie. Une période terminée dont la déclaration n'est pas enregistrée garde sa TVA aux comptes 4457 et 4456 : c'est un point à traiter.
+- Une ÉCRITURE LIBRE DE L'EXPERT-COMPTABLE (onglet Écritures, journal des opérations diverses, numérotée « EL<exercice>-<rang> ») est une décision qu'il passe lui-même, sans pièce ni mouvement du relevé : son justificatif est l'état des écritures libres de l'exercice et, quand elle en cite une, sa pièce — ce n'est pas une anomalie, ni une écriture rattachée à rien. Ses lignes sont dans la balance comme toutes les autres${dossierRow.mode_comptable === "engagement" ? "" : " ; une ligne de charge ou de produit compte dans la 2035 sous le poste que l'expert a choisi, à sa date, ou reste hors de la 2035 s'il l'en a sortie"}. Son libellé et son motif, saisis par l'expert, ne te sont pas transmis : ne les demande pas, ne les devine pas, nomme-la par son numéro (lister_ecritures_libres la décrit). Tu n'en écris jamais une : propose-la, l'expert la passe.
 - Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au ${plan.banque}, sans pièce : la cotisation au ${plan.cotisations_exploitant} (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : ` et sa CSG-CRDS, quand elle est saisie, au ${plan.exploitant} Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance`}${AUTRES_IMPOTS_DES_COTISATIONS_PREVUS ? ` ; sa part « autres impôts » — la contribution à la formation professionnelle et la CURPS que l'Urssaf appelle avec elle —, quand elle est saisie, va au ${plan.autres_impots ?? ""} (autres impôts), en BS sur la 2035 et non en BK, en trésorerie comme en engagement, et de même quand l'échéance est payée depuis le compte personnel` : ""}. Ce n'est pas une anomalie.
 - Une ÉCHÉANCE DE COTISATION PAYÉE DEPUIS LE COMPTE PERSONNEL de l'exploitant (un apport) s'écrit au jour de ce paiement, sans pièce ni mouvement, au journal des opérations diverses : la cotisation au ${plan.cotisations_exploitant} face au compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais + ", toute l'échéance" : `${plan.exploitant} Compte de l'exploitant, pour l'échéance hors CSG-CRDS : sa CSG-CRDS, qui irait au ${plan.exploitant}, s'y compense avec l'apport`}${dossierRow.mode_comptable === "engagement" ? "" : " ; elle compte dans la 2035 à la date du paiement"}. Une échéance ne se paie que d'une façon : par un mouvement rapproché ou par le compte personnel. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
 - La VALIDATION d'un exercice écrit l'OUVERTURE de l'exercice suivant — ses SOLDES REPORTÉS, au 1er janvier, journal AN, pièce « Exercice AAAA validé » : chaque compte de bilan y reprend son solde ; ${dossierRow.mode_comptable === "engagement" && dossierRow.compte_notes_de_frais !== plan.exploitant ? `le résultat y attend son affectation, au ${plan.resultat_benefice} pour un bénéfice et au ${plan.resultat_perte} pour une perte` : `le compte de l'exploitant et le résultat passent au ${plan.capital_individuel} Capital individuel, et l'exercice repart d'un compte de l'exploitant vide`}. Ce ne sont pas des écritures du brouillon (lister_ecritures ne les montre pas) ; lister_comptes les compte dans l'exercice qu'ils ouvrent. Tant qu'un exercice n'est pas validé, le suivant n'a pas d'ouverture : ses comptes de bilan partent de zéro, et lister_comptes le dit.

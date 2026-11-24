@@ -8,7 +8,7 @@ import { ContexteDossier } from '../../test/exercicesValides'
 import { DOSSIER, decision, citation, ecritureEquilibree, soldeReporte } from '../../test/revision'
 import { conclusion, noteDuJournal, revue } from '../../test/revisionRevue'
 import { textesDesPreuves } from '../../lib/revisionPreuves'
-import { PROGRAMME_DES_CYCLES } from '../../lib/revisionRevue'
+import { PROGRAMME_DES_CYCLES, TRAVAIL_DES_ECRITURES_LIBRES } from '../../lib/revisionRevue'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { DossierTab } from '../../lib/ongletsDossier'
 import type { LigneBancaire, Piece } from '../../lib/types'
@@ -332,6 +332,57 @@ describe('RevisionTab — rien avant d’avoir lu, rien sur une lecture partiell
     dossier2025()
     rendre({ annee: 'toutes' })
     expect(await screen.findByText(/choisis-en un en tête du dossier/)).toBeDefined()
+  })
+})
+
+// LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL6) : lues à part, illisibles elles suspendent la révision comme toute lecture ;
+// lues, la preuve d'un compte qu'elles touchent les dit sous leur numéro, résolu par l'écran, et l'ensemble propose leur relecture
+// — jamais le libellé ni le motif saisis.
+describe('RevisionTab — les écritures libres de l’expert-comptable (EL6)', () => {
+  const SAISI = 'Patient fictif Ombreval'
+  function avecUneEcritureLibre() {
+    dossier2025()
+    faux.tables.ecritures_brouillon.push(
+      ...ecritureEquilibree('el', '2025-12-31', '471000', '108000', 120).map((e) => ({ ...e, libelle: `Écart — ${SAISI}`, ecriture_libre_id: 'el-5' })),
+    )
+    faux.tables.ecritures_libres = [{
+      id: 'el-5', dossier_id: DOSSIER, exercice: 2025, numero: 5, date: '2025-12-31', libelle: `Écart — ${SAISI}`, motif: `Motif — ${SAISI}`,
+      avec_extourne: false, piece_citee_id: null, version: 1, cree_par: 'u1', cree_le: '2026-01-10T10:00:00Z', modifie_par: null, modifie_le: null,
+      lignes: [
+        { compte: '471000', sens: 'debit', centimes: 12000, poste_2035: null, compte_lib: null },
+        { compte: '108000', sens: 'credit', centimes: 12000, poste_2035: null, compte_lib: null },
+      ],
+    }]
+  }
+
+  it('illisibles : un bandeau, et ni état ni geste', async () => {
+    avecUneEcritureLibre()
+    faux.refusees.add('ecritures_libres')
+    rendre()
+    expect(await screen.findByText(/Les écritures de l’expert-comptable n'ont pas pu être lues en entier/)).toBeDefined()
+    expect(screen.queryByRole('button', { name: /Ouvrir le compte/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Ouvrir le cycle/ })).toBeNull()
+  })
+
+  it('la preuve d’un compte qu’elles touchent dit leur part, sous le numéro que l’écran résout ; rien de saisi', async () => {
+    avecUneEcritureLibre()
+    rendre()
+    await ouvrir('471000')
+    expect(texte(volet())).toContain('1 écriture libre de l’expert-comptable porte 120,00 € au débit sur ce compte (n° EL2025-0005)')
+    expect(texte(volet())).toContain('État des écritures libres 2025, n° EL2025-0005')
+    expect(document.body.textContent).not.toContain(SAISI)
+  })
+
+  it('l’ensemble propose leur relecture quand l’exercice en porte, et pas sinon', async () => {
+    avecUneEcritureLibre()
+    const vue = rendre()
+    await ouvrirCycle('Ensemble')
+    expect(within(volet()).getByRole('checkbox', { name: TRAVAIL_DES_ECRITURES_LIBRES.travail })).toBeDefined()
+    vue.unmount()
+    dossier2025()
+    rendre()
+    await ouvrirCycle('Ensemble')
+    expect(within(volet()).queryByRole('checkbox', { name: TRAVAIL_DES_ECRITURES_LIBRES.travail })).toBeNull()
   })
 })
 
