@@ -1675,7 +1675,9 @@ describe('les refus de la validation pour les ventes facturées (étape VF7b) �
   })()
   // INAL2 (`empreinte_des_exercices_forme_2`, en production depuis le 10/11/2026) la reprend pour l'empreinte en forme 2 :
   // ses 41 refus, au caractère près et dans le même ordre, ceux que le module redit.
-  const repriseDepuis = /\/\d{14}_(champs_bnc_du_fec|validation_des_paiements_par_la_caisse|empreinte_des_exercices_forme_2)\.sql$/
+  // EXP58-Q2 (`codes_des_clients`, préparée) la reprend pour admettre le code d'une fiche en identification du client, ses
+  // refus inchangés.
+  const repriseDepuis = /\/\d{14}_(champs_bnc_du_fec|validation_des_paiements_par_la_caisse|empreinte_des_exercices_forme_2|codes_des_clients)\.sql$/
 
   it('la migration : ses refus d’hier au caractère près, la définition d’hier contenue ligne à ligne dans la nouvelle', () => {
     expect(migration).toBeDefined()

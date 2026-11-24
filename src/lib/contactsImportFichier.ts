@@ -1,6 +1,7 @@
 import { sansBlancsAuxBords } from './articles'
 import { poidsFaceALaBorne } from './bornesStockage'
 import { TYPES_CLIENT_CONTACT, saisieQuiPart, type ContactEnvoye, type ContactPourSiret, type SaisieContact } from './contacts'
+import { CODES_DES_CLIENTS_PREVUS, LIBELLE_DU_CODE_CLIENT } from './codesDesClients'
 import { refusDesLignes, refusDuNombreDeLignes, type RefusImportContacts } from './contactsImport'
 import { LIBELLES_TYPE_CONTACT } from './contactsVue'
 import { decoderWindows1252 } from './decodageTexte'
@@ -309,9 +310,19 @@ export function nomCompare(texte: string): string {
  * première colonne qui porte son nom.
  */
 export function colonnesProposees(colonnes: readonly string[]): ChoixDeColonne[] {
+  return colonnesProposeesSelon(colonnes, CODES_DES_CLIENTS_PREVUS)
+}
+
+/**
+ * La même proposition, selon que le code des fiches est en base (EXP58-Q2) : levé, la colonne « Code client » — celle que la
+ * fiche exportée porte en tête — se propose « Ne pas importer » : la base pose le code d'une fiche à sa création, l'import ne
+ * le reprend jamais, et la fiche exportée se relit sans colonne à choisir. Baissé, la proposition d'hier.
+ */
+export function colonnesProposeesSelon(colonnes: readonly string[], codes: boolean): ChoixDeColonne[] {
   const pris = new Set<ChampDUnContact>()
   return colonnes.map((nom) => {
     const cle = nomCompare(nom)
+    if (codes && cle === nomCompare(LIBELLE_DU_CODE_CLIENT)) return 'ne_pas_importer'
     const champ = CHAMPS_DANS_L_ORDRE.find((c) => !pris.has(c) && NOMS_PROPOSES[c].some((n) => nomCompare(n) === cle))
     if (champ === undefined) return null
     pris.add(champ)

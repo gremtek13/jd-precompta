@@ -394,7 +394,7 @@ describe('les bords du rangement et de la répartition', () => {
     expect(brouillon.filter((l) => l.compte === '606100').map((l) => l.montant)).toEqual([100, 100, 100])
     const n = numeroter(brouillon, [vente], exportes({
       paiements, registre: [encaissement('e-b', 'm-b'), encaissement('e-c', 'm-c')],
-      factures: [{ id: 'f-avant', numero: 'F2024-0102', statut: 'validee', tiers_siret: null, source_de_la_vente: false }],
+      factures: [{ id: 'f-avant', numero: 'F2024-0102', statut: 'validee', tiers_siret: null, source_de_la_vente: false, codeDuClient: null }],
     }), mouvements)
     expect([...new Set(n.lignes.map((l) => `${l.journal}${l.numero} ${l.champsBnc?.modeRglt}`))]).toEqual(['VE1 Banque', 'VE2 Chèque'])
     expect(n.lignes.filter((l) => l.numero === 2).length).toBe(4)

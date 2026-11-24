@@ -338,7 +338,7 @@ describe('les essais qui cochent « Ventes »', () => {
     // relanceDesDemandesParEmail.sql (11/11/2026, B3b) : le client porte « Ventes » sur A, un dossier jetable inséré basculé.
     // auteurDesConnexions.sql (13/11/2026, B4RS-Q1) : le client porte « Ventes » sur DT, un dossier jetable inséré basculé.
     expect(ecrivent).toEqual([
-      'acomptesDesDevis.sql', 'adresseDuClientExigee.sql', 'apercuFactureElectronique.sql', 'articles.sql', 'auteurDesConnexions.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'caisse.sql', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
+      'acomptesDesDevis.sql', 'adresseDuClientExigee.sql', 'apercuFactureElectronique.sql', 'articles.sql', 'auteurDesConnexions.sql', 'banqueClient.sql', 'batterieEncaissements.mjs', 'caisse.sql', 'codesDesClients.sql', 'contacts.sql', 'dernierChangementDeRib.sql', 'devis.sql',
       'devisCitentUnContact.sql', 'dossiersAuRibAConfirmer.sql', 'droitsAcces.sql', 'ecrituresVentesFacturees.sql', 'encaissementsDesReprises.sql', 'envoiDesDevis.sql', 'etatFactureElectronique.sql',
       'exemplairesDesFactures.sql', 'factureInternationale.sql', 'factures.sql', 'facturesImportees.sql', 'ibanHorsDesParametres.sql', 'importContacts.sql', 'logoDesFactures.sql', 'logoDesFacturesSuppression.sql',
       'mentionsFigees.sql', 'numerotationContinue.sql', 'originalDUnImport.sql', 'originauxDesImports.sql', 'parametresFacturation.sql', 'pieceDUneFactureReprise.sql', 'piecesJointesEcartees.sql', 'relanceDesDemandesParEmail.sql', 'relancesDesFactures.sql', 'reprisesAuClient.sql', 'rls.sql',

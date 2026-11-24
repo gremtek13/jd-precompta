@@ -203,6 +203,7 @@ const {
 const { LOGO_DES_FACTURES_EXPORTE, cheminDuLogo } = await import('./logoDesFactures')
 const { ORIGINAUX_DES_IMPORTS_PREVUS } = await import('./bornesStockage')
 const { HORS_PERIMETRE_DES_SECRETS, RestaurationInterrompue, dossierPartielDe } = await import('./restaurationInterrompue')
+const { CODES_DES_CLIENTS_PREVUS } = await import('./codesDesClients')
 const { enBase64, explicationDuManque } = await import('./sauvegardeLogos')
 const { mondeDuSeau: seau } = await import('../test/stockageFactice')
 const { empreinteDe, logoDe } = await import('../test/logoFictif')
@@ -240,8 +241,9 @@ describe('export d’un dossier', () => {
     // Le logo des factures (A5c1) s'y ajoute le jour où sa migration est en base : le manifeste suit le drapeau.
     expect(manifeste.horsPerimetre).toEqual(horsPerimetre(LOGO_DES_FACTURES_EXPORTE, ORIGINAUX_DES_IMPORTS_PREVUS))
     // Les secrets que la sauvegarde tait : les connexions et les compteurs (quatre), et, la migration du facturé à l'assurance
-    // maladie en base (BOR3, en production depuis le 20/11/2026), son registre et sa clé (un cinquième).
-    expect(HORS_PERIMETRE_DES_SECRETS).toHaveLength(5)
+    // maladie en base (BOR3, en production depuis le 20/11/2026), son registre et sa clé (un cinquième) ; le compteur des codes
+    // des fiches clients, sa migration en base (EXP58-Q2, `CODES_DES_CLIENTS_PREVUS`), un sixième.
+    expect(HORS_PERIMETRE_DES_SECRETS).toHaveLength(5 + (CODES_DES_CLIENTS_PREVUS ? 1 : 0))
     expect(manifeste.horsPerimetre).toHaveLength(4 + HORS_PERIMETRE_DES_SECRETS.length + (LOGO_DES_FACTURES_EXPORTE ? 1 : 0) + (ORIGINAUX_DES_IMPORTS_PREVUS ? 1 : 0))
     expect(manifeste.horsPerimetre[3]).toMatch(/catalogue des rôles comptables/)
     // RESTAU-Q3 : les connexions et les compteurs de numérotation, que leurs tables sans policy rendent vides.

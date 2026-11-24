@@ -412,7 +412,8 @@ const K: LigneAJuger[] = [
   { journal: 'OD', numero: 1, compte: '681100', date_reglement: null, mode_reglement: null, nature_operation: 'Dotation aux amortissements', poste_rattache: 'Amortissements', identification_client: null },
   { journal: 'OD', numero: 1, compte: '281830', date_reglement: null, mode_reglement: null, nature_operation: 'Dotation aux amortissements', poste_rattache: null, identification_client: null },
 ]
-const doc = (numero: string | null, tiers_siret: string | null, statut: DocumentDuDossier['statut'] = 'validee'): DocumentDuDossier => ({ numero, statut, tiers_siret })
+const doc = (numero: string | null, tiers_siret: string | null, statut: DocumentDuDossier['statut'] = 'validee',
+  codeDuClient: string | null = null): DocumentDuDossier => ({ numero, statut, tiers_siret, codeDuClient })
 const DOCUMENTS: DocumentDuDossier[] = [
   doc('F2024-0001', '99900010200015'), doc('F2024-0002', '99900070000008'), doc('A2024-0001', '99900070000008'),
   doc('F2024-0003', '99900030000010'), doc('F2024-0004', '999000201'), doc('F2024-0005', '999 000 607 00013'),
@@ -488,6 +489,18 @@ describe('juger comme la base : les cas de l’essai, un à un', () => {
     expect(cleDe(deux([2, 3], { identification_client: 'F2023-0001' }))).toBe('client_inconnu')
     expect([...identificationsAdmises(DOCUMENTS)].sort()).toEqual(
       ['999000102', '999000201', 'A2024-0001', 'F2024-0001', 'F2024-0002', 'F2024-0003', 'F2024-0004', 'F2024-0005'].sort())
+  })
+
+  it('le client, depuis EXP58-Q2 : le code de la fiche d’un document VALIDÉ du dossier (167, 167e), jamais celui d’un brouillon (167b) ni un code qu’aucun document ne porte (167d)', () => {
+    const avec = (d: DocumentDuDossier) => [...DOCUMENTS, d]
+    const code = (c: string) => deux([2, 3], { identification_client: c })
+    expect(cleDe(code('C00001'), avec(doc('F2024-0006', null, 'validee', 'C00001')))).toBeNull()
+    expect(cleDe(code('C00001'), avec(doc(null, null, 'brouillon', 'C00001')))).toBe('client_inconnu')
+    expect(cleDe(code('C00007'), avec(doc('F2024-0006', null, 'validee', 'C00001')))).toBe('client_inconnu')
+    // Le document validé reste admis par son numéro, la règle d'hier : les deux se valent pour la base.
+    expect(cleDe(code('F2024-0006'), avec(doc('F2024-0006', null, 'validee', 'C00001')))).toBeNull()
+    expect(identificationsAdmises([doc('F2024-0006', null, 'validee', 'C00001')])).toEqual(new Set(['F2024-0006', 'C00001']))
+    expect(identificationsAdmises([doc(null, null, 'brouillon', 'C00001')])).toEqual(new Set())
   })
 })
 

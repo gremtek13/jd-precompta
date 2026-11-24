@@ -50,7 +50,7 @@ describe('la règle', () => {
   it('« entreprise » se juge EXACTEMENT comme IdClient : le même SIREN, ou le numéro de la facture', () => {
     const sirets = [null, '', SIRET_VALIDE, SIREN_VALIDE, SIRET_INVALIDE, SIREN_INVALIDE, '35600000000048', '35600000012345', '12345678200010 ']
     for (const tiers_siret of sirets) {
-      const f: FactureDuClient = { id: 'f1', numero: 'F2026-0001', statut: 'validee', tiers_siret, source_de_la_vente: true }
+      const f: FactureDuClient = { id: 'f1', numero: 'F2026-0001', statut: 'validee', tiers_siret, source_de_la_vente: true, codeDuClient: null }
       const siren = sirenDuClient(f)
       expect(identificationDuClient(f)).toBe(siren ?? 'F2026-0001')
       expect(nomDuClientEcrit({ tiers_siret, tiers_nom: 'Nom Fictif' }) !== null).toBe(siren !== null)

@@ -523,7 +523,9 @@ describe('les essais de la base, rejoués en production', () => {
     // Trente et un le même jour : `paiementsAssuranceMaladie`, `associationPaiementsAssuranceMaladie` et
     // `facturesAssuranceMaladie` sortis (NOE3, NOE5 et BOR3 en production, 20261120110000, 110100 et 110200, collées ; ils ne
     // cherchent aucun semis, ils se jouent comme des essais de la production).
-    expect(cas.length).toBe(31)
+    // Trente-deux le 24/11/2026 : `codesDesClients` (EXP58-Q2, `codes_des_clients`) entré dans la famille « apres », après sa
+    // migration préparée ; joué sur une copie de la réplique à 250 (30 verdicts sur 30, seule et après EL7 et EXP-Q4).
+    expect(cas.length).toBe(32)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

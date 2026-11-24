@@ -37,6 +37,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { BASCULE_OFFERTE } from './basculeDesVentes'
 import { CHANGEMENT_DE_RIB_EXPORTE } from './changementDeRib'
+import { CODE_DANS_LA_PHRASE_DES_CASES, CODES_DES_CLIENTS_PREVUS } from './codesDesClients'
 import { CONTACTS_EXPORTES } from './contacts'
 import { DEVIS_EXPORTES } from './devis'
 import { IMPORT_CONTACTS_EXPORTE } from './contactsImport'
@@ -450,12 +451,14 @@ export function ceQueDisentLesCases(
       + '« Mes ventes ».'
     : ''
   // Les contacts (étape A4a) : tout ce que la base ouvre — les colonnes, les auteurs, les quatre gestes — et ce que
-  // l'effacement fait et ne fait pas : la ligne reste, ses données partent, une facture garde la copie qu'elle a prise.
+  // l'effacement fait et ne fait pas : la ligne reste, ses données partent, une facture garde la copie qu'elle a prise. Depuis
+  // EXP58-Q2, sous son drapeau (la colonne n'existe pas avant la migration `codes_des_clients`), le code de chaque fiche, qu'il
+  // lit aussi.
   const avecLesContacts = ventesOuvertes && contactsOuverts
   const contacts = avecLesContacts
     ? ' Il tient aussi avec toi, dans « Mes ventes › Clients » et par les fonctions de la base, le fichier de ses clients : il le lit en entier — nom, '
       + 'type, adresse, SIREN et SIRET, adresse de facturation électronique et code service, e-mail, délai de paiement, '
-      + 'observations, et qui a créé, changé, retiré ou effacé chaque contact — et peut créer, modifier, retirer, reprendre '
+      + `observations, ${CODES_DES_CLIENTS_PREVUS ? `${CODE_DANS_LA_PHRASE_DES_CASES}, ` : ''}et qui a créé, changé, retiré ou effacé chaque contact — et peut créer, modifier, retirer, reprendre `
       + 'ou effacer un contact ; effacer en vide les données, et une facture garde la copie qu’elle en a prise.'
     : ''
   // L'import (étape A4b3a) : ce que la fonction fait — mille lignes au plus, d'un seul tenant, rien de rangé qui change —,

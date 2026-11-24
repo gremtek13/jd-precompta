@@ -101,7 +101,7 @@ const piece = (o: Partial<Piece> & Pick<Piece, 'id'>): Piece => pieceDeVente({
 type FactureEnTrop = FactureDuClient & { tiers_nom: string }
 type EncaissementEnTrop = EncaissementDuRegistre & { motif: string }
 const facture = (o: Partial<FactureEnTrop> & Pick<FactureEnTrop, 'id' | 'numero'>): FactureEnTrop => ({
-  statut: 'validee', tiers_siret: null, source_de_la_vente: false, tiers_nom: NOMS[0], ...o,
+  statut: 'validee', tiers_siret: null, source_de_la_vente: false, codeDuClient: null, tiers_nom: NOMS[0], ...o,
 })
 const encaissement = (o: Partial<EncaissementEnTrop> & Pick<EncaissementEnTrop, 'id' | 'facture_id' | 'ligne_bancaire_id'>): EncaissementEnTrop => ({
   dossier_id: D, date_encaissement: '2026-03-20', montant: 100, moyen: 'virement', annule_id: null, retire_le: null, motif: NOMS[9], ...o,

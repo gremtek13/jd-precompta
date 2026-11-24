@@ -40,7 +40,8 @@ import type {
 //      qui n'a pas de source reste vide (''), comme le § 70 de la notice le veut (« Il ne faut pas remplir avec des « 0 »
 //      ou des « espaces » »).
 //   2. JAMAIS UN NOM (BOI-BNC-DECLA-10-20, § 280 ; CGI, art. 99 ; code pénal, art. 226-13). IdClient n'est que sur les
-//      écritures d'une facture émise, et n'y est que le SIREN de son client ou le numéro de la facture (FEC22-Q4, (D)) ;
+//      écritures d'une facture émise, et n'y est que le code de la fiche d'où vient son client (EXP58-Q2, le drapeau levé :
+//      lib/codesDesClients.ts), sinon le SIREN de son client ou le numéro de la facture (FEC22-Q4, (D)) ;
 //      NatOp n'est que la nature comptable de l'opération et un poste du formulaire, jamais la nature d'un soin (LPF,
 //      art. L. 13-0 A ; BOI-CF-IOR-60-10, § 340). Les types lus portent les noms (`tiers`, `tiers_nom`, les libellés,
 //      `nom_fichier`, `motif`) pour que l'appelant passe ses lignes telles qu'il les a lues : le test « aucun nom » les y
@@ -127,7 +128,8 @@ export interface ChampsBnc {
   nature: NatureOperation
   /** NatOp de chaque ligne, par identifiant de ligne : la nature, suivie du poste sur une ligne de charge ou de produit. */
   natOp: ReadonlyMap<string, string>
-  /** Le SIREN du client ou le numéro de la facture, sur les seules écritures d'une facture émise ; '' ailleurs. */
+  /** Le code de la fiche du client (EXP58-Q2), sinon son SIREN ou le numéro de la facture, sur les seules écritures d'une
+   *  facture émise ; '' ailleurs. */
   idClient: string
 }
 
@@ -161,8 +163,12 @@ export type LigneACaracteriser = Pick<EcritureBrouillon, 'id' | 'compte' | 'libe
  * Une facture émise telle que le FEC la lit : son numéro, son statut, le SIRET figé de son client et sa source — JAMAIS son
  * nom (`tiers_nom`), que ni ce module ni sa lecture (lib/champsBncLecture.ts) ne demandent : une donnée qu'on ne lit pas ne
  * peut pas fuir (RGPD.md, la minimisation). Les tests en plantent un quand même, à côté du type, et aucun ne sort.
+ * `codeDuClient` (EXP58-Q2) : le code de la fiche d'où vient son client, que la lecture tire de `contact_id` et des fiches
+ * du dossier (`codeDuClientDeLaFacture`, lib/codesDesClients.ts) ; nul sans fiche — et toujours nul le drapeau baissé
+ * (`CODES_DES_CLIENTS_PREVUS`), la colonne n'existant pas. OBLIGATOIRE : chaque appelant dit s'il l'a lu.
  */
 export type FactureDuClient = Pick<FactureEmise, 'id' | 'numero' | 'statut' | 'tiers_siret' | 'source_de_la_vente'>
+  & { codeDuClient: string | null }
 
 /**
  * Un encaissement du registre (contre-passations et retirés compris), tel que les ventes facturées le lisent
@@ -241,16 +247,20 @@ function natOps(nature: NatureOperation, lignes: readonly LigneACaracteriser[]):
 }
 
 /**
- * IdClient d'une écriture d'une facture émise (FEC22-Q4, (D)) : le SIREN de son client quand la facture FIGÉE en porte un
- * — les neuf premiers chiffres de `tiers_siret`, s'il n'est fait que de chiffres (quatorze, un SIRET ; neuf, un SIREN
- * saisi seul) et passe la clé de Luhn de l'INSEE, celle du SIREN comprise : `sirenDuClient`, lib/libellesDesVentes.ts, le
- * prédicat que les libellés d'une vente partagent (FEC22-Q7) —, sinon le numéro de la facture, la « référence à un
- * document annexe » de BOI-BNC-DECLA-10-20, § 280. JAMAIS le nom (`tiers_nom`). Une facture qui n'est pas figée (sans
- * numéro, un brouillon) n'identifie personne : ''. Une entreprise ou un organisme qu'un SIREN désigne n'est couvert par
- * aucun secret médical ; un SIRET mal formé ne se corrige pas (ni espace retiré ni chiffre deviné) : le numéro le remplace.
+ * IdClient d'une écriture d'une facture émise. D'abord, depuis EXP58-Q2 (tranchée (A) le 18/11/2026), le CODE de la fiche
+ * d'où vient son client (`codeDuClient` : C et cinq chiffres, posé par la base, qui ne dit rien du client), pour toute fiche,
+ * entreprises comprises — la validation l'admet (`codes_des_clients`). Sans fiche, la règle d'hier (FEC22-Q4, (D)), qui ne
+ * devine rien : le SIREN de son client quand la facture FIGÉE en porte un — les neuf premiers chiffres de `tiers_siret`,
+ * s'il n'est fait que de chiffres (quatorze, un SIRET ; neuf, un SIREN saisi seul) et passe la clé de Luhn de l'INSEE,
+ * celle du SIREN comprise : `sirenDuClient`, lib/libellesDesVentes.ts, le prédicat que les libellés d'une vente partagent
+ * (FEC22-Q7) —, sinon le numéro de la facture, la « référence à un document annexe » de BOI-BNC-DECLA-10-20, § 280. JAMAIS
+ * le nom (`tiers_nom`). Une facture qui n'est pas figée (sans numéro, un brouillon) n'identifie personne : ''. Une entreprise
+ * ou un organisme qu'un SIREN désigne n'est couvert par aucun secret médical ; un SIRET mal formé ne se corrige pas (ni
+ * espace retiré ni chiffre deviné) : le numéro le remplace.
  */
 export function identificationDuClient(facture: FactureDuClient): string {
   if (facture.statut !== 'validee' || facture.numero === null || facture.numero === '') return ''
+  if (facture.codeDuClient !== null) return facture.codeDuClient
   return sirenDuClient(facture) ?? facture.numero
 }
 

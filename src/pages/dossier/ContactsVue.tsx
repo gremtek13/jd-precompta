@@ -10,6 +10,7 @@ import { ACCES_SANS_OBJET, type AccesDuDossier } from '../../lib/auteursVentes'
 import { nomDansUnRefus } from '../../lib/articles'
 import { saisieQuiPart, type ContactEnvoye, type SaisieContact } from '../../lib/contacts'
 import { IMPORT_CONTACTS_EXPORTE, refusImportContacts } from '../../lib/contactsImport'
+import { CODES_DES_CLIENTS_PREVUS, LIBELLE_DU_CODE_CLIENT, phraseDuCodeClient } from '../../lib/codesDesClients'
 import {
   ficheDuContactCsv, messageDeLExportDeLaFiche, nomFichierDeLaFiche, phraseDeLExportDeLaFiche,
 } from '../../lib/contactsExport'
@@ -317,6 +318,9 @@ export default function ContactsVue(props: Props) {
             + 'modifie, se retire et se reprend ; il peut aussi s’effacer : ses données partent, et les factures gardent leur copie.'}
       </p>
 
+      {/* EXP58-Q2 : le code de chaque fiche, que la base pose, dit sous son drapeau (la colonne n'existe pas avant la migration). */}
+      {CODES_DES_CLIENTS_PREVUS && <p className="muted" style={{ marginTop: 0 }}>{phraseDuCodeClient(espace)}</p>}
+
       {info && <p className="muted" style={{ marginTop: 0 }}>{info}</p>}
 
       <BandeauLecturePartielle
@@ -398,6 +402,9 @@ export default function ContactsVue(props: Props) {
                       <td data-libelle="Nom">
                         <div>
                           <div className="nom-fichier">{c.nom}</div>
+                          {CODES_DES_CLIENTS_PREVUS && c.code_client !== undefined && (
+                            <div className="muted" style={{ fontSize: '0.78rem', marginTop: 2 }}>{LIBELLE_DU_CODE_CLIENT} {c.code_client}</div>
+                          )}
                           {(c.retire_le != null || parLeClient) && (
                             <div className="pastilles-empilees" style={{ marginTop: 4 }}>
                               {c.retire_le != null && <span className="badge badge-neutral">Retiré le {formatDate(c.retire_le)}</span>}

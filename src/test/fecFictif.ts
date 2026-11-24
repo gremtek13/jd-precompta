@@ -145,8 +145,10 @@ export function composerLeFecFictif(choix: ChoixChampsBnc): FecFictif {
     if ('refus' in rendue) throw new Error(rendue.refus)
     return formaterFec(rendue, lettrage, MODELE.mode)
   }
+  // Aucune fiche dans l'année de la répétition (EXP58-Q2) : chaque facture garde l'identification d'hier.
   const facturesDuClient: FactureDuClient[] = factures.map((f) => ({
     id: f.id, numero: f.numero, statut: f.statut, tiers_siret: f.tiers_siret, source_de_la_vente: f.source_de_la_vente,
+    codeDuClient: null,
   }))
   const exportes: ChampsBncDuFec = {
     etat: 'exportes',

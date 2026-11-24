@@ -2453,6 +2453,11 @@ export interface Contact {
   cree_le: string
   modifie_par: string | null
   modifie_le: string | null
+  // EXP58-Q2 (migration `codes_des_clients`, PRÉPARÉE, pas appliquée ; lib/codesDesClients.ts, `CODES_DES_CLIENTS_PREVUS`) : le
+  // code de la fiche, C et cinq chiffres, posé par la base à sa création et gardé, l'effacement compris ; NOT NULL en base une
+  // fois la migration appliquée. FACULTATIF ici : avant elle, la colonne n'existe pas, et une lecture `select('*')` ne la rend
+  // pas — une colonne absente d'une lecture n'est pas une colonne nulle.
+  code_client?: string
 }
 
 // LES PARAMÈTRES DE FACTURATION D'UN DOSSIER (espace client, étape A5a ; migration `parametres_facturation`, présentée au

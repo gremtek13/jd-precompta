@@ -205,6 +205,13 @@
 -- Sur la réplique de FEC22b, la migration d'avant — sans eux — fait tomber les douze étapes qui les distinguent, et elles
 -- seules (245 verdicts) ; l'amendée les rend toutes justes, 245 sur 245, et les 229 contrôles d'hier gardent leurs verdicts
 -- au caractère près.
+--
+-- 24/11/2026, LE CODE D'UNE FICHE CLIENT (EXP58-Q2 ; migration `codes_des_clients`, préparée dans `supabase/preparees/`). Une
+-- étape de genre « …k » ne se joue qu'avec elle — la colonne `contacts.code_client` — : sans elle, une ligne dit qu'elles
+-- attendent (167, EN ATTENTE). Avec elle, la garde du secret admet aussi le code de la fiche d'où vient le client d'une
+-- facture VALIDÉE du dossier (167, 167e), jamais celui d'une fiche qu'aucun document validé ne désigne (167b : une fiche
+-- seule, ou celle d'un brouillon), ni celui d'une fiche d'un autre dossier (167c) ; chaque étape crée sa fiche et sa facture
+-- et s'annule avec elles, pour ne rien changer à la série de K que les étapes de La Poste prolongent.
 do $essai$
 declare
   chef uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
@@ -224,6 +231,10 @@ declare
   fec boolean := exists (select 1 from pg_attribute where attrelid = 'public.ecritures_brouillon'::regclass
                           and attname = 'nature_operation' and not attisdropped);
   genre text; en_attente_fec integer := 0;
+  -- La migration d'EXP58-Q2 : le code d'une fiche. Sans elle, ses étapes (genre « …k ») attendent.
+  codes boolean := exists (select 1 from information_schema.columns c
+                            where c.table_schema = 'public' and c.table_name = 'contacts' and c.column_name = 'code_client');
+  en_attente_codes integer := 0;
   -- L'empreinte d'un exercice validé telle que `report_des_soldes` l'écrivait (sans les quatre champs), le dossier, l'année
   -- et l'empreinte précédente à poser par `format` : 173c la confronte à celle d'aujourd'hui.
   empreinte_d_hier text := $f$encode(sha256(convert_to(
@@ -1084,6 +1095,24 @@ begin
       'La numérotation proposée ne couvre pas exactement les 8 écritures de l''exercice 2024.'],
     array['controlef', '166c. … la seconde occurrence à la place d''une autre ligne, le compte des lignes reçues juste', 'chef', $q${VAL}'{K}', 2024, jsonb_set({JK}, '{1}', jsonb_set(jsonb_set({JK} -> 0, '{numero}', '2'), '{mode_reglement}', '"Espèces"')){FIN}$q$, '22023',
       'La numérotation proposée ne couvre pas exactement les 8 écritures de l''exercice 2024.'],
+    -- EXP58-Q2 : le code de la fiche d'où vient le client. Chaque étape range sa fiche (son code posé par la base, le premier
+    -- de K), valide sa facture, et s'annule avec elles.
+    array['controlek', '167. le code de la fiche d''où vient le client d''une facture validée de K passe', 'chef', $q$select public.enregistrer_contact('{K}', null, '{"nom":"ESSAI CODE K","type_client":"assujetti","adresse":"Adresse fictive"}'::jsonb);
+      {ENF}'{K}', null, {FK} || jsonb_build_object('date_emission', '2024-02-09', 'contact_id', (select id from contacts where dossier_id = '{K}' and nom = 'ESSAI CODE K')), {LK}, true);
+      {VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', to_jsonb((select code_client from contacts where dossier_id = '{K}' and nom = 'ESSAI CODE K'))), '{3,identification_client}', to_jsonb((select code_client from contacts where dossier_id = '{K}' and nom = 'ESSAI CODE K'))){FIN}$q$, 'OK', ''],
+    array['controlek', '167b. le code d''une fiche qu''aucun document validé ne désigne : celle d''un brouillon', 'chef', $q$select public.enregistrer_contact('{K}', null, '{"nom":"ESSAI CODE K","type_client":"assujetti","adresse":"Adresse fictive"}'::jsonb);
+      {ENF}'{K}', null, {FK} || jsonb_build_object('date_emission', '2024-02-09', 'contact_id', (select id from contacts where dossier_id = '{K}' and nom = 'ESSAI CODE K')), {LK}, false);
+      {VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"C00001"'), '{3,identification_client}', '"C00001"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlek', '167c. … ni celui d''une fiche d''un autre dossier, que désigne une facture validée de X', 'chef', $q$select public.enregistrer_contact('{X}', null, '{"nom":"ESSAI CODE X","type_client":"assujetti","adresse":"Adresse fictive"}'::jsonb);
+      {ENF}'{X}', null, {FK} || jsonb_build_object('date_emission', '2023-02-02', 'contact_id', (select id from contacts where dossier_id = '{X}' and nom = 'ESSAI CODE X')), {LK}, true);
+      {VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"C00001"'), '{3,identification_client}', '"C00001"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlek', '167d. … ni un code que nulle fiche de K ne porte, de la bonne forme', 'chef', $q${VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"C00007"'), '{3,identification_client}', '"C00007"'){FIN}$q$, '22023',
+      'Une ligne de la numérotation proposée identifie le client autrement que par le numéro d''une facture validée du dossier ou par le SIREN qu''elle porte.'],
+    array['controlek', '167e. MUTATION de 167b : le même brouillon validé, le code de sa fiche passe', 'chef', $q$select public.enregistrer_contact('{K}', null, '{"nom":"ESSAI CODE K","type_client":"assujetti","adresse":"Adresse fictive"}'::jsonb);
+      {ENF}'{K}', null, {FK} || jsonb_build_object('date_emission', '2024-02-09', 'contact_id', (select id from contacts where dossier_id = '{K}' and nom = 'ESSAI CODE K')), {LK}, true);
+      {VAL}'{K}', 2024, jsonb_set(jsonb_set({JK}, '{2,identification_client}', '"C00001"'), '{3,identification_client}', '"C00001"'){FIN}$q$, 'OK', ''],
     -- La validation qui les porte, et les fige.
     array['faitf', '170. le chef valide 2024 de K, et ses quatre champs', 'chef', $q${VAL}'{K}', 2024, {JK}{FIN}$q$, 'OK', ''],
     array['valeurf', '171. ils sont figés, ligne par ligne, tels que la numérotation les portait', 'postgres', $q$select string_agg(coalesce(to_char(date_reglement, 'YYYY-MM-DD'), '∅') || '|' || coalesce(mode_reglement, '∅') || '|' || coalesce(nature_operation, '∅') || '|' || coalesce(poste_rattache, '∅') || '|' || coalesce(identification_client, '∅'), ',' order by id) from ecritures_brouillon where dossier_id = '{K}' and statut = 'validee'$q$, '',
@@ -1184,6 +1213,13 @@ begin
     foreach etape slice 1 in array etapes loop
       -- Une étape du lot FEC22b (genre « …f ») ne se joue qu'avec la migration champs_bnc_du_fec ; sans elle, elle attend.
       genre := etape[1];
+      if genre like '%k' then
+        if not codes then
+          en_attente_codes := en_attente_codes + 1;
+          continue;
+        end if;
+        genre := left(genre, -1);
+      end if;
       if genre like '%f' then
         if not fec then
           en_attente_fec := en_attente_fec + 1;
@@ -1234,6 +1270,11 @@ begin
     if en_attente_fec > 0 then
       verdicts := verdicts || jsonb_build_object('controle', '150. EN ATTENTE de la migration champs_bnc_du_fec (lot FEC22b) : '
         || en_attente_fec || ' étapes — les quatre champs du FEC d''un BNC en trésorerie', 'observe',
+        'absente : elles se jouent dès qu''elle y est', 'ok', true);
+    end if;
+    if en_attente_codes > 0 then
+      verdicts := verdicts || jsonb_build_object('controle', '167. EN ATTENTE de la migration codes_des_clients (EXP58-Q2) : '
+        || en_attente_codes || ' étapes — le code de la fiche d''où vient le client', 'observe',
         'absente : elles se jouent dès qu''elle y est', 'ok', true);
     end if;
     raise exception 'ANNULATION_ESSAI_GLOBALE';

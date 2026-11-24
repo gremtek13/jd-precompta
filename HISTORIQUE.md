@@ -54754,3 +54754,27 @@ XL, celui de la restauration après celui de la contre-passation. Sur une nouvel
 deux préparées, `rls.sql` 0 sur 1 336, 173 mutations, restauration IDENTIQUE (108 tables) ; avec la mienne seule, 0 sur 1 347,
 177 mutations (XL en attente), IDENTIQUE (109 tables) ; les deux s'appliquent dans les deux ordres, à la même signature, et
 ensemble `rls.sql` rend 0 sur 1 349 et 178 mutations, les deux essais 53 et 50 sans faute, la restauration IDENTIQUE (218 clés).
+
+### 24/11/2026 — EXP58-Q2 : UN CODE OPAQUE PAR FICHE CLIENT (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; (A) du 18/11/2026 ; conception 58, § 1.4, lot L3.) La préparée `codes_des_clients` (md5 `1fdd6bae…` sans la
+dernière fin de ligne, par l'outil ; son retour, à coller) : `contacts.code_client` (C et cinq chiffres, NOT NULL, unique dans le
+dossier), posé par la garde `poser_code_client` depuis un compteur par dossier (`contacts_numerotation`, sans policy), donné aux
+fiches d'avant dans l'ordre de création, gardé par une restauration (le compteur repris au plus haut), immuable, effacement compris ;
+`valider_exercice` (923cfa1b… et trois retouches, `65df5e35…`) admet le code de la fiche d'une facture VALIDÉE, numéro et SIREN
+toujours admis, `client_inconnu` inchangé. Le code se lit sur la fiche (A7a fige `contact_id`), jamais recopié ; sans fiche, la
+règle d'hier. Derrière `CODES_DES_CLIENTS_PREVUS` baissé : IdClient d'abord le code (`codeDuClient`, lib/champsBncLecture.ts), la
+fiche exportée en tête (« Ne pas importer » à l'import), la vue « Clients », l'onglet Accès, RESTAU-Q3, le plan de sauvegarde.
+Sur une copie de `replique_227` portée à 250 : inventaire 3 479 des deux côtés (`d145855d…`), socle 84 inchangé, dérive 251 ;
+`codesDesClients.sql` 30/30 (trois mutations de la garde tombent), `contacts.sql` 209 + 15, `validationExercice.sql` 250/250
+(l'ancienne validation fait tomber 167 et 167e), `rls.sql` 288 + 173, `restauration.sql` IDENTIQUE, le retour rend `signature.sql` ;
+16 mutations du code mordent ; en simulation, seul le conflit attendu avec INV3 (à reprendre sur `65df5e35…`). Questions : EXP58Q2-Q1
+à Q3, EXP58Q2-migration.
+Rejoué le même jour à la suite d'EL7 et d'EXP-Q4 : la préparée renommée `20261124170000` (son retour `…170100`), qui partageait
+l'horodatage d'EL7, son texte inchangé (`1fdd6bae…` ; son en-tête nomme le retour sous l'ancien nom) ; 46 restrictives dans les
+blocs ; le bloc de la restauration après celui des réglages de l'export ; l'essai dans la famille « apres » du banc (32 cas). Sur
+une nouvelle copie portée à 250 : sans la préparée, `rls.sql` 0 sur 1 336, 173 mutations, restauration IDENTIQUE (108 tables) ;
+avec elle, 0 sur 1 344, IDENTIQUE (109 tables, deux fiches semées et le compteur recopiés) ; le retour rend la signature de 250 ;
+les trois préparées dans l'ordre des versions, 0 sur 1 357, 178 mutations, IDENTIQUE (110 tables), l'essai 30/30 ; au banc du
+leurre, `codesDesClients`, `contacts` et `validationExercice` SÛRS, avec et sans elle. `validationExercice.sql` y rend 249/250 :
+son étape 141 ne compte pas la garde de suppression d'EL7 (`ecritures_libres_garde_de_la_contre_passation`), hors de cette préparée.

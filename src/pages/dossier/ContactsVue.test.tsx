@@ -44,6 +44,13 @@ const faux = vi.hoisted(() => ({
   retenirRpc: false,
   rpcEnAttente: [] as (() => void)[],
   telecharges: [] as { nom: string; contenu: string }[],
+  // Le drapeau du code des fiches (EXP58-Q2), joué par un accesseur : baissé comme dans le module, sauf où un cas le lève.
+  codes: false,
+}))
+
+vi.mock('../../lib/codesDesClients', async (original) => ({
+  ...(await original<typeof import('../../lib/codesDesClients')>()),
+  get CODES_DES_CLIENTS_PREVUS() { return faux.codes },
 }))
 
 // Le téléchargement est simulé (jsdom n'a pas d'URL d'objet) : ce que la vue donne à `telechargerTexte` se lit dans `faux.telecharges`.
@@ -221,6 +228,7 @@ beforeEach(() => {
   faux.retenirRpc = false
   faux.rpcEnAttente = []
   faux.telecharges = []
+  faux.codes = false
 })
 
 afterEach(() => {
@@ -474,6 +482,43 @@ describe('Clients — la liste', () => {
 function cleanupVue() {
   document.body.innerHTML = ''
 }
+
+describe('Clients — le code de chaque fiche (EXP58-Q2), sous son drapeau', () => {
+  const avecDesCodes = () => {
+    faux.contacts = nues([{ ...C1, code_client: 'C00001' }, { ...C2, code_client: 'C00002' }, { ...C3, code_client: 'C00003' },
+      { ...C4, code_client: 'C00004' }])
+  }
+
+  it('baissé : ni code ni phrase, même lus', async () => {
+    avecDesCodes()
+    await monter('cabinet')
+    expect(document.body.textContent).not.toMatch(/Code client|C0000\d/)
+  })
+
+  it('levé, au cabinet : le code sous le nom de chaque client, et la phrase qui dit ce qu’il est', async () => {
+    faux.codes = true
+    avecDesCodes()
+    await monter('cabinet')
+    expect(lisible((await ligneDe('Société Essai')).textContent)).toContain('Code client C00001')
+    expect(lisible((await ligneDe('Commune de Démoville')).textContent)).toContain('Code client C00002')
+    expect(screen.getByText(/posé par l’application et qui ne change plus, même effacé/)).toBeTruthy()
+  })
+
+  it('levé, au client : son code, la phrase à ses mots, aucun mot du cabinet', async () => {
+    faux.codes = true
+    avecDesCodes()
+    await monter('client')
+    expect(lisible((await ligneDe('Particulier Fictif')).textContent)).toContain('Code client C00004')
+    const phrase = screen.getByText(/Chacun de tes clients reçoit à sa création un code/)
+    expect(phrase.textContent).not.toMatch(/cabinet|FEC|onglet/)
+  })
+
+  it('levé, une fiche lue sans code (une lecture d’avant la migration) n’en montre aucun', async () => {
+    faux.codes = true
+    await monter('cabinet')
+    expect(lisible((await ligneDe('Société Essai')).textContent)).not.toContain('Code client')
+  })
+})
 
 describe('Clients — « Nouveau client »', () => {
   it('une saisie neuve : aucun type choisi, le premier refus du module, discret, le bouton grisé', async () => {
