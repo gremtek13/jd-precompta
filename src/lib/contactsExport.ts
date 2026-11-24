@@ -1,3 +1,4 @@
+import { CODES_DES_CLIENTS_PREVUS, LIBELLE_DU_CODE_CLIENT } from './codesDesClients'
 import { CHAMPS_DANS_L_ORDRE, LIBELLES_DES_CHAMPS, type ChampDUnContact } from './contactsImportFichier'
 import type { SaisieContact } from './contacts'
 import { LIBELLES_TYPE_CONTACT, saisieInitialeContact } from './contactsVue'
@@ -44,9 +45,22 @@ function valeurDuChamp(saisie: SaisieContact, champ: ChampDUnContact): string {
 
 /** La fiche d'un contact : l'en-tête (les libellés de l'import, dans l'ordre de la saisie), puis UNE ligne — marque UTF-8, « ; », CRLF. */
 export function ficheDuContactCsv(contact: ContactNomme): string {
+  return ficheDuContactCsvSelon(contact, CODES_DES_CLIENTS_PREVUS)
+}
+
+/**
+ * La même fiche, selon que le code des fiches est en base (EXP58-Q2, `CODES_DES_CLIENTS_PREVUS`) : levé, la fiche porte en
+ * PREMIÈRE colonne son code (« Code client »), la table de correspondance d'IdClient du FEC, une ligne par fiche — l'import ne
+ * le reprend jamais (la base le pose : `colonnesProposees` met cette colonne à « Ne pas importer »). Baissé, ou une fiche lue sans
+ * code, la fiche d'hier à l'octet.
+ */
+export function ficheDuContactCsvSelon(contact: ContactNomme, codes: boolean): string {
   const saisie = saisieInitialeContact(contact)
-  const enTete = CHAMPS_DANS_L_ORDRE.map((c) => champDeLaFiche(LIBELLES_DES_CHAMPS[c])).join(';')
-  const fiche = CHAMPS_DANS_L_ORDRE.map((c) => champDeLaFiche(valeurDuChamp(saisie, c))).join(';')
+  const avecLeCode = codes && contact.code_client !== undefined
+  const enTete = [...(avecLeCode ? [champDeLaFiche(LIBELLE_DU_CODE_CLIENT)] : []),
+    ...CHAMPS_DANS_L_ORDRE.map((c) => champDeLaFiche(LIBELLES_DES_CHAMPS[c]))].join(';')
+  const fiche = [...(avecLeCode ? [champDeLaFiche(contact.code_client ?? '')] : []),
+    ...CHAMPS_DANS_L_ORDRE.map((c) => champDeLaFiche(valeurDuChamp(saisie, c)))].join(';')
   return '\uFEFF' + enTete + '\r\n' + fiche
 }
 

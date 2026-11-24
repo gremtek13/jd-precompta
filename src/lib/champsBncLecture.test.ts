@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CHAMPS_BNC_EXPORTES } from './champsBncDuFec'
 import {
-  COLONNES_COTISATIONS_DU_FEC, COLONNES_FACTURES_DU_FEC, lireLesChampsBnc, lireLesChampsBncSelon,
+  COLONNES_COTISATIONS_DU_FEC, COLONNES_FACTURES_DU_FEC, COLONNES_FICHES_DU_FEC, lireLesChampsBnc, lireLesChampsBncSelon,
 } from './champsBncLecture'
+import { CODES_DES_CLIENTS_PREVUS } from './codesDesClients'
 
 // CE QUE LE FEC D'UN BNC EN TRÉSORERIE LIT DE PLUS (lot FEC22c1). Ce que ces cas gardent : le drapeau baissé, AUCUN appel au
 // réseau ; levé, les deux tables et le filtre de SON dossier, les colonnes nommées — jamais le nom du client —, le compte
@@ -53,9 +54,16 @@ vi.mock('./supabase', async () => {
 beforeEach(() => {
   faux.tables = {
     factures_emises: [
-      { id: 'f1', dossier_id: 'd1', numero: 'F2026-0001', statut: 'validee', tiers_siret: '12345678200010', source_de_la_vente: false },
-      { id: 'f2', dossier_id: 'd1', numero: null, statut: 'brouillon', tiers_siret: null, source_de_la_vente: true },
-      { id: 'x1', dossier_id: 'd2', numero: 'F2026-0009', statut: 'validee', tiers_siret: null, source_de_la_vente: false },
+      { id: 'f1', dossier_id: 'd1', numero: 'F2026-0001', statut: 'validee', tiers_siret: '12345678200010', source_de_la_vente: false, contact_id: 'k1' },
+      { id: 'f2', dossier_id: 'd1', numero: null, statut: 'brouillon', tiers_siret: null, source_de_la_vente: true, contact_id: null },
+      { id: 'f3', dossier_id: 'd1', numero: 'F2026-0002', statut: 'validee', tiers_siret: null, source_de_la_vente: false, contact_id: 'k-ailleurs' },
+      { id: 'x1', dossier_id: 'd2', numero: 'F2026-0009', statut: 'validee', tiers_siret: null, source_de_la_vente: false, contact_id: 'kx' },
+    ],
+    // Les fiches (EXP58-Q2) : leur identifiant, leur dossier et leur code seuls ; une fiche d'un autre dossier ne donne rien.
+    contacts: [
+      { id: 'k1', dossier_id: 'd1', code_client: 'C00003' },
+      { id: 'k2', dossier_id: 'd1', code_client: 'C00004' },
+      { id: 'kx', dossier_id: 'd2', code_client: 'C00001' },
     ],
     cotisations_declarees: [
       { id: 'c1', dossier_id: 'd1', paiement_personnel_le: '2026-03-10' },
@@ -71,16 +79,40 @@ beforeEach(() => {
 
 describe('lireLesChampsBncSelon — le drapeau levé', () => {
   it('les factures et les échéances de SON dossier, lues en entier, avec l’identifiant du dossier', async () => {
-    const lu = await lireLesChampsBncSelon('d1', true)
-    expect(lu).toEqual({
-      dossierId: 'd1', etat: 'lue',
-      factures: faux.tables.factures_emises.slice(0, 2), cotisations: faux.tables.cotisations_declarees,
+    const lu = await lireLesChampsBncSelon('d1', true, false)
+    // Le drapeau des codes baissé : aucune fiche lue, le code de chacune nul — l'identification d'hier.
+    const sansFiche = faux.tables.factures_emises.slice(0, 3).map(({ contact_id: _fiche, ...f }) => ({ ...f, codeDuClient: null }))
+    expect(lu).toEqual({ dossierId: 'd1', etat: 'lue', factures: sansFiche, cotisations: faux.tables.cotisations_declarees })
+    expect(faux.requetes.map((r) => r.table)).not.toContain('contacts')
+  })
+
+  it('le drapeau des codes levé (EXP58-Q2) : les fiches de SON dossier, leur code seul, et chaque facture le code de la sienne', async () => {
+    const lu = await lireLesChampsBncSelon('d1', true, true)
+    expect(lu.etat === 'lue' && lu.factures.map((f) => `${f.id}:${f.codeDuClient ?? '∅'}`)).toEqual(['f1:C00003', 'f2:∅', 'f3:∅'])
+    expect(faux.requetes.map((r) => r.table)).toEqual(['factures_emises', 'cotisations_declarees', 'contacts'])
+    expect(faux.requetes[2]).toMatchObject({ colonnes: COLONNES_FICHES_DU_FEC, options: { count: 'exact' }, filtres: [['dossier_id', 'd1']] })
+    expect(faux.requetes[2].ordres.at(-1)).toBe('id')
+    // Ni le nom ni l'identité d'une fiche ; et la provenance d'une facture ne sort pas de la lecture.
+    expect(COLONNES_FICHES_DU_FEC).toBe('id, dossier_id, code_client')
+    expect(lu.etat === 'lue' && lu.factures.some((f) => 'contact_id' in f)).toBe(false)
+  })
+
+  it('… les fiches lues en partie, ou une fiche d’un autre dossier rendue : incomplète, nommée', async () => {
+    faux.muetApres = { contacts: 1 }
+    const partielle = await lireLesChampsBncSelon('d1', true, true)
+    expect(partielle.etat === 'incomplete' && partielle.motif).toMatch(/^les codes des fiches clients : /)
+    faux.muetApres = {}
+    faux.sansFiltre = 'contacts'
+    expect(await lireLesChampsBncSelon('d1', true, true)).toEqual({
+      dossierId: 'd1', etat: 'incomplete', motif: "les codes des fiches clients : une ligne rendue n'est pas de ce dossier",
     })
   })
 
   it('les colonnes nommées — ni le nom du client, ni rien d’autre —, le compte annoncé, un tri total terminé par la clé primaire', async () => {
-    await lireLesChampsBncSelon('d1', true)
+    await lireLesChampsBncSelon('d1', true, false)
     expect(faux.requetes.map((r) => r.table)).toEqual(['factures_emises', 'cotisations_declarees'])
+    // La provenance d'une facture se lit (EXP58-Q2) : une colonne de la facture, en base depuis A7a.
+    expect(COLONNES_FACTURES_DU_FEC.split(', ')).toContain('contact_id')
     expect(faux.requetes[0]).toMatchObject({ colonnes: COLONNES_FACTURES_DU_FEC, options: { count: 'exact' }, filtres: [['dossier_id', 'd1']] })
     expect(faux.requetes[1]).toMatchObject({ colonnes: COLONNES_COTISATIONS_DU_FEC, options: { count: 'exact' }, filtres: [['dossier_id', 'd1']] })
     expect(faux.requetes.every((r) => r.ordres.at(-1) === 'id')).toBe(true)
@@ -89,24 +121,24 @@ describe('lireLesChampsBncSelon — le drapeau levé', () => {
 
   it('une seule lecture interrompue suffit : incomplète, avec le nom de celle qui a manqué', async () => {
     faux.muetApres = { cotisations_declarees: 1 }
-    const lu = await lireLesChampsBncSelon('d1', true)
+    const lu = await lireLesChampsBncSelon('d1', true, false)
     expect(lu.etat).toBe('incomplete')
     expect(lu.etat === 'incomplete' && lu.motif).toMatch(/^les échéances de cotisation : /)
   })
 
   it('une ligne d’un autre dossier rendue quand même : incomplète, jamais lue comme la sienne', async () => {
     faux.sansFiltre = 'factures_emises'
-    const lu = await lireLesChampsBncSelon('d1', true)
+    const lu = await lireLesChampsBncSelon('d1', true, false)
     expect(lu).toEqual({ dossierId: 'd1', etat: 'incomplete', motif: "les factures du dossier : une ligne rendue n'est pas de ce dossier" })
   })
 
   it('refusée, ou qui lève : incomplète, avec son motif — jamais un rejet', async () => {
     faux.refus = 'permission refusée'
-    const refusee = await lireLesChampsBncSelon('d1', true)
+    const refusee = await lireLesChampsBncSelon('d1', true, false)
     expect(refusee.etat === 'incomplete' && refusee.motif).toContain('permission refusée')
     faux.refus = null
     faux.leve = true
-    const levee = await lireLesChampsBncSelon('d1', true)
+    const levee = await lireLesChampsBncSelon('d1', true, false)
     expect(levee).toMatchObject({ dossierId: 'd1', etat: 'incomplete' })
     expect(levee.etat === 'incomplete' && levee.motif).toContain('réseau coupé')
   })
@@ -114,13 +146,13 @@ describe('lireLesChampsBncSelon — le drapeau levé', () => {
 
 describe('lireLesChampsBncSelon — le drapeau baissé', () => {
   it('ne lit rien, ne touche pas au réseau, et le dit', async () => {
-    expect(await lireLesChampsBncSelon('d1', false)).toEqual({ dossierId: 'd1', etat: 'non_exportes' })
+    expect(await lireLesChampsBncSelon('d1', false, false)).toEqual({ dossierId: 'd1', etat: 'non_exportes' })
     expect(faux.requetes).toEqual([])
   })
 
   it('le module chargé normalement suit son drapeau', async () => {
     const lu = await lireLesChampsBnc('d1')
     expect(lu.etat).toBe(CHAMPS_BNC_EXPORTES === null ? 'non_exportes' : 'lue')
-    expect(faux.requetes.length).toBe(CHAMPS_BNC_EXPORTES === null ? 0 : 2)
+    expect(faux.requetes.length).toBe(CHAMPS_BNC_EXPORTES === null ? 0 : CODES_DES_CLIENTS_PREVUS ? 3 : 2)
   })
 })

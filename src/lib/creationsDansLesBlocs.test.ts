@@ -326,9 +326,10 @@ describe('aucun objet ne se crée dans un bloc do, que l’inventaire de l’exp
     // contraintes de paire (MCB5g, INV2, LIA2, AFF2, EL2 : quatre chacune), la boucle de la double authentification, le bloc
     // `$preparees$` de la porte (ses dix tables) ; vingt et un rendus du catalogue comparés (dix-sept dans l'export, quatre
     // dans INV3 et DOCF-Q1-B). Un nombre qui change est un cas à relire, puis à épingler ici avec sa raison. Le 24/11/2026,
-    // quarante-cinq restrictives : celle de `reglages_d_export` (EXP-Q4, préparée), sous sa condition, sur la table qu'elle crée.
+    // quarante-six restrictives : celle de `reglages_d_export` (EXP-Q4, préparée), et celle de `codes_des_clients` (EXP58-Q2,
+    // préparée) sur son compteur, chacune sous sa condition, sur la table qu'elle crée.
     const tout = releve([...SCHEMA, ...PREPAREES])
-    expect(tout.cas).toEqual({ restrictive: 45, paire: 20, balayage: 1, porteDesPreparees: 10 })
+    expect(tout.cas).toEqual({ restrictive: 46, paire: 20, balayage: 1, porteDesPreparees: 10 })
     expect(tout.verifications).toBe(21)
     expect(tout.blocs).toBeGreaterThanOrEqual(220)
     expect(releve(PREPAREES).blocs).toBeGreaterThanOrEqual(40)
@@ -579,9 +580,10 @@ ${pose}`
       const lu = formes[abs(f.chemin)]
       return { balayage: t.balayage + lu.balayage, sous_condition: t.sous_condition + lu.sous_condition, retrait: t.retrait + lu.retrait }
     }, { balayage: 0, sous_condition: 0, retrait: 0 })
-    // Les nombres du relevé épinglé plus haut : un balayage, quarante-cinq tables sous condition (vingt-sept dans l'export,
-    // dix-sept dans les préparées depuis qu'EL2 est rangée, le 23/11/2026, et une de plus le 24/11/2026, `reglages_d_export`).
-    expect(total([...SCHEMA, ...PREPAREES])).toEqual({ balayage: 1, sous_condition: 45, retrait: 0 })
+    // Les nombres du relevé épinglé plus haut : un balayage, quarante-six tables sous condition (vingt-sept dans l'export,
+    // dix-sept dans les préparées depuis qu'EL2 est rangée, le 23/11/2026, et deux de plus le 24/11/2026 : `reglages_d_export`, puis
+    // le compteur des codes des fiches, `codes_des_clients`).
+    expect(total([...SCHEMA, ...PREPAREES])).toEqual({ balayage: 1, sous_condition: 46, retrait: 0 })
     expect(RETOURS.filter((f) => formes[abs(f.chemin)].retrait > 0).map((f) => f.chemin)).toEqual([RETOUR_DF?.chemin])
     expect(total(RETOURS)).toEqual({ balayage: 0, sous_condition: 0, retrait: 1 })
   })

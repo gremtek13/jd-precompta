@@ -27,8 +27,11 @@ let lue: { chemin: string; texte: string } | undefined
 const MIGRATION = () => (lue ??= laMigration())
 const RETOUR = () => readFileSync(`${RACINE}supabase/preparees/retour/20261110120150_retour_${NOM}.sql`, 'utf8')
 
-// La définition d'AVANT la migration, dans l'export : la dernière, hors du fichier de la migration elle-même.
-const avant = (fonction: string) => derniereDefinitionSql(fonction, (f) => !f.chemin.includes(NOM))
+// La définition d'AVANT la migration, dans l'export : la dernière des fichiers qui la PRÉCÈDENT — hors d'elle-même, et hors
+// d'une migration rangée après elle qui reprendrait la fonction (EXP58-Q2, `codes_des_clients`, reprend `valider_exercice`).
+const nomDuFichier = (chemin: string) => chemin.split('/').pop() as string
+const avant = (fonction: string) => derniereDefinitionSql(fonction,
+  (f) => !f.chemin.includes(NOM) && nomDuFichier(f.chemin) < nomDuFichier(MIGRATION().chemin))
 
 // La définition qu'un texte donne à une fonction (la seule qu'il en donne), de `create` au `$$;` exclu.
 function definitionDans(texte: string, fonction: string): string {

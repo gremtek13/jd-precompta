@@ -101,7 +101,9 @@ describe('le plan prévu, paramètres de facturation compris', () => {
 
   it('après les contacts, à la fin de ce qui ne dépend que du dossier — avant `exercices_valides` (les devis, depuis l’étape P6c1, avant le journal des e-mails)', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
-    expect(ORDRE_RESTAURATION_PREVU[rang('parametres_facturation') - 1]).toBe('contacts')
+    // Depuis EXP58-Q2, le compteur des codes des fiches s'intercale, juste après les contacts (sauvegardeCodesDesClients.test.ts).
+    expect(ORDRE_RESTAURATION_PREVU[rang('parametres_facturation') - 1]).toBe('contacts_numerotation')
+    expect(ORDRE_RESTAURATION_PREVU[rang('parametres_facturation') - 2]).toBe('contacts')
     // Depuis l'étape VF6b, le journal des désignations les suit (sauvegardeDesignations.test.ts) ; les devis, jusqu'à P6c1.
     expect(ORDRE_RESTAURATION_PREVU[rang('parametres_facturation') + 1]).toBe('designations_des_pieces')
     expect(rang('parametres_facturation')).toBeLessThan(rang('exercices_valides'))

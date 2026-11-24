@@ -395,6 +395,13 @@
 -- 250 : sans la préparée, IDENTIQUE (108 tables, 20 lignes, 216 clés) ; avec elle et un réglage semé dans `test` par sa
 -- fonction, IDENTIQUE (109 tables, 21 lignes dont le réglage, 217 clés). Rejoué après l'entrée du bloc d'EL7 : les mêmes ; la
 -- préparée d'EL7 appliquée aussi, IDENTIQUE (109 tables, 21 lignes, 218 clés).
+--
+-- 24/11/2026, EXP58-Q2 : `contacts_numerotation` (préparée `codes_des_clients`) entre au plan quand sa table existe (le bloc « Le
+-- compteur des codes des fiches clients », ci-dessous), juste après `contacts` ; le code d'une fiche, une colonne de `contacts`,
+-- se recopie avec elle. Sur une copie de `replique_227` portée à 250 : sans la préparée, IDENTIQUE (108 tables, 20 lignes, 216
+-- clés) ; avec elle et deux fiches semées dans `test` (leurs codes posés par la garde), IDENTIQUE (109 tables, 23 lignes dont
+-- les deux fiches et le compteur, 217 clés) ; les préparées d'EL7 et d'EXP-Q4 appliquées avant elle, IDENTIQUE (110 tables, 23
+-- lignes, 219 clés).
 \set ON_ERROR_STOP on
 drop schema if exists essai_restauration cascade;
 create schema essai_restauration;
@@ -1280,6 +1287,27 @@ begin
     insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'reglages_d_export');
     insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
      ('reglages_d_export','direct',null,null);
+  end if;
+end $$;
+
+-- ══ Le compteur des codes des fiches clients (EXP58-Q2) ══ Au plan du code quand `CODES_DES_CLIENTS_PREVUS` est levé —
+-- c'est-à-dire quand sa migration (`codes_des_clients`) est en base : le script met sa table juste après `contacts`
+-- (ORDRE_RESTAURATION_PREVU : une ligne par dossier, qui ne dépend que de lui), les tables qui suivent reculant d'un rang ; son
+-- chemin ; aucune vague. En production, sa lecture rend zéro ligne (aucune policy) : la restauration n'y écrit rien, et la
+-- garde des contacts reprend le compteur au plus haut des codes restaurés ; ici, le propriétaire la recopie comme les autres.
+-- Le code d'une fiche, une colonne de `contacts`, se recopie avec elle, sa forme et son unicité comprises. Joué après le bloc
+-- des réglages de l'export (EXP-Q4) et avant celui des options des cabinets, qui reste le dernier. Absente de la base, rien
+-- n'entre : le plan est celui d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.contacts_numerotation') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'contacts';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'contacts_numerotation');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('contacts_numerotation','direct',null,null);
   end if;
 end $$;
 

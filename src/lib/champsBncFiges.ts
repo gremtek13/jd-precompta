@@ -107,8 +107,9 @@ export interface LigneAJuger {
   identification_client: string | null
 }
 
-/** Un document du dossier tel que la garde du secret le lit : son numéro, son statut et le SIRET figé de son client. */
-export type DocumentDuDossier = Pick<FactureEmise, 'numero' | 'statut' | 'tiers_siret'>
+/** Un document du dossier tel que la garde du secret le lit : son numéro, son statut, le SIRET figé de son client et le code
+ *  de la fiche d'où vient ce client (EXP58-Q2 ; nul sans fiche, et toujours nul le drapeau baissé — lib/champsBncLecture.ts). */
+export type DocumentDuDossier = Pick<FactureEmise, 'numero' | 'statut' | 'tiers_siret'> & { codeDuClient: string | null }
 
 const FORME_DE_DATE = /^[1-9]\d{3}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
 
@@ -129,13 +130,17 @@ function differe(valeurs: readonly (string | null)[]): boolean {
 /**
  * Ce qui identifie un client, comme la base le lit : le numéro d'une facture ou d'un avoir VALIDÉ du dossier, ou le SIREN
  * de son client figé — les neuf premiers chiffres de `tiers_siret` quand il n'est fait que de neuf ou de quatorze chiffres
- * et passe ses clés (`sirenValide`, `siretValide` : La Poste et son siège compris). Jamais un nom.
+ * et passe ses clés (`sirenValide`, `siretValide` : La Poste et son siège compris) —, ou, depuis EXP58-Q2 (la migration
+ * `codes_des_clients`, qui l'ajoute à la garde du secret de `valider_exercice`), le code de la fiche d'où vient le client
+ * d'un tel document. Jamais un nom. Le code ne parvient ici que le drapeau levé (`CODES_DES_CLIENTS_PREVUS`), donc la
+ * migration en base : la lecture le tait avant elle.
  */
 export function identificationsAdmises(documents: readonly DocumentDuDossier[]): ReadonlySet<string> {
   const admises = new Set<string>()
   for (const d of documents) {
     if (d.statut !== 'validee' || d.numero === null || d.numero === '') continue
     admises.add(d.numero)
+    if (d.codeDuClient !== null) admises.add(d.codeDuClient)
     const s = d.tiers_siret
     if (s !== null && /^\d{14}$/.test(s) && siretValide(s) && sirenValide(s.slice(0, 9))) admises.add(s.slice(0, 9))
     if (s !== null && /^\d{9}$/.test(s) && sirenValide(s)) admises.add(s)

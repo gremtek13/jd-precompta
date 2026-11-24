@@ -55,7 +55,8 @@ const SIRET_INVALIDE = '12345678200011'
 type FactureLueEnTrop = FactureDuClient & { tiers_nom: string | null }
 type EncaissementLuEnTrop = EncaissementDuRegistre & { motif: string | null }
 const facture = (f: Partial<FactureLueEnTrop>): FactureLueEnTrop => ({
-  id: 'facture-1', numero: 'F2026-0007', statut: 'validee', tiers_siret: null, tiers_nom: NOMS[0], source_de_la_vente: true, ...f,
+  id: 'facture-1', numero: 'F2026-0007', statut: 'validee', tiers_siret: null, tiers_nom: NOMS[0], source_de_la_vente: true,
+  codeDuClient: null, ...f,
 })
 const encaissement = (e: Partial<EncaissementLuEnTrop>): EncaissementLuEnTrop => ({
   id: 'enc-1', dossier_id: 'dossier-1', facture_id: 'facture-1', date_encaissement: '2026-04-10', montant: 100, moyen: 'virement',
@@ -187,6 +188,30 @@ describe('IdClient (FEC22-Q4, (D)) : le SIREN d’une entreprise, sinon le numé
 
   it('le nom du client ne paraît jamais, même quand il ressemble à un numéro', () => {
     expect(identificationDuClient(facture({ tiers_nom: SIREN_VALIDE, tiers_siret: null }))).toBe('F2026-0007')
+  })
+})
+
+describe('IdClient, depuis EXP58-Q2 : le code de la fiche d’où vient le client, pour toute fiche, entreprises comprises', () => {
+  it('une facture validée qui vient d’une fiche : son code, avant le SIREN d’une entreprise et avant le numéro', () => {
+    expect(identificationDuClient(facture({ codeDuClient: 'C00003', tiers_siret: SIRET_VALIDE }))).toBe('C00003')
+    expect(identificationDuClient(facture({ codeDuClient: 'C00003', tiers_siret: null }))).toBe('C00003')
+  })
+
+  it('sans fiche — le drapeau baissé, ou un client saisi à la main —, la règle d’hier, rien de deviné', () => {
+    expect(identificationDuClient(facture({ codeDuClient: null, tiers_siret: SIRET_VALIDE }))).toBe(SIREN_VALIDE)
+    expect(identificationDuClient(facture({ codeDuClient: null, tiers_siret: null }))).toBe('F2026-0007')
+  })
+
+  it('une facture qui n’est pas figée n’identifie personne, sa fiche fût-elle connue', () => {
+    expect(identificationDuClient(facture({ statut: 'brouillon', numero: null, codeDuClient: 'C00003' }))).toBe('')
+  })
+
+  it('les écritures d’une vente facturée portent le code de la fiche de leur document', () => {
+    const f = facture({ codeDuClient: 'C00012', tiers_siret: SIRET_VALIDE })
+    expect(champsDUnEncaissement(encaissement({}), f, []).idClient).toBe('C00012')
+    expect(champsDeLaTvaDUneFacture(f, '2026-04-10', [], { sansReglement: 'vides' }).idClient).toBe('C00012')
+    // L'encaissement d'une autre facture : aucun client, comme hier.
+    expect(champsDUnEncaissement(encaissement({}), facture({ id: 'facture-2', codeDuClient: 'C00012' }), []).idClient).toBe('')
   })
 })
 

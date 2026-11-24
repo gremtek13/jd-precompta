@@ -289,7 +289,7 @@ export interface EntreesDesChampsBnc {
   // virement mixte, d'une remise. Vide pour un dossier qui n'a pas basculé, où aucune écriture n'en vient.
   registre: readonly EncaissementDuRegistre[]
   // Les factures et avoirs du dossier, TOUS : le numéro et le SIRET figé du client (IdClient, FEC22-Q4), la source de la
-  // vente — jamais le nom du client.
+  // vente, le code de la fiche d'où vient le client (EXP58-Q2 ; nul sans fiche ou le drapeau baissé) — jamais le nom du client.
   factures: readonly FactureDuClient[]
   // Les échéances de cotisation du dossier : la date d'un paiement depuis le compte personnel (`paiement_personnel_le`).
   cotisations: readonly Pick<CotisationDeclaree, 'id' | 'paiement_personnel_le'>[]
@@ -544,7 +544,9 @@ function posteDeLaLigne(
 
 // Une facture que les factures lues ne rendent pas : elle n'identifie personne (`identificationDuClient` rend '' d'une
 // facture qui n'est pas validée). Défensif : les factures sont lues en entier, et la composition ne cite que les leurs.
-const factureNonLue = (id: string): FactureDuClient => ({ id, numero: null, statut: 'brouillon', tiers_siret: null, source_de_la_vente: true })
+const factureNonLue = (id: string): FactureDuClient => ({
+  id, numero: null, statut: 'brouillon', tiers_siret: null, source_de_la_vente: true, codeDuClient: null,
+})
 
 /**
  * Les quatre champs d'une écriture, par la règle de SA sorte (lib/champsBncDuFec.ts, `REGLES_DES_SORTES`) : ce fichier n'en

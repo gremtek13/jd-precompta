@@ -14,6 +14,7 @@ import { ADRESSES_RECEPTION_EXPORTEES } from './adressesReception'
 import { ARTICLES_EXPORTES } from './articles'
 import { CAISSE_EXPORTEE } from './caisse'
 import { CONTACTS_EXPORTES } from './contacts'
+import { CODES_DES_CLIENTS_PREVUS, TABLES_DES_CODES_DES_CLIENTS } from './codesDesClients'
 import { ACOMPTES_PREVUS, DEVIS_EXPORTES, ENVOI_DES_DEVIS_PREVU } from './devis'
 import { EXEMPLAIRES_DES_FACTURES_EXPORTES, JUMELLE_INVERSEE_EXPORTEE } from './exemplairesDesFactures'
 import { FACTURES_IMPORTEES_PREVUES } from './facturesImportees'
@@ -745,6 +746,17 @@ export function auGrapheDesEcrituresLibres(r: Pick<Relation, 'enfant' | 'parent'
   return prevues || (!tables.includes(r.enfant) && !tables.includes(r.parent))
 }
 
+// LE COMPTEUR DES CODES DES FICHES CLIENTS (EXP58-Q2 ; migration `codes_des_clients`, PRÉPARÉE ; `CODES_DES_CLIENTS_PREVUS`,
+// lib/codesDesClients.ts). Le code d'une fiche est une colonne de `contacts`, déjà au plan (`select('*')` le porte) ; le
+// compteur de chaque dossier, `contacts_numerotation`, a sa table, sans policy — comme `facture_numerotation`, la sauvegarde
+// la lit vide, et la restauration n'y écrit rien : la garde des contacts reprend le compteur au plus haut des codes
+// restaurés (RESTAU-Q3, `CODES_HORS_PERIMETRE`, lib/restaurationInterrompue.ts). Au plan derrière le drapeau, juste après les
+// contacts : la lire avant la migration ferait échouer toute sauvegarde. sauvegardeCodesDesClients.test.ts l'éprouve.
+/** Une table au plan, côté codes des fiches clients : toutes, sauf le compteur tant que sa migration n'est pas en base. */
+export function auPlanDesCodesDesClients(table: string, prevus: boolean): boolean {
+  return prevus || !TABLES_DES_CODES_DES_CLIENTS.includes(table)
+}
+
 /** Une table au plan AUJOURD'HUI : celles d'une migration préparée seulement son drapeau levé — les devis, les articles, les
  *  adresses de réception, les contacts, les paramètres de facturation, le journal des désignations, la caisse, la trace des
  *  droits. */
@@ -787,6 +799,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_EN_BASE)
     && auPlanDesEcrituresLibres(table, ECRITURES_LIBRES_PREVUES)
     && auPlanDesReglagesDExport(table, REGLAGES_D_EXPORT_PREVUS)
+    && auPlanDesCodesDesClients(table, CODES_DES_CLIENTS_PREVUS)
 }
 
 // L'EXEMPLAIRE D'UNE FACTURE (chantier EC-Q3, étape VF1a ; migration `exemplaires_des_factures`, en base et dans l'export
@@ -1093,6 +1106,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'adresses_reception', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   // Les contacts (espace client, étape A4a) : seulement leur dossier — une facture n'en garde que la copie.
   { enfant: 'contacts', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // Le compteur des codes des fiches (EXP58-Q2, préparée) : une ligne par dossier.
+  { enfant: 'contacts_numerotation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   // Les paramètres de facturation (espace client, étape A5a) : leur dossier, et la version qu'une version remplace.
   { enfant: 'parametres_facturation', parent: 'parametres_facturation', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'parametres_facturation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -1531,6 +1546,8 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'pieces_jointes_ecartees',
   'adresses_reception',
   'contacts',
+  // Le compteur des codes des fiches (EXP58-Q2, préparée) : juste après les contacts ; lu vide, rien ne s'y écrit.
+  'contacts_numerotation',
   'parametres_facturation',
   'designations_des_pieces',
   'debuts_d_activite',
@@ -1801,6 +1818,7 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
 export const CLES_PRIMAIRES_PREVUES: Readonly<Record<string, readonly string[]>> = {
   cabinet_admins: ['user_id'],
   connexions_plateformes: ['dossier_id'],
+  contacts_numerotation: ['dossier_id'],
   declarations_ereporting_sources: ['declaration_id', 'genre', 'source_id'],
   devis_numerotation: ['dossier_id', 'annee'],
   encaissements_factures_taux: ['encaissement_id', 'taux'],
@@ -2106,6 +2124,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   articles: { acces: 'direct' },
   adresses_reception: { acces: 'direct' },
   contacts: { acces: 'direct' },
+  contacts_numerotation: { acces: 'direct' },
   parametres_facturation: { acces: 'direct' },
   designations_des_pieces: { acces: 'direct' },
   operations_caisse: { acces: 'direct' },

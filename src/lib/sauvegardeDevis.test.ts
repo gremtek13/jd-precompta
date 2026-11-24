@@ -40,6 +40,7 @@ import { OPTIONS_DES_CABINETS_EN_BASE } from './modulesDuCabinet'
 import { ECRITURES_LIBRES_PREVUES } from './ecritureLibre'
 import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import { REGLAGES_D_EXPORT_PREVUS } from './reglagesDExport'
+import { CODES_DES_CLIENTS_PREVUS } from './codesDesClients'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
@@ -93,6 +94,7 @@ import {
   violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures, auPlanDesHonorairesDeposes,
   auPlanDesDocumentsEtDemandes, auPlanDesAchatsDuClient, auPlanDesNotesDeFrais, auPlanDesSaisies2035E, auPlanDuModeleDuCabinet, auPlanDesCopiesDesFichiers, auPlanDesExercices, auPlanDuDepart, TABLES_DU_DEPART,
   auPlanDesOptionsDesCabinets, auPlanDesEcrituresLibres, auGrapheDesEcrituresLibres, auPlanDesReglagesDExport,
+  auPlanDesCodesDesClients,
 } from './sauvegarde'
 
 // LES DEVIS AU PLAN DE SAUVEGARDE (espace client, étape P5). Leurs migrations attendent l'accord du cabinet : tant que
@@ -138,7 +140,8 @@ describe('le filtre du plan', () => {
     // (sauvegardeAssociationsAssuranceMaladie.test.ts) ; depuis EL8, celui des écritures libres, et le graphe retire la clé du
     // brouillon vers une écriture libre (sauvegardeEcrituresLibres.test.ts) ; depuis EL7, le graphe retire la relation de la
     // contre-passation d'une écriture libre tant que sa migration n'est pas exportée (sauvegardeContrePassation.test.ts) ;
-    // depuis EXP-Q4, celui des réglages de l'export vers un logiciel comptable (sauvegardeReglagesDExport.test.ts).
+    // depuis EXP-Q4, celui des réglages de l'export vers un logiciel comptable (sauvegardeReglagesDExport.test.ts) ; depuis
+    // EXP58-Q2, celui du compteur des codes des fiches clients (sauvegardeCodesDesClients.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -174,7 +177,8 @@ describe('le filtre du plan', () => {
         && auPlanDeLAffectation(table, AFFECTATION_PREVUE)
         && auPlanDesOptionsDesCabinets(table, OPTIONS_DES_CABINETS_EN_BASE)
         && auPlanDesEcrituresLibres(table, ECRITURES_LIBRES_PREVUES)
-        && auPlanDesReglagesDExport(table, REGLAGES_D_EXPORT_PREVUS))
+        && auPlanDesReglagesDExport(table, REGLAGES_D_EXPORT_PREVUS)
+        && auPlanDesCodesDesClients(table, CODES_DES_CLIENTS_PREVUS))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)

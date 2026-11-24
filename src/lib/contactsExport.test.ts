@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { TYPES_CLIENT_CONTACT, saisieQuiPart, type ContactEnvoye } from './contacts'
-import { champDeLaFiche, ficheDuContactCsv, nomFichierDeLaFiche, nomSimplifiePourUnFichier } from './contactsExport'
+import { CODES_DES_CLIENTS_PREVUS } from './codesDesClients'
+import { champDeLaFiche, ficheDuContactCsv, ficheDuContactCsvSelon, nomFichierDeLaFiche, nomSimplifiePourUnFichier } from './contactsExport'
 import {
-  CHAMPS_DANS_L_ORDRE, apercuDeLImport, colonnesProposees, decoderLeFichier, decouperLeFichier, etatDeLaCorrespondance,
+  CHAMPS_DANS_L_ORDRE, apercuDeLImport, colonnesProposees, colonnesProposeesSelon, decoderLeFichier, decouperLeFichier,
+  etatDeLaCorrespondance,
   lignesAImporter, separateurPropose, tableauDuFichier, typesProposes, valeursDuType,
 } from './contactsImportFichier'
 import { LIBELLES_TYPE_CONTACT, saisieInitialeContact } from './contactsVue'
@@ -140,6 +142,47 @@ function rempli(type: TypeClient): ContactNomme {
     delai_paiement_jours: envoye.delai_paiement_jours as number, observations: envoye.observations,
   })
 }
+
+// LE CODE DE LA FICHE (EXP58-Q2) : la table de correspondance d'IdClient du FEC, une ligne par fiche exportée. Les deux états du
+// drapeau, joués par les fonctions `…Selon` ; le module chargé suit le sien.
+describe('le code de la fiche, sous son drapeau (EXP58-Q2)', () => {
+  const avecSonCode = contact({ code_client: 'C00007' })
+
+  it('le drapeau baissé, la fiche d’hier à l’octet, même lue avec un code ; le module chargé suit son drapeau', () => {
+    expect(ficheDuContactCsvSelon(avecSonCode, false)).toBe(ficheDuContactCsvSelon(contact(), false))
+    expect(ficheDuContactCsvSelon(avecSonCode, false).slice(1).split('\r\n')[0]).toBe(ENTETE_ATTENDU)
+    expect(ficheDuContactCsv(avecSonCode)).toBe(ficheDuContactCsvSelon(avecSonCode, CODES_DES_CLIENTS_PREVUS))
+    expect(colonnesProposees(['Code client'])).toEqual(colonnesProposeesSelon(['Code client'], CODES_DES_CLIENTS_PREVUS))
+  })
+
+  it('levé, le code en PREMIÈRE colonne, « Code client » ; une fiche lue sans code garde la fiche d’hier', () => {
+    const [enTete, fiche] = ficheDuContactCsvSelon(avecSonCode, true).slice(1).split('\r\n')
+    expect(enTete).toBe(`Code client;${ENTETE_ATTENDU}`)
+    expect(fiche.split(';')[0]).toBe('C00007')
+    expect(fiche.split(';').slice(1).join(';')).toBe(ficheDuContactCsvSelon(contact(), false).split('\r\n')[1])
+    expect(ficheDuContactCsvSelon(contact(), true)).toBe(ficheDuContactCsvSelon(contact(), false))
+  })
+
+  it('levé, l’import relit la fiche : le code « Ne pas importer » (la base le pose), aucune colonne à choisir, la même saisie', () => {
+    const decode = decoderLeFichier(new TextEncoder().encode(ficheDuContactCsvSelon(avecSonCode, true)), 'cabinet')
+    if ('refus' in decode) throw new Error(decode.refus)
+    const decoupe = decouperLeFichier(decode.texte, ';', 'cabinet')
+    if ('refus' in decoupe) throw new Error(decoupe.refus)
+    const tableau = tableauDuFichier(decoupe.enregistrements, true)
+    const choix = colonnesProposeesSelon(tableau.colonnes, true)
+    expect(choix).toEqual(['ne_pas_importer', ...CHAMPS_DANS_L_ORDRE])
+    const correspondance = {
+      choix, valeursDuType: typesProposes(valeursDuType(tableau.lignes, choix.indexOf('type_client'))), typeUnique: null,
+    }
+    expect(etatDeLaCorrespondance(tableau.colonnes, correspondance)).toEqual({
+      aChoisir: [], typeAChoisir: false, nonImportees: ['Code client'], colonneDuType: 2,
+    })
+    expect(lignesAImporter(tableau, correspondance)[0].envoyee).toEqual(cequeLaSaisieEnverrait(avecSonCode))
+    // Baissé, une colonne « Code client » d'un autre fichier reste à choisir, comme hier.
+    expect(colonnesProposeesSelon(['Code client', 'Nom'], false)).toEqual([null, 'nom'])
+    expect(colonnesProposeesSelon(['code  CLIENT', 'Nom'], true)).toEqual(['ne_pas_importer', 'nom'])
+  })
+})
 
 describe('l’aller-retour : la fiche passée par l’import rend ce que la saisie à la main enverrait', () => {
   it('les quatre types sont ceux de la base', () => {

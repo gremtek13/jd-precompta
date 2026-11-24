@@ -92,7 +92,9 @@ describe('le plan prévu, contacts compris', () => {
     const rang = (t: string) => ORDRE_RESTAURATION_PREVU.indexOf(t)
     expect(ORDRE_RESTAURATION_PREVU[rang('contacts') - 1]).toBe('adresses_reception')
     // Depuis l'étape A5a, les paramètres de facturation les suivent (sauvegardeParametresFacturation.test.ts) ; les devis, jusqu'à P6c1.
-    expect(ORDRE_RESTAURATION_PREVU[rang('contacts') + 1]).toBe('parametres_facturation')
+    // Depuis EXP58-Q2, le compteur des codes des fiches les suit, avant les paramètres (sauvegardeCodesDesClients.test.ts).
+    expect(ORDRE_RESTAURATION_PREVU[rang('contacts') + 1]).toBe('contacts_numerotation')
+    expect(ORDRE_RESTAURATION_PREVU[rang('contacts') + 2]).toBe('parametres_facturation')
     expect(rang('contacts')).toBeLessThan(rang('exercices_valides'))
     expect(rang('contacts')).toBeGreaterThan(rang('dossiers'))
     expect(rang('contacts')).toBeLessThan(rang('exercices_valides'))

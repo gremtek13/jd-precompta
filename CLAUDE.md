@@ -764,7 +764,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   FEC22-Q7, écrite le 02/11/2026 : le libellé d'une vente porte le nom d'une entreprise (le prédicat d'IdClient), sinon le
   numéro de la facture, une pièce de vente « Recette » et sa date, son 411 au compte « Clients divers » ; la règle dans
   `lib/libellesDesVentes.ts`, que garde un relevé de toute la source ; ce qui est déjà au brouillon garde son libellé,
-  et rien ne le signale (FEC22Q7-Q1, le 03/11/2026) → « FEC22F : LE FEC FICTIF DE L'ÉPREUVE DU FICHIER » (FEC22f, première partie, 13/11/2026 : `outils/fec/`, `fecFictif.test.ts` ;
+  et rien ne le signale (FEC22Q7-Q1, le 03/11/2026) ; EXP58-Q2 (A), préparée le 24/11/2026 : IdClient le code de la fiche du client (C et cinq chiffres posés par la base, `codes_des_clients`, `CODES_DES_CLIENTS_PREVUS` baissé), sans fiche la règle d'hier → « EXP58-Q2 : UN CODE OPAQUE PAR FICHE CLIENT », « FEC22F : LE FEC FICTIF DE L'ÉPREUVE DU FICHIER » (FEC22f, première partie, 13/11/2026 : `outils/fec/`, `fecFictif.test.ts` ;
   FEC22F-Q1), « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE »,
   « UNE RÉPONSE DU CABINET : FEC22Q7-Q1 », « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU
   CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », « LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) »,
