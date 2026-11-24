@@ -54778,3 +54778,12 @@ avec elle, 0 sur 1 344, IDENTIQUE (109 tables, deux fiches semées et le compteu
 les trois préparées dans l'ordre des versions, 0 sur 1 357, 178 mutations, IDENTIQUE (110 tables), l'essai 30/30 ; au banc du
 leurre, `codesDesClients`, `contacts` et `validationExercice` SÛRS, avec et sans elle. `validationExercice.sql` y rend 249/250 :
 son étape 141 ne compte pas la garde de suppression d'EL7 (`ecritures_libres_garde_de_la_contre_passation`), hors de cette préparée.
+
+### 24/11/2026 — L'ÉTAPE 141 DE LA VALIDATION COMPTE LA GARDE DE SUPPRESSION D'EL7
+
+(Agent architecte ; rien en production.) Rejouées ensemble sur une copie de `replique_227` portée à 250, les préparées d'EL7,
+d'EXP-Q4 et d'EXP58-Q2 rendaient `validationExercice.sql` 249 sur 250 : l'étape 141 (toute garde de suppression laisse passer la
+cascade d'un dossier qu'on supprime) observait 83 gardes pour 82 attendues — `ecritures_libres_garde_de_la_contre_passation`
+(EL7, de la forme `dossier`), qu'`ecrituresLibres.sql` comptait déjà, et elle non. Comptée désormais quand sa fonction existe :
+250 sur 250 avec les trois préparées, 246 sur 246 à 250 et 250 sur 250 avec EXP58-Q2 seule ; la garde d'EL7 désactivée, l'étape
+tombe ; SÛRE au banc du leurre, avec et sans EXP58-Q2.
