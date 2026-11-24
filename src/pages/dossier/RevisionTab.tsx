@@ -8,6 +8,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import type { PlanComptable } from '../../lib/planComptable'
 import { lireLaChecklist } from '../../lib/checklistLecture'
 import { pointsDeLaChecklist, type DonneesDeLaChecklist } from '../../lib/pointsDeLaChecklist'
+import { phraseDuSilence } from '../../lib/controlesAssuranceMaladie'
 import { controlesPourLaRevision, type ControleExistant } from '../../lib/controlesDeLaRevision'
 import { inventaireDeLaRevision, inventaireDesControles } from '../../lib/inventaireDesControles'
 import {
@@ -939,6 +940,10 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
           + 'encaissements sans mouvement du relevé : leur silence ne prouve rien. Recharge la page.'
         }
       />
+
+      {/* Les paiements de l'assurance maladie (NOE6), lus en partie ou refusés : leurs cinq points se taisent sous le cycle
+          Recettes ; le reste de la révision ne les lit pas, et demeure. Muet hors de la section, le module fermé ou tout lu. */}
+      {phraseDuSilence(points.assuranceMaladie) && <p className="error-text">{phraseDuSilence(points.assuranceMaladie)}</p>}
 
       {/* La caisse du dossier (étape C3b), ou une lecture dont ses points dépendent, lue en partie : ses quatre points de la Vue
           d'ensemble se taisent sous leurs cycles. Muet pour une caisse absente (le drapeau baissé). */}

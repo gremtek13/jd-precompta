@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest'
 import {
   CONTROLES_ASSURANCE_MALADIE_PREVUS, citationDesPaiements, citationsDeLaPiste, citerLesPaiementsDansLaPiste, classementDuCredit,
   controlesDeLAssuranceMaladie, detailDesAssociationsARevoir, detailDesCreditsHorsDesImports, detailDesCreditsSansPaiement,
-  detailDesExercicesEnEcart, detailDesPaiementsSansCredit, nombresDesControles, retenusDeLaChecklist,
+  detailDesExercicesEnEcart, detailDesPaiementsSansCredit, nombresDesControles, phraseDuSilence, retenusDeLaChecklist,
   type ControlesCalcules, type EntreeDesControles, type LectureDesControles, type MouvementControle,
 } from './controlesAssuranceMaladie'
-import type { LignePisteAudit } from './pisteAudit'
+import { genererPisteAuditCsv, type LignePisteAudit } from './pisteAudit'
 import type { AssociationDuRapprochement, PaiementDuRapprochement } from './rapprochementAssuranceMaladie'
 
 // LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE (NOE6) ET LEUR CITATION DANS LA PISTE D'AUDIT. Données fictives : aucun
@@ -58,8 +58,8 @@ const calcules = (e: EntreeDesControles): ControlesCalcules => {
 }
 
 describe('ce qui offre les contrôles', () => {
-  it('le drapeau de NOE6 est baissé tant que la session ne le lève pas', () => {
-    expect(CONTROLES_ASSURANCE_MALADIE_PREVUS).toBe(false)
+  it('le drapeau de NOE6 est levé depuis la relecture du 24/11/2026', () => {
+    expect(CONTROLES_ASSURANCE_MALADIE_PREVUS).toBe(true)
   })
 
   it('drapeau baissé, module fermé, rien de lu, ou un code hors de la santé sans import : sans objet', () => {
@@ -137,6 +137,32 @@ describe('le contrôle 1 : le crédit sans paiement, le paiement sans crédit, l
     const janvier = mouvement({ id: 'j', libelle: 'PRLV FICTIF', montant: -10, date: '2027-01-20' })
     const r = calcules(entree({ lu: lu({ paiements: [p], imports: [{ periode_du: '2026-12-01', periode_au: '2026-12-31' }] }), releve: { lignes: [janvier], complete: true }, anneesValidees: [2026], jour: '2027-02-01' }))
     expect(r.paiementsSansCredit).toHaveLength(1)
+  })
+
+  // Le crédit d'un exercice validé ne s'associe plus (la base le refuse) : le paiement qu'il verse resterait libre pour toujours,
+  // et se dirait « qu'aucun crédit ne verse » jusqu'à la validation de l'exercice suivant. Il se tait.
+  it('le paiement du 29 décembre que verse un crédit du 30, dans un exercice validé : rien ne se dit', () => {
+    const p = paiement({ date_journee_comptable: '2026-12-29' })
+    const decembre = mouvement({ id: 'd', date: '2026-12-30' })
+    const janvier = mouvement({ id: 'j', libelle: 'PRLV FICTIF', montant: -10, date: '2027-01-20' })
+    const imports = [{ periode_du: '2026-12-01', periode_au: '2026-12-31' }]
+    const r = calcules(entree({ lu: lu({ paiements: [p], imports }), releve: { lignes: [decembre, janvier], complete: true }, anneesValidees: [2026], jour: '2027-02-01' }))
+    expect(r.paiementsSansCredit).toHaveLength(0)
+    // Le même crédit, un autre montant et un libellé qui ne nomme pas l'assurance maladie : ce n'est pas lui, le paiement se dit.
+    const autre = mouvement({ id: 'd', date: '2026-12-30', montant: 99, libelle: 'VIR FICTIF' })
+    expect(calcules(entree({ lu: lu({ paiements: [p], imports }), releve: { lignes: [autre, janvier], complete: true }, anneesValidees: [2026], jour: '2027-02-01' }))
+      .paiementsSansCredit).toHaveLength(1)
+    // L'exercice n'est pas validé : le crédit s'associe, et le paiement a son candidat.
+    expect(calcules(entree({ lu: lu({ paiements: [p], imports }), releve: { lignes: [decembre, janvier], complete: true }, jour: '2027-02-01' }))
+      .paiementsSansCredit).toHaveLength(0)
+  })
+
+  it('un paiement négatif (une reprise de l’assurance maladie) sans débit qui le fasse se dit sous son montant signé', () => {
+    const p = paiement({ montant_centimes: -2500, nombre_de_factures: 0, date_journee_comptable: '2026-03-02' })
+    const autre = mouvement({ id: 'autre', libelle: 'PRLV FICTIF', montant: -10, date: '2026-03-20' })
+    const r = calcules(entree({ lu: lu({ paiements: [p] }), releve: { lignes: [autre], complete: true } }))
+    expect(r.paiementsSansCredit.map((c) => c.montantCentimes)).toEqual([-2500])
+    expect(detailDesPaiementsSansCredit(r)).toMatch(/[-−]\s?25,00/)
   })
 
   it('une association d’un crédit écarté, ou dont les paiements ne font plus le montant : à revoir', () => {
@@ -221,6 +247,28 @@ describe('les mots : des dates et des montants, jamais un libellé', () => {
     }
     expect(detailDesCreditsSansPaiement(r)).toContain('04/03/2026')
   })
+
+  it('un seul : « Le crédit du », « La journée comptable du » ; plusieurs : au pluriel, les plus anciennes d’abord', () => {
+    const autre = mouvement({ id: 'autre', libelle: 'PRLV FICTIF', montant: -10, date: '2026-03-28' })
+    const un = calcules(entree({ lu: lu({ paiements: [paiement({})] }), releve: { lignes: [mouvement({ montant: 50 }), autre], complete: true } }))
+    expect(detailDesCreditsSansPaiement(un)).toMatch(/^Le crédit du 04\/03\/2026 /)
+    expect(detailDesPaiementsSansCredit(un)).toMatch(/^La journée comptable du 02\/03\/2026 \([^)]*\)\. Un mois/)
+    const deux = calcules(entree({
+      lu: lu({ paiements: [paiement({}), paiement({ id: 'p2', date_journee_comptable: '2026-03-03', montant_centimes: 333 })] }),
+      releve: { lignes: [mouvement({ montant: 50 }), mouvement({ id: 'm2', date: '2026-03-05', montant: 60 }), autre], complete: true },
+    }))
+    expect(detailDesCreditsSansPaiement(deux)).toMatch(/^Les crédits du 04\/03\/2026 .*, 05\/03\/2026 /)
+    expect(detailDesPaiementsSansCredit(deux)).toMatch(/^Les journées comptables du .*, les plus anciennes d’abord\./)
+  })
+})
+
+describe('le silence se dit, à part', () => {
+  it('muet : une phrase qui dit pourquoi ; calculé ou sans objet : rien', () => {
+    const muet = controlesDeLAssuranceMaladie(entree({ lu: { etat: 'echec', motif: 'refus de la base' } }))
+    expect(phraseDuSilence(muet)).toMatch(/^Les paiements de l’assurance maladie ne se lisent pas \(refus de la base\).*leur silence ne prouve rien/)
+    expect(phraseDuSilence(controlesDeLAssuranceMaladie(entree({})))).toBeNull()
+    expect(phraseDuSilence({ etat: 'sans_objet' })).toBeNull()
+  })
 })
 
 describe('la retenue des ventes facturées', () => {
@@ -267,6 +315,23 @@ describe('la piste d’audit cite le paiement', () => {
     expect(b).toEqual(avecPiece)
     expect(c).toEqual(autre)
     expect(citerLesPaiementsDansLaPiste([base], ecritures, { etat: 'sans_objet' })).toEqual([base])
+  })
+
+  // Un dossier sans paiement associé (sans import, ou que la section n'offre pas) : le drapeau levé rend la piste d'hier, à
+  // l'octet — les lignes à l'égalité stricte, et le CSV.
+  it('sans association lue, la piste est celle d’hier, à l’octet', () => {
+    const lignes: LignePisteAudit[] = [{
+      ecritureId: 'e1', date: '2026-03-04', compte: '512000', libelle: 'Crédit du relevé du 04/03/2026', debit: 123.45, credit: 0,
+      pieceId: null, pieceTiers: null, pieceDate: '2026-03-04', pieceMontantTtc: null, pieceFichier: 'Relevé du 04/03/2026',
+      pieceEmpreinte: null, mouvementDate: '2026-03-04', mouvementLibelle: 'Crédit du relevé du 04/03/2026', mouvementMontant: 123.45, manque: [],
+    }]
+    const ecritures = [{ id: 'e1', ligne_bancaire_id: 'm1' }]
+    const hier = citerLesPaiementsDansLaPiste(lignes, ecritures, citationsDeLaPiste(false, true, null))
+    for (const lecture of [lu({ imports: [] }), lu({ paiements: [paiement({})] })]) {
+      const aujourdHui = citerLesPaiementsDansLaPiste(lignes, ecritures, citationsDeLaPiste(true, true, lecture))
+      expect(aujourdHui).toStrictEqual(hier)
+      expect(genererPisteAuditCsv(aujourdHui)).toBe(genererPisteAuditCsv(hier))
+    }
   })
 })
 

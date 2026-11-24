@@ -396,6 +396,14 @@ const VUES = [
   { nom: 'mobile-revue-ligne', chemin: '#/dossiers/d9/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir la ligne Total des recettes$' },
   { nom: 'mobile-revision-clair', chemin: '#/dossiers/d9/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025' },
   { nom: 'mobile-revision-panneau', chemin: '#/dossiers/d9/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le compte 218300$' },
+  // LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE (NOE6) : le cabinet infirmier, un paiement associé, un proposé, un
+  // paiement sans crédit et un crédit sans paiement (voir `imports_assurance_maladie` dans le faux Supabase) — la Vue
+  // d'ensemble, puis le cycle Recettes de la Révision 2026, sur ordinateur et sur téléphone.
+  { nom: 'pc-noe6-vue', chemin: '#/dossiers/d1/checklist', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'qu’aucun paiement importé ne justifie' },
+  { nom: 'pc-noe6-vue-sombre', chemin: '#/dossiers/d1/checklist', l: 1280, h: 800, theme: 'dark', reduite: false, vers: 'qu’aucun crédit du relevé ne verse' },
+  { nom: 'mobile-noe6-vue', chemin: '#/dossiers/d1/checklist', l: 390, h: 844, theme: 'light', reduite: false, vers: 'qu’aucun paiement importé ne justifie' },
+  { nom: 'pc-noe6-revision', chemin: '#/dossiers/d1/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2026', apres: '^Ouvrir le cycle Recettes$' },
+  { nom: 'mobile-noe6-revision', chemin: '#/dossiers/d1/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2026', apres: '^Ouvrir le cycle Recettes$' },
   // La coque du CLIENT (09/10/2026), rendue par `client: true` (le compte du cabinet infirmier, rattaché par une adhésion : voir
   // `banc-client` dans fauxSupabase.ts). Sa navigation paraît dans la barre latérale sur ordinateur, à l'accueil comme sur ses
   // autres écrans, déployée ou réduite à ses icônes ; sur téléphone elle reste cachée à l'accueil, où ses tuiles en tiennent

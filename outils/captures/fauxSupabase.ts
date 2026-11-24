@@ -2223,6 +2223,23 @@ function previsionPubliee(id: string, dossier: string, solde: number): Ligne {
 }
 
 const TABLES: Record<string, Ligne[]> = {
+  // LES PAIEMENTS DE L'ASSURANCE MALADIE DU CABINET INFIRMIER (conception 53, NOE4 à NOE6) : un import fictif d'août et de
+  // septembre 2026, des agrégats seuls (une journée, un régime, une caisse, une part, des centimes, un nombre de factures) —
+  // aucun nom, aucun numéro. Le paiement du 18/08 est associé au crédit classé en recette du 20/08 (`l8`) ; celui du 05/09
+  // attend le crédit du 08/09 (`l3`), proposé ; celui du 10/09 n'a aucun crédit qui le verse ; le crédit du 22/09 (`l10`)
+  // n'a aucun paiement : la Vue d'ensemble et la Révision (cycle Recettes) en disent deux attentions.
+  imports_assurance_maladie: [
+    { id: 'iam1', dossier_id: 'd1', periode_du: '2026-08-01', periode_au: '2026-09-30', nombre_de_rejets: 0, montant_rejete_centimes: 0, importe_par: 'u-banc', importe_le: '2026-10-02T09:00:00Z' },
+  ],
+  paiements_assurance_maladie: [
+    ['pam1', '2026-08-18', 185040, 12], ['pam2', '2026-09-05', 241860, 20], ['pam3', '2026-09-10', 50000, 4],
+  ].map(([id, journee, centimes, factures]) => ({
+    id, dossier_id: 'd1', import_id: 'iam1', date_journee_comptable: journee, regime: 1, caisse: 751, organisme_complementaire: null,
+    part: 'obligatoire', montant_centimes: centimes, regularisations_centimes: 0, nombre_de_factures: factures,
+  })),
+  paiements_assurance_maladie_mouvements: [
+    { id: 'aam1', dossier_id: 'd1', paiement_id: 'pam1', ligne_bancaire_id: 'l8', associe_par: 'u-banc', associe_le: '2026-10-02T09:05:00Z' },
+  ],
   revision_seuils: REVUE_D9.seuils,
   revision_explications: REVUE_D9.explications,
   references_annuelles: REVUE_D9.reperes,

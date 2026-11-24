@@ -18,6 +18,7 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { reserveCloturesInconnues } from '../../lib/resteAEnvoyer'
 import { lireLaChecklist, type LectureDeLaChecklist } from '../../lib/checklistLecture'
 import { pointsDeLaChecklist, pointsSousLesModules, type DocumentAttendu, type PointATraiter } from '../../lib/pointsDeLaChecklist'
+import { phraseDuSilence } from '../../lib/controlesAssuranceMaladie'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import EncartFactureElectronique from './EncartFactureElectronique'
 import CarteEspaceClient from './CarteEspaceClient'
@@ -128,7 +129,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // l'échec est journalisé par la lecture —, comme avant que leurs lectures sortent de cet écran.
   const {
     pointsParametrage: pointsParametrageCalcules, pointsTravail: pointsTravailCalcules, documentsAttendus, moisManquants, moisRecus,
-    piecesConfianceBasse,
+    piecesConfianceBasse, assuranceMaladie,
   } = pointsDeLaChecklist(
     { ...lecture, relevesIncoherents: lecture.relevesIncoherents ?? [], doublonsTexte: lecture.doublonsTexte ?? [] },
     {
@@ -251,6 +252,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
           'Recharge la page avant de t’y fier.'
         }
       />
+      {/* LES PAIEMENTS DE L'ASSURANCE MALADIE (NOE6) lus en partie ou refusés : leurs cinq points se taisent, et cela se dit ICI,
+          pour eux seuls — jamais dans « les données du dossier ». Muet hors de la section, le module fermé ou tout lu. */}
+      {phraseDuSilence(assuranceMaladie) && <p className="error-text">{phraseDuSilence(assuranceMaladie)}</p>}
       {reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true }) && (
         <p className="error-text">{reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true })}</p>
       )}

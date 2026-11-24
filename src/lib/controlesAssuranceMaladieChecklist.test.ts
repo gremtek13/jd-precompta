@@ -8,14 +8,16 @@ import { TOUS_LES_MODULES } from './modulesDuCabinet'
 import type { LigneBancaire } from './types'
 
 // LES CONTRÔLES DES PAIEMENTS DE L'ASSURANCE MALADIE DANS LA VUE D'ENSEMBLE (NOE6) : le drapeau joué par un accesseur, ses
-// deux états ; le module du cabinet ; la sévérité. Le calcul lui-même : controlesAssuranceMaladie.test.ts.
+// deux états (levé par défaut, l'état d'aujourd'hui depuis le 24/11/2026 ; baissé, tant que son code existe) ; le module du
+// cabinet ; la sévérité ; et un dossier que la section n'offre pas, que le drapeau levé ne change en rien. Le calcul lui-même :
+// controlesAssuranceMaladie.test.ts.
 
-const drapeau = vi.hoisted(() => ({ leve: false }))
+const drapeau = vi.hoisted(() => ({ leve: true }))
 vi.mock('./controlesAssuranceMaladie', async (original) => {
   const module = await original<typeof import('./controlesAssuranceMaladie')>()
   return { ...module, get CONTROLES_ASSURANCE_MALADIE_PREVUS() { return drapeau.leve } }
 })
-afterEach(() => { drapeau.leve = false })
+afterEach(() => { drapeau.leve = true })
 
 const IDS = [
   'assurance-maladie-credits-sans-paiement', 'assurance-maladie-credits-hors-des-imports', 'assurance-maladie-paiements-sans-credit',
@@ -62,11 +64,17 @@ const AVEC_UN_CREDIT = donnees({
   },
 })
 
+const LU_SANS_IMPORT = {
+  etat: 'lus' as const, imports: { lignes: [], complete: true, motif: null },
+  paiements: { lignes: [], complete: true, motif: null }, associations: { lignes: [], complete: true, motif: null },
+}
+
 const pointsAM = (d: DonneesDeLaChecklist, c: ContexteDeLaChecklist = CONTEXTE) =>
   pointsDeLaChecklist(d, c).tousLesPointsATraiter.filter((p) => IDS.includes(p.id))
 
 describe('les contrôles de l’assurance maladie dans la Vue d’ensemble', () => {
   it('le drapeau baissé : les cinq points, à zéro, et rien de calculé', () => {
+    drapeau.leve = false
     const points = pointsAM(AVEC_UN_CREDIT)
     expect(points.map((p) => p.id)).toEqual(IDS)
     expect(points.every((p) => p.nb === 0)).toBe(true)
@@ -99,5 +107,22 @@ describe('les contrôles de l’assurance maladie dans la Vue d’ensemble', () 
     expect(sansLeModule.map((p) => p.id)).not.toContain('assurance-maladie-credits-sans-paiement')
     const ferme = { ...CONTEXTE, offreAssuranceMaladie: { codeNaf: '86.90E', moduleOuvert: false } }
     expect(pointsAM(AVEC_UN_CREDIT, ferme).every((p) => p.nb === 0)).toBe(true)
+  })
+
+  // LA RÈGLE DE LA SECTION (lib/sectionAssuranceMaladie.ts) : un code NAF hors de la santé, et aucun import lu, ou une lecture
+  // qui n'a rien pu dire des imports. Tout ce que la Vue d'ensemble calcule est identique, à l'égalité stricte, drapeau baissé
+  // (rien de lu : `assuranceMaladie` nul) ou levé — même un crédit dont le libellé nomme la CPAM.
+  it.each([
+    ['lus en entier, sans import', LU_SANS_IMPORT],
+    ['refusés', { etat: 'echec' as const, motif: 'refus de la base' }],
+    ['lus en partie, sans ligne', { ...LU_SANS_IMPORT, imports: { lignes: [], complete: false, motif: 'lecture interrompue' } }],
+  ])('un dossier hors de la santé, ses paiements %s : le drapeau levé ne change rien', (_cas, lu) => {
+    const horsSante = { ...CONTEXTE, offreAssuranceMaladie: { codeNaf: '62.01Z', moduleOuvert: true } }
+    drapeau.leve = false
+    const hier = pointsDeLaChecklist(donnees({ lignes: [ligne({})], assuranceMaladie: null }), horsSante)
+    drapeau.leve = true
+    const aujourdHui = pointsDeLaChecklist(donnees({ lignes: [ligne({})], assuranceMaladie: { releveComplet: true, lu } }), horsSante)
+    expect(aujourdHui).toStrictEqual(hier)
+    expect(aujourdHui.assuranceMaladie).toStrictEqual({ etat: 'sans_objet' })
   })
 })
