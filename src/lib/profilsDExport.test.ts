@@ -113,6 +113,33 @@ describe('le profil ACD sur le FEC fictif', () => {
     expect(lignes.length).toBe(colonnesDe(fictif.vingtDeux).length - 1 - fictif.aNouveaux)
   })
 
+  it('la forme des comptes de tiers : nos auxiliaires tels quels, ou les deux colonnes vides — rien d’autre ne bouge', () => {
+    const ENTETE = colonnesDe(fictif.dixHuit)[0].join('\t')
+    const avecAux = (num: string, compte: string, aux: string, lib: string, debit: string, credit: string) =>
+      ['VE', 'Ventes', num, '20260105', compte, 'Compte', aux, lib, 'F2026-1', '20260105', 'Facture F2026-1', debit, credit, 'A', '20260110', '20260105', '', ''].join('\t')
+    const fec = [ENTETE, avecAux('VE00001', '411000', 'CDUPONT', 'Dupont SA', '100,00', '0,00'), avecAux('VE00001', '706000', '', '', '0,00', '100,00')].join('\r\n')
+    const nos = mettreEnFormePourAcd(fec, reglages())
+    const sans = mettreEnFormePourAcd(fec, reglages({ formeDesTiers: 'sans_auxiliaires' }))
+    if (!nos.ok || !sans.ok) throw new Error('refusé')
+    expect(colonnesDe(nos.texte)[1].slice(6, 8)).toEqual(['CDUPONT', 'Dupont SA'])
+    expect(colonnesDe(sans.texte)[1].slice(6, 8)).toEqual(['', ''])
+    colonnesDe(sans.texte).forEach((l, i) => {
+      const n = colonnesDe(nos.texte)[i]
+      expect([...l.slice(0, 6), ...l.slice(8)], String(i)).toEqual([...n.slice(0, 6), ...n.slice(8)])
+    })
+    // Sur le FEC fictif : chaque ligne qui portait un auxiliaire le perd, toute autre colonne et toute autre ligne restent.
+    const a = mettreEnFormePourAcd(fictif.vingtDeux, reglages())
+    const b = mettreEnFormePourAcd(fictif.vingtDeux, reglages({ formeDesTiers: 'sans_auxiliaires' }))
+    if (!a.ok || !b.ok) throw new Error('refusé')
+    const la = colonnesDe(a.texte)
+    const lb = colonnesDe(b.texte)
+    expect(lb.length).toBe(la.length)
+    lb.slice(1).forEach((l, i) => {
+      expect(l.slice(6, 8), String(i)).toEqual(['', ''])
+      expect([...l.slice(0, 6), ...l.slice(8)], String(i)).toEqual([...la[i + 1].slice(0, 6), ...la[i + 1].slice(8)])
+    })
+  })
+
   it('à dix-huit colonnes : le fichier les garde, et le choix des quatre champs est sans objet', () => {
     const r = mettreEnFormePourAcd(fictif.dixHuit, reglages({ quatreChamps: 'vides' }))
     if (!r.ok) throw new Error(r.refus.join(' '))

@@ -211,6 +211,11 @@
 --      EL7, ligne 26.9, préparée) : ni le client du dossier, ni un membre non assigné, ni l'anonyme ne contre-passent ; le chef
 --      passe le contrôle d'accès (contrôle positif, rien d'écrit) ; le catalogue. Une mutation, la fonction sans son contrôle
 --      d'accès ; avant la migration, une ligne « EN ATTENTE ».
+--  21. Les réglages de l'export vers un logiciel comptable (bloc RX, en fin de fichier ; migration `reglages_d_export`,
+--      EXP-Q4 (A), préparée) : le chef et un membre de l'équipe assigné au dossier lisent et enregistrent (EXP-Q8 (A),
+--      contrôles positifs), le client du dossier, un membre non assigné et l'anonyme rien ; le client n'enregistre, n'écrit,
+--      ne réécrit ni ne retire rien ; le super-administrateur réinsère (la restauration) ; le catalogue. Quatre mutations,
+--      dont l'enregistrement sans son contrôle d'accès ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -13128,6 +13133,248 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $xl$;
+
+-- ══ RX. Les réglages de l'export vers un logiciel comptable (EXP-Q4 (A) ; migration `reglages_d_export`, PRÉPARÉE) ═══════════
+-- Une table d'un dossier, lue par son cabinet (`admin_du_dossier` : son chef, un membre de l'équipe à qui le dossier est
+-- assigné, le super-administrateur), écrite par `enregistrer_reglages_d_export` seule (aucune policy de mise à jour ni de
+-- retrait, une garde), réinsérée par le super-administrateur (la restauration). Aucun client, même celui du dossier, quelles
+-- que soient ses cases (EXP-Q8 (A)). Le membre est le membre d'équipe d'essai (ESSAIS-Q1, outils/membre-d-essai/). Le reste (les
+-- refus sous leurs mots, la version lue, la garde, les contraintes) : `reglagesDExport.sql`, sur une réplique.
+--   RX1. Le chef enregistre les réglages d'un dossier jetable du cabinet du dossier du client et les lit (le contrôle POSITIF) ;
+--        le client, qui y a un accès, n'en lit rien ; un membre de l'équipe à qui le dossier n'est pas assigné non plus ;
+--        l'anonyme non plus ; assigné, le membre les lit (le contrôle POSITIF).
+--   RX2. Le client n'enregistre rien (42501, sous ses mots), n'insère rien en direct (42501), ne réécrit ni ne retire rien
+--        (aucune ligne touchée) ; le membre assigné enregistre, contre la version lue (le contrôle POSITIF) ; le
+--        super-administrateur réinsère une ligne en direct dans un second dossier jetable (la restauration, le contrôle POSITIF).
+--   RX3. Le catalogue : la RLS active ; deux policies permissives à authenticated — la lecture sur `admin_du_dossier`, la
+--        réinsertion sur `is_super_admin` —, et rien d'autre que la restrictive `deux_facteurs` ; la fonction exécutable par
+--        authenticated, ni par anon ni par PUBLIC.
+-- Ce qui n'est pas borné aux dossiers jetables (le client et l'anonyme, sur toute la table) ne rend qu'un booléen, jamais un
+-- compte. Quatre mutations, qui doivent mordre : M-RX1 (la lecture élargie au client du dossier : il lit les réglages), M-RX2
+-- (la lecture fermée : le chef ne lit plus rien), M-RX3 (la porte de la restauration fermée : le super-administrateur ne
+-- réinsère plus), M-RX4 (l'accès de la fonction sans `admin_du_dossier` : le client enregistre). Avant la migration, une ligne
+-- dit que le bloc attend.
+do $rx$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  membre uuid := '3e3b0000-0000-4000-8000-000000000001';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  dossier uuid := 'a1100000-0000-4000-8000-0000000000f1';
+  dossier2 uuid := 'a1100000-0000-4000-8000-0000000000f2';
+  -- Les réglages tels que l'application les donne (`reglagesPourLaBase`) : reglagesDExport.test.ts confronte la forme au module.
+  reglages jsonb := '{"longueur_des_comptes":8,"forme_des_tiers":"sans_auxiliaires","journaux":{"AC":"HA","VE":"VT","BQ":"CA1","OD":"OD","AN":"AN"}}';
+  version_chef integer; chef_lit bigint; client_rien text; du_membre bigint; de_l_anon text; membre_lit bigint;
+  par_la_fonction text; en_direct text; reecrites bigint; retirees bigint; par_le_membre text; reinsere text;
+  elargie bigint; fermee bigint; porte_fermee text; ouverte text; n bigint; erreur text;
+  construit boolean := false; verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.reglages_d_export') is null then
+    insert into rls_verdict values ('RX. les réglages de l''export vers un logiciel comptable : EN ATTENTE de la migration reglages_d_export',
+      'reglages_d_export', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : deux dossiers du cabinet du dossier du client, le premier que le client voit, aucun que le membre suive ──
+    insert into dossiers (id, nom, cabinet_id, mode_comptable, statut_tva)
+      select x.id, x.nom, d.cabinet_id, 'tresorerie', 'franchise' from dossiers d,
+        (values (dossier, 'Essai RLS des réglages d''export'), (dossier2, 'Essai RLS des réglages d''export, la restauration')) x(id, nom)
+       where d.id = dossier_du_client;
+    insert into memberships (user_id, dossier_id, role)
+      select client, dossier, m.role from memberships m where m.user_id = client and m.dossier_id = dossier_du_client limit 1;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    version_chef := enregistrer_reglages_d_export(dossier, 'acd', reglages, null);
+    select count(*) into chef_lit from reglages_d_export where dossier_id = dossier;
+    reset role;
+    construit := version_chef = 1;
+
+    -- RX1 : le client du dossier, le membre à qui il n'est pas assigné, l'anonyme ; puis le membre assigné.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select (count(*) = 0)::text into client_rien from reglages_d_export;
+    perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+    select count(*) into du_membre from reglages_d_export where dossier_id = dossier;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select (count(*) = 0)::text into de_l_anon from reglages_d_export;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    insert into dossier_assignations (dossier_id, user_id) values (dossier, membre);
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+    select count(*) into membre_lit from reglages_d_export where dossier_id = dossier;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'RX1. le chef lit les réglages qu''il a enregistrés, et le membre de l''équipe une fois le dossier assigné (les contrôles positifs) ; le client du dossier n''en lit rien, ni un membre à qui le dossier n''est pas assigné, ni l''anonyme',
+      'cible', 'reglages_d_export',
+      'observe', 'le chef : ' || chef_lit || ' | le client ne lit rien : ' || client_rien
+        || ' | le membre non assigné : ' || du_membre || ' | l''anonyme ne lit rien : ' || coalesce(de_l_anon, '?')
+        || ' | le membre assigné : ' || membre_lit,
+      'ok', chef_lit = 1 and client_rien = 'true' and du_membre = 0 and de_l_anon = 'true' and membre_lit = 1);
+
+    -- RX2 : le client n'enregistre, n'insère, ne réécrit ni ne retire ; le membre assigné enregistre ; le super-administrateur
+    -- réinsère.
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      perform enregistrer_reglages_d_export(dossier, 'acd', reglages, 1);
+      par_la_fonction := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_la_fonction is null then par_la_fonction := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into reglages_d_export (dossier_id, logiciel, regle_par) values (dossier2, 'acd', client);
+      en_direct := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if en_direct is null then en_direct := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    with t as (update reglages_d_export set longueur_des_comptes = 9 where dossier_id = dossier returning 1) select count(*) into reecrites from t;
+    with t as (delete from reglages_d_export where dossier_id = dossier returning 1) select count(*) into retirees from t;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', membre, 'role', 'authenticated')::text, true);
+      perform enregistrer_reglages_d_export(dossier, 'acd', reglages, 1);
+      par_le_membre := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if par_le_membre is null then par_le_membre := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      insert into reglages_d_export (dossier_id, logiciel, longueur_des_comptes, version, regle_par) values (dossier2, 'acd', 8, 3, membre);
+      reinsere := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if reinsere is null then reinsere := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'RX2. le client n''enregistre pas de réglages (la fonction), n''en écrit pas en direct, n''en réécrit ni n''en retire aucun ; le membre assigné en enregistre et le super-administrateur en réinsère (la restauration) : les contrôles positifs',
+      'cible', 'reglages_d_export',
+      'observe', 'enregistrer : ' || coalesce(par_la_fonction, '?') || ' | en direct : ' || coalesce(en_direct, '?')
+        || ' | réécrites : ' || reecrites || ' | retirées : ' || retirees || ' | le membre assigné : ' || coalesce(par_le_membre, '?')
+        || ' | réinsérée : ' || coalesce(reinsere, '?'),
+      'ok', par_la_fonction = '42501 Accès refusé à ce dossier.' and en_direct like '42501 %' and reecrites = 0 and retirees = 0
+        and par_le_membre = 'ACCEPTÉ' and reinsere = 'ACCEPTÉ');
+
+    -- M-RX1 : la lecture élargie au client du dossier.
+    begin
+      alter policy reglages_d_export_lecture on public.reglages_d_export
+        using (admin_du_dossier(dossier_id) or exists (select 1 from memberships m where m.dossier_id = reglages_d_export.dossier_id and m.user_id = auth.uid()));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from reglages_d_export where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-RX1 — la lecture des réglages d''export élargie au client du dossier',
+      'attendu', 'le client lit les réglages', 'observe', coalesce((elargie >= 1)::text, '?'), 'mord', coalesce(elargie >= 1, false));
+
+    -- M-RX2 : la lecture fermée.
+    begin
+      alter policy reglages_d_export_lecture on public.reglages_d_export using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from reglages_d_export where dossier_id = dossier;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-RX2 — la lecture des réglages d''export fermée',
+      'attendu', 'le chef ne lit plus rien', 'observe', coalesce(fermee::text, '?') || ' lue(s)', 'mord', coalesce(fermee = 0, false));
+
+    -- M-RX3 : la porte de la restauration fermée.
+    begin
+      alter policy reglages_d_export_restauration on public.reglages_d_export with check (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+      begin
+        insert into reglages_d_export (dossier_id, logiciel, longueur_des_comptes, version, regle_par) values (dossier2, 'acd', 8, 3, membre);
+        porte_fermee := 'ACCEPTÉ';
+      exception when others then porte_fermee := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-RX3 — la porte de la restauration fermée',
+      'attendu', 'le super-administrateur ne réinsère plus', 'observe', coalesce(porte_fermee, '?'), 'mord', coalesce(porte_fermee like '42501 %', false));
+
+    -- M-RX4 : la fonction d'enregistrement sans son contrôle d'accès (elle contourne la RLS : seul ce contrôle tient le client).
+    begin
+      execute replace(pg_get_functiondef('public.enregistrer_reglages_d_export(uuid, text, jsonb, integer)'::regprocedure),
+        'or not coalesce(public.admin_du_dossier(p_dossier_id), false)', '');
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin
+        perform enregistrer_reglages_d_export(dossier, 'acd', reglages, 1);
+        ouverte := 'ACCEPTÉ';
+      exception when others then ouverte := sqlstate || ' ' || sqlerrm;
+      end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-RX4 — l''enregistrement sans son contrôle d''accès (admin_du_dossier)',
+      'attendu', 'le client enregistre', 'observe', coalesce(ouverte, '?'), 'mord', coalesce(ouverte = 'ACCEPTÉ', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- RX3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'reglages_d_export' and p.roles = array['authenticated']::name[]
+     and p.permissive = 'PERMISSIVE'
+     and ((p.policyname = 'reglages_d_export_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'reglages_d_export_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'RX3. la RLS active ; deux policies à authenticated : la lecture du cabinet du dossier, la réinsertion du super-administrateur ; la fonction à authenticated seul (lecture du catalogue)',
+    'cible', 'reglages_d_export',
+    'observe', n || ' sur 2, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'reglages_d_export' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.reglages_d_export'::regclass)
+      || ', fonction ' || (select has_function_privilege('authenticated', p.oid, 'execute')::text || '/'
+           || has_function_privilege('anon', p.oid, 'execute')::text || '/'
+           || exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)::text
+         from pg_proc p where p.oid = to_regprocedure('public.enregistrer_reglages_d_export(uuid, text, jsonb, integer)')),
+    'ok', n = 2 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'reglages_d_export' and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 2
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.reglages_d_export'::regclass)
+      and (select has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+                  and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+             from pg_proc p where p.oid = to_regprocedure('public.enregistrer_reglages_d_export(uuid, text, jsonb, integer)')));
+  verdicts := verdicts || jsonb_build_object('controle', 'RX. le jeu d''essai des réglages d''export s''est construit', 'cible', 'deux dossiers du cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $rx$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

@@ -618,7 +618,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **L'export vers un logiciel comptable** (EXP1, 17/11/2026, `EXPORT_VERS_UN_LOGICIEL_OFFERT` levé le soir même sur la demande du cabinet) : le FEC de l'onglet Écritures
   remis en forme par un profil (`lib/profilsDExport.ts`, ACD : Windows-1252, comptes à la longueur choisie, numéro continu, journaux
   saisis), les justificatifs en ZIP sous leur PieceRef, sans rien changer au FEC ; restent l'essai chez l'expert-comptable et EXP-Q2 à Q5
-  → « EXP1 : L'EXPORT VERS UN LOGICIEL COMPTABLE, PROFIL ACD ».
+  → « EXP1 : L'EXPORT VERS UN LOGICIEL COMPTABLE, PROFIL ACD ». Les réglages d'un dossier pour un logiciel (EXP-Q4 (A), 24/11/2026) :
+  la longueur des comptes, la forme des tiers, le code de chacun des cinq journaux, « à saisir » tant qu'ils manquent, jamais un défaut,
+  en base (`reglages_d_export`, préparée, par l'outil ; `lib/reglagesDExport.ts`, `REGLAGES_D_EXPORT_PREVUS` baissé) → « EXP-Q4 : LES
+  RÉGLAGES DE L'EXPORT GARDÉS PAR DOSSIER ».
 - **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
   une OD source du brouillon ; en trésorerie, chaque ligne de résultat sous un poste de la 2035 ou « hors de la 2035 », une charge
   ou un produit rattaché hors de la 2035 seulement (`rattacheeComptee`, EXP58-Q3 (A) : la désignation « contre la règle »

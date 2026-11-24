@@ -2641,3 +2641,27 @@ export interface LigneDAffectationEnBase {
   destination: 'reserve_legale' | 'reserves_statutaires' | 'autres_reserves' | 'report_crediteur' | 'report_debiteur' | 'dividendes'
   montant_centimes: number
 }
+
+// LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP-Q4 (A) ; migration `reglages_d_export`, préparée, pas appliquée —
+// lib/reglagesDExport.ts, `REGLAGES_D_EXPORT_PREVUS`). Une ligne par dossier et par logiciel ; un réglage nul est « à saisir »,
+// jamais une valeur par défaut. Écrite par `enregistrer_reglages_d_export` seule, contre la version lue ; lue par le cabinet du
+// dossier, jamais par un client.
+export interface ReglagesDExport {
+  id: string
+  dossier_id: string
+  /** Un logiciel de la liste fermée de la base, `logiciels_d_export()` : un `ProfilDExport` de lib/profilsDExport.ts. */
+  logiciel: string
+  /** De 6 à 12 ; nul : à saisir. */
+  longueur_des_comptes: number | null
+  forme_des_tiers: 'nos_auxiliaires' | 'sans_auxiliaires' | null
+  /** Le code, dans le logiciel, de chacun des cinq journaux de l'application (1 à 20 lettres ou chiffres) ; nul : à saisir. */
+  journal_ac: string | null
+  journal_ve: string | null
+  journal_bq: string | null
+  journal_od: string | null
+  journal_an: string | null
+  version: number
+  /** Le compte du dernier enregistrement, posé par la fonction. */
+  regle_par: string
+  regle_le: string
+}

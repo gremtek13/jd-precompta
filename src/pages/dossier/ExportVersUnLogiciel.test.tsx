@@ -34,7 +34,36 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 
+// LES RÉGLAGES GARDÉS DU DOSSIER (EXP-Q4 (A)) : le drapeau `REGLAGES_D_EXPORT_PREVUS` joué par un accesseur — baissé par défaut,
+// quel que soit le vrai, pour garder l'écran d'hier éprouvé tant que son code existe ; levé par le bloc qui joue les réglages
+// gardés — et la lecture et l'écriture des réglages remplacées par des réponses que chaque cas prépare (une file : la lecture à
+// l'ouverture, puis la relecture après l'enregistrement).
+const drapeauReglages = vi.hoisted(() => ({ leve: undefined as undefined | boolean }))
+vi.mock('../../lib/reglagesDExport', async (original) => {
+  const vrai = await original<typeof import('../../lib/reglagesDExport')>()
+  return { ...vrai, get REGLAGES_D_EXPORT_PREVUS() { return drapeauReglages.leve ?? vrai.REGLAGES_D_EXPORT_PREVUS } }
+})
+const reglagesDuDossier = vi.hoisted(() => ({
+  lectures: [] as unknown[],
+  lus: [] as { dossierId: string; logiciel: string }[],
+  issue: null as unknown,
+  enregistres: [] as unknown[][],
+}))
+vi.mock('../../lib/reglagesDExportLecture', () => ({
+  lireLesReglagesDExport: async (dossierId: string, logiciel: string) => {
+    reglagesDuDossier.lus.push({ dossierId, logiciel })
+    const reponse = reglagesDuDossier.lectures.shift()
+    return reponse === undefined ? { dossierId, logiciel, etat: 'illisibles', motif: 'aucune réponse prévue par le cas' } : await reponse
+  },
+  enregistrerLesReglagesDExport: async (...args: unknown[]) => {
+    reglagesDuDossier.enregistres.push(args)
+    return reglagesDuDossier.issue ?? { ok: true, version: 1 }
+  },
+}))
+
 import ExportVersUnLogiciel from './ExportVersUnLogiciel'
+import { REFUS_DE_LA_BASE } from '../../lib/reglagesDExport'
+import type { ReglagesDExport } from '../../lib/types'
 
 const ENTETE = 'JournalCode\tJournalLib\tEcritureNum\tEcritureDate\tCompteNum\tCompteLib\tCompAuxNum\tCompAuxLib\tPieceRef\tPieceDate\t'
   + 'EcritureLib\tDebit\tCredit\tEcritureLet\tDateLet\tValidDate\tMontantdevise\tIdevise'
@@ -62,6 +91,12 @@ const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37])
 const decoder = new TextDecoder('windows-1252')
 
 beforeEach(() => {
+  // L'écran d'hier se joue drapeau BAISSÉ, quel que soit le vrai (levé le jour de la migration) ; le bloc du drapeau levé le lève.
+  drapeauReglages.leve = false
+  reglagesDuDossier.lectures = []
+  reglagesDuDossier.lus = []
+  reglagesDuDossier.issue = null
+  reglagesDuDossier.enregistres = []
   faux.fichiers = []
   faux.telechargements = 0
   faux.demandes = []
@@ -175,5 +210,140 @@ describe('l’export vers un logiciel comptable, à l’écran', () => {
     expect(zip).not.toContain('20260106-eeeeeeee.pdf')
     expect(screen.getByRole('status').textContent)
       .toMatch(/le fichier d’écritures et 1 justificatif\(s\) — 1 justificatif\(s\) n’y sont PAS : 20260106-eeeeeeee : le stockage ne l’a pas rendu\./)
+  })
+
+  it('le drapeau des réglages gardés baissé : aucune lecture, aucun enregistrement, huit chiffres proposés comme hier', () => {
+    monter()
+    expect(reglagesDuDossier.lus).toEqual([])
+    expect(screen.queryByRole('button', { name: 'Enregistrer ces réglages' })).toBeNull()
+    expect((screen.getByRole('spinbutton', { name: /Longueur des comptes/ }) as HTMLInputElement).value).toBe('8')
+    expect((screen.getByRole('textbox', { name: 'Code du journal AC dans le logiciel' }) as HTMLInputElement).value).toBe('AC')
+    expect(screen.queryByText(/Les comptes de tiers/)).toBeNull()
+  })
+})
+
+// ── Les réglages gardés du dossier (EXP-Q4 (A)), le drapeau levé ──
+const garde = (o: Partial<ReglagesDExport> = {}): ReglagesDExport => ({
+  id: 'r1', dossier_id: 'd1', logiciel: 'acd', longueur_des_comptes: 8, forme_des_tiers: 'sans_auxiliaires',
+  journal_ac: 'HA', journal_ve: null, journal_bq: null, journal_od: null, journal_an: null, version: 2, regle_par: 'u1',
+  regle_le: '2026-11-24T10:00:00Z', ...o,
+})
+const lus = (gardes: ReglagesDExport | null) => ({ dossierId: 'd1', logiciel: 'acd', etat: 'lus', gardes })
+const champ = (nom: string) => screen.getByRole('textbox', { name: nom }) as HTMLInputElement
+const longueur = () => screen.getByRole('spinbutton', { name: /Longueur des comptes/ }) as HTMLInputElement
+const boutonEnregistrer = () => screen.getByRole('button', { name: /Enregistrer ces réglages|Enregistrement…/ }) as HTMLButtonElement
+const boutonFichier = () => screen.getByRole('button', { name: 'Télécharger le fichier' }) as HTMLButtonElement
+
+async function monterAvecLesReglages() {
+  monter()
+  await screen.findByText(/Rien ne peut partir|écriture\(s\), \d+ ligne\(s\)/)
+}
+
+describe('les réglages gardés du dossier, le drapeau levé (EXP-Q4 (A))', () => {
+  beforeEach(() => { drapeauReglages.leve = true })
+
+  it('« Lecture… » tant que les réglages ne sont pas revenus : ni formulaire ni téléchargement', async () => {
+    let rendre: (v: unknown) => void = () => {}
+    reglagesDuDossier.lectures = [new Promise((r) => { rendre = r })]
+    monter()
+    expect(screen.getByRole('status').textContent).toMatch(/Lecture des réglages que le dossier garde pour ce logiciel/)
+    expect(screen.queryByRole('button', { name: 'Télécharger le fichier' })).toBeNull()
+    expect(screen.queryByRole('spinbutton', { name: /Longueur des comptes/ })).toBeNull()
+    expect(reglagesDuDossier.lus).toEqual([{ dossierId: 'd1', logiciel: 'acd' }])
+    await act(async () => { rendre(lus(garde())) })
+    expect(longueur().value).toBe('8')
+  })
+
+  it('gardés, ils préremplissent le formulaire, partent tels quels, et rien n’est à enregistrer', async () => {
+    reglagesDuDossier.lectures = [lus(garde())]
+    await monterAvecLesReglages()
+    expect(longueur().value).toBe('8')
+    expect(champ('Code du journal AC dans le logiciel').value).toBe('HA')
+    expect((screen.getByRole('radio', { name: /Sans compte auxiliaire/ }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByText(/version 2\) sont préremplis/)).toBeDefined()
+    expect(boutonEnregistrer().disabled).toBe(true)
+    expect(screen.getByText(/rien à enregistrer/)).toBeDefined()
+    await act(async () => { fireEvent.click(boutonFichier()) })
+    await waitFor(() => expect(faux.telechargements).toBe(1))
+    const lignes = decoder.decode(await octetsDe(faux.fichiers[0].blob)).replace(/\r\n$/, '').split('\r\n').slice(1).map((l) => l.split('\t'))
+    expect(lignes.map((l) => [l[0], l[4]])).toEqual([['HA', '60610000'], ['HA', '51200000'], ['HA', '62600000'], ['HA', '51200000']])
+  })
+
+  it('sans ligne gardée, tout est à saisir — ni huit chiffres, ni nos codes — et l’export le refuse en le nommant', async () => {
+    reglagesDuDossier.lectures = [lus(null)]
+    await monterAvecLesReglages()
+    expect(longueur().value).toBe('')
+    expect(champ('Code du journal AC dans le logiciel').value).toBe('')
+    expect(screen.getByText(/Aucun réglage n’est gardé pour ce dossier/)).toBeDefined()
+    expect(screen.getByRole('alert').textContent).toContain('La longueur des comptes dans le logiciel : à saisir.')
+    expect(screen.getByRole('alert').textContent).toContain('La forme des comptes de tiers : à saisir.')
+    expect(screen.getByRole('alert').textContent).toContain('Le code du journal AC (Achats) dans le logiciel : à saisir.')
+    expect(boutonFichier().disabled).toBe(true)
+    expect(boutonEnregistrer().disabled).toBe(true)
+    // Saisis à la main, ils partent — l'export d'aujourd'hui reste possible —, et s'offrent à l'enregistrement.
+    fireEvent.change(longueur(), { target: { value: '8' } })
+    fireEvent.click(screen.getByRole('radio', { name: /Nos comptes auxiliaires/ }))
+    fireEvent.change(champ('Code du journal AC dans le logiciel'), { target: { value: 'HA' } })
+    expect(boutonFichier().disabled).toBe(false)
+    expect(boutonEnregistrer().disabled).toBe(false)
+  })
+
+  it('un réglage que la base refuserait se dit avant le clic, sous ses mots, et ne s’enregistre pas', async () => {
+    reglagesDuDossier.lectures = [lus(garde())]
+    await monterAvecLesReglages()
+    fireEvent.change(longueur(), { target: { value: '13' } })
+    expect(screen.getByText(REFUS_DE_LA_BASE.longueur)).toBeDefined()
+    expect(boutonEnregistrer().disabled).toBe(true)
+    fireEvent.change(longueur(), { target: { value: '8' } })
+    fireEvent.change(champ('Code du journal AC dans le logiciel'), { target: { value: 'H A' } })
+    expect(screen.getByText(REFUS_DE_LA_BASE.code)).toBeDefined()
+    expect(boutonEnregistrer().disabled).toBe(true)
+    expect(reglagesDuDossier.enregistres).toEqual([])
+  })
+
+  it('deux clics dans le même act : un seul enregistrement, contre la version lue, puis la liste relue', async () => {
+    reglagesDuDossier.lectures = [lus(garde()), lus(garde({ journal_ac: 'ACH', version: 3 }))]
+    reglagesDuDossier.issue = { ok: true, version: 3 }
+    await monterAvecLesReglages()
+    fireEvent.change(champ('Code du journal AC dans le logiciel'), { target: { value: ' ACH ' } })
+    await act(async () => {
+      fireEvent.click(boutonEnregistrer())
+      fireEvent.click(boutonEnregistrer())
+    })
+    await screen.findByText('Réglages enregistrés pour ce dossier (version 3).')
+    expect(reglagesDuDossier.enregistres).toHaveLength(1)
+    const [dossierId, logiciel, saisie, versionLue] = reglagesDuDossier.enregistres[0]
+    expect([dossierId, logiciel, versionLue]).toEqual(['d1', 'acd', 2])
+    expect(saisie).toMatchObject({ longueurDesComptes: '8', formeDesTiers: 'sans_auxiliaires', journaux: { AC: ' ACH ' } })
+    expect(reglagesDuDossier.lus).toHaveLength(2)
+    // Recalée sur ce que la base garde : le code rogné, et plus rien à enregistrer.
+    expect(champ('Code du journal AC dans le logiciel').value).toBe('ACH')
+    expect(boutonEnregistrer().disabled).toBe(true)
+  })
+
+  it('refusé parce qu’un autre compte les a changés : le refus se dit, et le formulaire repart de ce que la base garde', async () => {
+    reglagesDuDossier.lectures = [lus(garde()), lus(garde({ longueur_des_comptes: 10, journal_ac: 'AUTRE', version: 3 }))]
+    reglagesDuDossier.issue = { ok: false, erreur: REFUS_DE_LA_BASE.version }
+    await monterAvecLesReglages()
+    fireEvent.change(champ('Code du journal AC dans le logiciel'), { target: { value: 'ACH' } })
+    await act(async () => { fireEvent.click(boutonEnregistrer()) })
+    await screen.findByText(REFUS_DE_LA_BASE.version)
+    expect(champ('Code du journal AC dans le logiciel').value).toBe('AUTRE')
+    expect(longueur().value).toBe('10')
+    expect(screen.getByText(/version 3\) sont préremplis/)).toBeDefined()
+  })
+
+  it('une lecture ratée ou partielle ne préremplit rien, le dit, n’offre pas l’enregistrement ; l’export à la main reste possible', async () => {
+    reglagesDuDossier.lectures = [{ dossierId: 'd1', logiciel: 'acd', etat: 'illisibles', motif: 'lecture incomplète' }]
+    await monterAvecLesReglages()
+    expect(screen.getByText(/n’ont pas pu être lus \(lecture incomplète\) : rien n’est prérempli et rien ne s’enregistre/)).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Enregistrer ces réglages' })).toBeNull()
+    expect(longueur().value).toBe('')
+    fireEvent.change(longueur(), { target: { value: '8' } })
+    fireEvent.click(screen.getByRole('radio', { name: /Nos comptes auxiliaires/ }))
+    fireEvent.change(champ('Code du journal AC dans le logiciel'), { target: { value: 'HA' } })
+    await act(async () => { fireEvent.click(boutonFichier()) })
+    await waitFor(() => expect(faux.telechargements).toBe(1))
+    expect(reglagesDuDossier.enregistres).toEqual([])
   })
 })
