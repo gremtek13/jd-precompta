@@ -53,3 +53,73 @@ export async function ecritureLibreRetiree(page) {
   await section.getByText(/^Écriture libre EL\d{4}-0001 retirée\.$/).waitFor({ timeout: 10000 })
   return section
 }
+
+// LE DÉTAIL DES COMPTES ET LA RÉVISION (EL6) : deux écritures libres FICTIVES passées par l'écran, que les visites de la Balance, du
+// Bilan et de la Révision montrent ensuite — la part privée de l'électricité (le 108000, un compte de bilan, face au 606100), puis
+// une charge constatée d'avance du 31 décembre, hors de la 2035 avec son extourne (le 486000 face au 618000). Idempotent dans un même
+// document : rien ne se repasse si la seconde est déjà dans la liste (les visites de debordements.mjs partagent la table du faux).
+export async function ecrituresLibresSemees(page, dossier = 'd1') {
+  await page.goto(`http://127.0.0.1:5199/#/dossiers/${dossier}/ecritures`)
+  const section = SECTION_LIBRE(page)
+  await section.waitFor({ timeout: 10000 })
+  await section.getByText(/^Aucune écriture libre dans l’exercice|EL\d{4}-\d{4}/).first().waitFor({ timeout: 10000 })
+  if ((await section.getByRole('cell', { name: /EL2026-0002$/ }).count()) > 0) return
+  if ((await section.getByRole('cell', { name: /EL2026-0001$/ }).count()) === 0) await ecritureLibrePassee(page)
+  await saisieLibreOuverte(page)
+  await section.getByLabel('Date', { exact: true }).fill('2026-12-31')
+  await section.getByLabel('Libellé', { exact: true }).fill('Abonnement du logiciel de 2027 payé d’avance')
+  await section.getByLabel(/^Motif/).fill('Charge constatée d’avance : l’abonnement de 2027 réglé en décembre 2026')
+  await ligneLibre(section, 1, '486000', '300,00')
+  const deux = section.getByRole('group', { name: 'Ligne 2' })
+  await deux.getByLabel('Compte', { exact: true }).fill('618000')
+  // Le nom du choix porte aussi ses options (« Sens Débit Crédit ») : le libellé se cherche par son début.
+  await deux.locator('label', { hasText: /^Sens/ }).locator('select').selectOption('credit')
+  await deux.getByLabel('Montant', { exact: true }).fill('300,00')
+  const regle = section.getByRole('button', { name: 'Passer hors de la 2035, avec son extourne', exact: true })
+  if ((await regle.count()) > 0) await regle.click()
+  else await section.getByLabel(/^Extourner au 1er janvier suivant/).check()
+  page.once('dialog', (d) => d.accept())
+  await section.getByRole('button', { name: 'Passer l’écriture', exact: true }).click()
+  await section.getByRole('cell', { name: /EL2026-0002$/ }).waitFor({ timeout: 10000 })
+}
+
+// La fiche d'un compte de la visite d'avant reste dans le panneau de droite (l'adresse ne change que par son fragment) : sous
+// 1 280 px il se superpose au panneau central et recouvre le bouton suivant. On le ferme d'abord.
+export async function panneauFerme(page) {
+  const fermer = page.locator('#panneau-droit').getByRole('button', { name: 'Fermer le panneau', exact: true })
+  if ((await fermer.count()) > 0) await fermer.first().click()
+}
+
+// LE PROGRAMME DE L'ENSEMBLE (EL6) ne se propose que sur un exercice TERMINÉ : au banc, celui de 2025 de la société tenue en
+// engagement (d8). Une écriture libre fictive du 30 juin 2025 — des honoraires reclassés face au fournisseur —, passée par l'écran,
+// puis la Révision de 2025 et la fiche du cycle « Ensemble ». Idempotent dans un même document, comme `ecrituresLibresSemees`.
+export async function ensembleDeLExerciceClos(page) {
+  await panneauFerme(page)
+  await page.goto('http://127.0.0.1:5199/#/dossiers/d8/ecritures')
+  const section = SECTION_LIBRE(page)
+  await section.waitFor({ timeout: 10000 })
+  await page.getByText('2025', { exact: true }).first().click()
+  await section.getByText(/^Aucune écriture libre dans l’exercice 2025|EL2025-\d{4}/).first().waitFor({ timeout: 10000 })
+  if ((await section.getByRole('cell', { name: /EL2025-0001$/ }).count()) === 0) {
+    await saisieLibreOuverte(page)
+    await section.getByLabel('Date', { exact: true }).fill('2025-06-30')
+    await section.getByLabel('Libellé', { exact: true }).fill('Honoraires du graphiste reclassés')
+    await section.getByLabel(/^Motif/).fill('Facture du graphiste passée en sous-traitance au lieu d’honoraires')
+    for (const [n, compte, sens] of [[1, '622600', 'debit'], [2, '401000', 'credit']]) {
+      const ligne = section.getByRole('group', { name: `Ligne ${n}` })
+      await ligne.getByLabel('Compte', { exact: true }).fill(compte)
+      await ligne.locator('label', { hasText: /^Sens/ }).locator('select').selectOption(sens)
+      await ligne.getByLabel('Montant', { exact: true }).fill('120,00')
+    }
+    page.once('dialog', (d) => d.accept())
+    await section.getByRole('button', { name: 'Passer l’écriture', exact: true }).click()
+    await section.getByRole('cell', { name: /EL2025-0001$/ }).waitFor({ timeout: 10000 })
+  }
+  await page.goto('http://127.0.0.1:5199/#/dossiers/d8/revision')
+  const ouvrir = page.getByRole('button', { name: /^Ouvrir le cycle Ensemble/ })
+  await ouvrir.waitFor({ timeout: 10000 })
+  await ouvrir.click()
+  const travail = page.getByText(/^Relire les écritures libres de l’exercice/).first()
+  await travail.waitFor({ timeout: 10000 })
+  await travail.scrollIntoViewIfNeeded()
+}

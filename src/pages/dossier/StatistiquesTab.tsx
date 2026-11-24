@@ -29,6 +29,7 @@ import { porteUneSourceDeVente, type FacturesDesLignes } from '../../lib/ventesF
 import { useEcrituresLibres } from '../../lib/useEcrituresLibres'
 import { ecrituresLibresPourLesMoteurs } from '../../lib/ecrituresLibresVue'
 import { marquesDesEcrituresLibres } from '../../lib/ecrituresLibresDuDetail'
+import { NumerosEntiers } from '../../components/NumerosEntiers'
 
 // Aucune vente facturée à ranger : un dossier en trésorerie, ou dont le brouillon n'en porte aucune.
 const SANS_FACTURE: FacturesDesLignes = { factures: [], encaissements: [] }
@@ -483,7 +484,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
                   <td data-libelle="Compte" style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{l.compte}</td>
                   <td data-libelle="Libellé">
                     {l.libelle}
-                    {marquesLibres.has(l.compte) && <div className="cellule-suite muted">{marquesLibres.get(l.compte)}</div>}
+                    {marquesLibres.has(l.compte) && <div className="cellule-suite muted"><NumerosEntiers texte={marquesLibres.get(l.compte) ?? ''} /></div>}
                   </td>
                   <td data-libelle="Écritures">{l.nbEcritures}</td>
                   <td data-libelle="Débit">{formatMoney(l.totalDebit)}</td>

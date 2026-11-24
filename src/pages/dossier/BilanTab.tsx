@@ -23,6 +23,7 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useEcrituresLibres } from '../../lib/useEcrituresLibres'
 import { ecrituresLibresPourLesMoteurs } from '../../lib/ecrituresLibresVue'
 import { marquesDesEcrituresLibres } from '../../lib/ecrituresLibresDuDetail'
+import { NumerosEntiers } from '../../components/NumerosEntiers'
 
 // LE BILAN DE L'EXERCICE CHOISI (ligne 33 de la feuille de route) : ses rubriques sont celles du 2033-A-SD, et il se
 // calcule dans `lib/bilan.ts` depuis les soldes de l'exercice — son ouverture et ses écritures, celles de la Balance
@@ -91,7 +92,7 @@ function LigneDuDetail({ c, precedent, marque }: { c: CompteDuDetail; precedent:
       {precedent !== null && <span className="muted">{` (${precedent} : ${c.precedent ? euros(c.precedent.centimes) : VIDE})`}</span>}
       {c.n?.inhabituel && <span className="muted">{' — solde de l’autre sens que le sien'}</span>}
       {raison && <span className="muted">{` — ${raison}`}</span>}
-      {marque && <span className="muted">{` — ${marque}`}</span>}
+      {marque && <span className="muted">{' — '}<NumerosEntiers texte={marque} /></span>}
       {c.n?.tiers && (
         <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
           {c.n.tiers.map((t) => (
