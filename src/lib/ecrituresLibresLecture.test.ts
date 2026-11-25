@@ -175,14 +175,52 @@ describe('lireLesCitationsDesEcrituresLibres', () => {
       ligne({ id: 'e3', numero: 3, dossier_id: 'd2', piece_citee_id: 'p-2' }),
     ]
     expect(await lireLesCitationsDesEcrituresLibresSelon('d1', true))
-      .toEqual({ dossierId: 'd1', etat: 'lues', citations: [{ exercice: 2025, numero: 1, piece_citee_id: 'p-1' }] })
-    expect(faux.requetes).toHaveLength(1)
-    const [requete] = faux.requetes
+      .toEqual({ dossierId: 'd1', etat: 'lues', citations: [{ exercice: 2025, numero: 1, piece_citee_id: 'p-1', figee: false }] })
+    expect(faux.requetes).toHaveLength(2)
+    const [requete, validations] = faux.requetes
     expect(requete).toMatchObject({
       table: 'ecritures_libres', colonnes: 'id, dossier_id, exercice, numero, piece_citee_id', options: { count: 'exact' },
       filtres: [['dossier_id', 'd1'], ['not.piece_citee_id.is', null]],
     })
     expect(requete.ordres.at(-1)).toBe('id')
+    // Les exercices validés de SON dossier, en entier, tri total terminé par la clé primaire (dossier_id, annee).
+    expect(validations).toMatchObject({
+      table: 'exercices_valides', colonnes: 'dossier_id, annee', options: { count: 'exact' }, filtres: [['dossier_id', 'd1']],
+    })
+    expect(validations.ordres).toEqual(['dossier_id', 'annee'])
+  })
+
+  // Relecture adverse du 25/11/2026 : une écriture d'un exercice validé — son exercice au plus tard le dernier validé du dossier, la
+  // frontière de `frontiere_validation` — est figée, et sa citation ne se retire plus ; un exercice validé d'un AUTRE dossier ne
+  // fige rien ici (le filtre, que le faux client applique, et la ligne relue).
+  it('dit laquelle est figée : son exercice au plus tard le dernier exercice validé du dossier', async () => {
+    faux.tables.ecritures_libres = [
+      ligne({ id: 'e1', numero: 1, exercice: 2024, date: '2024-06-30', piece_citee_id: 'p-1' }),
+      ligne({ id: 'e2', numero: 2, exercice: 2025, date: '2025-06-30', piece_citee_id: 'p-1' }),
+      ligne({ id: 'e3', numero: 1, exercice: 2026, date: '2026-01-15', piece_citee_id: 'p-2' }),
+    ]
+    faux.tables.exercices_valides = [{ dossier_id: 'd1', annee: 2024 }, { dossier_id: 'd1', annee: 2025 }, { dossier_id: 'd2', annee: 2026 }]
+    const lu = await lireLesCitationsDesEcrituresLibresSelon('d1', true)
+    expect(lu.etat === 'lues' && lu.citations.map((c) => [c.exercice, c.numero, c.figee])).toEqual([[2024, 1, true], [2025, 2, true], [2026, 1, false]])
+    // Aucun exercice validé : rien n'est figé.
+    faux.tables.exercices_valides = []
+    const sans = await lireLesCitationsDesEcrituresLibresSelon('d1', true)
+    expect(sans.etat === 'lues' && sans.citations.every((c) => !c.figee)).toBe(true)
+  })
+
+  it('les exercices validés lus en partie, refusés ou d’une autre forme : illisible — rien n’est dit cité, ni figé', async () => {
+    faux.tables.ecritures_libres = [ligne({ piece_citee_id: 'p-1' })]
+    faux.refus = { exercices_valides: 'permission denied' }
+    expect(await lireLesCitationsDesEcrituresLibresSelon('d1', true))
+      .toMatchObject({ etat: 'illisibles', motif: expect.stringContaining('les exercices validés') })
+    faux.refus = {}
+    for (const v of [{ dossier_id: 'd1', annee: '2024' }, { dossier_id: 'd1', annee: 2024.5 }, { dossier_id: 'd1', annee: null }]) {
+      faux.tables.exercices_valides = [v]
+      expect(await lireLesCitationsDesEcrituresLibresSelon('d1', true), JSON.stringify(v)).toMatchObject({ etat: 'illisibles' })
+    }
+    faux.tables.exercices_valides = [{ dossier_id: 'd1', annee: 2024 }]
+    faux.muetApres = 0
+    expect(await lireLesCitationsDesEcrituresLibresSelon('d1', true)).toMatchObject({ etat: 'illisibles' })
   })
 
   it('lue en partie, refusée, levée, ou d’une autre forme : illisible, jamais vide', async () => {

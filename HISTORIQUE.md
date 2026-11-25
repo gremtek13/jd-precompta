@@ -54840,3 +54840,20 @@ le dossier garde : rien à enregistrer. », alors que le dossier ne garde rien ;
 « Réglages enregistrés (version n) » juste après un enregistrement. Le cabinet a tranché (A) : `phraseDeRienAEnregistrer`
 (`lib/reglagesDExport.ts`) dit « Rien n'est saisi : rien à enregistrer. » quand rien n'est gardé, et l'écran tait la
 phrase tant que celle de l'enregistrement réussi est affichée (elle revient à la saisie suivante). Écran seul.
+
+### 25/11/2026 — LA RELECTURE ADVERSE DES TROIS MIGRATIONS DU JOUR (251 À 253) : AUCUN DÉFAUT DE BASE, UN REMÈDE IMPOSSIBLE À L'ÉCRAN
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 253, dérive `4eb8834b…`, inventaire 3 518, socle 84,
+puis supprimée.) Les essais y passent : contre-passation 0/50 et 12 mutations, réglages 0/53 et 8, codes 30/30, `ecrituresLibres`
+0/67 et 6, `contacts` 209 + 15, `validationExercice` 250/250 (`psql -1`, super-utilisateur), `rls.sql` 0/1 357 et 178,
+`restauration.sql` IDENTIQUE (110 tables, sans écriture libre ni fiche à prouver). Refusés sous leurs mots et codes, par l'anonyme, le
+client « Ventes », un membre non assigné, le chef d'un autre cabinet : contre-passer deux fois, une contre-passation ouverte, une
+extournée, dans l'exercice validé, à une version périmée, des lignes au même sens ; retirer ou remplacer la contre-passée ; écrire
+`contre_passe_id`, un code ou les réglages en direct, les détourner d'un dossier. En course (deux sessions) : la seconde
+contre-passation reçoit « déjà » (23514, jamais 23505) ; les codes se suivent sans trou, une création annulée rend le sien ; le
+second premier réglage, 40001. `valider_exercice` = 923cfa1b… plus ses trois retouches. Admis, à ne pas réenquêter : le
+super-administrateur écrit en direct (la restauration ; un C99999 épuise le compteur) ; `poser_code_client` garde un code donné hors
+de la RLS (aucun chemin) ; une réinsertion en une instruction, contre-passation d'abord, se refuse (les vagues l'évitent). Le défaut,
+d'écran : une pièce citée par une écriture d'un exercice validé ne se supprime jamais (sa citation ne se retire plus, la
+contre-passation la garde), et l'écran disait « retire d'abord la citation » ; la lecture des citations lit les exercices validés,
+le remède ne se dit que si aucune écriture qui cite n'est figée. Questions : RA253-Q1, RA253-Q2.

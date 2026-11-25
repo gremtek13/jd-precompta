@@ -67,8 +67,11 @@ export async function lireLesEcrituresLibresSelon(
 // AVANT le clic qu'une pièce citée ne se supprime pas (lib/pieceCiteeParUneEcritureLibre.ts). Une lecture À PART, plus courte que
 // celle des écrans de l'onglet Écritures : la référence et la pièce citée seulement — ni libellé, ni motif, ni lignes, ni auteurs,
 // que la règle n'a pas à connaître. Toutes les écritures du dossier qui citent une pièce, quel que soit leur exercice (une écriture
-// d'un exercice validé la garde aussi). Par `lireTout`, tri total terminé par la clé primaire ; elle ne rejette jamais : lue en
-// partie, refusée, levée ou d'une autre forme, `illisibles` avec son motif — et alors aucune pièce n'est dite citée.
+// d'un exercice validé la garde aussi). Puis les exercices validés du dossier, pour dire laquelle est FIGÉE — son exercice au plus
+// tard le dernier validé, la frontière de `frontiere_validation` — : sa citation ne se retire plus, et la phrase ne propose pas de
+// la retirer (relecture adverse du 25/11/2026). Par `lireTout`, tri total terminé par la clé primaire ; elle ne rejette jamais :
+// l'une ou l'autre lue en partie, refusée, levée ou d'une autre forme, `illisibles` avec son motif — et alors aucune pièce n'est
+// dite citée.
 
 /** Les pièces citées par les écritures libres d'un dossier ; ne rejette jamais. */
 export function lireLesCitationsDesEcrituresLibres(dossierId: string): Promise<CitationsDesEcrituresLibres> {
@@ -79,12 +82,28 @@ export function lireLesCitationsDesEcrituresLibres(dossierId: string): Promise<C
 export async function lireLesCitationsDesEcrituresLibresSelon(dossierId: string, prevues: boolean): Promise<CitationsDesEcrituresLibres> {
   if (!prevues) return { dossierId, etat: 'absentes' }
   try {
-    const lecture = await lireTout<Record<string, unknown>>((debut, fin) =>
-      supabase.from('ecritures_libres').select('id, dossier_id, exercice, numero, piece_citee_id', { count: 'exact' })
-        .eq('dossier_id', dossierId).not('piece_citee_id', 'is', null)
-        .order('exercice').order('numero').order('id').range(debut, fin),
-    )
+    const [lecture, validations] = await Promise.all([
+      lireTout<Record<string, unknown>>((debut, fin) =>
+        supabase.from('ecritures_libres').select('id, dossier_id, exercice, numero, piece_citee_id', { count: 'exact' })
+          .eq('dossier_id', dossierId).not('piece_citee_id', 'is', null)
+          .order('exercice').order('numero').order('id').range(debut, fin),
+      ),
+      lireTout<Record<string, unknown>>((debut, fin) =>
+        supabase.from('exercices_valides').select('dossier_id, annee', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('dossier_id').order('annee').range(debut, fin),
+      ),
+    ])
     if (!lecture.complete) return { dossierId, etat: 'illisibles', motif: lecture.motif ?? 'lecture incomplète' }
+    if (!validations.complete) {
+      return { dossierId, etat: 'illisibles', motif: `les exercices validés : ${validations.motif ?? 'lecture incomplète'}` }
+    }
+    let derniereValidee: number | null = null
+    for (const v of validations.lignes) {
+      if (v.dossier_id !== dossierId || !Number.isInteger(v.annee)) {
+        return { dossierId, etat: 'illisibles', motif: 'un exercice validé n’a pas la forme que la base écrit' }
+      }
+      derniereValidee = Math.max(derniereValidee ?? (v.annee as number), v.annee as number)
+    }
     const citations: CitationDUneEcritureLibre[] = []
     for (const l of lecture.lignes) {
       const { id, dossier_id: dossier, exercice, numero, piece_citee_id: piece } = l
@@ -92,7 +111,10 @@ export async function lireLesCitationsDesEcrituresLibresSelon(dossierId: string,
         || (numero as number) < 1 || typeof piece !== 'string' || piece === '') {
         return { dossierId, etat: 'illisibles', motif: 'une écriture n’a pas la forme que la base écrit' }
       }
-      citations.push({ exercice: exercice as number, numero: numero as number, piece_citee_id: piece })
+      citations.push({
+        exercice: exercice as number, numero: numero as number, piece_citee_id: piece,
+        figee: derniereValidee !== null && (exercice as number) <= derniereValidee,
+      })
     }
     return { dossierId, etat: 'lues', citations }
   } catch (e) {

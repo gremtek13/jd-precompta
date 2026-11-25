@@ -1644,6 +1644,20 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
     expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
   })
 
+  // Relecture adverse du 25/11/2026 : l'écriture qui cite est d'un exercice VALIDÉ (2026, ici) — figée, sa citation ne se retire
+  // plus, et sa contre-passation ne la retire pas : la fiche ne propose pas ce geste impossible, elle dit que la pièce reste.
+  it('citée par une écriture d’un exercice validé : la fiche ne propose pas de retirer la citation', async () => {
+    poser(deux())
+    citer()
+    faux.parTable.exercices_valides = [{ dossier_id: 'dossier-de-test', annee: 2026 }]
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByText('Cette pièce est citée par l’écriture libre EL2026-0003 : elle ne se supprime plus, sauf avec son '
+      + 'dossier. L’écriture EL2026-0003 est d’un exercice validé : sa citation ne se retire plus, et la pièce reste au dossier.')).toBeTruthy()
+    expect(within(volet()).queryByText(/retire d’abord/)).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
+  })
+
   it('une écriture libre d’un autre dossier ne garde rien ici', async () => {
     poser(deux())
     citer('autre-dossier')

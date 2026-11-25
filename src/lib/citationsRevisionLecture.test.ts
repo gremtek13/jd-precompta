@@ -144,7 +144,7 @@ describe('citantDe', () => {
 describe('une pièce citée par une écriture libre (ELQ8Q1-Q1)', () => {
   const libres = {
     dossierId: 'd1', etat: 'lues' as const,
-    citations: [{ exercice: 2026, numero: 3, piece_citee_id: 'p-1' }, { exercice: 2026, numero: 4, piece_citee_id: 'p-7' }],
+    citations: [{ exercice: 2026, numero: 3, piece_citee_id: 'p-1', figee: false }, { exercice: 2026, numero: 4, piece_citee_id: 'p-7', figee: false }],
   }
 
   it('la révision et le dossier permanent parlent d’abord, puis l’écriture libre', async () => {
