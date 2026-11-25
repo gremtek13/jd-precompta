@@ -54841,19 +54841,22 @@ le dossier garde : rien à enregistrer. », alors que le dossier ne garde rien ;
 (`lib/reglagesDExport.ts`) dit « Rien n'est saisi : rien à enregistrer. » quand rien n'est gardé, et l'écran tait la
 phrase tant que celle de l'enregistrement réussi est affichée (elle revient à la saisie suivante). Écran seul.
 
-### 25/11/2026 — LA RELECTURE ADVERSE DES TROIS MIGRATIONS DU JOUR (251 À 253) : AUCUN DÉFAUT DE BASE, UN REMÈDE IMPOSSIBLE À L'ÉCRAN
+### 25/11/2026 — LA RELECTURE ADVERSE DES TROIS MIGRATIONS DU JOUR (251 À 253) : LE FICHIER D'UNE PIÈCE CITÉE, ET UN REMÈDE IMPOSSIBLE
 
-(Agent architecte ; rien en production ; une copie de `replique_227` portée à 253, dérive `4eb8834b…`, inventaire 3 518, socle 84,
-puis supprimée.) Les essais y passent : contre-passation 0/50 et 12 mutations, réglages 0/53 et 8, codes 30/30, `ecrituresLibres`
-0/67 et 6, `contacts` 209 + 15, `validationExercice` 250/250 (`psql -1`, super-utilisateur), `rls.sql` 0/1 357 et 178,
-`restauration.sql` IDENTIQUE (110 tables, sans écriture libre ni fiche à prouver). Refusés sous leurs mots et codes, par l'anonyme, le
-client « Ventes », un membre non assigné, le chef d'un autre cabinet : contre-passer deux fois, une contre-passation ouverte, une
-extournée, dans l'exercice validé, à une version périmée, des lignes au même sens ; retirer ou remplacer la contre-passée ; écrire
-`contre_passe_id`, un code ou les réglages en direct, les détourner d'un dossier. En course (deux sessions) : la seconde
-contre-passation reçoit « déjà » (23514, jamais 23505) ; les codes se suivent sans trou, une création annulée rend le sien ; le
-second premier réglage, 40001. `valider_exercice` = 923cfa1b… plus ses trois retouches. Admis, à ne pas réenquêter : le
-super-administrateur écrit en direct (la restauration ; un C99999 épuise le compteur) ; `poser_code_client` garde un code donné hors
-de la RLS (aucun chemin) ; une réinsertion en une instruction, contre-passation d'abord, se refuse (les vagues l'évitent). Le défaut,
-d'écran : une pièce citée par une écriture d'un exercice validé ne se supprime jamais (sa citation ne se retire plus, la
-contre-passation la garde), et l'écran disait « retire d'abord la citation » ; la lecture des citations lit les exercices validés,
-le remède ne se dit que si aucune écriture qui cite n'est figée. Questions : RA253-Q1, RA253-Q2.
+(Agent architecte ; rien en production ; deux copies de `replique_227` portées à 253 — dérive `4eb8834b…`, inventaire 3 518, socle
+84 —, l'une après l'autre, supprimées.) Les essais y passent : contre-passation 0/50 et 12 mutations, réglages 0/53 et 8, codes
+30/30, `ecrituresLibres` 0/67 et 6, `contacts` 209 + 15, `validationExercice` 250/250 (`psql -1`, super-utilisateur), `rls.sql`
+0/1 357 et 178, `restauration.sql` IDENTIQUE (110 tables ; semé des trois chantiers, la paire en deux vagues). Refusés sous leurs
+mots et codes, par l'anonyme, le client « Ventes », un membre non assigné, le chef d'un autre cabinet : contre-passer deux fois,
+une ouverte, une extournée, dans l'exercice validé, à une version périmée, des lignes au même sens ; retirer ou remplacer la
+contre-passée ; écrire `contre_passe_id`, un code ou les réglages en direct. En course : la seconde contre-passation reçoit
+« déjà » (23514, jamais 23505) ; les codes se suivent sans trou ; le second premier réglage, 40001. `valider_exercice` =
+923cfa1b… plus ses trois retouches. Admis, à ne pas réenquêter : le super-administrateur écrit en direct (la restauration) ;
+`poser_code_client` garde un code donné hors de la RLS (aucun chemin n'en donne). Deux défauts, autour de la pièce qu'une
+écriture libre cite (EL2) : à l'écran, « retire d'abord la citation » sur une écriture figée, dont la citation ne se retire plus
+(la lecture des citations lit les exercices validés, le remède ne se dit que s'il existe) ; en base, `fichier_fige` (INAL1)
+ignore cette citation, et qui administre le dossier retire le fichier par l'API (mesuré : une ligne de `storage.objects` part ;
+le témoin du dossier permanent, aucune). Préparée : `fichier_cite_par_une_ecriture_libre` (le corps 5372f8d2… plus une
+condition, `5e7016c0…`, par l'outil ; son retour, à coller), son essai 0/11 et 2 mutations ; avec elle `rls.sql`, `dossierPermanent`
+(189) et `exemplairesDesFactures` (323), qui admettent son empreinte, SÛRS au banc ; INV3 et elle se refusent l'une après
+l'autre (REPET-Q2). Questions : RA253-migration, RA253-Q1, RA253-Q2.
