@@ -198,12 +198,12 @@ export default function ExportVersUnLogiciel({ dossierId, nomDuFec, fec, pieces,
       </button>
       {erreur && <p className="error-text" role="alert" style={{ flexBasis: '100%' }}>{erreur}</p>}
       {ouvert && instantane !== null && enLecture && (
-        <div className="card" style={{ flexBasis: '100%', textAlign: 'left' }} aria-label="Export vers un logiciel comptable">
+        <div className="card carte-export-logiciel" aria-label="Export vers un logiciel comptable">
           <p className="muted" role="status">Lecture des réglages que le dossier garde pour ce logiciel…</p>
         </div>
       )}
       {ouvert && instantane !== null && misEnForme !== null && (
-        <div className="card" style={{ flexBasis: '100%', textAlign: 'left' }} aria-label="Export vers un logiciel comptable">
+        <div className="card carte-export-logiciel" aria-label="Export vers un logiciel comptable">
           <div className="field-row aligne-bas" style={{ flexWrap: 'wrap', gap: 12 }}>
             <label className="field">
               <span>Logiciel</span>
@@ -279,7 +279,7 @@ export default function ExportVersUnLogiciel({ dossierId, nomDuFec, fec, pieces,
           )}
 
           {REGLAGES_D_EXPORT_PREVUS && lus !== null && (
-            <div>
+            <div className="enregistrement-des-reglages">
               <button className="btn btn-outline btn-sm" disabled={enregistrement.enCours || refusDeLaSaisie !== null || rienAEnregistrer}
                 onClick={() => { void enregistrerLesReglages() }}>
                 {enregistrement.enCours ? 'Enregistrement…' : 'Enregistrer ces réglages'}

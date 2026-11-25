@@ -208,7 +208,7 @@ function ListeDesImports({ espace, imports, totaux, enCours, aRetirer, onDemande
   return (
     <>
       <h4 style={{ marginBottom: 6 }}>Les imports de bordereaux</h4>
-      <div className="tableau-adaptable">
+      <div className="table-scroll tableau-adaptable">
         <table className="table-empilable-etroite" aria-label="Imports des bordereaux de télétransmission">
           <thead>
             <tr><th>Importé le</th><th>Lots créés</th><th>Lots</th><th>Factures (ordre de grandeur)</th><th>Part obligatoire</th><th>Part complémentaire</th><th></th></tr>
@@ -254,7 +254,7 @@ function ListeDesImports({ espace, imports, totaux, enCours, aRetirer, onDemande
 
 function TableauDesTotaux({ totaux, libelle }: { totaux: readonly TotalDuFactureDit[]; libelle: string }) {
   return (
-    <div className="tableau-adaptable">
+    <div className="table-scroll tableau-adaptable">
       <table className="table-empilable-etroite" aria-label={libelle}>
         <thead>
           <tr><th>Lots créés le</th><th>Organisme</th><th>Part</th><th>Facturé</th><th>Lots</th><th>Factures (ordre de grandeur)</th></tr>

@@ -197,6 +197,22 @@ h3 { font-size: 1.02rem; }
    champs à DROITE, à la largeur de leur contenu — le style en ligne l'emporterait sur la règle mobile. */
 .field-row.aligne-bas { align-items: flex-end; }
 
+/* L'export vers un logiciel comptable (onglet Écritures), dans la rangée des exports, calée à DROITE : sur téléphone sa carte
+   prenait la largeur du nom du logiciel dans sa liste et sortait de l'écran par la GAUCHE (vu au banc, 25/11/2026). `min-width: 0`
+   la tient dans la rangée, la liste se tient dans la carte. Ses groupes de champs perdent le cadre en creux du navigateur. */
+.carte-export-logiciel { flex-basis: 100%; min-width: 0; max-width: 100%; text-align: left; }
+.carte-export-logiciel .field, .carte-export-logiciel select { min-width: 0; max-width: 100%; }
+.carte-export-logiciel fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px 2px;
+  margin: 0 0 14px;
+  min-width: 0;
+}
+.carte-export-logiciel legend { padding: 0 6px; font-size: 0.8rem; font-weight: 600; color: var(--color-text-light); }
+.carte-export-logiciel .enregistrement-des-reglages { margin-bottom: 14px; }
+.carte-export-logiciel .enregistrement-des-reglages p { margin: 8px 0 0; }
+
 /* ---------- Badges ---------- */
 .badge {
   display: inline-flex;

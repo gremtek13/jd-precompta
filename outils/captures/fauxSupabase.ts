@@ -2078,9 +2078,85 @@ const LIGNES_FIGEES_D1: FactureLigne[] = [
 // année), l'écriture et son extourne posées au brouillon sous `ecriture_libre_id`, puis retirées avec elle. Les autres refus de la
 // base (date, comptes, équilibre, règle de la trésorerie) sont dits par l'écran avant le clic : le banc ne les rejoue pas.
 let ecrituresLibresDuBanc = 0
+// Un levier du banc, lu à chaque appel (localStorage) : une visite de debordements.mjs le pose et le retire sans recharger le document.
+const levierDuBanc = (cle: string): string | null => (typeof localStorage === 'undefined' ? null : localStorage.getItem(cle))
+
+// LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE FIGÉE (EL7, en production depuis le 25/11/2026) : sous le levier `banc-ecritures-figees`,
+// deux écritures libres FICTIVES de l'exercice 2025 validé de la kinésithérapeute (d9), donc figées — la part privée du téléphone,
+// sous son poste de la 2035, qui se contre-passe, et une charge constatée d'avance du 31 décembre extournée, que son état retient.
+// Levier retiré, elles partent avec ce qui les contre-passe (et ses lignes au brouillon) : les visites de la Révision de d9 et de sa
+// Balance se mesurent sans elles, comme hier.
+const ECRITURES_FIGEES_DU_BANC: Ligne[] = [
+  {
+    id: 'el-figee-1', dossier_id: 'd9', exercice: 2025, numero: 1, date: '2025-06-30', libelle: 'Part privée du téléphone 2025',
+    motif: 'Usage privé de la ligne estimé à 30 % des factures du premier semestre', avec_extourne: false, piece_citee_id: null,
+    lignes: [
+      { compte: '108000', sens: 'debit', centimes: 12000, poste_2035: null, compte_lib: null },
+      { compte: '626000', sens: 'credit', centimes: 12000, poste_2035: 'Fournitures de bureau, frais de documentation, de correspondance et de téléphone', compte_lib: null },
+    ],
+    version: 1, cree_par: 'u1', cree_le: '2025-07-01T08:30:00Z', modifie_par: null, modifie_le: null, contre_passe_id: null,
+  },
+  {
+    id: 'el-figee-2', dossier_id: 'd9', exercice: 2025, numero: 2, date: '2025-12-31', libelle: 'Abonnement du logiciel de 2026 payé d’avance',
+    motif: 'Charge constatée d’avance : l’abonnement de 2026 réglé en décembre 2025', avec_extourne: true, piece_citee_id: null,
+    lignes: [
+      { compte: '486000', sens: 'debit', centimes: 24000, poste_2035: null, compte_lib: null },
+      { compte: '618000', sens: 'credit', centimes: 24000, poste_2035: null, compte_lib: null },
+    ],
+    version: 1, cree_par: 'u1', cree_le: '2026-01-15T10:00:00Z', modifie_par: null, modifie_le: null, contre_passe_id: null,
+  },
+]
+function ecrituresFigeesDuBanc(): void {
+  const libres = TABLES.ecritures_libres ?? []
+  const semees = ECRITURES_FIGEES_DU_BANC.map((e) => e.id)
+  if (levierDuBanc('banc-ecritures-figees') === '1') {
+    if (!libres.some((e) => semees.includes(String(e.id)))) TABLES.ecritures_libres = [...libres, ...ECRITURES_FIGEES_DU_BANC.map((e) => ({ ...e }))]
+    return
+  }
+  const parties = libres.filter((e) => semees.includes(String(e.id)) || semees.includes(String(e.contre_passe_id))).map((e) => e.id)
+  if (parties.length === 0) return
+  TABLES.ecritures_libres = libres.filter((e) => !parties.includes(e.id))
+  TABLES.ecritures_brouillon = (TABLES.ecritures_brouillon ?? []).filter((b) => !parties.includes(b.ecriture_libre_id))
+}
+
 function rpcDesEcrituresLibres(nom: string, args?: Ligne): { data: unknown; error: null | { message: string } } | null {
+  ecrituresFigeesDuBanc()
   const libres = () => TABLES.ecritures_libres ?? []
   const changee = { data: null, error: { message: 'Cette écriture libre a changé depuis sa lecture : relire les écritures avant de l’écrire.' } }
+  // `contre_passer_ecriture_libre` (EL7), pour ce que l'écran peut éprouver : la version lue comparée, une seule contre-passation par
+  // écriture, l'écriture neuve au numéro suivant de son année, qui cite l'origine et porte ses lignes au sens inverse (sans poste,
+  // hors de la 2035), ses lignes au brouillon. Les autres refus (date, libellé, motif, état), l'écran les dit avant le clic.
+  if (nom === 'contre_passer_ecriture_libre' && args) {
+    const origine = libres().find((x) => x.id === args.p_id)
+    if (origine === undefined || origine.version !== args.p_version_lue) return changee
+    if (libres().some((x) => x.contre_passe_id === origine.id)) {
+      return { data: null, error: { message: 'Cette écriture libre a déjà sa contre-passation : une écriture ne se contre-passe qu’une fois.' } }
+    }
+    const c = (args.p_contre_passation ?? {}) as Ligne
+    const date = String(c.date)
+    const exercice = Number(date.slice(0, 4))
+    const dossierId = String(origine.dossier_id)
+    const numero = Math.max(0, ...libres().filter((x) => x.dossier_id === dossierId && x.exercice === exercice).map((x) => Number(x.numero))) + 1
+    const id = `el-banc-${++ecrituresLibresDuBanc}`
+    const maintenant = new Date().toISOString()
+    const lignes = (origine.lignes as Ligne[]).map((l) => ({
+      ...l, sens: l.sens === 'debit' ? 'credit' : 'debit', poste_2035: c.hors_de_la_2035 === true ? null : l.poste_2035,
+    }))
+    TABLES.ecritures_libres = [...libres(), {
+      id, dossier_id: dossierId, exercice, numero, date, libelle: c.libelle, motif: c.motif, lignes, avec_extourne: false,
+      piece_citee_id: null, version: 1, cree_par: session.user.id, cree_le: maintenant, modifie_par: null, modifie_le: null,
+      contre_passe_id: origine.id,
+    }]
+    const proposees = (args.p_ecritures ?? []) as { date: string; libelle: string; lignes: { compte: string; sens: string; centimes: number }[] }[]
+    TABLES.ecritures_brouillon = [
+      ...(TABLES.ecritures_brouillon ?? []),
+      ...proposees.flatMap((p, i) => p.lignes.map((l, j) => ({
+        id: `${id}-${i}-${j}`, dossier_id: dossierId, piece_id: null, ligne_bancaire_id: null, ecriture_libre_id: id, date: p.date,
+        compte: l.compte, libelle: p.libelle, sens: l.sens, montant: l.centimes / 100, statut: 'proposee', created_at: maintenant,
+      }))),
+    ]
+    return { data: id, error: null }
+  }
   if (nom === 'enregistrer_ecriture_libre' && args) {
     const dossierId = String(args.p_dossier_id)
     const e = (args.p_ecriture ?? {}) as Ligne
@@ -2101,6 +2177,8 @@ function rpcDesEcrituresLibres(nom: string, args?: Ligne): { data: unknown; erro
       avec_extourne: e.avec_extourne, piece_citee_id: piece, version: ancienne === undefined ? 1 : Number(ancienne.version) + 1,
       cree_par: ancienne?.cree_par ?? session.user.id, cree_le: ancienne?.cree_le ?? maintenant,
       modifie_par: ancienne === undefined ? null : session.user.id, modifie_le: ancienne === undefined ? null : maintenant,
+      // La colonne d'EL7, en base depuis le 25/11/2026 : nulle sur une écriture qui ne contre-passe rien.
+      contre_passe_id: ancienne?.contre_passe_id ?? null,
     }
     TABLES.ecritures_libres = [...libres().filter((x) => x.id !== id), ecrite]
     const proposees = (args.p_ecritures ?? []) as { date: string; libelle: string; lignes: { compte: string; sens: string; centimes: number }[] }[]
@@ -2122,6 +2200,30 @@ function rpcDesEcrituresLibres(nom: string, args?: Ligne): { data: unknown; erro
     return { data: avant - TABLES.ecritures_brouillon.length, error: null }
   }
   return null
+}
+
+// LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL (EXP-Q4 (A), en production depuis le 25/11/2026) : la table `reglages_d_export`, vide au
+// départ, et `enregistrer_reglages_d_export`, comme la base la joue pour ce que l'écran éprouve — la version lue comparée, la ligne
+// posée ou remplacée, la version rendue. Les refus de forme, l'écran les dit avant le clic. Le levier `banc-reglages-export` (lu à
+// chaque appel) joue la lecture qui échoue (« refusee ») et la lecture lente (« lente », trois secondes : l'état « Lecture… »).
+function rpcDesReglagesDExport(nom: string, args?: Ligne): { data: unknown; error: null | { message: string } } | null {
+  if (nom !== 'enregistrer_reglages_d_export' || !args) return null
+  const lignes = TABLES.reglages_d_export ?? []
+  const gardee = lignes.find((l) => l.dossier_id === args.p_dossier_id && l.logiciel === args.p_logiciel)
+  if ((gardee?.version ?? null) !== (args.p_version_lue ?? null)) {
+    return { data: null, error: { message: 'Les réglages d’export de ce dossier ont changé depuis leur lecture : relis-les avant de les enregistrer.' } }
+  }
+  const r = (args.p_reglages ?? {}) as { longueur_des_comptes: number | null; forme_des_tiers: string | null; journaux: Record<string, string | null> }
+  const version = Number(gardee?.version ?? 0) + 1
+  const ecrite: Ligne = {
+    id: gardee?.id ?? `re-banc-${lignes.length + 1}`, dossier_id: args.p_dossier_id, logiciel: args.p_logiciel,
+    longueur_des_comptes: r.longueur_des_comptes, forme_des_tiers: r.forme_des_tiers,
+    journal_ac: r.journaux.AC ?? null, journal_ve: r.journaux.VE ?? null, journal_bq: r.journaux.BQ ?? null,
+    journal_od: r.journaux.OD ?? null, journal_an: r.journaux.AN ?? null,
+    version, regle_par: session.user.id, regle_le: new Date().toISOString(),
+  }
+  TABLES.reglages_d_export = [...lignes.filter((l) => l !== gardee), ecrite]
+  return { data: version, error: null }
 }
 
 function rpcDesParametres(nom: string, args?: Ligne): { data: unknown; error: null } | null {
@@ -2650,8 +2752,12 @@ const TABLES: Record<string, Ligne[]> = {
   adresses_reception: ADRESSES_RECEPTION_DU_BANC.map((a) => ({ ...a })),
   // Le catalogue d'articles de l'atelier (espace client, étape A2a) : voir ARTICLES_D7.
   articles: ARTICLES_D7.map((a) => ({ ...a })),
-  // Le fichier des clients (espace client, étape A4b1) : voir CONTACTS_DU_BANC.
-  contacts: CONTACTS_DU_BANC.map((c) => ({ ...c })),
+  // Le fichier des clients (espace client, étape A4b1) : voir CONTACTS_DU_BANC. Chaque fiche porte le code que la base lui pose
+  // (EXP58-Q2, `codes_des_clients`, en production depuis le 25/11/2026) : « C » et cinq chiffres, au rang de sa création dans son
+  // dossier (le compteur de `contacts_numerotation`).
+  contacts: CONTACTS_DU_BANC.map((c, i) => ({
+    ...c, code_client: `C${String(CONTACTS_DU_BANC.slice(0, i + 1).filter((d) => d.dossier_id === c.dossier_id).length).padStart(5, '0')}`,
+  })),
   // Les paramètres de facturation (espace client, étape A5b1) : voir PARAMETRES_DU_BANC.
   parametres_facturation: PARAMETRES_DU_BANC.map((v) => ({ ...v })),
 }
@@ -2807,11 +2913,16 @@ function requete(table: string) {
     single: () => { unique = 'single'; return chaine },
     maybeSingle: () => { unique = 'maybe'; return chaine },
     then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
+      if (table === 'ecritures_libres' || table === 'ecritures_brouillon') ecrituresFigeesDuBanc()
       const lignes = (TABLES[table] ?? []).filter((l) => filtres.every((f) => f(l)))
       let reponse: unknown
       if (unique) reponse = { data: lignes[0] ?? null, error: null }
       else if (tete) reponse = { data: null, error: null, count: lignes.length }
       else reponse = { data: lignes.slice(debut, fin + 1), error: null, count: lignes.length }
+      // Les réglages de l'export (voir `rpcDesReglagesDExport`) : la lecture refusée, ou rendue après trois secondes.
+      const reglages = table === 'reglages_d_export' ? levierDuBanc('banc-reglages-export') : null
+      if (reglages === 'refusee') reponse = { data: null, error: { message: 'permission denied for table reglages_d_export', code: '42501' }, count: null }
+      if (reglages === 'lente') return new Promise((r) => setTimeout(() => r(reponse), 3000)).then(suite, echec)
       return Promise.resolve(reponse).then(suite, echec)
     },
   })
@@ -3118,7 +3229,8 @@ export const supabase = {
     ? caisseDuClientDuBanc(args)
     : nom === 'plafonds_de_l_assistant'
       ? plafondsDuBanc()
-      : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDesEcrituresLibres(nom, args) ?? rpcDuBanc(nom, args?.p_dossier_id))),
+      : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDesEcrituresLibres(nom, args) ?? rpcDesReglagesDExport(nom, args)
+        ?? rpcDuBanc(nom, args?.p_dossier_id))),
   from: (table: string) => requete(table),
   storage: {
     // Le seau `ventes` (étape A5c2a) rend et range les logos ; les autres seaux restent une maquette.

@@ -54806,3 +54806,16 @@ INV3 s'appliquent (son essai 71 + 25 ; inventaire 3 566, 3 593, 3 566 après son
 citée parmi toutes les pièces du dossier, « à valider » comprises (la base l'acceptait), lues d'une lecture par l'onglet Écritures,
 l'état et la piste d'audit la désignant quel que soit son statut ; NOE6R-Q1 (B), rien à coder ; EL6-Q1 à Q3, EL7-Q1 à Q3, EXPQ4-Q1
 à Q3, EXP58Q2-Q1 et Q2, à la recommandation. Question : ELQ8Q1-Q1 (la suppression d'une pièce citée, refusée sans un mot avant le clic).
+
+### 25/11/2026 — LES TROIS ÉCRANS D'EL7, EXP-Q4 ET EXP58-Q2 ÉPROUVÉS AU BANC ; UN DÉBORDEMENT PAR LA GAUCHE
+
+(Agent dev ; rien en production.) Le faux Supabase gagne `contre_passer_ecriture_libre`, deux écritures libres figées de 2025 sur d9
+(le levier `banc-ecritures-figees`, lu à chaque appel, retiré : elles partent), `reglages_d_export` et sa fonction (le levier
+`banc-reglages-export` : « lente », « refusee »), le code client de chaque fiche ; douze visites au banc et onze vues ×4 à la vitrine.
+Trouvé : sur téléphone, la carte de l'export vers un logiciel sortait de 27 px de l'écran PAR LA GAUCHE (la rangée des exports est calée
+à droite, la carte prenait la largeur du nom du logiciel dans sa liste) — invisible au banc, qui ne regardait que le bord droit : il
+mesure désormais les deux bords (sur les 238 visites à 390 px, ce seul défaut) ; `.carte-export-logiciel` la tient, et ses groupes de
+champs perdent le cadre en creux du navigateur. Sur téléphone, « Figée par la validation » se serrait à deux mots par ligne à côté du
+refus de l'extournée : la cellule des gestes d'une écriture libre n'a plus qu'un bloc. La pièce « à valider » paraît, dite telle, au choix.
+Le banc entier, au passage : à 1 280 px volet ouvert, les tableaux de NOE4 et BOR4 (onglet Banque) sortaient de 12 et 60 px — d'avant ce
+jour ; ils défilent (`.table-scroll`). Puis 0 aux quatre largeurs, à 720 px, aux volets extrêmes et aux passes du client.

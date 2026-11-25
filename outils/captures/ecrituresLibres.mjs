@@ -123,3 +123,91 @@ export async function ensembleDeLExerciceClos(page) {
   await travail.waitFor({ timeout: 10000 })
   await travail.scrollIntoViewIfNeeded()
 }
+
+// LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE FIGÉE (EL7 ; `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` levé le 25/11/2026), sur la
+// kinésithérapeute (d9), dont l'exercice 2025 est validé : le levier `banc-ecritures-figees` du faux Supabase (lu à chaque appel) y
+// sème deux écritures libres FICTIVES de 2025, figées — EL2025-0001, qui se contre-passe, et EL2025-0002, extournée, que son état
+// retient. L'onglet relit en revenant d'un autre onglet (l'adresse ne change que par son fragment : rien ne se recharge). Les
+// visites de debordements.mjs partagent la table du faux : `contrePassationFaite` ne contre-passe qu'une fois.
+export async function ecrituresFigeesOuvertes(page, exercice = '2025') {
+  await panneauFerme(page)
+  await page.evaluate(() => localStorage.setItem('banc-ecritures-figees', '1'))
+  await page.goto('http://127.0.0.1:5199/#/dossiers/d9/checklist')
+  await page.waitForTimeout(300)
+  await page.goto('http://127.0.0.1:5199/#/dossiers/d9/ecritures')
+  const section = SECTION_LIBRE(page)
+  await section.waitFor({ timeout: 10000 })
+  await page.getByRole('tab', { name: exercice, exact: true }).first().click()
+  await section.getByRole('cell', { name: new RegExp(`EL${exercice}-0001$`) }).waitFor({ timeout: 10000 })
+  return section
+}
+
+/** Le formulaire de contre-passation d'EL2025-0001 ouvert ; `date` remplace la date proposée, `motif` se remplit. */
+export async function contrePassationOuverte(page, { date = null, motif = '' } = {}) {
+  const section = await ecrituresFigeesOuvertes(page)
+  const abandonner = section.getByRole('button', { name: 'Abandonner', exact: true })
+  if ((await abandonner.count()) > 0) await abandonner.click()
+  await section.getByRole('button', { name: 'Contre-passer', exact: true }).click()
+  const formulaire = section.getByRole('form', { name: 'Contre-passation de l’écriture libre' })
+  await formulaire.waitFor({ timeout: 10000 })
+  if (date !== null) await formulaire.getByLabel('Date de la contre-passation', { exact: true }).fill(date)
+  if (motif !== '') await formulaire.getByLabel(/^Motif de la contre-passation/).fill(motif)
+  return formulaire
+}
+
+/** EL2025-0001 contre-passée au 1er janvier 2026, hors de la 2035, la confirmation acceptée : la mention relue dans la liste. */
+export async function contrePassationFaite(page) {
+  const section = await ecrituresFigeesOuvertes(page)
+  if ((await section.getByText(/^Contre-passée par EL2026-0001/).count()) === 0) {
+    const formulaire = await contrePassationOuverte(page, { motif: 'La part privée était déjà déduite de la facture de juin : comptée deux fois' })
+    page.once('dialog', (d) => d.accept())
+    await formulaire.getByRole('button', { name: 'Contre-passer l’écriture', exact: true }).click()
+    await section.getByText('Écriture libre EL2025-0001 contre-passée.').waitFor({ timeout: 10000 })
+  }
+  await section.getByText(/^Contre-passée par EL2026-0001/).waitFor({ timeout: 10000 })
+  return section
+}
+
+// LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP-Q4 (A) ; `REGLAGES_D_EXPORT_PREVUS` levé le 25/11/2026), à côté du FEC de
+// l'onglet Écritures du cabinet infirmier (d1). Le levier `banc-reglages-export` du faux Supabase (lu à chaque appel) joue la lecture
+// lente (« Lecture… ») et la lecture refusée ; sans lui, la table du faux, vide au départ, garde ce qu'on enregistre — dans un même
+// document, d'une visite à l'autre. L'export se rouvre d'un autre onglet : son état repart de zéro.
+export const EXPORT_LOGICIEL = (page) => page.getByLabel('Export vers un logiciel comptable', { exact: true }).last()
+export async function exportOuvert(page, levier = null) {
+  await panneauFerme(page)
+  await page.evaluate((l) => {
+    localStorage.removeItem('banc-ecritures-figees')
+    if (l === null) localStorage.removeItem('banc-reglages-export')
+    else localStorage.setItem('banc-reglages-export', l)
+  }, levier)
+  await page.goto('http://127.0.0.1:5199/#/dossiers/d1/checklist')
+  await page.waitForTimeout(300)
+  await page.goto('http://127.0.0.1:5199/#/dossiers/d1/ecritures')
+  const bouton = page.getByRole('button', { name: 'Exporter vers un logiciel comptable', exact: true })
+  await bouton.waitFor({ timeout: 10000 })
+  await page.waitForFunction(() => {
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent === 'Exporter vers un logiciel comptable')
+    return b !== undefined && !b.disabled
+  }, null, { timeout: 10000 })
+  await bouton.click()
+  const carte = EXPORT_LOGICIEL(page)
+  await carte.waitFor({ timeout: 10000 })
+  return carte
+}
+
+/** Les réglages saisis (huit chiffres, sans auxiliaire, des codes de journaux d'ACD fictifs) et enregistrés : la version dite. */
+export async function reglagesEnregistres(page) {
+  const carte = await exportOuvert(page)
+  await carte.getByText(/^Aucun réglage n’est gardé|^Les réglages gardés/).first().waitFor({ timeout: 10000 })
+  const enregistrer = carte.getByRole('button', { name: 'Enregistrer ces réglages', exact: true })
+  if ((await carte.getByText(/^Les réglages gardés/).count()) === 0) {
+    await carte.getByLabel(/^Longueur des comptes/).fill('8')
+    await carte.getByRole('radio', { name: /Sans compte auxiliaire/ }).check()
+    for (const [code, eux] of [['AN', 'AN'], ['AC', 'HA'], ['BQ', 'BQ1'], ['OD', 'OD']]) {
+      await carte.getByLabel(`Code du journal ${code} dans le logiciel`, { exact: true }).fill(eux)
+    }
+    await enregistrer.click()
+    await carte.getByText(/^Réglages enregistrés/).waitFor({ timeout: 10000 })
+  }
+  return carte
+}
