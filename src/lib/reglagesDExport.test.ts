@@ -7,7 +7,7 @@ import {
 } from './profilsDExport'
 import {
   CODE_DU_JOURNAL_DU_LOGICIEL, codeDeLaSaisie, COLONNES_DES_REGLAGES_D_EXPORT, JOURNAUX_DE_L_APPLICATION, LOGICIELS_DES_REGLAGES,
-  longueurDeLaSaisie, memesReglages, phraseDeLEnregistrement, phraseDesReglagesGardes, profilDeLaSaisie, REFUS_DE_LA_BASE,
+  longueurDeLaSaisie, memesReglages, phraseDeLEnregistrement, phraseDeRienAEnregistrer, phraseDesReglagesGardes, profilDeLaSaisie, REFUS_DE_LA_BASE,
   REGLAGES_D_EXPORT_PREVUS, refusDeLEnregistrement, reglagesLisibles, reglagesPourLaBase, SAISIE_A_SAISIR, saisieDesReglagesGardes,
   TABLES_DES_REGLAGES_D_EXPORT, type SaisieDesReglages,
 } from './reglagesDExport'
@@ -223,6 +223,11 @@ describe('les réglages gardés, relus', () => {
     expect(memesReglages(saisieDe({ ...saisieDesReglagesGardes(gardes()), formeDesTiers: 'nos_auxiliaires' }), gardes())).toBe(false)
     expect(memesReglages(SAISIE_A_SAISIR, null)).toBe(true)
     expect(memesReglages(saisieDe({ longueurDesComptes: '8' }), null)).toBe(false)
+  })
+
+  it('la phrase de « rien à enregistrer » ne dit « ceux que le dossier garde » que d’un dossier qui garde une ligne (EXPQ4E-Q1)', () => {
+    expect(phraseDeRienAEnregistrer(null)).toBe('Rien n’est saisi : rien à enregistrer.')
+    expect(phraseDeRienAEnregistrer(gardes())).toBe('Ces réglages sont ceux que le dossier garde : rien à enregistrer.')
   })
 
   it('une ligne d’une forme que la base ne donne pas est illisible, jamais corrigée', () => {

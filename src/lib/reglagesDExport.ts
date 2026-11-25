@@ -70,6 +70,14 @@ export const REGLAGES_NON_ENREGISTRES = 'Les réglages n’ont pas pu être enre
 /** Ce que dit l'écran quand la saisie est déjà ce que la base garde. */
 export const RIEN_A_ENREGISTRER = 'Ces réglages sont ceux que le dossier garde : rien à enregistrer.'
 
+/** Le même état quand le dossier ne garde encore rien : la phrase d'au-dessus mentirait (EXPQ4E-Q1). */
+export const RIEN_N_EST_SAISI = 'Rien n’est saisi : rien à enregistrer.'
+
+/** La phrase d'une saisie égale à ce qui est gardé, selon que le dossier garde une ligne ou non. */
+export function phraseDeRienAEnregistrer(gardes: unknown | null): string {
+  return gardes === null ? RIEN_N_EST_SAISI : RIEN_A_ENREGISTRER
+}
+
 /** La lecture des réglages gardés d'un dossier pour un logiciel (lib/reglagesDExportLecture.ts) : lus en entier, ou illisibles. */
 export type LectureDesReglagesDExport =
   | { dossierId: string; logiciel: string; etat: 'lus'; gardes: ReglagesDExport | null }
