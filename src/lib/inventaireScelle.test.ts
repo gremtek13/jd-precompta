@@ -165,8 +165,10 @@ describe('les empreintes épinglées, recalculées des textes qui posent les fon
   })
 
   it('les essais qui admettent fichier_fige à son empreinte admettent celle de la production et celle d’INV3', () => {
+    // Les deux d'abord, dans cet ordre ; d'autres corps préparés peuvent suivre dans la liste (celui de
+    // `fichier_cite_par_une_ecriture_libre`, que fichierCiteParUneEcritureLibre.test.ts y exige).
     for (const essai of ['supabase/essais/dossierPermanent.sql', 'supabase/essais/exemplairesDesFactures.sql']) {
-      expect(lire(essai), essai).toContain(`md5(replace(prosrc, chr(13), '')) in ('${md5(corps(enProduction('fichier_fige')))}', '${empreinteDans(INV3, 'fichier_fige')}')`)
+      expect(lire(essai), essai).toContain(`md5(replace(prosrc, chr(13), '')) in ('${md5(corps(enProduction('fichier_fige')))}', '${empreinteDans(INV3, 'fichier_fige')}'`)
     }
     expect(lire('supabase/essais/validationExercice.sql'))
       .toContain("'pieces.pieces_fichier_scelle_par_l_inventaire:garder_fichier_scelle_par_l_inventaire:dossier:O'")
