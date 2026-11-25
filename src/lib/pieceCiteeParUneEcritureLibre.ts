@@ -15,12 +15,20 @@ import { referenceDeLEcritureLibre } from './ecrituresLibresDesExports'
 // UNE LECTURE PARTIELLE OU REFUSÉE NE DIT RIEN DE FAUX : aucune pièce n'est dite citée (la base reste juge, et le refus de
 // la base se traduit après le clic, `refusDeSuppressionParUneEcritureLibre`), et l'écran le dit dans un bandeau. Une lecture pas
 // encore revenue est NULLE : rien n'est dit non plus. Le drapeau baissé (`absentes`) : aucune écriture libre, rien ne cite.
+//
+// LE REMÈDE N'EST DIT QUE S'IL EXISTE (relecture adverse du 25/11/2026) : « retire d'abord la citation de l'écriture » ne vaut que
+// pour une écriture d'un exercice OUVERT. Celle d'un exercice validé est figée (`enregistrer_ecriture_libre` et
+// `retirer_ecriture_libre` la refusent, 23514 ; sa contre-passation, EL7, ne retire pas la citation et la fige davantage) : sa
+// pièce citée reste au dossier, et la phrase le dit au lieu d'offrir un geste que la base refuserait. Figée : son exercice au
+// plus tard le dernier exercice validé du dossier (la frontière de `frontiere_validation`, le 31 décembre de celui-ci).
 
-/** Ce que la garde lit d'une écriture libre : sa référence et la pièce qu'elle cite — jamais son libellé ni son motif. */
+/** Ce que la garde lit d'une écriture libre : sa référence, la pièce qu'elle cite et son gel — jamais son libellé ni son motif. */
 export interface CitationDUneEcritureLibre {
   exercice: number
   numero: number
   piece_citee_id: string
+  /** Figée par la validation de son exercice : sa citation ne se retire plus. */
+  figee: boolean
 }
 
 export type CitationsDesEcrituresLibres =
@@ -33,37 +41,51 @@ export function motifDesCitationsDesEcrituresLibres(lecture: CitationsDesEcritur
   return lecture !== null && lecture.etat === 'illisibles' ? lecture.motif : null
 }
 
-/** Les références des écritures libres qui citent cette pièce, dans l'ordre des exercices puis des numéros. */
-export function ecrituresLibresQuiCitent(pieceId: string, lecture: CitationsDesEcrituresLibres | null): string[] {
+/** Les citations de cette pièce parmi les lues, dans l'ordre des exercices puis des numéros. */
+function citationsDeLaPiece(pieceId: string, lecture: CitationsDesEcrituresLibres | null): CitationDUneEcritureLibre[] {
   if (lecture === null || lecture.etat !== 'lues') return []
   const cible = pieceId.toLowerCase()
   return lecture.citations
     .filter((c) => c.piece_citee_id.toLowerCase() === cible)
     .slice()
     .sort((a, b) => a.exercice - b.exercice || a.numero - b.numero)
-    .map(referenceDeLEcritureLibre)
+}
+
+/** Les références des écritures libres qui citent cette pièce, dans l'ordre des exercices puis des numéros. */
+export function ecrituresLibresQuiCitent(pieceId: string, lecture: CitationsDesEcrituresLibres | null): string[] {
+  return citationsDeLaPiece(pieceId, lecture).map(referenceDeLEcritureLibre)
 }
 
 function enumeration(elements: readonly string[]): string {
   return elements.length <= 1 ? (elements[0] ?? '') : `${elements.slice(0, -1).join(', ')} et ${elements[elements.length - 1]}`
 }
 
+/** Le remède, quand toutes les écritures qui citent sont d'un exercice ouvert. */
+export const REMEDE_D_UNE_CITATION_OUVERTE = 'Pour la supprimer, retire d’abord la citation de l’écriture, dans l’onglet Écritures.'
+
 /**
  * Le refus de la SUPPRESSION de cette pièce par les écritures libres qui la citent, sous leur référence ; nul quand rien de ce qui
- * a été lu ne la cite — ou quand rien n'a été lu en entier : la base reste juge, et elle dit sa raison.
+ * a été lu ne la cite — ou quand rien n'a été lu en entier : la base reste juge, et elle dit sa raison. Le remède n'est dit que si
+ * aucune écriture qui la cite n'est figée : la citation d'une écriture d'un exercice validé ne se retire plus.
  */
 export function refusDeSuppressionParLesEcrituresLibres(pieceId: string, lecture: CitationsDesEcrituresLibres | null): string | null {
-  const references = ecrituresLibresQuiCitent(pieceId, lecture)
-  if (references.length === 0) return null
+  const citations = citationsDeLaPiece(pieceId, lecture)
+  if (citations.length === 0) return null
+  const references = citations.map(referenceDeLEcritureLibre)
   const qui = references.length === 1 ? `l’écriture libre ${references[0]}` : `les écritures libres ${enumeration(references)}`
-  return `Cette pièce est citée par ${qui} : elle ne se supprime plus, sauf avec son dossier. `
-    + `Pour la supprimer, retire d’abord la citation de l’écriture, dans l’onglet Écritures.`
+  const figees = citations.filter((c) => c.figee).map(referenceDeLEcritureLibre)
+  const suite = figees.length === 0 ? REMEDE_D_UNE_CITATION_OUVERTE
+    : figees.length === 1 ? `L’écriture ${figees[0]} est d’un exercice validé : sa citation ne se retire plus, et la pièce reste au dossier.`
+      : `Les écritures ${enumeration(figees)} sont d’exercices validés : leur citation ne se retire plus, et la pièce reste au dossier.`
+  return `Cette pièce est citée par ${qui} : elle ne se supprime plus, sauf avec son dossier. ${suite}`
 }
 
-/** Le refus de la base, après le clic, quand la lecture n'a pas su dire la citation : la clé des écritures libres. */
+/** Le refus de la base, après le clic, quand la lecture n'a pas su dire la citation : la clé des écritures libres. Il ne sait pas
+ *  quelle écriture cite : le remède dit sa condition. */
 export const SUPPRESSION_CITEE_PAR_UNE_ECRITURE_LIBRE =
   'Cette pièce est citée par une écriture libre du dossier : elle ne se supprime plus, sauf avec son dossier. '
-  + 'Pour la supprimer, retire d’abord la citation de l’écriture, dans l’onglet Écritures.'
+  + 'Pour la supprimer, retire d’abord la citation de l’écriture, dans l’onglet Écritures, si son exercice n’est pas validé ; '
+  + 'validé, la citation ne se retire plus.'
 
 /**
  * LE REFUS DE LA BASE DEVANT LA SUPPRESSION D'UNE PIÈCE QU'UNE ÉCRITURE LIBRE CITE, TRADUIT : la clé étrangère
