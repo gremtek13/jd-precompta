@@ -4,7 +4,7 @@ import { ECRITURES_LIBRES_PREVUES, refusDeLEcritureLibre } from './ecritureLibre
 import type { PieceACiter } from './justificatifsDeLInventaire'
 import {
   ligneDeLaPieceCitee, optionDeLaPieceCitee, optionDeLaPieceDUneEcritureLibre, optionsDesPiecesDUneEcritureLibre,
-  piecesCitablesParUneEcritureLibre,
+  piecesCitablesParUneEcritureLibre, piecesCiteesParDesEcrituresLibres,
   centimesDuMontant, confirmationDeLEcriture, confirmationDuRetrait, ecritureLibreDeLaLigne, ecrituresLibresPourLesMoteurs,
   effetSurLa2035, equilibreDeLaSaisie, formulaireDeLEcriture, formulaireVide, motifDesEcrituresLibres, saisieDuFormulaire,
   simulationTaitLesEcrituresLibres, type FormulaireDEcritureLibre,
@@ -97,7 +97,7 @@ describe('la lecture relue et passée aux moteurs (EL5)', () => {
   })
 })
 
-describe('la pièce citée, facultative (EL-Q8 (A))', () => {
+describe('la pièce citée, facultative (EL-Q8 (A)), toute pièce du dossier (ELQ8-Q1 (B))', () => {
   const piece = (o: Partial<PieceACiter> = {}): PieceACiter => ({
     id: 'p1', dossier_id: 'd1', nom_fichier: 'facture-secrete.pdf', date_piece: '2025-06-12', tiers: 'Papeterie fictive',
     montant_ttc: 42.5, type_piece: 'achat', statut: 'validee', ...o,
@@ -110,9 +110,22 @@ describe('la pièce citée, facultative (EL-Q8 (A))', () => {
     piece({ id: 'p5', dossier_id: 'd2' }),
   ]
 
-  it('ne propose que les pièces VALIDÉES de CE dossier, la plus récente d’abord, une pièce sans date à la fin', () => {
-    expect(piecesCitablesParUneEcritureLibre(PIECES, 'd1').map((p) => p.id)).toEqual(['p2', 'p1', 'p3'])
+  // ELQ8-Q1 (B), tranchée par le cabinet le 25/11/2026 : « toutes les pièces du dossier, « à valider » comprises, comme
+  // l'inventaire » — ce que la base accepte (`enregistrer_ecriture_libre` : une pièce de ce dossier, quel que soit son statut).
+  it('propose toutes les pièces de CE dossier, « à valider » comprises, la plus récente d’abord, une pièce sans date à la fin', () => {
+    expect(piecesCitablesParUneEcritureLibre(PIECES, 'd1').map((p) => p.id)).toEqual(['p2', 'p1', 'p4', 'p3'])
     expect(piecesCitablesParUneEcritureLibre(PIECES, 'd2').map((p) => p.id)).toEqual(['p5'])
+  })
+
+  it('une pièce « à valider » se dit telle dans son option ; une validée, non', () => {
+    expect(optionDeLaPieceDUneEcritureLibre(piece({ id: 'p4', statut: 'a_valider' })).detail).toMatch(/^42,50\s€ TTC · Dépense · à valider$/)
+    expect(optionDeLaPieceDUneEcritureLibre(piece()).detail).not.toContain('à valider')
+  })
+
+  it('les pièces que des écritures libres citent, quel que soit leur statut, parmi celles lues', () => {
+    const libres = [{ piece_citee_id: 'p4' }, { piece_citee_id: null }, { piece_citee_id: 'p1' }, { piece_citee_id: 'absente' }]
+    expect(piecesCiteesParDesEcrituresLibres(PIECES, libres).map((p) => p.id)).toEqual(['p1', 'p4'])
+    expect(piecesCiteesParDesEcrituresLibres(PIECES, [])).toEqual([])
   })
 
   it('désigne une pièce par sa date, son tiers et son montant, jamais par le nom de son fichier', () => {
@@ -124,13 +137,13 @@ describe('la pièce citée, facultative (EL-Q8 (A))', () => {
     const sansRien = optionDeLaPieceDUneEcritureLibre(piece({ date_piece: null, tiers: '  ', montant_ttc: null, type_piece: 'vente' }))
     expect(sansRien.titre).toBe('Sans date — tiers non lu')
     expect(sansRien.detail).toBe('montant non lu · Recette')
-    expect(optionsDesPiecesDUneEcritureLibre(PIECES, 'd1').map((x) => x.citation.id)).toEqual(['p2', 'p1', 'p3'])
+    expect(optionsDesPiecesDUneEcritureLibre(PIECES, 'd1').map((x) => x.citation.id)).toEqual(['p2', 'p1', 'p4', 'p3'])
   })
 
   it('retrouve la pièce citée parmi les citables ; ni lue en entier, ni retrouvée, elle ne se devine pas', () => {
     expect(optionDeLaPieceCitee(null, PIECES, 'd1')).toBeNull()
     expect(optionDeLaPieceCitee('p1', null, 'd1')).toBeNull()
-    expect(optionDeLaPieceCitee('p4', PIECES, 'd1')).toBeNull()
+    expect(optionDeLaPieceCitee('p4', PIECES, 'd1')?.detail).toMatch(/· à valider$/)
     expect(optionDeLaPieceCitee('p5', PIECES, 'd1')).toBeNull()
     expect(optionDeLaPieceCitee('p1', PIECES, 'd1')?.titre).toBe('12/06/2025 — Papeterie fictive')
   })
@@ -138,7 +151,8 @@ describe('la pièce citée, facultative (EL-Q8 (A))', () => {
   it('la ligne de la liste et de la confirmation dit chacun des quatre cas', () => {
     expect(ligneDeLaPieceCitee(null, PIECES, 'd1')).toBe('Aucune pièce citée : l’état des écritures libres en tient lieu.')
     expect(ligneDeLaPieceCitee('p1', null, 'd1')).toMatch(/déjà citée \(les pièces du dossier ne sont pas lues en entier\)/)
-    expect(ligneDeLaPieceCitee('p4', PIECES, 'd1')).toBe('Pièce citée : une pièce du dossier qui n’est pas parmi ses pièces validées.')
+    expect(ligneDeLaPieceCitee('p5', PIECES, 'd1')).toBe('Pièce citée : une pièce du dossier qui n’est pas parmi ses pièces lues.')
+    expect(ligneDeLaPieceCitee('p4', PIECES, 'd1')).toMatch(/^Pièce citée : 12\/06\/2025 — Papeterie fictive \(42,50\s€ TTC · Dépense · à valider\)\.$/)
     expect(ligneDeLaPieceCitee('p1', PIECES, 'd1')).toMatch(/^Pièce citée : 12\/06\/2025 — Papeterie fictive \(42,50\s€ TTC · Dépense\)\.$/)
   })
 

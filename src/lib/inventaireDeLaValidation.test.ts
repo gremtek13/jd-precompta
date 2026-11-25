@@ -270,8 +270,9 @@ describe('prealablesDeLInventaire : ce que la validation retiendrait, avant le c
 describe('la migration, son retour et son essai', () => {
   it('l’essai cite le module, et le retour rend la validation d’hier (son empreinte, dite par la garde de fin)', () => {
     expect(ESSAI).toContain('src/lib/inventaireDeLaValidation.ts')
-    expect(RETOUR).toContain('923cfa1b57037146070ca1430f163495')
-    expect(MIGRATION).toContain("923cfa1b57037146070ca1430f163495")
+    // Le corps de production de `valider_exercice` depuis `codes_des_clients` (25/11/2026), sur lequel INV3 est reprise.
+    expect(RETOUR).toContain('65df5e35dc5d0d82534a9e22eaaa8429')
+    expect(MIGRATION).toContain("65df5e35dc5d0d82534a9e22eaaa8429")
   })
 
   it('la table des déclarations est celle que la sauvegarde déclare derrière le drapeau', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
 import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
 import { carteDeLEclatement, type LectureDuReleveDeLOuverture } from '../../lib/ouvertureEclatee'
@@ -86,7 +86,7 @@ import { estOuvert } from '../../lib/modulesDuCabinet'
 import VentesFactureesEcritures from './VentesFactureesEcritures'
 import EcrituresLibresSection from './EcrituresLibresSection'
 import { lireLesEcrituresLibres } from '../../lib/ecrituresLibresLecture'
-import { ecrituresLibresPourLesMoteurs, motifDesEcrituresLibres, type LectureDesEcrituresLibres } from '../../lib/ecrituresLibresVue'
+import { ecrituresLibresPourLesMoteurs, motifDesEcrituresLibres, piecesCiteesParDesEcrituresLibres, type LectureDesEcrituresLibres } from '../../lib/ecrituresLibresVue'
 import { ECRITURES_LIBRES_PREVUES } from '../../lib/ecritureLibre'
 import {
   AUCUNE_PIECE_CITEE, exemplairesDesSources, facturesSourcesDe, horsDesExemplairesDesSources, marquerLesPiecesCitees,
@@ -191,8 +191,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Le module des paiements de l'assurance maladie (NOE6) : ouvert, la piste d'audit cite le paiement associé à un crédit.
   const { ouverts: modulesOuverts } = useModulesOuverts()
   const [categories, setCategories] = useState<Categorie[]>([])
-  const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
-  // Le motif d'une lecture des pièces validées partielle ou refusée, nul lue en entier : la section des écritures libres n'offre
+  // Toutes les pièces du dossier, lues en entier d'une seule lecture : les VALIDÉES (`piecesValidees`, dérivées) font le
+  // brouillon, le FEC, la piste d'audit et les contrôles, comme hier ; toutes, « à valider » comprises, se proposent comme la
+  // pièce citée d'une écriture libre (ELQ8-Q1 (B), le 25/11/2026), et l'état des écritures libres et la piste d'audit désignent
+  // la pièce citée quel que soit son statut.
+  const [piecesDuDossier, setPiecesDuDossier] = useState<Piece[]>([])
+  const piecesValidees = useMemo(() => piecesDuDossier.filter((p) => p.statut === 'validee'), [piecesDuDossier])
+  // Le motif d'une lecture des pièces partielle ou refusée, nul lue en entier : la section des écritures libres n'offre
   // alors aucune pièce à citer (EL-Q8 (A)).
   const [piecesIncompletes, setPiecesIncompletes] = useState<string | null>(null)
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
@@ -319,7 +324,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       ),
       lireTout<Piece>((debut, fin) =>
         supabase.from('pieces').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
       // Lue par tranches, et triée sur un ordre TOTAL (`date` n'est pas unique) : sans clé de
       // départage, deux tranches successives peuvent se recouvrir ou sauter des lignes, et rien ne
@@ -405,7 +410,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setVentilations(lectureVentilations.lignes)
     setVentilationsIncompletes(lectureVentilations.complete ? null : lectureVentilations.motif)
     setCategories(lectureCategories.lignes)
-    setPiecesValidees(lecturePieces.lignes)
+    setPiecesDuDossier(lecturePieces.lignes)
     setPiecesIncompletes(lecturePieces.complete ? null : lecturePieces.motif ?? 'lecture incomplète')
     setEcritures(brouillon.lignes)
     setANouveaux(lectureANouveaux.lignes)
@@ -903,7 +908,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     return genererPisteAuditCsv(citerLesPaiementsDansLaPiste(pisteAudit(
       ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice,
       {
-        immobilisations, factures: piecesValidees, vehicules: vehicules.lignes,
+        // La pièce citée d'une écriture libre, quel que soit son statut (ELQ8-Q1 (B)) : jointe aux validées, où la piste la cherche.
+        immobilisations, factures: [...piecesValidees, ...piecesCiteesParDesEcrituresLibres(
+          piecesDuDossier.filter((p) => p.statut !== 'validee'),
+          ecrituresLibresDesExports.etat === 'lues' ? ecrituresLibresDesExports.ecritures : [],
+        )], vehicules: vehicules.lignes,
         ventes: { ...ventes, exemplaires: preuves.exemplaires, transmissions: preuves.transmissions, piecesCitees },
         caisse: operationsDuFec ?? OPERATIONS_DE_CAISSE_ABSENTES,
         plan: modele.plan, banques, ecrituresLibres: ecrituresLibresDesExports,
@@ -1366,7 +1375,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           frontiere={frontiere}
           ouverture={aNouveauxIncomplets !== null ? undefined : ouverture}
           categories={categories}
-          pieces={piecesValidees}
+          pieces={piecesDuDossier}
           piecesIncompletes={piecesIncompletes}
           relecture={loading}
           relire={load}

@@ -54,6 +54,8 @@ const PIECES: Piece[] = [
   piece({}),
   piece({ id: 'p2', date_piece: '2025-09-01', tiers: 'Énergie fictive', montant_ttc: 120 }),
   piece({ id: 'p9', dossier_id: 'd2', tiers: 'Autre dossier fictif' }),
+  // Une pièce « à valider » du dossier : proposée, et dite telle (ELQ8-Q1 (B)).
+  piece({ id: 'p4', date_piece: '2025-11-20', tiers: 'Loyer fictif', montant_ttc: 800, statut: 'a_valider' }),
 ]
 
 const relire = vi.fn(async () => {})
@@ -214,16 +216,17 @@ describe('EcrituresLibresSection (EL5)', () => {
       })
     }
 
-    it('lues en entier : le choix ne propose que les pièces validées du dossier ; la pièce choisie part et la confirmation la nomme', async () => {
+    it('lues en entier : le choix propose les pièces du dossier, « à valider » comprises (ELQ8-Q1 (B)) ; la pièce choisie part et la confirmation la nomme', async () => {
       monter(LUES, { pieces: PIECES })
       remplirUneEcritureEquilibree()
       expect(screen.getByText(/Pièce justificative/)).toBeDefined()
-      fireEvent.click(screen.getByRole('button', { name: 'Choisir une pièce validée' }))
-      const liste = screen.getByRole('list', { name: 'Choisir une pièce validée' })
+      fireEvent.click(screen.getByRole('button', { name: 'Choisir une pièce du dossier' }))
+      const liste = screen.getByRole('list', { name: 'Choisir une pièce du dossier' })
       expect(liste.textContent).toContain('01/09/2025 — Énergie fictive')
       expect(liste.textContent).toContain('12/06/2025 — Papeterie fictive')
       expect(liste.textContent).not.toContain('Autre dossier fictif')
       expect(liste.textContent).not.toContain('fichier-fictif.pdf')
+      expect(liste.textContent).toMatch(/20\/11\/2025 — Loyer fictif.*800,00\s€ TTC · Dépense · à valider/)
       fireEvent.click(screen.getByRole('button', { name: /01\/09\/2025 — Énergie fictive/ }))
       expect(screen.getByRole('button', { name: 'Ne rien citer' })).toBeDefined()
       await passer()
@@ -244,7 +247,7 @@ describe('EcrituresLibresSection (EL5)', () => {
       monter(LUES, { pieces: PIECES, piecesIncompletes: '3 ligne(s) lue(s) sur 9 annoncée(s)' })
       remplirUneEcritureEquilibree()
       expect(screen.getByText(/3 ligne\(s\) lue\(s\) sur 9/)).toBeDefined()
-      expect(screen.queryByRole('button', { name: 'Choisir une pièce validée' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Choisir une pièce du dossier' })).toBeNull()
       expect((screen.getByText('Passer l’écriture') as HTMLButtonElement).disabled).toBe(false)
       await passer()
       expect((faux.rpcs[0].args.p_ecriture as { piece_citee_id: string | null }).piece_citee_id).toBeNull()

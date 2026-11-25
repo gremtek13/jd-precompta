@@ -2453,10 +2453,11 @@ export interface Contact {
   cree_le: string
   modifie_par: string | null
   modifie_le: string | null
-  // EXP58-Q2 (migration `codes_des_clients`, PRÉPARÉE, pas appliquée ; lib/codesDesClients.ts, `CODES_DES_CLIENTS_PREVUS`) : le
-  // code de la fiche, C et cinq chiffres, posé par la base à sa création et gardé, l'effacement compris ; NOT NULL en base une
-  // fois la migration appliquée. FACULTATIF ici : avant elle, la colonne n'existe pas, et une lecture `select('*')` ne la rend
-  // pas — une colonne absente d'une lecture n'est pas une colonne nulle.
+  // EXP58-Q2 (migration `codes_des_clients`, en production depuis le 25/11/2026, 253 ; lib/codesDesClients.ts,
+  // `CODES_DES_CLIENTS_PREVUS`, levé) : le code de la fiche, C et cinq chiffres, posé par la base à sa création et gardé,
+  // l'effacement compris ; NOT NULL en base. FACULTATIF ici tant que l'état d'avant se joue (le drapeau baissé : avant la
+  // migration, ou après son retour, la colonne n'existe pas et `select('*')` ne la rend pas — une colonne absente d'une lecture
+  // n'est pas une colonne nulle), comme les colonnes de la régularisation de `cotisations_declarees`.
   code_client?: string
 }
 
@@ -2647,8 +2648,8 @@ export interface LigneDAffectationEnBase {
   montant_centimes: number
 }
 
-// LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP-Q4 (A) ; migration `reglages_d_export`, préparée, pas appliquée —
-// lib/reglagesDExport.ts, `REGLAGES_D_EXPORT_PREVUS`). Une ligne par dossier et par logiciel ; un réglage nul est « à saisir »,
+// LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP-Q4 (A) ; migration `reglages_d_export`, en production depuis le
+// 25/11/2026, 252 — lib/reglagesDExport.ts, `REGLAGES_D_EXPORT_PREVUS`, levé). Une ligne par dossier et par logiciel ; un réglage nul est « à saisir »,
 // jamais une valeur par défaut. Écrite par `enregistrer_reglages_d_export` seule, contre la version lue ; lue par le cabinet du
 // dossier, jamais par un client.
 export interface ReglagesDExport {

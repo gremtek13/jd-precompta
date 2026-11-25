@@ -28,7 +28,7 @@ export async function saisieLibreRemplie(page, { desequilibre = false, piece = t
   await ligneLibre(section, 1, '108000', '25,26')
   await ligneLibre(section, 2, '606100', desequilibre ? '20,00' : '25,26', 'Chauffage, eau, gaz, électricité')
   if (piece) {
-    await section.getByRole('button', { name: 'Choisir une pièce validée', exact: true }).click()
+    await section.getByRole('button', { name: 'Choisir une pièce du dossier', exact: true }).click()
     await section.getByRole('button', { name: /^05\/09\/2026 — Énergie Services/ }).click()
   }
   return section

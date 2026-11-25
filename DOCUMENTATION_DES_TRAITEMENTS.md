@@ -268,8 +268,8 @@ colonnes FIGÉES par la validation (`numerotationValidee`) : deux exports d'un e
   à la validation (`lib/champsBncFiges.ts`, `REFUS_DES_CHAMPS_BNC`) ; leur export attend le choix de l'expert-comptable
   (FEC22-E2) : tant que `CHAMPS_BNC_EXPORTES` est baissé, le fichier sort à dix-huit colonnes. L'identification du client
   n'est que sur les écritures d'une facture émise : le code de la fiche d'où vient son client, posé par la base à la création
-  de la fiche (EXP58-Q2, `codeDuClientDeLaFacture`, sous `CODES_DES_CLIENTS_PREVUS`, baissé tant que la migration n'est pas en
-  base), sinon le SIREN d'une entreprise ou le numéro de la facture (`identificationDuClient`).
+  de la fiche (EXP58-Q2, `codeDuClientDeLaFacture`, sous `CODES_DES_CLIENTS_PREVUS`, levé le 25/11/2026, la migration
+  en production), sinon le SIREN d'une entreprise ou le numéro de la facture (`identificationDuClient`).
 - Une écriture que rien ne rattache à une source n'entre pas dans le fichier, et l'écran le dit ; inventer une pièce
   serait pire. Un mouvement ignoré non plus (`mouvementsIgnoresHorsFec`, `lib/controles.ts`).
 - Aucun nom de patient : ni le libellé du relevé d'un crédit, ni le nom d'un fichier, ni le client d'une vente qui n'est

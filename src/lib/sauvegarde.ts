@@ -705,14 +705,15 @@ export function auPlanDesEcrituresLibres(table: string, prevues: boolean): boole
   return prevues || !(TABLES_DES_ECRITURES_LIBRES as readonly string[]).includes(table)
 }
 
-// LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE (ligne 26.9, EL7 ; migration `contre_passation_des_ecritures_libres`, PRÉPARÉE le
-// 24/11/2026) : une colonne de la table des écritures libres, `contre_passe_id`, qui cite l'écriture libre qu'elle contre-passe, de
+// LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE (ligne 26.9, EL7 ; migration `contre_passation_des_ecritures_libres`, préparée le
+// 24/11/2026, en production depuis le 25/11/2026, 251) : une colonne de la table des écritures libres, `contre_passe_id`, qui cite l'écriture libre qu'elle contre-passe, de
 // son dossier, sans action à la suppression (une écriture contre-passée ne part pas avant sa contre-passation ; les deux partent
 // avec leur dossier). Une relation de la table vers ELLE-MÊME : ses lignes partent par VAGUES (`TABLES_AUTO_REFERENCEES_PAR_VAGUES`)
 // — l'écriture d'origine d'abord : la garde de la colonne lit sa cible à l'insertion, et une contre-passation ne se remplace pas,
 // elle ne part donc pas à NULL pour se compléter ensuite. Sous le drapeau de la migration
-// (`CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE`), baissé : la relation et la vague ne sont pas au plan du jour, et `select('*')` ne
-// rend pas la colonne. Aucune table de plus, aucun rang. sauvegardeContrePassation.test.ts éprouve les deux états.
+// (`CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE`), levé le 25/11/2026 : la relation et la vague sont au plan du jour ; baissé
+// (l'état d'avant), elles n'y étaient pas, et `select('*')` ne rendait pas la colonne. Aucune table de plus, aucun rang.
+// sauvegardeContrePassation.test.ts éprouve les deux états.
 
 /** Une relation au graphe du jour, côté contre-passation : la sienne attend sa migration. */
 export function auGrapheDeLaContrePassation(r: Pick<Relation, 'enfant' | 'colonne'>, prevue: boolean): boolean {
@@ -724,10 +725,11 @@ export function auxVaguesDeLaContrePassation(a: { table: string; colonne: string
   return prevue || !(a.table === 'ecritures_libres' && a.colonne === COLONNE_DE_LA_CONTRE_PASSATION)
 }
 
-// LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP-Q4 (A) ; migration `reglages_d_export`, PRÉPARÉE le 24/11/2026,
-// supabase/preparees/20261124160000_reglages_d_export.sql) : la longueur des comptes, la forme des comptes de tiers et les
-// codes des journaux qu'un dossier garde pour un logiciel. Sous le drapeau de la migration (`REGLAGES_D_EXPORT_PREVUS`,
-// src/lib/reglagesDExport.ts), baissé : la production n'a pas la table, et la lire ferait échouer toute sauvegarde. Sa
+// LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP-Q4 (A) ; migration `reglages_d_export`, préparée le 24/11/2026, en
+// production depuis le 25/11/2026, 252 : supabase/schema/20261125123611_reglages_d_export.sql) : la longueur des comptes, la
+// forme des comptes de tiers et les codes des journaux qu'un dossier garde pour un logiciel. Sous le drapeau de la migration
+// (`REGLAGES_D_EXPORT_PREVUS`, src/lib/reglagesDExport.ts), levé le 25/11/2026 ; baissé (l'état d'avant), la table n'était
+// pas au plan : la lire avant la migration aurait fait échouer toute sauvegarde. Sa
 // relation au dossier (cascade), son rang (juste après les marques de l'alerte du chiffre d'affaires, une place qu'aucun voisin
 // ne fixe, après le dossier), son chemin, direct ; aucune vague ; sa clé est la commune, `id`. La restauration la réinsère par
 // la porte que sa policy et sa garde ouvrent au super-administrateur (`reglages_d_export_restauration`), sa version, son auteur
@@ -746,8 +748,8 @@ export function auGrapheDesEcrituresLibres(r: Pick<Relation, 'enfant' | 'parent'
   return prevues || (!tables.includes(r.enfant) && !tables.includes(r.parent))
 }
 
-// LE COMPTEUR DES CODES DES FICHES CLIENTS (EXP58-Q2 ; migration `codes_des_clients`, PRÉPARÉE ; `CODES_DES_CLIENTS_PREVUS`,
-// lib/codesDesClients.ts). Le code d'une fiche est une colonne de `contacts`, déjà au plan (`select('*')` le porte) ; le
+// LE COMPTEUR DES CODES DES FICHES CLIENTS (EXP58-Q2 ; migration `codes_des_clients`, en production depuis le 25/11/2026, 253 ;
+// `CODES_DES_CLIENTS_PREVUS`, lib/codesDesClients.ts, levé le même jour). Le code d'une fiche est une colonne de `contacts`, déjà au plan (`select('*')` le porte) ; le
 // compteur de chaque dossier, `contacts_numerotation`, a sa table, sans policy — comme `facture_numerotation`, la sauvegarde
 // la lit vide, et la restauration n'y écrit rien : la garde des contacts reprend le compteur au plus haut des codes
 // restaurés (RESTAU-Q3, `CODES_HORS_PERIMETRE`, lib/restaurationInterrompue.ts). Au plan derrière le drapeau, juste après les

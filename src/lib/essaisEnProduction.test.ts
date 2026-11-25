@@ -342,10 +342,11 @@ describe('les essais de la base, rejoués en production', () => {
     // maladie) : il retire en direct une clé, une empreinte, un total, un import et un dossier jetable, sous la garde
     // ESSAI_HORS_REPLIQUE ; son compagnon, facturesAssuranceMaladie.sql, se joue en production (aucune suppression).
     // Le trente-neuvième, contrePassationDesEcrituresLibres, le 24/11/2026 (EL7, migration `contre_passation_des_ecritures_libres`,
-    // préparée) : il crée des dossiers, des écritures libres et des exercices validés fictifs, suspend les déclencheurs d'une table
+    // en production depuis le 25/11/2026, 251) : il crée des dossiers, des écritures libres et des exercices validés fictifs, suspend les déclencheurs d'une table
     // le temps d'une sous-transaction, mute des fonctions, une garde et une contrainte. Ce qui contourne la RLS se rejoue partout :
     // le bloc XL de rls.sql.
-    // Le quarantième, reglagesDExport, le 24/11/2026 (EXP-Q4, migration `reglages_d_export`, préparée) : il crée des dossiers
+    // Le quarantième, reglagesDExport, le 24/11/2026 (EXP-Q4, migration `reglages_d_export`, en production depuis le 25/11/2026,
+    // 252) : il crée des dossiers
     // fictifs, écrit en direct sous le propriétaire, et mute la fonction, la garde, deux policies et la liste fermée. Son
     // catalogue et ses profils se rejouent partout : le bloc RX de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
@@ -525,7 +526,9 @@ describe('les essais de la base, rejoués en production', () => {
     // cherchent aucun semis, ils se jouent comme des essais de la production).
     // Trente-deux le 24/11/2026 : `codesDesClients` (EXP58-Q2, `codes_des_clients`) entré dans la famille « apres », après sa
     // migration préparée ; joué sur une copie de la réplique à 250 (30 verdicts sur 30, seule et après EL7 et EXP-Q4).
-    expect(cas.length).toBe(32)
+    // Trente et un le 25/11/2026 : `codesDesClients` sorti (EXP58-Q2 en production, 20261125124544, par l'outil ; il ne
+    // cherche aucun semis, il se joue comme un essai de la production).
+    expect(cas.length).toBe(31)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

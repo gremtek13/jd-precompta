@@ -9,8 +9,9 @@ import { definitionsSql, fichiersDuSchema, fichiersPrepares } from '../test/sche
 // fonction qu'elle remplace (`create or replace`), tel que la base le porte aujourd'hui : la dernière définition de l'export,
 // les retours chariot d'un collage écartés. Un autre remplaçant collé avant elle change ce corps : elle se refuse au lieu de
 // l'écraser, et se reprend sur le corps du jour. La garde de la migration de l'inventaire (`validation_de_l_inventaire`, INV3)
-// le faisait déjà pour `valider_exercice` (923cfa1b…, son corps de production), ce que la répétition du 14/11/2026 avait cru
-// absent ; une mutation d'un caractère de ce corps la fait refuser sur une copie de la réplique.
+// le faisait déjà pour `valider_exercice` (923cfa1b…, son corps de production d'alors), ce que la répétition du 14/11/2026
+// avait cru absent ; une mutation d'un caractère de ce corps la fait refuser sur une copie de la réplique. Le 25/11/2026,
+// `codes_des_clients` (EXP58-Q2) a remplacé ce corps en production (65df5e35…) : INV3 s'est reprise dessus.
 //
 // Le scanner part de TOUTES les préparées (supabase/preparees) ; une exception porte sa raison et se compte ; un plancher
 // distingue « zéro faute » d'« aveugle » ; des défauts plantés prouvent qu'il voit (une garde sans l'empreinte, l'empreinte
@@ -73,8 +74,10 @@ describe('une migration préparée qui remplace une fonction en vérifie le corp
     expect(liste.length).toBeGreaterThanOrEqual(8)
     const inv3 = liste.filter((r) => r.migration === 'validation_de_l_inventaire').map((r) => `${r.fonction}:${r.verifiee}`).sort()
     expect(inv3).toEqual(['empreinte_exercice_forme_2:true', 'fichier_fige:true', 'valider_exercice:true'])
+    // Le corps de production depuis le 25/11/2026 : celui de `codes_des_clients` (EXP58-Q2, 253), sur lequel INV3 a été reprise
+    // le même jour (EXP58Q2-Q3 (A)) ; avant, celui d'`empreinte_des_exercices_forme_2` (923cfa1b…).
     expect(liste.find((r) => r.migration === 'validation_de_l_inventaire' && r.fonction === 'valider_exercice')?.production)
-      .toBe('923cfa1b57037146070ca1430f163495')
+      .toBe('65df5e35dc5d0d82534a9e22eaaa8429')
     // Aucune préparée ne remplace une fonction que l'export n'a pas : un `create or replace` d'une fonction neuve se lirait ici.
     expect(liste.filter((r) => r.production === null)).toEqual([])
   })

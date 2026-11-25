@@ -1,4 +1,4 @@
--- RETOUR DE `codes_des_clients` (EXP58-Q2, supabase/preparees/20261124170000_codes_des_clients.sql) — À COLLER par le cabinet
+-- RETOUR DE `codes_des_clients` (EXP58-Q2, supabase/schema/20261125124544_codes_des_clients.sql) — À COLLER par le cabinet
 -- dans l'éditeur SQL de Supabase, dans une transaction : il retire un déclencheur, une fonction, une table, deux contraintes et
 -- une colonne, ce que l'outil d'application retient. CE QU'IL DÉTRUIT : le code de chaque fiche de `contacts` et le compteur
 -- de chaque dossier (`contacts_numerotation`). Un code déjà remis — une fiche exportée, un FEC envoyé à l'expert-comptable —

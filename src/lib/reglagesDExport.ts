@@ -9,7 +9,8 @@ import type { ReglagesDExport } from './types'
 // « un réglage par dossier, saisi par le cabinet, sans défaut » ; la recherche : docs/conceptions/57-exports-vers-les-logiciels-
 // comptables.md, § 0 point 12, § 3.1 et § 5). Trois réglages que tout tiers qui exporte vers ces logiciels demande au cabinet,
 // et qui ne se devinent pas : la longueur des comptes, la forme des comptes de tiers, la correspondance des journaux. La base
-// les garde (migration `reglages_d_export`, PRÉPARÉE : supabase/preparees/20261124160000_reglages_d_export.sql), un réglage
+// les garde (migration `reglages_d_export`, en production depuis le 25/11/2026, 252, par l'outil :
+// supabase/schema/20261125123611_reglages_d_export.sql), un réglage
 // nul y est « à saisir » ; ce module en fait le profil que lib/profilsDExport.ts attend, ou dit ce qui manque — jamais une
 // valeur par défaut, ni tirée d'un autre dossier ni devinée. Il redit les refus de la base sous ses mots (`REFUS_DE_LA_BASE`),
 // confrontés au texte de la migration par reglagesDExport.test.ts. Pur : la lecture et l'écriture vivent dans
@@ -19,11 +20,13 @@ import type { ReglagesDExport } from './types'
 // ils se règlent à chaque export, comme aujourd'hui.
 
 /**
- * Le drapeau de la migration : BAISSÉ tant qu'elle n'est pas en base. Baissé, l'écran de l'export reste celui d'hier (les
- * réglages proposés, `REGLAGES_PROPOSES_ACD`), rien ne se lit ni ne s'écrit, et la table n'est pas au plan de sauvegarde ;
- * levé, l'écran lit les réglages gardés du dossier, les préremplit, et offre « Enregistrer ces réglages ».
+ * Le drapeau de la migration : LEVÉ depuis le 25/11/2026, la migration en base (252, par l'outil). Levé, l'écran lit les
+ * réglages gardés du dossier, les préremplit, et offre « Enregistrer ces réglages » ; la table est au plan de sauvegarde.
+ * Baissé, l'écran de l'export restait celui d'hier (les réglages proposés, `REGLAGES_PROPOSES_ACD`), rien ne se lisait ni ne
+ * s'écrivait, et la table n'était pas au plan : l'état d'avant, que les tests jouent encore (un accesseur, ou le paramètre de
+ * `auPlanDesReglagesDExport`).
  */
-export const REGLAGES_D_EXPORT_PREVUS: boolean = false
+export const REGLAGES_D_EXPORT_PREVUS: boolean = true
 
 /** Les tables de la migration, au plan de sauvegarde derrière le drapeau (lib/sauvegarde.ts). */
 export const TABLES_DES_REGLAGES_D_EXPORT = ['reglages_d_export'] as const

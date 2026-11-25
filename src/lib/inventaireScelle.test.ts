@@ -82,6 +82,26 @@ describe('l’empreinte étendue (INV3-Q1 (A)) : la production, et l’inventair
     expect(definitionDans(INV3, 'fichier_fige')).toBe(attendue)
   })
 
+  // REPET-Q2 (A) et EXP58Q2-Q3 (A) : INV3 part du corps de `valider_exercice` EN PRODUCTION le jour de son collage — depuis le
+  // 25/11/2026, celui de `codes_des_clients` (253). Ses ajouts ôtés (trois variables et le bloc de l'inventaire, entre les refus
+  // d'hier et le réglage de la validation), elle est la définition de l'export au caractère près ; un corps d'hier, ou une
+  // retouche perdue en la reprenant, se voit ici avant la garde de tête de la base.
+  it('valider_exercice : celle de la production au caractère près, plus trois variables et le bloc de l’inventaire', () => {
+    const posee = definitionDans(INV3, 'valider_exercice')
+    const variables = '  v_inventaire_mal_numerote boolean;\n  v_regularisation record;\n  v_compte_repris text;\n'
+    const debut = posee.indexOf("  -- L'INVENTAIRE (ligne 35, INV3 ;")
+    const suite = posee.indexOf("  -- Les déclencheurs d'intangibilité ne laissent passer", debut)
+    expect(debut).toBeGreaterThan(-1)
+    expect(suite).toBeGreaterThan(debut)
+    const sansSesAjouts = uneFois(posee.slice(0, debut) + posee.slice(suite), variables, '')
+    expect(sansSesAjouts).toBe(remplacee(enProduction('valider_exercice')))
+    expect(md5(corps(enProduction('valider_exercice')))).toBe('65df5e35dc5d0d82534a9e22eaaa8429')
+  })
+
+  it('le retour rend la valider_exercice de la production au caractère près', () => {
+    expect(definitionDans(RETOUR, 'valider_exercice')).toBe(remplacee(enProduction('valider_exercice')))
+  })
+
   it('chaque régularisation est scellée une fois, par l’exercice qui la porte : la reprise par celui de son extourne', () => {
     for (const f of ['regularisations_scellees', 'pieces_scellees_par_l_inventaire']) {
       expect(corps(definitionDans(INV3, f)), f).toContain('(case when o.reprise then o.exercice + 1 else o.exercice end) = p_annee')
