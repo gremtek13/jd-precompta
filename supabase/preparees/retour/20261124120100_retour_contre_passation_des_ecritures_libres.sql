@@ -1,4 +1,4 @@
--- RETOUR DE 20261124120000_contre_passation_des_ecritures_libres (EL7, conception 54) — À COLLER, et seulement sur l'accord du
+-- RETOUR DE 20261125123317_contre_passation_des_ecritures_libres (EL7, conception 54) — À COLLER, et seulement sur l'accord du
 -- cabinet : il DÉTRUIT la colonne `ecritures_libres.contre_passe_id`, ses deux contraintes et sa clé étrangère, la garde de la
 -- colonne et son déclencheur, et la fonction `contre_passer_ecriture_libre`. Ce qu'il rend : la base d'avant la migration (la
 -- signature de supabase/essais/signature.sql d'avant, mesurée le 24/11/2026 sur une copie de la réplique portée à 250).

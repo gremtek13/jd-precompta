@@ -244,37 +244,57 @@ export function euros(centimes: number): string {
   return formatMoney(Number.isSafeInteger(centimes) ? centimes / 100 : Number.NaN)
 }
 
-// ── La pièce citée (EL-Q8 (A) : facultative) ────────────────────────────────────────────────────────────────────────────
+// ── La pièce citée (EL-Q8 (A) : facultative ; ELQ8-Q1 (B) : toute pièce du dossier) ───────────────────────────────────────
 //
-// La base accepte toute pièce DE CE DOSSIER (`enregistrer_ecriture_libre`, étape 8). L'écran est PLUS STRICT : il ne propose que
-// les pièces VALIDÉES du dossier — celles que l'onglet Écritures lit en entier (`lireTout`) et que l'état des écritures libres
-// sait désigner (sa date de dépôt et son empreinte) ; une pièce « à valider » peut encore être un doublon, se corriger ou se
-// supprimer, et une pièce citée ne se supprime plus (la clé étrangère de la table la retient). Lue en partie ou refusée, la liste
-// ne s'offre pas, l'écran le dit, et la saisie part avec ce qu'elle cite déjà (rien, pour une nouvelle) : rien n'empêche
-// d'enregistrer sans pièce. Aucun refus avant le clic : ce que l'écran propose est du dossier, et la pièce déjà citée d'une
-// écriture relue l'est aussi — la base l'a vérifié en l'écrivant.
+// La base accepte toute pièce DE CE DOSSIER, quel que soit son statut (`enregistrer_ecriture_libre`, étape 8 : la pièce existe
+// et son dossier est celui de l'écriture). L'écran propose la même chose, et rien de plus large (ELQ8-Q1, tranchée (B) par le
+// cabinet le 25/11/2026 : « toutes les pièces du dossier, « à valider » comprises, comme l'inventaire » — la facture qui fonde
+// une écriture de l'expert est souvent encore « à valider » quand il la passe) : toutes les pièces du dossier que l'onglet
+// Écritures lit en entier (`lireTout`), une pièce « à valider » dite telle dans son option. L'état des écritures libres et la
+// piste d'audit la désignent comme une autre (sa date de dépôt et son empreinte), l'onglet leur donnant les pièces citées quel
+// que soit leur statut. Ce que le choix emporte, dit ici plutôt que découvert : une pièce citée ne se supprime plus — la clé
+// étrangère de la table la retient, « à valider » comprise (un doublon cité se retire de l'écriture d'abord, tant que son
+// exercice n'est pas validé). Lue en partie ou refusée, la liste ne s'offre pas, l'écran le dit, et la saisie part avec ce
+// qu'elle cite déjà (rien, pour une nouvelle) : rien n'empêche d'enregistrer sans pièce. Aucun refus avant le clic : ce que
+// l'écran propose est du dossier, et la pièce déjà citée d'une écriture relue l'est aussi — la base l'a vérifié en l'écrivant.
 //
 // Une pièce se désigne par sa date, son tiers et son montant TTC, son sens en plus — jamais par le nom de son fichier.
 
-/** Les pièces qu'une écriture libre peut citer : les validées de CE dossier, la plus récente d'abord (sans date à la fin). */
+/** Les pièces qu'une écriture libre peut citer : toutes celles de CE dossier, « à valider » comprises (ELQ8-Q1 (B)), la plus
+ *  récente d'abord (sans date à la fin). */
 export function piecesCitablesParUneEcritureLibre<P extends PieceACiter>(pieces: readonly P[], dossierId: string): P[] {
-  const gardees = pieces.filter((p) => p.dossier_id === dossierId && p.statut === 'validee')
+  const gardees = pieces.filter((p) => p.dossier_id === dossierId)
   return piecesCitablesParUneRegularisation({ pieces: gardees, factures: [] }) as P[]
+}
+
+/** Les pièces que les écritures libres données citent, parmi celles lues, quel que soit leur statut : ce que l'état des
+ *  écritures libres et la piste d'audit désignent (ELQ8-Q1 (B)). */
+export function piecesCiteesParDesEcrituresLibres<P extends { id: string }>(
+  pieces: readonly P[], libres: readonly { piece_citee_id: string | null }[],
+): P[] {
+  const citees = new Set(libres.flatMap((e) => (e.piece_citee_id === null ? [] : [e.piece_citee_id])))
+  return pieces.filter((p) => citees.has(p.id))
 }
 
 const SENS_DES_PIECES: Readonly<Record<PieceACiter['type_piece'], string>> = {
   achat: 'Dépense', vente: 'Recette', note_frais: 'Note de frais', autre: 'Autre pièce',
 }
 
-/** L'option d'une pièce dans le choix : sa date et son tiers en titre, son montant TTC et son sens en détail. */
+/** L'option d'une pièce dans le choix : sa date et son tiers en titre, son montant TTC et son sens en détail. Une colonne que la
+ *  ligne ne porte pas se lit comme une colonne nulle (« non lu ») : depuis ELQ8-Q1 (B), le choix reçoit aussi les pièces « à
+ *  valider », dont l'exemplaire d'une facture, que rien n'a encore lu — une ligne incomplète ne fait jamais tomber l'onglet. */
 export function optionDeLaPieceDUneEcritureLibre(p: PieceACiter): OptionDeCitation {
-  const date = p.date_piece === null ? 'Sans date' : formatDate(p.date_piece)
-  const tiers = p.tiers === null || p.tiers.trim() === '' ? 'tiers non lu' : p.tiers.trim()
-  const montant = p.montant_ttc === null ? 'montant non lu' : `${formatMoney(p.montant_ttc)} TTC`
+  const datePiece = p.date_piece ?? null
+  const tiersLu = typeof p.tiers === 'string' ? p.tiers.trim() : ''
+  const montantTtc = p.montant_ttc ?? null
+  const sens = SENS_DES_PIECES[p.type_piece] ?? 'Pièce'
+  const date = datePiece === null ? 'Sans date' : formatDate(datePiece)
+  const tiers = tiersLu === '' ? 'tiers non lu' : tiersLu
+  const montant = montantTtc === null ? 'montant non lu' : `${formatMoney(montantTtc)} TTC`
   return {
     citation: { genre: 'piece', id: p.id }, titre: `${date} — ${tiers}`, fichier: false,
-    detail: `${montant} · ${SENS_DES_PIECES[p.type_piece]}`,
-    champs: [p.tiers, p.date_piece === null ? null : formatDate(p.date_piece), p.montant_ttc, SENS_DES_PIECES[p.type_piece]],
+    detail: `${montant} · ${sens}${p.statut === 'validee' ? '' : ' · à valider'}`,
+    champs: [p.tiers ?? null, datePiece === null ? null : formatDate(datePiece), montantTtc, sens],
   }
 }
 
@@ -284,7 +304,7 @@ export function optionsDesPiecesDUneEcritureLibre(pieces: readonly PieceACiter[]
 }
 
 /** L'option de la pièce citée, cherchée parmi les citables ; nulle si rien n'est cité, si les pièces ne sont pas lues en entier
- *  (`pieces` nul), ou si elle ne s'y retrouve pas (une pièce du dossier repassée « à valider »). */
+ *  (`pieces` nul), ou si elle ne s'y retrouve pas (une pièce que la lecture ne rend pas). */
 export function optionDeLaPieceCitee(
   pieceId: string | null, pieces: readonly PieceACiter[] | null, dossierId: string,
 ): OptionDeCitation | null {
@@ -298,7 +318,7 @@ export function ligneDeLaPieceCitee(pieceId: string | null, pieces: readonly Pie
   if (pieceId === null) return 'Aucune pièce citée : l’état des écritures libres en tient lieu.'
   if (pieces === null) return 'Pièce citée : celle qui est déjà citée (les pièces du dossier ne sont pas lues en entier).'
   const o = optionDeLaPieceCitee(pieceId, pieces, dossierId)
-  return o === null ? 'Pièce citée : une pièce du dossier qui n’est pas parmi ses pièces validées.' : `Pièce citée : ${o.titre} (${o.detail}).`
+  return o === null ? 'Pièce citée : une pièce du dossier qui n’est pas parmi ses pièces lues.' : `Pièce citée : ${o.titre} (${o.detail}).`
 }
 
 /**

@@ -22,13 +22,14 @@ import {
 } from './ecritureLibre'
 import { referenceDeLEcritureLibre, type EcritureLibreDesExports, type LigneEnBaseDEcritureLibre } from './ecrituresLibresDesExports'
 
-/** LA MIGRATION `contre_passation_des_ecritures_libres` (EL7) EST-ELLE EN BASE ? Non : préparée le 24/11/2026
- *  (supabase/preparees/20261124120000_contre_passation_des_ecritures_libres.sql), pas appliquée. Baissé, rien ne change : la
- *  lecture ne demande pas la colonne `contre_passe_id` (PostgREST la refuserait), la section « Écritures de l'expert-comptable »
- *  est celle d'EL5, et le plan de sauvegarde ne porte ni sa relation ni sa vague (lib/sauvegarde.ts). Il se lève avec la
- *  migration appliquée et son fichier rangé dans supabase/schema/, la suite entière jouée d'abord en simulation — elle l'a été le
+/** LA MIGRATION `contre_passation_des_ecritures_libres` (EL7) EST-ELLE EN BASE ? Oui depuis le 25/11/2026 (251, par l'outil ;
+ *  supabase/schema/20261125123317_contre_passation_des_ecritures_libres.sql), le drapeau levé le même jour. Levé : la lecture
+ *  demande la colonne `contre_passe_id`, la section « Écritures de l'expert-comptable » offre « Contre-passer » sur une écriture
+ *  figée, et le plan de sauvegarde porte sa relation et sa vague (lib/sauvegarde.ts). Baissé, rien ne changeait : la section
+ *  d'EL5, ni la colonne ni la vague — l'état d'avant, que les tests jouent encore (un accesseur, ou le paramètre de
+ *  `auxVaguesDeLaContrePassation` et de `colonnesDesEcrituresLibres`). La suite entière a été jouée en simulation le
  *  24/11/2026, et passe dans les deux états. */
-export const CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE: boolean = false
+export const CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE: boolean = true
 
 /** La colonne de la migration, lue le drapeau levé. */
 export const COLONNE_DE_LA_CONTRE_PASSATION = 'contre_passe_id'

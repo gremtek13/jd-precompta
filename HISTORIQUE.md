@@ -54787,3 +54787,22 @@ cascade d'un dossier qu'on supprime) observait 83 gardes pour 82 attendues — `
 (EL7, de la forme `dossier`), qu'`ecrituresLibres.sql` comptait déjà, et elle non. Comptée désormais quand sa fonction existe :
 250 sur 250 avec les trois préparées, 246 sur 246 à 250 et 250 sur 250 avec EXP58-Q2 seule ; la garde d'EL7 désactivée, l'étape
 tombe ; SÛRE au banc du leurre, avec et sans EXP58-Q2.
+
+### 25/11/2026 — TROIS MIGRATIONS EN PRODUCTION (251 À 253) : EL7, EXP-Q4 ET EXP58-Q2, LEURS DRAPEAUX LEVÉS, INV3 REPRISE
+
+(Agent architecte ; appliquées le 25/11/2026 par la session, par l'outil, sur l'accord du cabinet : EL7-migration, EXPQ4-migration,
+EXP58Q2-migration.) Rangées dans l'export sous les versions de l'historique, textes inchangés (`20261125123317`, `…123611`,
+`…124544` ; `0b0cbf84…`, `44d7903d…`, `1fdd6bae…` sans la dernière fin de ligne), les retours dans `supabase/preparees/retour/`.
+Levés : `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE`, `REGLAGES_D_EXPORT_PREVUS`, `CODES_DES_CLIENTS_PREVUS`, leurs états d'avant
+joués par les accesseurs et les paramètres ; `codesDesClients` hors de la famille « apres » du banc (31 cas) ; le leurre gagne une
+ligne de `reglages_d_export` par dossier (sans elle, le banc ne conclut plus) ; `contacts_numerotation`, sans policy, volontaire ;
+aucune Edge Function ne porte ces drapeaux. INV3 reprise sur le corps que pose `codes_des_clients` (`65df5e35…`, EXP58Q2-Q3 (A)) :
+ses trois retouches dans sa `valider_exercice` (`efaf74ed…`), ses gardes et son retour (qui rend `65df5e35…`), un test qui l'épingle
+au corps de l'export plus ses seuls ajouts. Sur une copie de `replique_227` portée à 253 : dérive 253 `4eb8834b…`, socle 84
+`e54200f4…`, inventaire 3 518 `a6475fb0…`, égaux des deux côtés ; `rls.sql` 0 sur 1 357, 178 mutations ; restauration IDENTIQUE
+(110 tables) ; les essais des trois 50 + 12, 53 + 8, 30/30, `validationExercice` 250, `contacts` 225, `ecrituresLibres` 67 + 6 ;
+l'export rejoué dans une base vide, `signature.sql` égal ; au banc, les 116 essais de la production hors d'« apres » SÛRS ; INV2 puis
+INV3 s'appliquent (son essai 71 + 25 ; inventaire 3 566, 3 593, 3 566 après son retour). Réponses consignées : ELQ8-Q1 (B), la pièce
+citée parmi toutes les pièces du dossier, « à valider » comprises (la base l'acceptait), lues d'une lecture par l'onglet Écritures,
+l'état et la piste d'audit la désignant quel que soit son statut ; NOE6R-Q1 (B), rien à coder ; EL6-Q1 à Q3, EL7-Q1 à Q3, EXPQ4-Q1
+à Q3, EXP58Q2-Q1 et Q2, à la recommandation. Question : ELQ8Q1-Q1 (la suppression d'une pièce citée, refusée sans un mot avant le clic).

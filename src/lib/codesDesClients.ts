@@ -7,7 +7,8 @@ import type { Contact, FactureEmise } from './types'
 // 7°, la vingt-deuxième information ; BOI-CF-IOR-60-40-20, § 310 : « codifiable sous le secret professionnel »), un code par
 // client et sa table de correspondance, là où FEC22-Q4 (D) écrivait le SIREN d'une entreprise, sinon le numéro de la facture.
 //
-// CE QUE LA BASE TIENT (la migration préparée `codes_des_clients`, supabase/preparees/20261124170000_codes_des_clients.sql) :
+// CE QUE LA BASE TIENT (la migration `codes_des_clients`, en production depuis le 25/11/2026, 253, par l'outil :
+// supabase/schema/20261125124544_codes_des_clients.sql) :
 // chaque fiche de `contacts` reçoit à sa création un code, la lettre C et cinq chiffres (C00001 à C99999), le rang de sa
 // création dans le dossier — jamais tiré du nom, du SIREN ni d'aucune donnée de la fiche —, posé par une garde de la table
 // (`poser_code_client`, un compteur par dossier, `contacts_numerotation`), puis gardé : il ne change plus, l'effacement
@@ -19,14 +20,15 @@ import type { Contact, FactureEmise } from './types'
 // que la lecture du FEC passe au module des quatre champs, lib/champsBncDuFec.ts, `codeDuClient`), et les mots des écrans
 // (la vue « Clients », la fiche exportée, la phrase de l'onglet Accès).
 //
-// LE DRAPEAU BAISSÉ, RIEN NE CHANGE : la colonne n'existe pas encore, la lecture du FEC ne la demande pas, IdClient reste
-// celui d'hier, à l'octet (le FEC fictif de la répétition compris), et aucun écran ne dit de code.
+// LE DRAPEAU BAISSÉ, RIEN NE CHANGEAIT : la colonne n'existait pas, la lecture du FEC ne la demandait pas, IdClient restait
+// celui d'hier, à l'octet (le FEC fictif de la répétition compris), et aucun écran ne disait de code — l'état d'avant, que les
+// tests jouent encore (un accesseur, ou le paramètre des fonctions `…Selon`).
 
-/** Le drapeau de la migration `codes_des_clients` (EXP58-Q2, PRÉPARÉE le 24/11/2026, PAS APPLIQUÉE) : baissé, la colonne
- *  `contacts.code_client` et le compteur n'existent pas, rien ne les lit, et l'identification du client du FEC reste celle de
- *  FEC22-Q4 (D). Il se lève avec la migration (son fichier rangé dans supabase/schema/), jamais avant : une lecture de la
- *  colonne avant elle ferait échouer celle des factures du FEC. */
-export const CODES_DES_CLIENTS_PREVUS = false
+/** Le drapeau de la migration `codes_des_clients` (EXP58-Q2) : LEVÉ depuis le 25/11/2026, la migration en base (253, par
+ *  l'outil ; son fichier rangé dans supabase/schema/). Levé, la colonne `contacts.code_client` se lit (la vue « Clients », la
+ *  fiche exportée, la lecture du FEC) et le compteur est au plan de sauvegarde. Jamais levé avant la migration : une lecture
+ *  de la colonne avant elle ferait échouer celle des factures du FEC. */
+export const CODES_DES_CLIENTS_PREVUS: boolean = true
 
 /** La table que la migration crée, hors de toute lecture de l'API (aucune policy) : le plan de sauvegarde la porte derrière le
  *  drapeau, et la lit vide (RESTAU-Q3). */

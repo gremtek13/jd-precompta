@@ -1,9 +1,11 @@
 -- RETOUR DE 20261112235000_validation_de_l_inventaire (INV3, ligne 35) — À COLLER, et seulement sur l'accord du cabinet : il
 -- DÉTRUIT la table des déclarations d'inventaire (`inventaires_declares`), sa garde, la garde du fichier d'une pièce scellée
 -- par l'inventaire et les huit fonctions de la migration, et rend telles que la production les porte, au caractère près,
--- leur commentaire aussi : `valider_exercice` et `empreinte_exercice_forme_2` depuis `empreinte_des_exercices_forme_2`
--- (md5 923cfa1b… et a62b0761…), `fichier_fige` depuis `piece_figee_dans_le_stockage` (md5 5372f8d2…). Ce qu'il rend : la
--- base d'INV2 (et d'INV4, si elle y est) sans la validation de l'inventaire.
+-- leur commentaire aussi : `valider_exercice` depuis `codes_des_clients` (md5 65df5e35… ; repris le 25/11/2026 avec la
+-- migration, EXP58Q2-Q3 (A) — son commentaire reste celui d'`empreinte_des_exercices_forme_2`, que `codes_des_clients` ne
+-- change pas), `empreinte_exercice_forme_2` depuis `empreinte_des_exercices_forme_2` (md5 a62b0761…), `fichier_fige` depuis
+-- `piece_figee_dans_le_stockage` (md5 5372f8d2…). Ce qu'il rend : la base d'INV2 (et d'INV4, si elle y est) sans la
+-- validation de l'inventaire.
 -- Il se refuse tant qu'une déclaration existe (la relever par un SELECT, puis décider avec le cabinet), si une fonction
 -- qu'il rend n'est plus celle que la migration a posée (une migration suivante l'a remplacée : son retour d'abord), ou si
 -- un exercice validé scelle une régularisation ou une pièce par l'inventaire (INV3-Q1) : l'empreinte d'hier ne la verrait
@@ -19,7 +21,7 @@ begin
     raise exception 'retour_validation_de_l_inventaire : des déclarations d''inventaire existent ; les relever, et décider avec le cabinet, d''abord.';
   end if;
   if (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p
-       where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure) is distinct from '6ead429ff05ee505cd963ae6ab479abf'
+       where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure) is distinct from 'efaf74ed43c701f148a553febac6df8f'
      or (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p
           where p.oid = 'public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure)
         is distinct from 'cb18f6063974972974a1aa92eb5b3e92'
@@ -319,7 +321,10 @@ begin
   --   - LA GARDE DU SECRET (BOI-BNC-DECLA-10-20, § 280 ; CGI, art. 99 ; FEC22-Q4, (D)) : un client ne s'identifie que
   --     par le numéro d'une facture ou d'un avoir VALIDÉ du dossier, ou par le SIREN que porte son client figé — les
   --     neuf premiers chiffres de son `tiers_siret` quand il n'est fait que de neuf ou de quatorze chiffres et passe
-  --     ses clés, comme `identificationDuClient` le lit. Aucun chemin n'y fait entrer un nom.
+  --     ses clés, comme `identificationDuClient` le lit. Aucun chemin n'y fait entrer un nom. Depuis EXP58-Q2
+  --     (`codes_des_clients`), aussi par le code de la fiche d'où vient le client d'un tel document
+  --     (`factures_emises.contact_id`, figé avec lui), cette fiche du dossier : un code que la base a posé à sa
+  --     création, qui ne change plus et ne dit rien du client.
   -- « Sans règlement » est un mode de la liste : la base ne choisit pas entre lui et des champs vides (FEC22-Q1, (C) ;
   -- FEC22-E2). src/lib/champsBncFiges.ts redit ces refus, dans cet ordre.
   with l as (
@@ -384,8 +389,9 @@ begin
       ('Frais divers de gestion', '6'), ('Divers', '6'), ('Frais financiers', '6'), ('Pertes diverses', '6'),
       ('Amortissements', '6'), ('Dotation aux amortissements', '6')
   ), documents as (
-    -- Les factures et les avoirs validés du dossier : leur numéro, et le SIRET ou le SIREN que leur client figé porte.
-    select f.numero, f.tiers_siret as siret from public.factures_emises f
+    -- Les factures et les avoirs validés du dossier : leur numéro, le SIRET ou le SIREN que leur client figé porte, et la
+    -- fiche d'où vient ce client (EXP58-Q2).
+    select f.numero, f.tiers_siret as siret, f.contact_id from public.factures_emises f
      where f.dossier_id = p_dossier_id and f.statut = 'validee' and coalesce(f.numero, '') <> ''
   ), cles as (
     -- La clé de Luhn de l'INSEE, en entiers : en partant de la droite, un chiffre sur deux doublé (moins neuf au-delà
@@ -407,10 +413,13 @@ begin
       from documents d
      where d.siret ~ '^[0-9]{9}$' or d.siret ~ '^[0-9]{14}$'
   ), admis(valeur) as (
-    -- Ce qui identifie un client : le numéro d'un document validé, ou le SIREN juste de son client figé.
+    -- Ce qui identifie un client : le numéro d'un document validé, le SIREN juste de son client figé, ou le code de la
+    -- fiche d'où vient ce client, une fiche du dossier (EXP58-Q2).
     select numero from documents
     union
     select siren from cles where siren_juste and siret_juste
+    union
+    select c.code_client from documents d join public.contacts c on c.id = d.contact_id and c.dossier_id = p_dossier_id
   )
   select case
       when exists (select 1 from l where date_reglement is not null
@@ -689,7 +698,7 @@ drop function public.garder_inventaires_declares();
 do $fin$
 begin
   if (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p
-       where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure) is distinct from '923cfa1b57037146070ca1430f163495'
+       where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure) is distinct from '65df5e35dc5d0d82534a9e22eaaa8429'
      or not (select p.prosecdef from pg_proc p where p.oid = 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)'::regprocedure)
      or has_function_privilege('anon', 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', 'execute')
      or not has_function_privilege('authenticated', 'public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', 'execute')

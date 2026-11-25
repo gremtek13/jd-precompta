@@ -39,9 +39,10 @@ import type { Categorie, Piece } from '../../lib/types'
 //   trésorerie proposée devant une charge ou un produit rattaché ; la confirmation NOMME les lignes, les totaux et l'effet sur
 //   la 2035 ; les gestes par `enregistrer_ecriture_libre` et `retirer_ecriture_libre` seules, chacun sous son verrou `useRef`,
 //   relâché après la relecture.
-// - La pièce citée, facultative (EL-Q8 (A)) : un choix parmi les pièces VALIDÉES du dossier que l'onglet a lues EN ENTIER
-//   (`optionsDesPiecesDUneEcritureLibre`), par le choix commun de l'inventaire (`ChoixDuJustificatif`) ; lues en partie, aucun
-//   choix, le motif dit, et la saisie part avec ce qu'elle cite déjà. La liste nomme la pièce citée de chaque écriture.
+// - La pièce citée, facultative (EL-Q8 (A)) : un choix parmi TOUTES les pièces du dossier que l'onglet a lues EN ENTIER,
+//   « à valider » comprises et dites telles (ELQ8-Q1 (B), le 25/11/2026, comme l'inventaire ; `optionsDesPiecesDUneEcritureLibre`),
+//   par le choix commun de l'inventaire (`ChoixDuJustificatif`) ; lues en partie, aucun choix, le motif dit, et la saisie part
+//   avec ce qu'elle cite déjà. La liste et l'état des écritures libres nomment la pièce citée de chaque écriture.
 // - La contre-passation (EL7), sous `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` seulement (baissé : la section d'EL5, à
 //   l'identique) : une écriture FIGÉE par la validation de son exercice ne s'offre plus à « Modifier » ni à « Retirer », que la
 //   base refuserait ; elle s'offre à « Contre-passer », sauf ce que son état retient, dit avant le clic (extournée, déjà
@@ -62,8 +63,8 @@ export default function EcrituresLibresSection({
   // La date des à-nouveaux (l'ouverture), nulle sans reprise ; `undefined` tant qu'ils ne sont pas lus en entier : aucun geste.
   ouverture: string | null | undefined
   categories: readonly Categorie[]
-  // Les pièces VALIDÉES du dossier, lues par l'onglet : celles que l'état désigne (une absente s'y dit « hors du jeu chargé ») et
-  // celles qu'une écriture peut citer.
+  // TOUTES les pièces du dossier, lues par l'onglet, « à valider » comprises (ELQ8-Q1 (B)) : celles que l'état désigne (une
+  // absente s'y dit « hors du jeu chargé ») et celles qu'une écriture peut citer.
   pieces: readonly Piece[]
   // Le motif d'une lecture des pièces partielle ou refusée ; nul quand elles sont lues en entier.
   piecesIncompletes: string | null
@@ -317,7 +318,7 @@ export default function EcrituresLibresSection({
               onChange={(ev) => setFormulaire({ ...formulaire, motif: ev.target.value })} />
           </label>
           <ChoixDuJustificatif
-            id="ecriture-libre-piece" quoi="une pièce validée" desactive={geler}
+            id="ecriture-libre-piece" quoi="une pièce du dossier" desactive={geler}
             lecture={piecesIncompletes === null ? { etat: 'lue' } : { etat: 'incomplete', motif: piecesIncompletes }}
             options={optionsDesPieces}
             citee={formulaire.pieceCiteeId === null ? null : { genre: 'piece', id: formulaire.pieceCiteeId }}

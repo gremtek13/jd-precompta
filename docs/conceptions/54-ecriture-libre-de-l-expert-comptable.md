@@ -553,7 +553,7 @@ EXCEPTION tracée, jamais un retour silencieux : la version validée ne dispara�
 | EL4 | La 2035 (la source neuve, ses contributions), la concordance (le motif déclaré, `concorde` hors des écarts déclarés si EL-Q6 (A)), `prealablesValidation.ts`, Clôture, la situation intermédiaire et l'estimation ; un test qui garde la CA3 aveugle | 2 | le même | EL2 | oui |
 | EL5 | L'écran : une section « Écritures de l'expert-comptable » de l'onglet Écritures — la liste de l'exercice, lue en entier (partielle : aucun geste) ; la saisie compte par compte au chef seul (un membre la lit, sans formulaire), l'équilibre affiché, les avertissements sous chaque ligne, le poste proposé, l'extourne proposée ; une confirmation qui NOMME les lignes, les totaux et l'effet sur la 2035 ; un verrou `useRef` par geste ; ses tests d'écran | 2 | `ECRITURES_LIBRES_EXPORTEES` baissé | EL3, EL4 | oui |
 | EL6 | Le détail de la balance et du bilan, la révision (preuve, travail), l'assistant (lecture sans libellé) et son redéploiement | 1 | — | EL5 | non |
-| EL7 — **préparée le 24/11/2026** (§ 7.2) | La contre-passation d'une écriture validée, d'un geste, dans un exercice ouvert (`contre_passe_id`) | 0,5 | `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` baissé | EL5 | non |
+| EL7 — **préparée le 24/11/2026, en production le 25/11/2026 (251)** (§ 7.2) | La contre-passation d'une écriture validée, d'un geste, dans un exercice ouvert (`contre_passe_id`) | 0,5 | `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` levé le 25/11/2026 | EL5 | non |
 | EL8 | La mise en production : la table au plan de sauvegarde derrière `ECRITURES_LIBRES_PREVUES` AVEC son bloc de l'essai de restauration (restauration.sql, que restaurationEssai.test.ts confronte au plan prévu), le bloc de `rls.sql` ; simulation (fichiers posés, drapeaux levés, suite entière), collage par le cabinet (les fonctions suppriment), les trois contrôles de l'export, `rejouer.py`, essais rejoués, drapeaux levés | 0,5 | levés | EL2 à EL5 | oui |
 | EL9 | Le dégel d'un exercice validé par le chef (EL-Q10 (B), § 6.1) : `degels_d_exercice`, `degeler_exercice`, la relecture des gardes qui lisent la frontière, l'archive au plan de sauvegarde et au paquet d'archive, l'écran (le motif, l'écart avant la revalidation) | 2 | `DEGEL_PREVU` baissé | EL10-Q1 à Q7 | selon EL10-Q7 |
 
@@ -596,7 +596,7 @@ qu'il connaît.
 
 - **« Validée »** : une écriture libre n'a pas de statut à elle ; elle se valide avec son exercice — sa date au plus tard à la
   frontière de la validation, ou une de ses lignes validée, le gel qu'EL2 lit déjà. Après, elle se contre-passe.
-- **La migration** (`supabase/preparees/20261124120000_contre_passation_des_ecritures_libres.sql`, sans instruction de suppression :
+- **La migration** (`supabase/schema/20261125123317_contre_passation_des_ecritures_libres.sql`, sans instruction de suppression :
   l'outil peut l'appliquer) : `contre_passe_id` (vers la même table, sans action, une contrainte d'unicité TOTALE, jamais avec une
   extourne) ; `contre_passer_ecriture_libre(p_id, p_version_lue, p_contre_passation, p_ecritures)` — l'accès avant toute lecture
   (`admin_du_dossier`), la version lue, l'écriture figée, sans extourne (son extourne la défait déjà), pas déjà contre-passée ; une

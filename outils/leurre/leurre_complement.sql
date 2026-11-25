@@ -312,5 +312,21 @@ begin
          and not exists (select 1 from public.ecritures_brouillon b where b.dossier_id = lc.d and b.ecriture_libre_id is not null)$i$;
   end if;
 end $ecritures_libres$;
+-- Les réglages de l'export vers un logiciel comptable (migration `reglages_d_export`, EXP-Q4, en production depuis le
+-- 25/11/2026) : le remplisseur n'écrit ni un logiciel de la liste fermée, ni un code de journal de lettres et de chiffres.
+-- Une ligne par leurre, selon les CHECK de la table : le logiciel de la liste (`acd`), une longueur et une forme permises, et
+-- les cinq codes de journal marqués du leurre (« LEURRE7Q3 », sa lettre et le journal, sans trait d'union : la forme que la
+-- base admet) ; un essai qui lirait les réglages d'un autre dossier que les siens rendrait le leurre. Sous `to_regclass`, sa
+-- ligne seulement si le leurre n'en a pas.
+do $reglages_d_export$
+begin
+  if to_regclass('public.reglages_d_export') is not null then
+    execute $i$insert into public.reglages_d_export (dossier_id, logiciel, longueur_des_comptes, forme_des_tiers, journal_ac,
+        journal_ve, journal_bq, journal_od, journal_an, version, regle_par)
+      select d, 'acd', 11, 'nos_auxiliaires', 'LEURRE7Q3' || x || 'AC', 'LEURRE7Q3' || x || 'VE', 'LEURRE7Q3' || x || 'BQ',
+             'LEURRE7Q3' || x || 'OD', 'LEURRE7Q3' || x || 'AN', 1, chef
+        from lc where not exists (select 1 from public.reglages_d_export r where r.dossier_id = lc.d)$i$;
+  end if;
+end $reglages_d_export$;
 select 'complément', count(*) from dossier_permanent where dossier_id in (select d from lc);
 commit;

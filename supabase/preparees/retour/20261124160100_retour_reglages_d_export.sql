@@ -1,7 +1,7 @@
 -- RETOUR ARRIÈRE DE `reglages_d_export` (EXP-Q4 (A), les réglages de l'export vers un logiciel comptable, gardés par dossier
 -- et par logiciel) — DESTRUCTIF, À ACCORDER PAR LE CABINET, À COLLER dans l'éditeur SQL de Supabase, dans une transaction,
 -- avec sa ligne d'historique (le texte retire une table, sa garde et deux fonctions). La migration :
--- supabase/preparees/20261124160000_reglages_d_export.sql (préparée le 24/11/2026, sous une version provisoire) ; le récit :
+-- supabase/schema/20261125123611_reglages_d_export.sql (préparée le 24/11/2026, sous une version provisoire) ; le récit :
 -- HISTORIQUE.md, « 24/11/2026 — EXP-Q4 : LES RÉGLAGES DE L'EXPORT GARDÉS PAR DOSSIER (PRÉPARÉE, PAS APPLIQUÉE) ».
 --
 -- L'ORDRE : D'ABORD l'application, son drapeau baissé (`REGLAGES_D_EXPORT_PREVUS`, src/lib/reglagesDExport.ts ; le fichier

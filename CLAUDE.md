@@ -620,8 +620,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   saisis), les justificatifs en ZIP sous leur PieceRef, sans rien changer au FEC ; restent l'essai chez l'expert-comptable et EXP-Q2 à Q5
   → « EXP1 : L'EXPORT VERS UN LOGICIEL COMPTABLE, PROFIL ACD ». Les réglages d'un dossier pour un logiciel (EXP-Q4 (A), 24/11/2026) :
   la longueur des comptes, la forme des tiers, le code de chacun des cinq journaux, « à saisir » tant qu'ils manquent, jamais un défaut,
-  en base (`reglages_d_export`, préparée, par l'outil ; `lib/reglagesDExport.ts`, `REGLAGES_D_EXPORT_PREVUS` baissé) → « EXP-Q4 : LES
-  RÉGLAGES DE L'EXPORT GARDÉS PAR DOSSIER ».
+  en base (`reglages_d_export`, en production depuis le 25/11/2026 (252, par l'outil) ; `lib/reglagesDExport.ts`, `REGLAGES_D_EXPORT_PREVUS`
+  levé) → « EXP-Q4 : LES RÉGLAGES DE L'EXPORT GARDÉS PAR DOSSIER », « TROIS MIGRATIONS EN PRODUCTION (251 À 253) ».
 - **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
   une OD source du brouillon ; en trésorerie, chaque ligne de résultat sous un poste de la 2035 ou « hors de la 2035 », une charge
   ou un produit rattaché hors de la 2035 seulement (`rattacheeComptee`, EXP58-Q3 (A) : la désignation « contre la règle »
@@ -632,7 +632,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   chaque moteur (`ecrituresLibresAppelants.test.ts`) et la section de l'onglet Écritures, derrière le même drapeau ; « Ma simulation »
   ne les compte pas et le dit (EL5-Q1) → « EL5 : LA LECTURE DES ÉCRITURES LIBRES » ; EL2 EN PRODUCTION depuis le 23/11/2026 (250, collée ; `ecritures_libres`, `ECRITURES_LIBRES_PREVUES` levé ; les quatre
   sources neuves sœurs la tolèrent, `stocks.test.ts`) → « EL2 EN PRODUCTION » ; éprouvée au banc (`ecritures-libres/*`), la pièce citée
-  choisie parmi les validées lues en entier (ELQ8-Q1 ouverte) → « L'ÉCRITURE LIBRE ÉPROUVÉE DANS UN NAVIGATEUR » ; EL6 (24/11/2026) : le détail de la Balance et du Bilan marque « écriture libre n° EL… » (`lib/ecrituresLibresDuDetail.ts`), la preuve d'un compte dit leur part et propose leur pièce citée, l'ensemble propose leur relecture, l'assistant nomme leurs lignes par leur numéro et les décrit (`lister_ecritures_libres`, au jeton de l'appelant), jamais libellé, motif ni `compte_lib` ; `agent-comptable` redéployée le 24/11/2026 (v63, au commit `c9912ce3`) → « EL6 : L'ÉCRITURE LIBRE DANS LE DÉTAIL DES COMPTES » ; EL8 (22/11/2026) : la table au plan de sauvegarde, dans `restauration.sql`
+  choisie parmi toutes les pièces du dossier lues en entier, « à valider » comprises, comme l'inventaire, l'état et la piste d'audit la
+  désignant quel que soit son statut (ELQ8-Q1 (B), 25/11/2026) → « L'ÉCRITURE LIBRE ÉPROUVÉE DANS UN NAVIGATEUR » ; EL6 (24/11/2026) : le détail de la Balance et du Bilan marque « écriture libre n° EL… » (`lib/ecrituresLibresDuDetail.ts`), la preuve d'un compte dit leur part et propose leur pièce citée, l'ensemble propose leur relecture, l'assistant nomme leurs lignes par leur numéro et les décrit (`lister_ecritures_libres`, au jeton de l'appelant), jamais libellé, motif ni `compte_lib` ; `agent-comptable` redéployée le 24/11/2026 (v63, au commit `c9912ce3`) → « EL6 : L'ÉCRITURE LIBRE DANS LE DÉTAIL DES COMPTES » ; EL8 (22/11/2026) : la table au plan de sauvegarde, dans `restauration.sql`
   et `rls.sql` (LI), derrière le drapeau ; la porte posée en clair (md5 `55ffe78c…`), le tout prouvé sur une réplique égale à la
   production → « EL8 :
   L'ÉCRITURE LIBRE PRÊTE À COLLER » ; EL3 (22/11/2026) en module,
@@ -647,8 +648,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   (`ecrituresLibresHorsDeLaCa3.test.ts`) → « L'ÉCRITURE LIBRE DE
   L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION », « EXP58-Q3 ET NOE4-Q1 »,
   « EL3 : L'ÉCRITURE LIBRE DANS LE FEC », « EL4 : L'ÉCRITURE LIBRE DANS LA 2035 », « EL4-Q1 : LES COTISATIONS DE L'ESTIMATION ».
-  EL7 (24/11/2026), la contre-passation d'une écriture figée, préparée (`contre_passe_id`, `contre_passer_ecriture_libre` et sa garde ; l'outil
-  peut l'appliquer), écran et sauvegarde derrière `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` baissé → « EL7 : LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE VALIDÉE ».
+  EL7 (24/11/2026), la contre-passation d'une écriture figée (`contre_passe_id`, `contre_passer_ecriture_libre` et sa garde), en production
+  depuis le 25/11/2026 (251, par l'outil), `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` levé (l'écran et la sauvegarde) → « EL7 : LA
+  CONTRE-PASSATION D'UNE ÉCRITURE LIBRE VALIDÉE », « TROIS MIGRATIONS EN PRODUCTION (251 À 253) ».
 - **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
   (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
   les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».
@@ -764,7 +766,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   FEC22-Q7, écrite le 02/11/2026 : le libellé d'une vente porte le nom d'une entreprise (le prédicat d'IdClient), sinon le
   numéro de la facture, une pièce de vente « Recette » et sa date, son 411 au compte « Clients divers » ; la règle dans
   `lib/libellesDesVentes.ts`, que garde un relevé de toute la source ; ce qui est déjà au brouillon garde son libellé,
-  et rien ne le signale (FEC22Q7-Q1, le 03/11/2026) ; EXP58-Q2 (A), préparée le 24/11/2026 : IdClient le code de la fiche du client (C et cinq chiffres posés par la base, `codes_des_clients`, `CODES_DES_CLIENTS_PREVUS` baissé), sans fiche la règle d'hier → « EXP58-Q2 : UN CODE OPAQUE PAR FICHE CLIENT », « FEC22F : LE FEC FICTIF DE L'ÉPREUVE DU FICHIER » (FEC22f, première partie, 13/11/2026 : `outils/fec/`, `fecFictif.test.ts` ;
+  et rien ne le signale (FEC22Q7-Q1, le 03/11/2026) ; EXP58-Q2 (A) : IdClient le code de la fiche du client (C et cinq chiffres posés par la base, `codes_des_clients`, en production depuis le 25/11/2026 (253, par l'outil), `CODES_DES_CLIENTS_PREVUS` levé), sans fiche la règle d'hier → « EXP58-Q2 : UN CODE OPAQUE PAR FICHE CLIENT », « TROIS MIGRATIONS EN PRODUCTION (251 À 253) », « FEC22F : LE FEC FICTIF DE L'ÉPREUVE DU FICHIER » (FEC22f, première partie, 13/11/2026 : `outils/fec/`, `fecFictif.test.ts` ;
   FEC22F-Q1), « FEC22-Q7 : LE NOM DU CLIENT HORS DES LIBELLÉS D'UNE VENTE »,
   « UNE RÉPONSE DU CABINET : FEC22Q7-Q1 », « LE FEC D'UN BNC EN TRÉSORERIE : LES VINGT-DEUX CHAMPS, LA CONCEPTION », « HUIT RÉPONSES DU
   CABINET : C6-Q1, FEC22-Q1 À Q6 ET FEC22-E », « LES QUATRE CHAMPS DU FEC D'UN BNC EN TRÉSORERIE, EN MODULE (FEC22A) »,
@@ -1073,7 +1075,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `attribuer_numero_facture` ne sont exécutées par aucun rôle ; une lecture ne rend que ce que son essai vérifie. À
   revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `devis_numerotation`,
-  `connexions_bancaires`, `connexions_plateformes`, `originaux_liberes` : volontaire. `function_search_path_mutable` sur `retour_declencheur` : bénin (`immutable`,
+  `connexions_bancaires`, `connexions_plateformes`, `originaux_liberes`, `contacts_numerotation` : volontaire. `function_search_path_mutable` sur `retour_declencheur` : bénin (`immutable`,
   ne nomme aucun objet).
 
 ### Base de données et schéma
@@ -1373,7 +1375,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   deux gardes par ligne là où elles ne refusent rien (deux jumeaux sous WHEN, en production depuis le 12/11/2026 ; `jd.validation_exercice` ne se
   pose qu'après le verrou exclusif de la validation) → « LA VALIDATION D'UN GROS EXERCICE : LES GARDES ALLÉGÉES ».
   **Cinq chantiers préparés remplacent `valider_exercice`** (les gardes allégées, INV3, LIA5, AFF3, EXD3) : chacun part
-  du corps EN PRODUCTION le jour de son collage et reprend les filets des précédents, jamais d'une copie d'avant ; de
+  du corps EN PRODUCTION le jour de son collage et reprend les filets des précédents, jamais d'une copie d'avant (INV3, reprise
+  le 25/11/2026 sur celui de `codes_des_clients`, md5 65df5e35…, EXP58Q2-Q3 (A)) ; de
   même, une colonne de source neuve du brouillon (MCB5g, INV2, LIA2, demain AFF2) laisse intacte la contrainte « sans
   autre source » d'hier et pose, si l'autre colonne est déjà là, une contrainte par PAIRE au même nom des deux côtés
   (`ecritures_brouillon_inventaire_hors_des_stocks`…), sa garde de tête acceptant les colonnes neuves des autres.

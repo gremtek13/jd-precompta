@@ -1,5 +1,5 @@
 -- LE CODE OPAQUE D'UNE FICHE CLIENT, POSÉ PAR LA BASE (EXP58-Q2 ; la migration préparée `codes_des_clients`,
--- supabase/preparees/20261124170000_codes_des_clients.sql). Le récit : HISTORIQUE.md, « 24/11/2026 — EXP58-Q2 : UN CODE OPAQUE
+-- supabase/schema/20261125124544_codes_des_clients.sql). Le récit : HISTORIQUE.md, « 24/11/2026 — EXP58-Q2 : UN CODE OPAQUE
 -- PAR FICHE CLIENT (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer après toute migration qui touche `contacts`, ses déclencheurs ou ses
 -- contraintes, `poser_code_client`, `contacts_numerotation`, `enregistrer_contact`, `importer_contacts`, `effacer_contact`,
 -- `retirer_contact`, `reprendre_contact`, `acces_avant_les_gardes` ou `is_super_admin`. La validation qui admet le code (la

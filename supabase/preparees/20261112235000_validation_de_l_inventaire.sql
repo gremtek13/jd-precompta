@@ -1,5 +1,6 @@
 -- INV3 : LA VALIDATION CONNAÎT L'INVENTAIRE (ligne 35) — PRÉPARÉE le 12/11/2026, récrite le 22/11/2026 (la porte d'accès
--- posée en clair, § 5 bis), PAS APPLIQUÉE. PAR L'OUTIL
+-- posée en clair, § 5 bis), reprise le 25/11/2026 sur le corps de `valider_exercice` que `codes_des_clients` (EXP58-Q2, 253)
+-- a posé en production (EXP58Q2-Q3 (A)), PAS APPLIQUÉE. PAR L'OUTIL
 -- (`apply_migration`) : aucune instruction ne retire une table, une colonne, une contrainte, une fonction ni une ligne ; le
 -- mot du retrait n'y paraît que dans `on delete cascade`, l'évènement d'un déclencheur et `tg_op = 'DELETE'`, les formes que
 -- `categories_du_dossier` et `modele_de_plan_du_cabinet` ont passées par l'outil. Aucune barre oblique inverse, aucun retour
@@ -41,7 +42,9 @@
 --   2. Deux juges, privés, que la validation appelle : `inventaire_a_jour` (les lignes d'une régularisation sont celles
 --      qu'elle commande) et `inventaire_extourne_entiere` (l'extourne au 1er janvier est la constatation validée, en sens
 --      inverse).
---   3. `valider_exercice`, au caractère près celle de la production (`empreinte_des_exercices_forme_2`, md5 923cfa1b…),
+--   3. `valider_exercice`, au caractère près celle de la production (`codes_des_clients`, md5 65df5e35… ; jusqu'au
+--      25/11/2026, `empreinte_des_exercices_forme_2`, md5 923cfa1b…, dont celle-ci ne diffère que par les trois retouches
+--      de l'identification du client par le code de sa fiche),
 --      plus trois variables et un bloc, placé après TOUS les refus d'hier et avant le réglage de la validation : la
 --      numérotation des écritures d'inventaire (le journal OD, la pièce « Inventaire AAAA » du 31 décembre, une écriture par
 --      régularisation et par date : la sorte `inventaire` de src/lib/fec.ts), l'inventaire déclaré, les régularisations de
@@ -77,10 +80,10 @@
 -- confronte pas (INV3Q2-Q1 (A)). L'écran (INV5) non plus : aucun dossier n'est en engagement en production (12/11/2026), rien
 -- ne s'y déclare avant lui.
 --
--- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 22/11/2026 sur une réplique égale à la production, 249,
--- après INV2, les deux migrations posées en simulation dans l'export : les fichiers et la base égaux) : le socle ne change
--- pas (celui d'INV2, 84 instructions, `42878356…`) ; l'inventaire compte 27 objets de plus qu'après INV2 (3 472, puis
--- 3 499 : `3edc1aaa…`, puis `eebb2dd1…`).
+-- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 25/11/2026, côté base, sur une copie de la réplique portée
+-- à la production du jour, 253, après INV2 ; le 22/11/2026, à 249, les fichiers et la base égaux en simulation) : le socle
+-- ne change pas (celui d'INV2, 85 instructions, `fb91c2a6…`) ; l'inventaire compte 27 objets de plus qu'après INV2 (3 566,
+-- puis 3 593 : `86c20446…`, puis `9dc39b2f…`) ; son retour rend ceux d'INV2 et `valider_exercice` au corps 65df5e35….
 
 do $garde$
 declare
@@ -120,7 +123,7 @@ begin
   -- `valider_exercice` collé avant elle (la liasse, l'affectation, les exercices décalés) change ce corps, et elle se refuse
   -- au lieu de l'écraser ; elle se reprend alors sur le corps du jour (src/lib/remplacementsDesPreparees.test.ts).
   for v_f in select x.f from (values
-      ('valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '923cfa1b57037146070ca1430f163495'),
+      ('valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '65df5e35dc5d0d82534a9e22eaaa8429'),
       ('empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)',
        'a62b0761a132e53c218bdc5b3820299e'),
       ('verifier_exercice_valide(uuid, integer)', '1478bda759c33e3912da7e0089ca9994'),
@@ -718,7 +721,10 @@ begin
   --   - LA GARDE DU SECRET (BOI-BNC-DECLA-10-20, § 280 ; CGI, art. 99 ; FEC22-Q4, (D)) : un client ne s'identifie que
   --     par le numéro d'une facture ou d'un avoir VALIDÉ du dossier, ou par le SIREN que porte son client figé — les
   --     neuf premiers chiffres de son `tiers_siret` quand il n'est fait que de neuf ou de quatorze chiffres et passe
-  --     ses clés, comme `identificationDuClient` le lit. Aucun chemin n'y fait entrer un nom.
+  --     ses clés, comme `identificationDuClient` le lit. Aucun chemin n'y fait entrer un nom. Depuis EXP58-Q2
+  --     (`codes_des_clients`), aussi par le code de la fiche d'où vient le client d'un tel document
+  --     (`factures_emises.contact_id`, figé avec lui), cette fiche du dossier : un code que la base a posé à sa
+  --     création, qui ne change plus et ne dit rien du client.
   -- « Sans règlement » est un mode de la liste : la base ne choisit pas entre lui et des champs vides (FEC22-Q1, (C) ;
   -- FEC22-E2). src/lib/champsBncFiges.ts redit ces refus, dans cet ordre.
   with l as (
@@ -783,8 +789,9 @@ begin
       ('Frais divers de gestion', '6'), ('Divers', '6'), ('Frais financiers', '6'), ('Pertes diverses', '6'),
       ('Amortissements', '6'), ('Dotation aux amortissements', '6')
   ), documents as (
-    -- Les factures et les avoirs validés du dossier : leur numéro, et le SIRET ou le SIREN que leur client figé porte.
-    select f.numero, f.tiers_siret as siret from public.factures_emises f
+    -- Les factures et les avoirs validés du dossier : leur numéro, le SIRET ou le SIREN que leur client figé porte, et la
+    -- fiche d'où vient ce client (EXP58-Q2).
+    select f.numero, f.tiers_siret as siret, f.contact_id from public.factures_emises f
      where f.dossier_id = p_dossier_id and f.statut = 'validee' and coalesce(f.numero, '') <> ''
   ), cles as (
     -- La clé de Luhn de l'INSEE, en entiers : en partant de la droite, un chiffre sur deux doublé (moins neuf au-delà
@@ -806,10 +813,13 @@ begin
       from documents d
      where d.siret ~ '^[0-9]{9}$' or d.siret ~ '^[0-9]{14}$'
   ), admis(valeur) as (
-    -- Ce qui identifie un client : le numéro d'un document validé, ou le SIREN juste de son client figé.
+    -- Ce qui identifie un client : le numéro d'un document validé, le SIREN juste de son client figé, ou le code de la
+    -- fiche d'où vient ce client, une fiche du dossier (EXP58-Q2).
     select numero from documents
     union
     select siren from cles where siren_juste and siret_juste
+    union
+    select c.code_client from documents d join public.contacts c on c.id = d.contact_id and c.dossier_id = p_dossier_id
   )
   select case
       when exists (select 1 from l where date_reglement is not null
@@ -1385,7 +1395,7 @@ declare
   v record;
 begin
   for v in select * from (values
-      ('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', '6ead429ff05ee505cd963ae6ab479abf', true),
+      ('public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb)', 'efaf74ed43c701f148a553febac6df8f', true),
       ('public.declarer_inventaire(uuid, integer)', '4c4b03b22feeb1eb2e49532c8adc3761', true),
       ('public.retirer_declaration_inventaire(uuid)', '3ea40ecdcc812f8a87695ce8b11f164c', true),
       ('public.inventaire_a_jour(uuid)', 'c38104a194f1f0ef1f71598a2ae4ee4e', false),

@@ -438,8 +438,8 @@ const VUES = [
       suffixe: 'choix',
       pas: async (page) => {
         const section = await saisieLibreOuverte(page)
-        await section.getByRole('button', { name: 'Choisir une pièce validée', exact: true }).click()
-        await section.getByRole('list', { name: 'Choisir une pièce validée' }).evaluate((e) => e.scrollIntoView({ block: 'center' }))
+        await section.getByRole('button', { name: 'Choisir une pièce du dossier', exact: true }).click()
+        await section.getByRole('list', { name: 'Choisir une pièce du dossier' }).evaluate((e) => e.scrollIntoView({ block: 'center' }))
       },
     },
     { suffixe: 'saisie', pas: async (page) => { await (await saisieLibreRemplie(page)).getByText(/^Pièce justificative/).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
