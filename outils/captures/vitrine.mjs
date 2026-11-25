@@ -12,7 +12,10 @@
 // chargée » le prouve à chaque vue. Les polices passaient avant par curl, venant de Google.
 import { chromium } from 'playwright-core'
 import { existsSync, mkdirSync, readdirSync } from 'node:fs'
-import { SECTION_LIBRE, ecritureLibrePassee, ecritureLibreRetiree, saisieLibreOuverte, saisieLibreRemplie } from './ecrituresLibres.mjs'
+import {
+  SECTION_LIBRE, contrePassationFaite, contrePassationOuverte, ecritureLibrePassee, ecritureLibreRetiree, ecrituresFigeesOuvertes, exportOuvert,
+  reglagesEnregistres, saisieLibreOuverte, saisieLibreRemplie,
+} from './ecrituresLibres.mjs'
 
 const BASE = 'http://127.0.0.1:5199/'
 const SORTIE = new URL('./sorties/', import.meta.url).pathname
@@ -451,6 +454,56 @@ const VUES = [
     { nom: `pc-ecritures-libres-${suffixe}-sombre`, chemin: '#/dossiers/d1/ecritures', l: 1280, h: 800, theme: 'dark', reduite: false, pas },
     { nom: `pc-ecritures-libres-${suffixe}-1024`, chemin: '#/dossiers/d1/ecritures', l: 1024, h: 768, theme: 'light', reduite: false, pas },
     { nom: `mobile-ecritures-libres-${suffixe}`, chemin: '#/dossiers/d1/ecritures', l: 390, h: 844, theme: 'light', reduite: false, pas },
+  ]),
+  // LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE FIGÉE (EL7), sur l'exercice 2025 validé de la kinésithérapeute (d9 ; voir
+  // ecrituresLibres.mjs) : la liste et le refus de l'extournée dit avant le clic ; le formulaire, une date de l'exercice validé
+  // refusée ; la contre-passation faite, sa mention ; l'écriture neuve de 2026 qui la cite. LES RÉGLAGES DE L'EXPORT VERS UN
+  // LOGICIEL (EXP-Q4), sur le cabinet infirmier : « Lecture… », tout « à saisir » et l'export refusé, les réglages enregistrés puis
+  // l'export rouvert prérempli, la lecture refusée. LE CODE CLIENT (EXP58-Q2), sur l'atelier : la liste des clients du cabinet, puis
+  // celle du client « Ventes ».
+  ...[
+    { suffixe: 'figees', chemin: '#/dossiers/d9/ecritures', pas: async (page) => { await (await ecrituresFigeesOuvertes(page)).getByText(/^Une écriture extournée au 1er janvier/).evaluate((e) => e.scrollIntoView({ block: 'center' })) } },
+    {
+      suffixe: 'contre-passer', chemin: '#/dossiers/d9/ecritures',
+      pas: async (page) => { await (await contrePassationOuverte(page, { date: '2025-12-31', motif: 'Comptée deux fois' })).evaluate((e) => e.scrollIntoView({ block: 'start' })) },
+    },
+    { suffixe: 'contre-passee', chemin: '#/dossiers/d9/ecritures', pas: async (page) => { await (await contrePassationFaite(page)).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
+    {
+      suffixe: 'contre-passation-2026', chemin: '#/dossiers/d9/ecritures',
+      pas: async (page) => { await contrePassationFaite(page); await (await ecrituresFigeesOuvertes(page, '2026')).evaluate((e) => e.scrollIntoView({ block: 'start' })) },
+    },
+    { suffixe: 'export-lecture', chemin: '#/dossiers/d1/ecritures', pas: async (page) => { await (await exportOuvert(page, 'lente')).evaluate((e) => e.scrollIntoView({ block: 'center' })) } },
+    { suffixe: 'export-a-saisir', chemin: '#/dossiers/d1/ecritures', pas: async (page) => { await (await exportOuvert(page)).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
+    {
+      suffixe: 'export-a-saisir-refus', chemin: '#/dossiers/d1/ecritures',
+      pas: async (page) => { await (await exportOuvert(page)).getByText('Rien ne peut partir :', { exact: true }).evaluate((e) => e.scrollIntoView({ block: 'center' })) },
+    },
+    {
+      suffixe: 'export-prerempli', chemin: '#/dossiers/d1/ecritures',
+      pas: async (page) => { await reglagesEnregistres(page); await (await exportOuvert(page)).evaluate((e) => e.scrollIntoView({ block: 'start' })) },
+    },
+    { suffixe: 'export-illisibles', chemin: '#/dossiers/d1/ecritures', pas: async (page) => { await (await exportOuvert(page, 'refusee')).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
+    {
+      suffixe: 'clients-codes', chemin: '#/dossiers/d7/factures',
+      pas: async (page) => {
+        await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+        await page.getByText(/^Code client C\d{5}$/).first().waitFor({ timeout: 10000 })
+        await page.getByText(/^Chaque client reçoit à sa création un code/).evaluate((e) => e.scrollIntoView({ block: 'start' }))
+      },
+    },
+    {
+      suffixe: 'client-clients-codes', chemin: '#/mes-ventes', client: true, ventes: 'sans-banque',
+      pas: async (page) => {
+        await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+        await page.getByText(/^Code client C\d{5}$/).first().waitFor({ timeout: 10000 })
+        await page.getByText(/^Chacun de tes clients reçoit à sa création un code/).evaluate((e) => e.scrollIntoView({ block: 'start' }))
+      },
+    },
+  ].flatMap(({ suffixe, chemin, pas, client = false, ventes = null }) => [
+    { nom: `pc-${suffixe}`, chemin, l: 1440, h: 900, theme: 'light', reduite: false, pas, client, ventes },
+    { nom: `pc-${suffixe}-sombre`, chemin, l: 1280, h: 800, theme: 'dark', reduite: false, pas, client, ventes },
+    { nom: `pc-${suffixe}-1024`, chemin, l: 1024, h: 768, theme: 'light', reduite: false, pas, client, ventes },
+    { nom: `mobile-${suffixe}`, chemin, l: 390, h: 844, theme: 'light', reduite: false, pas, client, ventes },
   ]),
 ].filter((v) => v.nom.includes(filtre))
 

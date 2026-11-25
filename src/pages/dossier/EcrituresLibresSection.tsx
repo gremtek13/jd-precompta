@@ -266,22 +266,26 @@ export default function EcrituresLibresSection({
                         </td>
                         <td data-libelle="Version">{e.version}, le {instantAParis(instantDeLaVersion(e))}, par {auteurDeLaVersion(e, lue.auteurs)}</td>
                         <td>
-                          <div className="actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {!figee && !contrePasse && (
-                              <button type="button" className="btn btn-outline btn-sm" disabled={geler || contrePassation !== null}
-                                onClick={() => { setMessage(null); setFormulaire(formulaireDeLEcriture(e)) }}>Modifier</button>
-                            )}
-                            {!figee && <button type="button" className="btn btn-danger btn-sm" disabled={geler} onClick={() => retirer(e.id)}>Retirer</button>}
-                            {figee && retenue.length === 0 && frontiere !== null && (
-                              <button type="button" className="btn btn-outline btn-sm" disabled={geler || formulaire !== null || contexte === null}
-                                onClick={() => { setMessage(null); setContrePassation({ id: e.id, saisie: saisieProposeeDeLaContrePassation(e, frontiere) }) }}>
-                                Contre-passer
-                              </button>
-                            )}
+                          {/* Un seul bloc, comme la cellule des lignes : repliée en fiche (téléphone), la cellule est une rangée, et
+                              « Figée par la validation » se serrait à côté du refus, deux mots par ligne (vu au banc, 25/11/2026). */}
+                          <div>
+                            <div className="actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {!figee && !contrePasse && (
+                                <button type="button" className="btn btn-outline btn-sm" disabled={geler || contrePassation !== null}
+                                  onClick={() => { setMessage(null); setFormulaire(formulaireDeLEcriture(e)) }}>Modifier</button>
+                              )}
+                              {!figee && <button type="button" className="btn btn-danger btn-sm" disabled={geler} onClick={() => retirer(e.id)}>Retirer</button>}
+                              {figee && retenue.length === 0 && frontiere !== null && (
+                                <button type="button" className="btn btn-outline btn-sm" disabled={geler || formulaire !== null || contexte === null}
+                                  onClick={() => { setMessage(null); setContrePassation({ id: e.id, saisie: saisieProposeeDeLaContrePassation(e, frontiere) }) }}>
+                                  Contre-passer
+                                </button>
+                              )}
+                            </div>
+                            {figee && <p className="muted" style={{ margin: '4px 0 0' }}>Figée par la validation de {e.exercice}.</p>}
+                            {/* Ce que l'état de l'écriture retient, dit avant le clic ; « déjà contre-passée », la mention le dit. */}
+                            {retenue.filter((r) => r.cle !== 'dejaContrePassee').map((r) => <p key={r.cle} className="muted" style={{ margin: '4px 0 0' }}>{r.message}</p>)}
                           </div>
-                          {figee && <p className="muted" style={{ margin: '4px 0 0' }}>Figée par la validation de {e.exercice}.</p>}
-                          {/* Ce que l'état de l'écriture retient, dit avant le clic ; « déjà contre-passée », la mention le dit. */}
-                          {retenue.filter((r) => r.cle !== 'dejaContrePassee').map((r) => <p key={r.cle} className="muted" style={{ margin: '4px 0 0' }}>{r.message}</p>)}
                         </td>
                       </tr>
                     )

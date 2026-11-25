@@ -63,7 +63,10 @@
 // Une ligne de plus dit le compte avant le total.
 import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
-import { SECTION_LIBRE, ecritureLibrePassee, ecritureLibreRetiree, ecrituresLibresSemees, ensembleDeLExerciceClos, panneauFerme, saisieLibreRemplie } from './ecrituresLibres.mjs'
+import {
+  SECTION_LIBRE, contrePassationFaite, contrePassationOuverte, ecritureLibrePassee, ecritureLibreRetiree, ecrituresFigeesOuvertes, ecrituresLibresSemees,
+  ensembleDeLExerciceClos, exportOuvert, panneauFerme, reglagesEnregistres, saisieLibreRemplie,
+} from './ecrituresLibres.mjs'
 
 // LA CAISSE (ligne 26.6, étape C4) : `CAISSE=1` joue l'onglet Caisse et la fiche de son versement d'espèces, le drapeau
 // `CAISSE_EXPORTEE` (src/lib/caisse.ts) levé dans la copie de travail le temps du banc — jamais commité. Baissé, l'adresse
@@ -172,6 +175,67 @@ const VISITES_DES_ECRITURES_LIBRES = [
   {
     dossier: 'd8', onglet: 'revision', nom: 'ecritures-libres/revision-ensemble',
     apres: async (page) => { await ensembleDeLExerciceClos(page) },
+  },
+  // EL7 : la contre-passation d'une écriture libre figée, sur l'exercice 2025 validé de la kinésithérapeute (d9, le levier
+  // `banc-ecritures-figees` ; voir ecrituresLibres.mjs) — la liste, « Contre-passer » sur l'une et le refus de l'extournée dit avant le
+  // clic ; le formulaire, le motif manquant refusé ; une date dans l'exercice validé refusée ; la contre-passation faite, sa mention
+  // sous l'écriture d'origine ; puis l'écriture neuve de 2026 qui la cite, et son « Retirer ».
+  {
+    dossier: 'd9', onglet: 'ecritures', nom: 'ecritures-libres/figees',
+    apres: async (page) => { await (await ecrituresFigeesOuvertes(page)).getByText(/^Une écriture extournée au 1er janvier suivant ne se contre-passe pas/).scrollIntoViewIfNeeded() },
+  },
+  {
+    dossier: 'd9', onglet: 'ecritures', nom: 'ecritures-libres/contre-passer',
+    apres: async (page) => { await (await contrePassationOuverte(page)).getByText(/^Le motif de l’écriture tient/).scrollIntoViewIfNeeded() },
+  },
+  {
+    dossier: 'd9', onglet: 'ecritures', nom: 'ecritures-libres/contre-passer-date-figee',
+    apres: async (page) => {
+      const formulaire = await contrePassationOuverte(page, { date: '2025-12-31', motif: 'Comptée deux fois' })
+      await formulaire.getByText(/^Cette date est dans un exercice validé/).scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'ecritures', nom: 'ecritures-libres/contre-passee',
+    apres: async (page) => { await (await contrePassationFaite(page)).getByText(/^Contre-passée par EL2026-0001/).scrollIntoViewIfNeeded() },
+  },
+  {
+    dossier: 'd9', onglet: 'ecritures', nom: 'ecritures-libres/contre-passation-2026',
+    apres: async (page) => {
+      await contrePassationFaite(page)
+      await (await ecrituresFigeesOuvertes(page, '2026')).getByText(/^Contre-passe EL2025-0001/).scrollIntoViewIfNeeded()
+    },
+  },
+]
+
+// LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP-Q4 (A)), à côté du FEC de l'onglet Écritures du cabinet infirmier (d1 ;
+// voir ecrituresLibres.mjs) : la lecture lente (« Lecture… »), tout « à saisir » et l'export refusé qui nomme ce qui manque, les
+// réglages enregistrés, l'export rouvert prérempli, puis la lecture refusée, qui ne préremplit ni n'enregistre rien. Dans cet ordre :
+// la table du faux garde d'une visite à l'autre ce qui a été enregistré.
+const VISITES_DE_L_EXPORT = [
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'export-logiciel/lecture',
+    apres: async (page) => { await (await exportOuvert(page, 'lente')).getByText(/^Lecture des réglages/).scrollIntoViewIfNeeded() },
+  },
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'export-logiciel/a-saisir',
+    apres: async (page) => { await (await exportOuvert(page)).getByText('Rien ne peut partir :', { exact: true }).scrollIntoViewIfNeeded() },
+  },
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'export-logiciel/enregistre',
+    apres: async (page) => { await (await reglagesEnregistres(page)).getByText(/^Réglages enregistrés/).scrollIntoViewIfNeeded() },
+  },
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'export-logiciel/prerempli',
+    apres: async (page) => { await (await exportOuvert(page)).getByText(/^Les réglages gardés pour ce dossier/).scrollIntoViewIfNeeded() },
+  },
+  {
+    dossier: 'd1', onglet: 'ecritures', nom: 'export-logiciel/illisibles',
+    apres: async (page) => {
+      await (await exportOuvert(page, 'refusee')).getByText(/n’ont pas pu être lus/).scrollIntoViewIfNeeded()
+      // Le levier retiré : il ne joue que sur cette lecture, et la mesure suit.
+      await page.evaluate(() => localStorage.removeItem('banc-reglages-export'))
+    },
   },
 ]
 
@@ -1271,6 +1335,18 @@ const VISITES = [
       await page.getByText(/^« Exporter la fiche » télécharge/).scrollIntoViewIfNeeded()
     },
   },
+  // LE CODE CLIENT (EXP58-Q2, `CODES_DES_CLIENTS_PREVUS` levé le 25/11/2026), sur l'atelier (d7) : la phrase du code au-dessus de la
+  // liste, et « Code client C0000… » sous le nom de chaque fiche — dont le particulier au nom très long et l'établi hors de France.
+  {
+    dossier: 'd7', onglet: 'factures', nom: 'factures/clients-codes',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('table', { name: 'Clients' }).waitFor({ timeout: 10000 })
+      await page.getByText(/^Code client C\d{5}$/).first().waitFor({ timeout: 10000 })
+      await page.getByText(/^Chaque client reçoit à sa création un code/).scrollIntoViewIfNeeded()
+    },
+  },
   // « PARAMÈTRES » (espace client, étape A5b1) : les paramètres de facturation de l'atelier (d7) dans la cinquième vue de l'onglet
   // Factures — le sélecteur à cinq boutons, qui passe à la ligne ; la courante, dont le RIB n'est que PROPOSÉ par son titulaire
   // (« par le client »), le RIB confirmé d'avant en vigueur, l'historique ; puis le formulaire « Modifier les paramètres », et la
@@ -1680,6 +1756,7 @@ const VISITES = [
     },
   },
   ...VISITES_DES_ECRITURES_LIBRES,
+  ...VISITES_DE_L_EXPORT,
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -2121,6 +2198,17 @@ const VISITES_CLIENT = [
       await page.locator('tr', { hasText: 'Commune de Démoville' }).getByRole('button', { name: 'Exporter la fiche', exact: true }).click()
       await page.getByText(/^Fiche de « Commune de Démoville[^»]*» exportée : fiche-client-commune-de-demoville-[a-z0-9-]+-\d{4}-\d{2}-\d{2}\.csv\./).waitFor({ timeout: 10000 })
       await page.getByText(/^« Exporter la fiche » télécharge/).scrollIntoViewIfNeeded()
+    },
+  },
+  // Le code client (EXP58-Q2), aux mots du client : la phrase tutoyée, et le code sous le nom de chaque fiche.
+  {
+    chemin: '#/mes-ventes', nom: 'client/clients-codes',
+    apres: async (page) => {
+      await fermerLesFenetres(page)
+      await page.getByRole('tab', { name: 'Clients', exact: true }).click()
+      await page.getByRole('table', { name: 'Clients' }).waitFor({ timeout: 10000 })
+      await page.getByText(/^Code client C\d{5}$/).first().waitFor({ timeout: 10000 })
+      await page.getByText(/^Chacun de tes clients reçoit à sa création un code/).scrollIntoViewIfNeeded()
     },
   },
   // « Paramètres » (étape A5b1), aux mots du client : son RIB proposé « en attente de la confirmation de ton cabinet », sans
@@ -2627,13 +2715,21 @@ for (const { dossier, onglet, chemin, nom, apres, fenetre, nav, sansAssistant } 
       if (fixes.some((f) => f.contains(e))) continue
       // La carte ou la case de grille qui le porte : le premier ancêtre qui en est une.
       const carte = e.parentElement?.closest('.card, .kpi, .widget, .cockpit, .bento > *')
-      const bord = carte ? carte.getBoundingClientRect().right : null
+      const cadreCarte = carte ? carte.getBoundingClientRect() : null
+      const bord = cadreCarte ? cadreCarte.right : null
       const horsPanneau = r.right > main.right - 1
       const horsCarte = bord !== null && r.right > bord + 1
-      if (!horsPanneau && !horsCarte) continue
+      // ET PAR LA GAUCHE (25/11/2026) : dans une rangée calée à droite (`justify-content: flex-end`), un élément plus large que la
+      // rangée déborde par la GAUCHE — la carte de l'export vers un logiciel, sur téléphone, sortait de 27 px de l'écran sans
+      // qu'aucune des règles ci-dessus, qui ne regardaient que le bord droit, ne la voie.
+      const aGauchePanneau = r.left < main.left - 1
+      const aGaucheCarte = cadreCarte !== null && r.left < cadreCarte.left - 1
+      if (!horsPanneau && !horsCarte && !aGauchePanneau && !aGaucheCarte) continue
       if (trouvees.some((t) => t.el.contains(e))) continue
-      const ecart = Math.round(horsPanneau ? r.right - main.right : r.right - bord)
-      trouvees.push({ el: e, texte: `${ecart} px ${horsPanneau ? 'hors du panneau' : 'hors de sa carte'} — <${e.tagName.toLowerCase()}> ${extrait(e)}` })
+      const ecart = Math.round(horsPanneau ? r.right - main.right : horsCarte ? r.right - bord
+        : aGauchePanneau ? main.left - r.left : cadreCarte.left - r.left)
+      const ou = horsPanneau ? 'hors du panneau' : horsCarte ? 'hors de sa carte' : aGauchePanneau ? 'hors du panneau, à gauche' : 'hors de sa carte, à gauche'
+      trouvees.push({ el: e, texte: `${ecart} px ${ou} — <${e.tagName.toLowerCase()}> ${extrait(e)}` })
     }
     // Un texte plus large que sa boîte : la boîte tient dans sa carte, le mot trop long en sort. Seul l'élément qui
     // porte le texte compte — ses ancêtres débordent avec lui.

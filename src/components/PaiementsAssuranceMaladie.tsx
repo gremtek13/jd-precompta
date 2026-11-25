@@ -233,7 +233,7 @@ function ListeDesImports({ espace, imports, paiements, enCours, associes, aRetir
   return (
     <>
       <h4 style={{ marginBottom: 6 }}>Les imports</h4>
-      <div className="tableau-adaptable">
+      <div className="table-scroll tableau-adaptable">
         <table className="table-empilable-etroite" aria-label="Imports des paiements de l’assurance maladie">
           <thead><tr><th>Importé le</th><th>Journées</th><th>Paiements</th><th>Total</th><th>Rejets</th><th></th></tr></thead>
           <tbody>
@@ -283,7 +283,7 @@ function TableauDesPaiements({ paiements, libelle }: {
   libelle: string
 }) {
   return (
-    <div className="tableau-adaptable">
+    <div className="table-scroll tableau-adaptable">
       <table className="table-empilable-etroite" aria-label={libelle}>
         <thead>
           <tr><th>Journée comptable</th><th>Organisme</th><th>Part</th><th>Net payé</th><th>Régularisations</th><th>Factures</th></tr>
@@ -445,7 +445,7 @@ function FenetreDImport({ espace, enBase, occupe, erreur, onImporter, onClose }:
                   {`${tableau.lignes.length} ligne${tableau.lignes.length > 1 ? 's' : ''}${enTete ? ', l’en-tête ôté' : ''}. `
                     + 'Chaque colonne se montre par son nom et son genre, jamais par ses valeurs.'}
                 </p>
-                <div className="tableau-adaptable">
+                <div className="table-scroll tableau-adaptable">
                   <table className="table-empilable-etroite" aria-label="Colonnes du fichier">
                     <thead><tr><th>Colonne</th><th>Genre</th></tr></thead>
                     <tbody>
