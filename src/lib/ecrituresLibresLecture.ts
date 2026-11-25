@@ -6,6 +6,7 @@ import { messageErreur } from './messageErreur'
 import { equipeNommable, type MembreLu } from './ouverturesAttestees'
 import { supabase } from './supabase'
 import type { EcritureLibreDeLEtat } from './ecrituresLibresDesExports'
+import type { CitationDUneEcritureLibre, CitationsDesEcrituresLibres } from './pieceCiteeParUneEcritureLibre'
 
 // LES ÉCRITURES LIBRES D'UN DOSSIER, LUES POUR LES ÉCRANS DU CABINET (EL5 ; conception 54, § 4 ; modèle : lib/caisseLecture.ts).
 // La policy `ecritures_libres_lecture` (`admin_du_dossier`) ouvre au chef, au membre assigné et au super-administrateur toutes
@@ -59,6 +60,43 @@ export async function lireLesEcrituresLibresSelon(
     }
   } catch (e) {
     return { dossierId, etat: 'lues', ecritures, auteurs: new Map(), motifDesAuteurs: `l’équipe : ${messageErreur(e, 'la lecture a échoué')}` }
+  }
+}
+
+// LES PIÈCES QUE LES ÉCRITURES LIBRES CITENT (ELQ8Q1-Q1 (A), 25/11/2026), lues pour que Justificatifs et la fiche d'une pièce disent
+// AVANT le clic qu'une pièce citée ne se supprime pas (lib/pieceCiteeParUneEcritureLibre.ts). Une lecture À PART, plus courte que
+// celle des écrans de l'onglet Écritures : la référence et la pièce citée seulement — ni libellé, ni motif, ni lignes, ni auteurs,
+// que la règle n'a pas à connaître. Toutes les écritures du dossier qui citent une pièce, quel que soit leur exercice (une écriture
+// d'un exercice validé la garde aussi). Par `lireTout`, tri total terminé par la clé primaire ; elle ne rejette jamais : lue en
+// partie, refusée, levée ou d'une autre forme, `illisibles` avec son motif — et alors aucune pièce n'est dite citée.
+
+/** Les pièces citées par les écritures libres d'un dossier ; ne rejette jamais. */
+export function lireLesCitationsDesEcrituresLibres(dossierId: string): Promise<CitationsDesEcrituresLibres> {
+  return lireLesCitationsDesEcrituresLibresSelon(dossierId, ECRITURES_LIBRES_PREVUES)
+}
+
+/** La même lecture, selon que la table est en base : les deux états du drapeau, que les tests jouent. */
+export async function lireLesCitationsDesEcrituresLibresSelon(dossierId: string, prevues: boolean): Promise<CitationsDesEcrituresLibres> {
+  if (!prevues) return { dossierId, etat: 'absentes' }
+  try {
+    const lecture = await lireTout<Record<string, unknown>>((debut, fin) =>
+      supabase.from('ecritures_libres').select('id, dossier_id, exercice, numero, piece_citee_id', { count: 'exact' })
+        .eq('dossier_id', dossierId).not('piece_citee_id', 'is', null)
+        .order('exercice').order('numero').order('id').range(debut, fin),
+    )
+    if (!lecture.complete) return { dossierId, etat: 'illisibles', motif: lecture.motif ?? 'lecture incomplète' }
+    const citations: CitationDUneEcritureLibre[] = []
+    for (const l of lecture.lignes) {
+      const { id, dossier_id: dossier, exercice, numero, piece_citee_id: piece } = l
+      if (typeof id !== 'string' || id === '' || dossier !== dossierId || !Number.isInteger(exercice) || !Number.isInteger(numero)
+        || (numero as number) < 1 || typeof piece !== 'string' || piece === '') {
+        return { dossierId, etat: 'illisibles', motif: 'une écriture n’a pas la forme que la base écrit' }
+      }
+      citations.push({ exercice: exercice as number, numero: numero as number, piece_citee_id: piece })
+    }
+    return { dossierId, etat: 'lues', citations }
+  } catch (e) {
+    return { dossierId, etat: 'illisibles', motif: messageErreur(e, 'la lecture a échoué') }
   }
 }
 

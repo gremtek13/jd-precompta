@@ -3,6 +3,7 @@ import { lireTout } from './lectureComplete'
 import { refusDuRetraitDUneSourceCitee, refusDuRetraitParLeDossierPermanent } from './dossierPermanent'
 import { lireLeDossierPermanent } from './dossierPermanentLecture'
 import { refusDuRetraitDUneSource } from './revision'
+import { refusDeSuppressionParLesEcrituresLibres, type CitationsDesEcrituresLibres } from './pieceCiteeParUneEcritureLibre'
 import type { EntreeDossierPermanent, RevisionJustification, RevisionPreuve } from './types'
 
 // CE QUE LA RÉVISION CITE, lu pour que les écrans qui retirent une pièce ou un document le disent AVANT le clic (ligne 41,
@@ -62,8 +63,9 @@ export function refusDeSuppression(
   return refusDuRetraitDUneSourceCitee(source, 'suppression', citations, citations.entrees)
 }
 
-/** Qui cite une source : la révision d'un solde (qui se dit d'abord, comme la base) ou le dossier permanent. */
-export type QuiCite = 'revision' | 'dossier-permanent'
+/** Qui cite une source : la révision d'un solde (qui se dit d'abord, comme la base), le dossier permanent, ou — pour une pièce —
+ *  une écriture libre (ELQ8Q1-Q1 (A), lib/pieceCiteeParUneEcritureLibre.ts). */
+export type QuiCite = 'revision' | 'dossier-permanent' | 'ecriture-libre'
 
 export function quiCite(
   source: { pieceId: string } | { documentId: string },
@@ -74,13 +76,38 @@ export function quiCite(
   return refusDuRetraitParLeDossierPermanent(source, 'suppression', citations.entrees) !== null ? 'dossier-permanent' : null
 }
 
+// UNE PIÈCE, CITÉE AUSSI PAR UNE ÉCRITURE LIBRE (ELQ8Q1-Q1 (A), 25/11/2026) : la clé `ecritures_libres_piece_citee_id_fkey` refuse sa
+// suppression comme `garder_source_citee` celle d'une source de la révision. La même règle, dans le même ordre : la révision et le
+// dossier permanent d'abord, sous les mots de la base, puis les écritures libres sous leur référence. Un document n'est jamais
+// cité par une écriture libre : ces deux fonctions ne valent que pour une pièce.
+
+/** Le refus de la suppression de cette pièce : la révision, le dossier permanent, puis les écritures libres ; nul sinon. */
+export function refusDeSuppressionDUnePiece(
+  pieceId: string, citations: LectureDesCitations | null, libres: CitationsDesEcrituresLibres | null,
+): string | null {
+  return refusDeSuppression({ pieceId }, citations) ?? refusDeSuppressionParLesEcrituresLibres(pieceId, libres)
+}
+
+/** Qui cite cette pièce, dans le même ordre. */
+export function quiCiteLaPiece(
+  pieceId: string, citations: LectureDesCitations | null, libres: CitationsDesEcrituresLibres | null,
+): QuiCite | null {
+  return quiCite({ pieceId }, citations)
+    ?? (refusDeSuppressionParLesEcrituresLibres(pieceId, libres) !== null ? 'ecriture-libre' : null)
+}
+
 /**
  * Ce qui cite, dit pour une liste de sources écartées : « la révision des soldes » (les mots d'hier) tant que toutes sont
- * citées par elle, « le dossier permanent » quand toutes le sont par lui, les deux sinon.
+ * citées par elle, « le dossier permanent » quand toutes le sont par lui, « une écriture libre » (« des écritures libres » dès
+ * deux pièces), et leur énumération sinon.
  */
 export function citantDe(sortes: readonly (QuiCite | null)[]): string {
-  const revision = sortes.includes('revision')
-  const permanent = sortes.includes('dossier-permanent')
-  return revision && permanent ? 'la révision des soldes et le dossier permanent'
-    : permanent ? 'le dossier permanent' : 'la révision des soldes'
+  const libres = sortes.filter((s) => s === 'ecriture-libre').length
+  const noms = [
+    sortes.includes('revision') ? 'la révision des soldes' : null,
+    sortes.includes('dossier-permanent') ? 'le dossier permanent' : null,
+    libres === 0 ? null : libres === 1 ? 'une écriture libre' : 'des écritures libres',
+  ].filter((n): n is string => n !== null)
+  if (noms.length === 0) return 'la révision des soldes'
+  return noms.length === 1 ? noms[0] : `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}`
 }

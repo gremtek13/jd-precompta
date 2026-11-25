@@ -42,7 +42,11 @@ import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type Marque
 import { lireVentesEmises, sourcesDuPont, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
 import { lireLesFacturesProposees, type FactureProposee } from '../../lib/exemplairesDesFacturesLecture'
 import { lireLesVentesFacturees } from '../../lib/ventesFactureesLecture'
-import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
+import { citantDe, lireCitationsDeLaRevision, quiCiteLaPiece, refusDeSuppressionDUnePiece, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
+import { lireLesCitationsDesEcrituresLibres } from '../../lib/ecrituresLibresLecture'
+import {
+  motifDesCitationsDesEcrituresLibres, refusDeSuppressionParUneEcritureLibre, type CitationsDesEcrituresLibres,
+} from '../../lib/pieceCiteeParUneEcritureLibre'
 import { lireFichesHorsDeFrance } from '../../lib/piecesHorsDeFranceLecture'
 import { lireEcarts } from '../../lib/regimesEreportingLecture'
 import { lireDeclarationsEreporting, type LectureDesDeclarations } from '../../lib/declarationsEreportingLecture'
@@ -207,6 +211,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   // se supprime plus, sauf avec son dossier (`garder_source_citee`, hypothèse Q8). Lue pour que la fiche et la
   // suppression de la sélection le disent AVANT le clic, sous les mots de la base. Nulle avant sa première lecture.
   const [citations, setCitations] = useState<LectureDesCitations | null>(null)
+  // ET CE QUE LES ÉCRITURES LIBRES CITENT (ELQ8Q1-Q1 (A), lib/pieceCiteeParUneEcritureLibre.ts) : la clé des écritures libres refuse
+  // la suppression d'une pièce citée, « à valider » comprise (ELQ8-Q1 (B)). La même règle, dite avant le clic sous la référence de
+  // l'écriture ; lue en partie, rien n'est dit cité, et un bandeau le dit. Nulle avant sa première lecture.
+  const [citationsLibres, setCitationsLibres] = useState<CitationsDesEcrituresLibres | null>(null)
   // LES FICHES « FOURNISSEUR ÉTABLI HORS DE FRANCE » DU DOSSIER (ligne 28.5, e-reporting, étape e3), toutes versions
   // comprises : la fiche d'une pièce les montre et les écrit, et la suppression d'une pièce emporte la sienne (clé en
   // cascade) — sa confirmation la nomme. Nulle avant sa première lecture.
@@ -278,7 +286,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
       lecturePieces, lectureRapprochees, lectureReglements, lectureVentes, lectureCategories, lectureSousDossiers,
       lectureTiersCategories, lectureTiersCabinet, lectureDeLaCaisse, lectureCommentaires, presence, doublons, lectureFigees,
       lectureVentesEmises, lectureFacturesProposees, lectureCitations, lectureFichesHorsDeFrance, lectureEcarts,
-      lectureDeclarations,
+      lectureDeclarations, lectureCitationsLibres,
     ] = await Promise.all([
       // Lues par tranches, triées sur un ordre TOTAL : le plafond de PostgREST ne se signale pas
       // (voir lib/lectureComplete.ts). Tronquée, la liste ne paraît pas vide — elle paraît complète,
@@ -342,6 +350,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
       lireFichesHorsDeFrance(dossierId),
       lireEcarts(dossierId),
       lireDeclarationsEreporting(dossierId),
+      lireLesCitationsDesEcrituresLibres(dossierId),
     ])
     // Avant la première écriture : un chargement lancé depuis a la main.
     if (no !== chargementNo.current) return
@@ -366,6 +375,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     setVentesEmises(lectureVentesEmises)
     setFacturesProposees(lectureFacturesProposees)
     setCitations(lectureCitations)
+    setCitationsLibres(lectureCitationsLibres)
     setFichesHorsDeFrance(lectureFichesHorsDeFrance)
     setEcartsEreporting(lectureEcarts)
     setDeclarationsEreporting(lectureDeclarations)
@@ -759,11 +769,12 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
   //
   // LE MOTIF D'ORIGINE ÉTAIT FAUX, ET SON MESSAGE ENVOYAIT CHERCHER UN LIEN QUI NE BLOQUE RIEN. Il
   // annonçait une contrainte de clé étrangère (23503) « rapprochement bancaire ou pack déjà généré ».
-  // Mesuré le 23/09/2026 : les CINQ clés étrangères entrantes de `pieces` sont en SET NULL ou
-  // CASCADE, aucune en NO ACTION — une suppression de pièce ne peut donc JAMAIS lever 23503 ; et
-  // `packs` n'a aucune clé entrante du tout, `pack_pieces` ayant été supprimée. « Retire d'abord ce
-  // lien » ne désignait donc rien à retirer, pendant que la vraie conséquence — le rapprochement
-  // bancaire défait en silence — n'était nommée nulle part.
+  // Mesuré le 23/09/2026, les clés entrantes de `pieces` étaient en SET NULL ou CASCADE, et `packs` n'en
+  // avait aucune : « retire d'abord ce lien » ne désignait rien, pendant que la vraie conséquence — le
+  // rapprochement bancaire défait en silence — n'était nommée nulle part. Deux clés refusent depuis, et
+  // chacune a ses mots : celle d'un paiement de la caisse (`on delete restrict`, relecture du 01/11/2026)
+  // et celle d'une écriture libre qui cite la pièce (NO ACTION, EL2 ; ELQ8Q1-Q1 (A)), dites avant le clic
+  // quand leur lecture est entière, traduites après sinon.
   //
   // Le compte reste (un refus RLS, une coupure), mais il RAPPORTE sa raison au lieu de l'inventer.
   //
@@ -779,7 +790,12 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     const { data, error } = await supabase.from('pieces').delete().eq('id', piece.id).select('id').maybeSingle()
     // La pièce qu'un paiement de la caisse cite, partie sur une caisse lue en partie (relecture du 01/11/2026) : le refus de la
     // base sous les mots de l'écran, qui nomment le remède.
-    if (error) return refusDeSuppressionParLaCaisse(error) ?? messageErreur(error, 'suppression refusée par la base')
+    // Et celle qu'une écriture libre cite, partie sur une lecture des écritures libres partielle (ELQ8Q1-Q1 (A)) : la clé des
+    // écritures libres refuse, sous les mots de l'écran.
+    if (error) {
+      return refusDeSuppressionParLaCaisse(error) ?? refusDeSuppressionParUneEcritureLibre(error)
+        ?? messageErreur(error, 'suppression refusée par la base')
+    }
     if (!data) return AUCUNE_PIECE_SUPPRIMEE
     // Ses DEUX fichiers quand elle en a deux (voir lib/fichiersPiece.ts) : la version lisible d'une facture reçue en
     // XML, laissée seule, ne serait plus désignée par rien.
@@ -797,9 +813,10 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     const nonFigees = selection.filter((p) => !figees.has(p.id))
     const nbFigees = selection.length - nonFigees.length
     // UNE PIÈCE CITÉE PAR LA RÉVISION NE SE SUPPRIME PLUS NON PLUS (`garder_source_citee`) : écartée de la sélection,
-    // chacune nommée avec la phrase de la base — la décision qui la cite —, plutôt qu'un refus de la base pièce par pièce.
+    // chacune nommée avec la phrase de la base — la décision qui la cite —, plutôt qu'un refus de la base pièce par pièce. Ni
+    // une pièce qu'une écriture libre cite (ELQ8Q1-Q1 (A)) : écartée de même, nommée sous la référence de l'écriture.
     const citees = nonFigees.flatMap((p) => {
-      const refus = refusDeSuppression({ pieceId: p.id }, citations)
+      const refus = refusDeSuppressionDUnePiece(p.id, citations, citationsLibres)
       return refus === null ? [] : [{ piece: p, refus }]
     })
     // UNE PIÈCE DONT LA FICHE EST DÉCLARÉE NE SE SUPPRIME PLUS NON PLUS (hypothèse E5-Q6, `garder_piece_declaree`) : écartée de
@@ -837,8 +854,8 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
         : `\n\n${nbFigees} pièces de la sélection justifient une écriture validée : elles ne se suppriment plus, et restent.`
     const listeDesCitees = citees.slice(0, 5).map((c) => `• ${c.piece.nom_fichier} — ${c.refus}`).join('\n')
       + (citees.length > 5 ? `\n… et ${citees.length - 5} autre(s)` : '')
-    // Citée par la révision des soldes, comme hier ; par le dossier permanent, ou par les deux, quand c'est lui qui cite.
-    const citant = citantDe(citees.map((c) => quiCite({ pieceId: c.piece.id }, citations)))
+    // Citée par la révision des soldes, comme hier ; par le dossier permanent, par une écriture libre, ou par plusieurs.
+    const citant = citantDe(citees.map((c) => quiCiteLaPiece(c.piece.id, citations, citationsLibres)))
     const avertissementCitees = citees.length === 0 ? ''
       : `\n\n${citees.length === 1 ? 'Une pièce de la sélection reste' : `${citees.length} pièces de la sélection restent`}, `
         + `citée${citees.length > 1 ? 's' : ''} par ${citant} :\n${listeDesCitees}`
@@ -1027,6 +1044,15 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
         accord="lues"
         consequence={
           'Une pièce citée par le dossier permanent peut donc paraître supprimable : la base refusera alors de la supprimer, ' +
+          'et dira pourquoi.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les écritures libres du dossier"
+        motif={motifDesCitationsDesEcrituresLibres(citationsLibres)}
+        accord="lues"
+        consequence={
+          'Une pièce citée par une écriture libre peut donc paraître supprimable : la base refusera alors de la supprimer, ' +
           'et dira pourquoi.'
         }
       />
@@ -1458,7 +1484,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
             onModifiee={noterModification}
             sansTexteLu={!presenceTexteIncertaine && !avecTexteOcr.has(editing.id)}
             figeePar={figees.has(editing.id) ? `L'exercice ${figees.get(editing.id)} est validé` : null}
-            citeePar={refusDeSuppression({ pieceId: editing.id }, citations)}
+            citeePar={refusDeSuppressionDUnePiece(editing.id, citations, citationsLibres)}
             venteEmise={(() => {
               const marque = marqueParPiece.get(editing.id)
               return marque ? {

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { citantDe, lireCitationsDeLaRevision, quiCite, refusDeSuppression } from './citationsRevisionLecture'
+import {
+  citantDe, lireCitationsDeLaRevision, quiCite, quiCiteLaPiece, refusDeSuppression, refusDeSuppressionDUnePiece,
+} from './citationsRevisionLecture'
 
 // La lecture de ce que la révision cite : les décisions et les preuves du dossier, et les entrées du dossier permanent
 // (ligne 41, étape R7), en entier, et la phrase de la base pour la suppression d'une source citée. Le faux client APPLIQUE le filtre du dossier et annonce son compte.
@@ -134,5 +136,38 @@ describe('citantDe', () => {
     expect(citantDe(['dossier-permanent'])).toBe('le dossier permanent')
     expect(citantDe(['revision', 'dossier-permanent'])).toBe('la révision des soldes et le dossier permanent')
     expect(citantDe([null])).toBe('la révision des soldes')
+  })
+})
+
+// ELQ8Q1-Q1 (A) : une pièce citée par une écriture libre, dans la même règle et le même ordre — la révision et le dossier permanent
+// d'abord, sous les mots de la base, puis l'écriture libre sous sa référence.
+describe('une pièce citée par une écriture libre (ELQ8Q1-Q1)', () => {
+  const libres = {
+    dossierId: 'd1', etat: 'lues' as const,
+    citations: [{ exercice: 2026, numero: 3, piece_citee_id: 'p-1' }, { exercice: 2026, numero: 4, piece_citee_id: 'p-7' }],
+  }
+
+  it('la révision et le dossier permanent parlent d’abord, puis l’écriture libre', async () => {
+    const lues = await lireCitationsDeLaRevision('d1')
+    expect(refusDeSuppressionDUnePiece('p-1', lues, libres)).toBe(refusDeSuppression({ pieceId: 'p-1' }, lues))
+    expect(quiCiteLaPiece('p-1', lues, libres)).toBe('dossier-permanent')
+    expect(refusDeSuppressionDUnePiece('p-7', lues, libres)).toMatch(/^Cette pièce est citée par l’écriture libre EL2026-0004 :/)
+    expect(quiCiteLaPiece('p-7', lues, libres)).toBe('ecriture-libre')
+    expect(refusDeSuppressionDUnePiece('p-9', lues, libres)).toBeNull()
+    expect(quiCiteLaPiece('p-9', lues, libres)).toBeNull()
+  })
+
+  it('les écritures libres parlent même avant la lecture de la révision, et rien quand elles ne sont pas lues', () => {
+    expect(quiCiteLaPiece('p-7', null, libres)).toBe('ecriture-libre')
+    expect(refusDeSuppressionDUnePiece('p-7', null, null)).toBeNull()
+    expect(refusDeSuppressionDUnePiece('p-7', null, { dossierId: 'd1', etat: 'illisibles', motif: 'coupure' })).toBeNull()
+  })
+
+  it('citantDe nomme une ou des écritures libres, et les énumère avec les autres', () => {
+    expect(citantDe(['ecriture-libre'])).toBe('une écriture libre')
+    expect(citantDe(['ecriture-libre', 'ecriture-libre'])).toBe('des écritures libres')
+    expect(citantDe(['revision', 'ecriture-libre'])).toBe('la révision des soldes et une écriture libre')
+    expect(citantDe(['revision', 'dossier-permanent', 'ecriture-libre']))
+      .toBe('la révision des soldes, le dossier permanent et une écriture libre')
   })
 })
