@@ -54832,3 +54832,11 @@ encore, d'après une mesure du 23/09/2026, qu'aucune clé entrante ne refuse. La
 d’abord la citation de l’écriture, dans l’onglet Écritures. »), après la révision et le dossier permanent (`refusDeSuppressionDUnePiece`,
 `quiCiteLaPiece`, `citantDe` qui nomme « une écriture libre ») ; la fiche n'offre pas « Supprimer », la sélection l'écarte et la nomme.
 Lue en partie : rien n'est dit cité, un bandeau le dit, et le refus de la base se traduit après le clic sous les mots de l'écran.
+
+### EXPQ4E-Q1 : « RIEN N'EST SAISI » QUAND LE DOSSIER NE GARDE AUCUN RÉGLAGE D'EXPORT (25/11/2026)
+
+Vu au banc le même jour : sans ligne gardée et sans saisie, l'export vers un logiciel disait « Ces réglages sont ceux que
+le dossier garde : rien à enregistrer. », alors que le dossier ne garde rien ; et la même phrase restait au-dessus de
+« Réglages enregistrés (version n) » juste après un enregistrement. Le cabinet a tranché (A) : `phraseDeRienAEnregistrer`
+(`lib/reglagesDExport.ts`) dit « Rien n'est saisi : rien à enregistrer. » quand rien n'est gardé, et l'écran tait la
+phrase tant que celle de l'enregistrement réussi est affichée (elle revient à la saisie suivante). Écran seul.

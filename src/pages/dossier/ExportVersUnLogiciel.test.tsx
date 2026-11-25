@@ -262,7 +262,7 @@ describe('les réglages gardés du dossier, le drapeau levé (EXP-Q4 (A))', () =
     expect((screen.getByRole('radio', { name: /Sans compte auxiliaire/ }) as HTMLInputElement).checked).toBe(true)
     expect(screen.getByText(/version 2\) sont préremplis/)).toBeDefined()
     expect(boutonEnregistrer().disabled).toBe(true)
-    expect(screen.getByText(/rien à enregistrer/)).toBeDefined()
+    expect(screen.getByText('Ces réglages sont ceux que le dossier garde : rien à enregistrer.')).toBeDefined()
     await act(async () => { fireEvent.click(boutonFichier()) })
     await waitFor(() => expect(faux.telechargements).toBe(1))
     const lignes = decoder.decode(await octetsDe(faux.fichiers[0].blob)).replace(/\r\n$/, '').split('\r\n').slice(1).map((l) => l.split('\t'))
@@ -275,6 +275,7 @@ describe('les réglages gardés du dossier, le drapeau levé (EXP-Q4 (A))', () =
     expect(longueur().value).toBe('')
     expect(champ('Code du journal AC dans le logiciel').value).toBe('')
     expect(screen.getByText(/Aucun réglage n’est gardé pour ce dossier/)).toBeDefined()
+    expect(screen.getByText('Rien n’est saisi : rien à enregistrer.')).toBeDefined()
     expect(screen.getByRole('alert').textContent).toContain('La longueur des comptes dans le logiciel : à saisir.')
     expect(screen.getByRole('alert').textContent).toContain('La forme des comptes de tiers : à saisir.')
     expect(screen.getByRole('alert').textContent).toContain('Le code du journal AC (Achats) dans le logiciel : à saisir.')
@@ -319,6 +320,8 @@ describe('les réglages gardés du dossier, le drapeau levé (EXP-Q4 (A))', () =
     // Recalée sur ce que la base garde : le code rogné, et plus rien à enregistrer.
     expect(champ('Code du journal AC dans le logiciel').value).toBe('ACH')
     expect(boutonEnregistrer().disabled).toBe(true)
+    // « Réglages enregistrés » suffit : la phrase de « rien à enregistrer » se tait juste après (EXPQ4E-Q1).
+    expect(screen.queryByText(/rien à enregistrer/)).toBeNull()
   })
 
   it('refusé parce qu’un autre compte les a changés : le refus se dit, et le formulaire repart de ce que la base garde', async () => {

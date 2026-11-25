@@ -7,7 +7,7 @@ import {
 } from '../../lib/profilsDExport'
 import {
   JOURNAUX_DE_L_APPLICATION, memesReglages, phraseDeLEnregistrement, phraseDesReglagesGardes, profilDeLaSaisie,
-  REGLAGES_D_EXPORT_PREVUS, refusDeLEnregistrement, RIEN_A_ENREGISTRER, SAISIE_A_SAISIR, saisieDesReglagesGardes,
+  REGLAGES_D_EXPORT_PREVUS, phraseDeRienAEnregistrer, refusDeLEnregistrement, SAISIE_A_SAISIR, saisieDesReglagesGardes,
   type JournalDeLApplication, type LectureDesReglagesDExport, type SaisieDesReglages,
 } from '../../lib/reglagesDExport'
 import { enregistrerLesReglagesDExport, lireLesReglagesDExport } from '../../lib/reglagesDExportLecture'
@@ -285,7 +285,9 @@ export default function ExportVersUnLogiciel({ dossierId, nomDuFec, fec, pieces,
                 {enregistrement.enCours ? 'Enregistrement…' : 'Enregistrer ces réglages'}
               </button>
               {refusDeLaSaisie !== null && <p className="error-text">{refusDeLaSaisie}</p>}
-              {refusDeLaSaisie === null && rienAEnregistrer && <p className="muted">{RIEN_A_ENREGISTRER}</p>}
+              {/* Juste après un enregistrement réussi, « Réglages enregistrés » suffit (EXPQ4E-Q1). */}
+              {refusDeLaSaisie === null && rienAEnregistrer && !enregistrement.fait && lus !== null
+                && <p className="muted">{phraseDeRienAEnregistrer(lus.gardes)}</p>}
               {enregistrement.erreur && <p className="error-text" role="alert">{enregistrement.erreur}</p>}
               {enregistrement.fait && <p className="muted" role="status">{enregistrement.fait}</p>}
             </div>
