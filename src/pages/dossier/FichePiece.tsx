@@ -18,6 +18,7 @@ import ApercuDuFichier from '../../components/ApercuDuFichier'
 import { genreDApercu } from '../../lib/genreDApercu'
 import { IconChevron, IconPrecedent } from '../../components/icons'
 import { messageErreur } from '../../lib/messageErreur'
+import { refusDeSuppressionParUneEcritureLibre } from '../../lib/pieceCiteeParUneEcritureLibre'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
 import { retirerFichiers } from '../../lib/stockage'
 import { fichierAMontrer, fichiersDeLaPiece } from '../../lib/fichiersPiece'
@@ -98,6 +99,7 @@ interface Props {
   // LA RÉVISION DES SOLDES QUI CITE CETTE PIÈCE (ligne 41, hypothèse Q8, `garder_source_citee`) : la phrase de la base
   // qui refuse sa suppression (`refusDuRetraitDUneSource`), ou rien. La fiche le dit et n'offre pas « Supprimer » ; le
   // reste de la pièce se modifie toujours — un fichier remplacé change son empreinte, et la décision qui la cite le dira.
+  // Ou, après elle et le dossier permanent, l'écriture libre qui la cite, sous sa référence (ELQ8Q1-Q1 (A)).
   citeePar?: string | null
   // LA FACTURE ÉMISE QUE CETTE PIÈCE PORTE (ligne 28.6, lib/ventesJumelles.ts) : sa marque, et le nom des autres pièces
   // qui portent la même facture. L'écran appelant ne la donne que sur des listes lues en entier ; rien, sinon.
@@ -818,12 +820,15 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         // garde du brouillon, ou la clé de l'opération. Ses mots, et le remède, plutôt que la raison de Postgres.
         const parLaCaisse = refusDeSuppressionParLaCaisse(deleteError)
         if (parLaCaisse) throw new Error(parLaCaisse)
-        // Contrainte de clé étrangère (23503) : la pièce est encore référencée par une table qui
-        // REFUSE la suppression. Gardé comme garde-fou, mais ce chemin ne peut pas se lever
-        // aujourd'hui — mesuré le 23/09/2026, les cinq clés entrantes de `pieces` sont en SET NULL
-        // ou CASCADE, et `packs` n'a aucune clé entrante (`pack_pieces` a été supprimée). Le message
-        // d'avant nommait justement ces deux liens-là et envoyait « retirer » ce qui ne bloque rien ;
-        // il ne devine donc plus la cause, il dit ce qu'on sait et rend la raison de Postgres.
+        // LA PIÈCE QU'UNE ÉCRITURE LIBRE CITE (ELQ8Q1-Q1 (A)) : la fiche n'offre pas « Supprimer » quand les écritures libres sont
+        // lues en entier (`citeePar`) ; lues en partie, la clé `ecritures_libres_piece_citee_id_fkey` refuse (23503). Ses mots.
+        const parUneEcritureLibre = refusDeSuppressionParUneEcritureLibre(deleteError)
+        if (parUneEcritureLibre) throw new Error(parUneEcritureLibre)
+        // Toute autre contrainte de clé étrangère (23503) : la pièce est encore référencée par une table qui REFUSE la
+        // suppression. Mesuré le 23/09/2026, les clés entrantes de `pieces` étaient en SET NULL ou CASCADE ; deux refusent
+        // depuis — celle d'un paiement de la caisse et celle d'une écriture libre, traduites ci-dessus. Le message d'avant
+        // nommait des liens qui ne bloquent rien ; pour une clé à venir, il ne devine pas la cause, il dit ce qu'on sait et
+        // rend la raison de Postgres.
         if (deleteError.code === '23503') {
           throw new Error(
             'Impossible de supprimer : cette pièce est encore référencée ailleurs dans la base. '

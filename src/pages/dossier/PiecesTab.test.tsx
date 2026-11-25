@@ -30,6 +30,8 @@ const faux = vi.hoisted(() => ({
   // c'est elle qui inventait une cause (« liées à un rapprochement bancaire ou à un pack déjà
   // généré ») au lieu de rendre la raison.
   refusSuppression: null as string | null,
+  // Et le code de ce refus (une clé étrangère, 23503), quand le test le pose.
+  codeRefusSuppression: null as string | null,
   // Les mises à jour de pièces envoyées par la fiche, et de quoi retenir la réponse : c'est la
   // fenêtre pendant laquelle l'opérateur peut ouvrir une autre pièce.
   majPieces: [] as { id: unknown; valeur: Record<string, unknown> }[],
@@ -57,7 +59,7 @@ const faux = vi.hoisted(() => ({
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatNot } = await import('../../test/filtresPostgrest')
   // Les décisions de la révision et leurs preuves aussi (ligne 41, étape R3) : celles d'un autre dossier ne citent rien ici.
-  const TABLES_FILTREES = new Set(['factures_emises', 'transmissions_factures', 'revision_justifications', 'revision_preuves', 'dossier_permanent'])
+  const TABLES_FILTREES = new Set(['factures_emises', 'transmissions_factures', 'revision_justifications', 'revision_preuves', 'dossier_permanent', 'ecritures_libres'])
   return {
   supabase: {
     from: (table: string) => {
@@ -115,7 +117,9 @@ vi.mock('../../lib/supabase', async () => {
             return Promise.resolve({ data: { ventes_par_les_factures: false }, error: null })
           }
           if (operation !== 'delete') return Promise.resolve({ data: null, error: null })
-          if (faux.refusSuppression) return Promise.resolve({ data: null, error: { message: faux.refusSuppression } })
+          if (faux.refusSuppression) {
+            return Promise.resolve({ data: null, error: { message: faux.refusSuppression, code: faux.codeRefusSuppression ?? undefined } })
+          }
           const lignes = (faux.parTable[table] ?? []) as { id: unknown }[]
           const visee = lignes.find((l) => idsVises.includes(l.id) && !faux.sansEffet.has(String(l.id)))
           if (!visee) return Promise.resolve({ data: null, error: null })
@@ -289,6 +293,7 @@ function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
   faux.muetApres = {}
   faux.suppressions = []
   faux.refusSuppression = null
+  faux.codeRefusSuppression = null
   faux.majPieces = []
   faux.retenueMaj = null
   faux.avecTexte = new Set()
@@ -1600,6 +1605,101 @@ describe('PiecesTab — une pièce citée par le dossier permanent', () => {
     monter('toutes')
     expect(await screen.findByText(/^Les entrées du dossier permanent n'ont pas pu être lues en entier \(1 ligne\(s\) lue\(s\) sur 2 annoncée\(s\)\)\. Une pièce citée par le dossier permanent peut donc paraître supprimable/)).toBeTruthy()
     expect(screen.queryByText(/Les décisions de la révision des soldes et leurs preuves/)).toBeNull()
+  })
+})
+
+// UNE PIÈCE CITÉE PAR UNE ÉCRITURE LIBRE NE SE SUPPRIME PAS, DIT AVANT LE CLIC (ELQ8Q1-Q1 (A)) : la clé des écritures libres refuse
+// sa suppression (EL2), « à valider » comprise (ELQ8-Q1 (B)). La fiche le dit sous la référence de l'écriture et n'offre pas
+// « Supprimer » ; la sélection l'écarte et la NOMME ; rien ne part. Jamais le libellé ni le motif de l'écriture.
+describe('PiecesTab — une pièce citée par une écriture libre', () => {
+  const PHRASE = 'Cette pièce est citée par l’écriture libre EL2026-0003 : elle ne se supprime plus, sauf avec son dossier. '
+    + 'Pour la supprimer, retire d’abord la citation de l’écriture, dans l’onglet Écritures.'
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+  const deux = () => [
+    piece({ id: 'p-citee', tiers: 'ALPHA', statut: 'a_valider', nom_fichier: 'facture-regularisee.pdf' }),
+    piece({ id: 'p-libre', tiers: 'BETA', statut: 'validee' }),
+  ]
+  function citer(dossier = 'dossier-de-test', champs: Record<string, unknown> = {}) {
+    faux.parTable.ecritures_libres = [
+      { id: 'el-1', dossier_id: dossier, exercice: 2026, numero: 3, piece_citee_id: 'p-citee', libelle: 'Libellé secret', motif: 'Motif secret', ...champs },
+      { id: 'el-2', dossier_id: dossier, exercice: 2026, numero: 4, piece_citee_id: null, libelle: 'Autre', motif: 'Autre' },
+    ]
+  }
+
+  it('la fiche d’une pièce « à valider » citée le dit sous la référence de l’écriture, et n’offre pas « Supprimer »', async () => {
+    poser(deux())
+    citer()
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByText(PHRASE)).toBeTruthy()
+    expect(screen.queryByText(/secret/)).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
+
+    await ouvrir('BETA')
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
+  })
+
+  it('une écriture libre d’un autre dossier ne garde rien ici', async () => {
+    poser(deux())
+    citer('autre-dossier')
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
+  })
+
+  it('une sélection écarte la pièce citée, et la confirmation la NOMME sous la référence de l’écriture', async () => {
+    poser(deux())
+    citer()
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return true })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(message).toMatch(/^Supprimer définitivement 1 pièce\(s\) \?/)
+    expect(message.endsWith(`Une pièce de la sélection reste, citée par une écriture libre :\n• facture-regularisee.pdf — ${PHRASE}`)).toBe(true)
+    expect(message).not.toContain('secret')
+    expect(faux.suppressions).toEqual(['p-libre'])
+  })
+
+  it('une sélection faite de la seule pièce citée ne demande rien, dit la phrase, et n’envoie rien', async () => {
+    poser([deux()[0]])
+    citer()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let alerte = ''
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alerte = String(m ?? '') })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(alerte).toBe(PHRASE)
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(faux.suppressions).toEqual([])
+  })
+
+  it('lues en partie, les écritures libres le disent, rien n’est dit cité, et le refus de la base se dit sous les mots de l’écran', async () => {
+    poser(deux())
+    citer()
+    faux.muetApres = { ecritures_libres: 0 }
+    faux.refusSuppression = 'update or delete on table "pieces" violates foreign key constraint "ecritures_libres_piece_citee_id_fkey" on table "ecritures_libres"'
+    faux.codeRefusSuppression = '23503'
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter('toutes')
+    expect(await screen.findByText(/^Les écritures libres du dossier n'ont pas pu être lues en entier .*Une pièce citée par une écriture libre peut donc paraître supprimable/)).toBeTruthy()
+    await ouvrir('ALPHA')
+    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Supprimer' })) })
+    expect(await within(volet()).findByText(/^Cette pièce est citée par une écriture libre du dossier : elle ne se supprime plus/)).toBeTruthy()
+    expect(faux.suppressions).toEqual(['p-citee'])
   })
 })
 

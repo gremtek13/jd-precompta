@@ -54819,3 +54819,16 @@ champs perdent le cadre en creux du navigateur. Sur téléphone, « Figée par l
 refus de l'extournée : la cellule des gestes d'une écriture libre n'a plus qu'un bloc. La pièce « à valider » paraît, dite telle, au choix.
 Le banc entier, au passage : à 1 280 px volet ouvert, les tableaux de NOE4 et BOR4 (onglet Banque) sortaient de 12 et 60 px — d'avant ce
 jour ; ils défilent (`.table-scroll`). Puis 0 aux quatre largeurs, à 720 px, aux volets extrêmes et aux passes du client.
+
+### 25/11/2026 — ELQ8Q1-Q1 : LA PIÈCE CITÉE PAR UNE ÉCRITURE LIBRE DITE AVANT LE CLIC
+
+(Agent dev ; écran seul, sans migration ; ELQ8Q1-Q1 (A), tranchée le 25/11/2026.) En base depuis EL2, `ecritures_libres.piece_citee_id`
+référence `pieces` sans clause `on delete` (NO ACTION) : la suppression d'une pièce citée lève 23503 sur
+`ecritures_libres_piece_citee_id_fkey`, sauf avec son dossier — et depuis ELQ8-Q1 (B) une pièce « à valider » peut être citée. L'écran ne
+le disait qu'après le clic, sous « encore référencée ailleurs dans la base », et deux commentaires (FichePiece, PiecesTab) affirmaient
+encore, d'après une mesure du 23/09/2026, qu'aucune clé entrante ne refuse. La même règle que `garder_source_citee` : une lecture courte
+(`lireLesCitationsDesEcrituresLibres`, la référence et la pièce, jamais libellé ni motif), la phrase dans `lib/pieceCiteeParUneEcritureLibre.ts`
+(« Cette pièce est citée par l’écriture libre EL2026-0003 : elle ne se supprime plus, sauf avec son dossier. Pour la supprimer, retire
+d’abord la citation de l’écriture, dans l’onglet Écritures. »), après la révision et le dossier permanent (`refusDeSuppressionDUnePiece`,
+`quiCiteLaPiece`, `citantDe` qui nomme « une écriture libre ») ; la fiche n'offre pas « Supprimer », la sélection l'écarte et la nomme.
+Lue en partie : rien n'est dit cité, un bandeau le dit, et le refus de la base se traduit après le clic sous les mots de l'écran.

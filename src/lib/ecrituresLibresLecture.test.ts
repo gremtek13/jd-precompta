@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import { ECRITURES_LIBRES_PREVUES } from './ecritureLibre'
-import { lireLesEcrituresLibres, lireLesEcrituresLibresSelon } from './ecrituresLibresLecture'
+import {
+  lireLesCitationsDesEcrituresLibres, lireLesCitationsDesEcrituresLibresSelon, lireLesEcrituresLibres, lireLesEcrituresLibresSelon,
+} from './ecrituresLibresLecture'
 import { colonnesDesEcrituresLibres, ecrituresLibresPourLesMoteurs } from './ecrituresLibresVue'
 import { migrationRangee } from '../test/schema'
 
@@ -18,7 +20,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('./supabase', async () => {
-  const { filtrer, predicatEq } = await import('../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot } = await import('../test/filtresPostgrest')
   return {
     supabase: {
       from: (table: string) => {
@@ -38,6 +40,9 @@ vi.mock('./supabase', async () => {
           select: (colonnes: string, options: unknown) => { requete.colonnes = colonnes; requete.options = options; return c },
           eq: (colonne: string, valeur: unknown) => { requete.filtres.push([colonne, valeur]); predicats.push(predicatEq(colonne, valeur)); return c },
           in: (colonne: string, valeurs: unknown[]) => { requete.filtres.push([colonne, valeurs]); predicats.push((l) => valeurs.includes(l[colonne])); return c },
+          not: (colonne: string, operateur: string, valeur: unknown) => {
+            requete.filtres.push([`not.${colonne}.${operateur}`, valeur]); predicats.push(predicatNot(colonne, operateur, valeur)); return c
+          },
           order: (colonne: string) => { requete.ordres.push(colonne); return c },
           range: (d: number, f: number) => { debut = d; fin = f; return c },
           then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => repondre().then(suite, echec),
@@ -147,6 +152,53 @@ describe('lireLesEcrituresLibres — la colonne de la contre-passation (EL7)', (
     for (const v of ['', 7, 'e1']) {
       faux.tables.ecritures_libres = [ligne({ contre_passe_id: v })]
       expect(await lireLesEcrituresLibresSelon('d1', true, true), String(v)).toMatchObject({ etat: 'illisibles' })
+    }
+  })
+})
+
+// LES PIÈCES QUE LES ÉCRITURES LIBRES CITENT (ELQ8Q1-Q1 (A)) : la référence et la pièce seulement, jamais le libellé ni le motif ;
+// les écritures de SON dossier qui citent une pièce, en entier ; tout manque rend `illisibles`, jamais une liste vide.
+describe('lireLesCitationsDesEcrituresLibres', () => {
+  it('le drapeau baissé : l’absence, sans aucune requête ; par défaut, le drapeau', async () => {
+    expect(await lireLesCitationsDesEcrituresLibresSelon('d1', false)).toEqual({ dossierId: 'd1', etat: 'absentes' })
+    expect(faux.requetes).toEqual([])
+    const attendu = await lireLesCitationsDesEcrituresLibresSelon('d1', ECRITURES_LIBRES_PREVUES)
+    faux.requetes = []
+    expect(await lireLesCitationsDesEcrituresLibres('d1')).toEqual(attendu)
+    expect(faux.requetes.length > 0).toBe(ECRITURES_LIBRES_PREVUES)
+  })
+
+  it('levé : les écritures de SON dossier qui citent une pièce, sans libellé, motif, lignes ni auteurs', async () => {
+    faux.tables.ecritures_libres = [
+      ligne({ id: 'e1', numero: 1, piece_citee_id: 'p-1' }),
+      ligne({ id: 'e2', numero: 2 }),
+      ligne({ id: 'e3', numero: 3, dossier_id: 'd2', piece_citee_id: 'p-2' }),
+    ]
+    expect(await lireLesCitationsDesEcrituresLibresSelon('d1', true))
+      .toEqual({ dossierId: 'd1', etat: 'lues', citations: [{ exercice: 2025, numero: 1, piece_citee_id: 'p-1' }] })
+    expect(faux.requetes).toHaveLength(1)
+    const [requete] = faux.requetes
+    expect(requete).toMatchObject({
+      table: 'ecritures_libres', colonnes: 'id, dossier_id, exercice, numero, piece_citee_id', options: { count: 'exact' },
+      filtres: [['dossier_id', 'd1'], ['not.piece_citee_id.is', null]],
+    })
+    expect(requete.ordres.at(-1)).toBe('id')
+  })
+
+  it('lue en partie, refusée, levée, ou d’une autre forme : illisible, jamais vide', async () => {
+    faux.tables.ecritures_libres = [ligne({ piece_citee_id: 'p-1' })]
+    faux.muetApres = 0
+    expect(await lireLesCitationsDesEcrituresLibresSelon('d1', true)).toMatchObject({ etat: 'illisibles' })
+    faux.muetApres = Infinity
+    faux.refus = { ecritures_libres: 'permission denied' }
+    expect(await lireLesCitationsDesEcrituresLibresSelon('d1', true)).toMatchObject({ etat: 'illisibles', motif: expect.stringContaining('permission denied') })
+    faux.refus = {}
+    faux.leve = true
+    expect(await lireLesCitationsDesEcrituresLibresSelon('d1', true)).toMatchObject({ etat: 'illisibles' })
+    faux.leve = false
+    for (const o of [{ numero: 0 }, { exercice: '2025' }, { piece_citee_id: 7 }, { id: '' }]) {
+      faux.tables.ecritures_libres = [ligne({ piece_citee_id: 'p-1', ...o })]
+      expect(await lireLesCitationsDesEcrituresLibresSelon('d1', true), JSON.stringify(o)).toMatchObject({ etat: 'illisibles' })
     }
   })
 })
