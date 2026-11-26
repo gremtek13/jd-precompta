@@ -162,7 +162,7 @@ export default function ValidationExerciceCard({
       {bloquants.length > 0 ? (
         <>
           <p style={{ marginBottom: 4 }}><strong>Avant de valider</strong></p>
-          <ListePrealables prealables={bloquants} onNavigate={onNavigate} onChoisirExercice={onChoisirExercice} />
+          <ListePrealables ici="cloture" prealables={bloquants} onNavigate={onNavigate} onChoisirExercice={onChoisirExercice} />
         </>
       ) : (
         <p>Rien n'empêche de valider cet exercice.</p>
@@ -170,7 +170,7 @@ export default function ValidationExerciceCard({
       {avertissements.length > 0 && (
         <>
           <p style={{ marginBottom: 4 }}><strong>À lire avant de valider</strong></p>
-          <ListePrealables prealables={avertissements} onNavigate={onNavigate} onChoisirExercice={onChoisirExercice} />
+          <ListePrealables ici="cloture" prealables={avertissements} onNavigate={onNavigate} onChoisirExercice={onChoisirExercice} />
         </>
       )}
       {etat.validable && demande && (
@@ -262,7 +262,10 @@ function phraseDuResultat(annee: number, report: ReportDesSoldes, plan: PlanComp
     + 'en attente d’affectation : l’affecter reste un geste du cabinet.'
 }
 
-function ListePrealables({ prealables, onNavigate, onChoisirExercice }: {
+// La liste des préalables, écrite une fois : la carte de Clôture et la section de l'onglet Révision (RevisionTab) la montrent
+// pareille. `ici` : l'onglet où elle s'affiche — un préalable qui s'y règle ne mène nulle part ailleurs.
+export function ListePrealables({ ici, prealables, onNavigate, onChoisirExercice }: {
+  ici: DossierTab
   prealables: EtatDeValidation['prealables']
   onNavigate?: (tab: DossierTab) => void
   onChoisirExercice?: (annee: number) => void
@@ -280,7 +283,7 @@ function ListePrealables({ prealables, onNavigate, onChoisirExercice }: {
               <button className="btn btn-outline btn-sm" onClick={() => onChoisirExercice(p.exercice!)}>Exercice {p.exercice}</button>
             </>
           )}
-          {p.cible !== 'cloture' && onNavigate && (
+          {p.cible !== ici && onNavigate && (
             <>
               {' '}
               <button className="btn btn-outline btn-sm" onClick={() => onNavigate(p.cible)}>{libelleDeLOnglet(p.cible)}</button>

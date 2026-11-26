@@ -41,7 +41,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn, predicatIs, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     const predicats: ReturnType<typeof predicatEq>[] = []
     let debut = 0
@@ -57,6 +57,10 @@ vi.mock('../../lib/supabase', async () => {
       select: () => c,
       eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
+      // Celles que la lecture de Clôture fait aussi (useClotureDuDossier, pour la section « Avant de valider l'exercice »).
+      in: (colonne: string, valeurs: readonly unknown[]) => { predicats.push(predicatIn(colonne, valeurs)); return c },
+      is: (colonne: string, valeur: unknown) => { predicats.push(predicatIs(colonne, valeur)); return c },
+      not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
       order: () => c,
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => (faux.attente ?? Promise.resolve()).then(() => {
@@ -1103,5 +1107,75 @@ describe('RevisionTab — le journal, la revue du chef, la mémoire', () => {
     expect(screen.queryByRole('region', { name: 'Cycle Tiers' })).toBeNull()
     await ouvrirCycle('Trésorerie')
     expect(texte(volet())).toContain('Laissé à suivre par 2024')
+  })
+})
+
+// AVANT DE VALIDER L'EXERCICE (ligne 41) : les préalables de la validation, EN LECTURE SEULE, par la lecture et les calculs mêmes
+// de Clôture (useClotureDuDossier) — le module de la section (lib/prealablesDeLaRevision.ts) est éprouvé à part. Ici, ce qu'aucun
+// calcul pur ne voit : que la section les DISE, bloquants à part, avec l'onglet qui les règle ; qu'elle se taise sur une lecture
+// que la seule validation fait ; qu'elle suive l'exercice de l'en-tête ; qu'elle n'offre aucun geste de validation.
+describe('RevisionTab — avant de valider l’exercice', () => {
+  const section = () => screen.getByRole('region', { name: 'Avant de valider l’exercice' })
+  const aValider = (id: string, date: string) =>
+    piece({ id, statut: 'a_valider', date_piece: date, nom_fichier: `${id}.pdf`, storage_path: `${DOSSIER}/${id}.pdf` })
+
+  it('dit les préalables de l’exercice, bloquants à part, chacun avec l’onglet qui le règle, et aucun geste de validation', async () => {
+    dossier2025()
+    faux.tables.pieces = [aValider('pav1', '2025-03-01'), aValider('pav2', '2025-04-01')]
+    const onNavigate = vi.fn()
+    rendre({ onNavigate })
+    expect(await screen.findByRole('heading', { name: 'Avant de valider l’exercice 2025' })).toBeDefined()
+    const ici = section()
+    expect(texte(ici)).toContain('Ce qui empêche de valider')
+    expect(texte(ici)).toContain('2 pièce(s) à valider datée(s) de l\'exercice 2025')
+    expect(within(ici).queryByRole('button', { name: /Valider l’exercice/ })).toBeNull()
+    await act(async () => { fireEvent.click(within(ici).getAllByRole('button', { name: 'Justificatifs' })[0]) })
+    expect(onNavigate).toHaveBeenCalledWith('pieces')
+    await act(async () => { fireEvent.click(within(ici).getByRole('button', { name: 'Aller à la Clôture' })) })
+    expect(onNavigate).toHaveBeenLastCalledWith('cloture')
+    // Aucune fonction appelée : la section ne fait que lire.
+    expect(faux.appels.map((a) => a.nom)).not.toContain('valider_exercice')
+  })
+
+  it('une lecture que seule la validation fait, refusée : un bandeau, et aucun préalable', async () => {
+    dossier2025()
+    faux.tables.pieces = [aValider('pav1', '2025-03-01')]
+    faux.refusees.add('exercices_valides')
+    rendre()
+    await screen.findByRole('heading', { name: 'Avant de valider l’exercice 2025' })
+    const ici = section()
+    expect(await within(ici).findByText(/Les entrées de la validation n'ont pas pu être lues en entier/)).toBeDefined()
+    expect(texte(ici)).not.toContain('pièce(s) à valider')
+    expect(texte(ici)).not.toContain('Rien n’empêche de valider')
+  })
+
+  it('suit l’exercice de l’en-tête : un autre exercice dit ses préalables à lui', async () => {
+    dossier2025()
+    faux.tables.pieces = [aValider('pav1', '2025-03-01')]
+    render(
+      <FournisseurPanneauDroit>
+        <ContexteDossier annee={2025} valides={[]}>
+          <RevisionTab codeNaf={null} dossierId={DOSSIER} modele={TRESORERIE} assujettiTva={false} periodiciteTva="trimestrielle" statutTva="exonere" ventesParLesFactures={false} onNavigate={() => {}} />
+          <ChoisirExercice annee={2024} />
+        </ContexteDossier>
+        <EmplacementPanneauDroit />
+      </FournisseurPanneauDroit>,
+    )
+    await screen.findByRole('heading', { name: 'Avant de valider l’exercice 2025' })
+    expect(texte(section())).toContain('pièce(s) à valider datée(s) de l\'exercice 2025')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Choisir 2024' })) })
+    expect(await screen.findByRole('heading', { name: 'Avant de valider l’exercice 2024' })).toBeDefined()
+    expect(texte(section())).not.toContain('pièce(s) à valider datée(s) de l\'exercice')
+  })
+
+  it('ne dit rien avant que les lectures de la validation soient revenues', async () => {
+    dossier2025()
+    let liberer = () => {}
+    faux.attente = new Promise<void>((r) => { liberer = r })
+    rendre()
+    expect(screen.queryByRole('region', { name: 'Avant de valider l’exercice' })).toBeNull()
+    await act(async () => { liberer() })
+    await screen.findByRole('heading', { name: 'Avant de valider l’exercice 2025' })
+    expect(texte(section())).not.toContain('Chargement…')
   })
 })

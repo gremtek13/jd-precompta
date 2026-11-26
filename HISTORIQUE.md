@@ -54919,3 +54919,17 @@ relues en entier, sinon rien de proposé. La section « Notes de frais du client
 `memberships.droit_achats` (refusée, seule elle tombe) ; le modèle passé par PiecesTab, sans défaut. Rien ne change de type seul :
 le cabinet décide dans la fiche de la pièce. Restent la Vue d'ensemble, l'écriture au 421 en engagement (B7) et la levée de B8.
 Questions : L3-Q1 (pour qui, une note saisie pour soi), L3-Q2 (le 421 en trésorerie), L3-Q3 (le signal hors de la section).
+
+### 26/11/2026 — LES PRÉALABLES DE LA VALIDATION DANS L'ONGLET RÉVISION (LIGNE 41)
+
+(Agent dev ; ni base, ni Edge Function.) L'onglet Révision montre, en lecture seule, une section « Avant de valider l'exercice » :
+les préalables mêmes de la carte « Valider l'exercice » de Clôture, bloquants (« Ce qui empêche de valider ») et attentions à
+part, chacun avec l'onglet qui le règle (`ListePrealables`, désormais exportée de `ValidationExerciceCard.tsx` et paramétrée par
+l'onglet courant), puis « Aller à la Clôture » ; aucun geste de validation. Pour qu'il n'y ait qu'UNE lecture, la lecture et les
+calculs de Clôture (environ 750 lignes, sans rien y changer) sortent de `ClotureTab.tsx` dans `pages/dossier/useClotureDuDossier.ts`,
+que les deux onglets appellent ; la section passe par `prealablesDeLExercice` et le module pur `lib/prealablesDeLaRevision.ts` (rien
+avant le retour des lectures, saisies de la 2035 et inventaire compris ; un bandeau et aucun préalable sur une lecture partielle ;
+rien de plus à un exercice validé). Le jumeau de la revue analytique (`revueAnalytiqueEcran.test.ts`) lit désormais le crochet. La
+conception (§ 4.2) voulait aussi RANGER chaque préalable dans son cycle (la table de `revisionCycles.ts` existe) : laissé à une
+question (RPV-Q1). R6 reste à faire. Banc : deux captures (`*-revision-prealables`), `debordements.mjs` à 0 sur les visites
+« revision » à 1 440, 1 280, 1 024, 720 et 390 px.

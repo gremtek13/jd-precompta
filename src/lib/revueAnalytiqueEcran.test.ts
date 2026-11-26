@@ -103,8 +103,9 @@ describe('declarationPourLaRevue — la 2035 de Clôture, et nulle part ailleurs
 
   // LE JUMEAU DE CLÔTURE : ce fichier recopie quatre expressions de l'écran qui signe la 2035. Si l'une change là-bas, la
   // revue comparerait une autre 2035 que celle que le cabinet voit — ce test le dit.
+  // Les calculs de Clôture vivent dans sa lecture, écrite une fois pour Clôture et la Révision (useClotureDuDossier).
   it('recopie les quatre appels de ClotureTab', () => {
-    const source = readFileSync(new URL('../pages/dossier/ClotureTab.tsx', import.meta.url), 'utf8')
+    const source = readFileSync(new URL('../pages/dossier/useClotureDuDossier.ts', import.meta.url), 'utf8')
     for (const expression of [
       "toutesLesLignes.filter((l) => l.statut === 'rapprochee')",
       // Les parts des virements mixtes (étape VF5h) : de la lecture des ventes facturées, comme la revue les reçoit.
