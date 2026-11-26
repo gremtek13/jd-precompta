@@ -198,6 +198,56 @@ export const REFUS_DU_REGLAGE = {
 /** Le refus de `modules_ouverts_du_dossier` à qui n'est ni du cabinet du dossier ni l'un de ses accès client (42501). */
 export const REFUS_DE_LA_LECTURE = 'Accès refusé à ce dossier.'
 
+// ── La frontière de la tenue, en base (OPT6 ; OPT-Q1 (A), OPT-Q4 (A)) ─────────────────────────────────────────────────────
+
+/** Le drapeau de la migration préparée `frontiere_de_la_tenue` (OPT6, supabase/preparees/20261126120000_frontiere_de_la_tenue.sql),
+ *  BAISSÉ tant qu'elle n'est pas appliquée. Levé, la confirmation de fermer la tenue dit que la base refusera aussi la
+ *  validation, la publication et l'écriture libre (`TENUE_REFUSEE_EN_BASE`). Aucun écran ne lit la table autrement : la base
+ *  refuse seule, sous les mots de `REFUS_DE_LA_TENUE`, et les écrans de la tenue ne se montent déjà plus (OPT3). */
+export const FRONTIERE_DE_LA_TENUE_PREVUE = false
+
+/** Le refus de `garder_frontiere_de_la_tenue` (P0001), aux mots de la base : frontiereDeLaTenue.test.ts le confronte au texte
+ *  de la migration et de son essai. */
+export const REFUS_DE_LA_TENUE =
+  'Le module « Tenue et déclarations » n\'est pas ouvert au cabinet de ce dossier : ni validation d\'exercice, ni situation publiée, ni écriture libre.'
+
+/** Ce que la base refuse aux dossiers d'un cabinet sans la tenue, dit avant de la fermer (OPT6). */
+export const TENUE_REFUSEE_EN_BASE =
+  'La base refusera aussi aux dossiers de ce cabinet la validation d’un exercice, la publication d’une situation et l’enregistrement '
+  + 'd’une écriture libre ; ce qui est déjà validé, publié ou écrit reste tel quel, et une situation publiée se retire toujours.'
+
+/** Les phrases propres à la fermeture de la tenue, selon que la frontière est en base ou non (le drapeau, passé en paramètre
+ *  pour que ses deux états s'éprouvent). */
+export function phrasesDeLaFermetureDeLaTenue(frontiereEnBase: boolean): string[] {
+  return frontiereEnBase ? [TENUE_REFUSEE_EN_BASE] : []
+}
+
+// ── Les sections d'un écran du socle qui appartiennent à un module (OPT3) ───────────────────────────────────────────────
+
+/**
+ * Les composants qu'un écran du socle monte comme SECTION d'un module : chacun ne se monte que sous `estOuvert(<son module>, …)`,
+ * à chaque point de montage (modulesDeclares.test.ts le lit dans l'expression JSX qui le monte). Un composant du socle n'y
+ * figure pas. Liste FERMÉE tenue à la main — une section ne se reconnaît pas à sa forme — : le scanner la confronte aussi aux
+ * fichiers de components/ et pages/ dont le nom désigne un module (`NOMS_DES_SECTIONS`), pour qu'une section neuve d'un module
+ * connu n'y échappe pas.
+ */
+export const MODULE_DE_LA_SECTION: Readonly<Record<string, ModuleOptionnel>> = {
+  PaiementsAssuranceMaladie: 'assurance_maladie',
+  FactureAssuranceMaladie: 'assurance_maladie',
+  DuContrePaye: 'assurance_maladie',
+  AssociationDansLaSection: 'assurance_maladie',
+  EcrituresLibresSection: 'tenue',
+  ConnexionBancaireCard: 'connexion_bancaire',
+}
+
+/** Les noms de fichier qui désignent un module : tout composant ainsi nommé, monté hors de son propre fichier, est une section
+ *  de ce module et doit figurer dans `MODULE_DE_LA_SECTION`. */
+export const NOMS_DES_SECTIONS: readonly (readonly [RegExp, ModuleOptionnel])[] = [
+  [/AssuranceMaladie|DuContrePaye/, 'assurance_maladie'],
+  [/EcrituresLibres|EcritureLibre/, 'tenue'],
+  [/ConnexionBancaire/, 'connexion_bancaire'],
+]
+
 // ── La lecture (le côté fermé) ─────────────────────────────────────────────────────────────────────────────────────────
 
 /**

@@ -1365,8 +1365,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         />
       )}
 
-      {/* Les écritures de l'expert-comptable (EL5) : derrière le drapeau de leur migration, rien ne se monte ni ne se lit avant. */}
-      {ECRITURES_LIBRES_PREVUES && (
+      {/* Les écritures de l'expert-comptable (EL5) : derrière le drapeau de leur migration, rien ne se monte ni ne se lit avant.
+          L'écriture libre est de la tenue (OPT-Q4 (A)) : la section ne se monte que sous son module ; fermé, les écritures déjà
+          passées restent lues, comptées et exportées (OPT-Q2 (A)), et la base refuse d'en passer d'autres (OPT6). */}
+      {ECRITURES_LIBRES_PREVUES && estOuvert('tenue', modulesOuverts) && (
         <EcrituresLibresSection
           dossierId={dossierId}
           annee={anneeFilter}

@@ -565,7 +565,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // Sur un code NAF de santé ou de la liste fermée (NOE4-Q1 (C), NOE4Q1-Q1 (B)), ou dès qu'un import est lu (NOE4Q1-Q2 (A)) :
   // hors de là, ni la section ni la fiche d'un crédit n'OFFRENT l'association ; la lecture, elle, continue — un crédit déjà
   // associé reste hors des candidats d'une vente.
-  const associationOfferte = sectionAssuranceMaladie(codeNaf, importsDeLaLecture(paiementsAssuranceMaladie.lu, dossierId)).offerte
+  // L'association d'un crédit dans sa fiche suit la section : sous le module de l'assurance maladie seul (OPT3), comme la
+  // section de l'onglet ; fermé, la fiche n'en dit rien (sectionsDesModules.test.ts, l'exception AssociationDansLaFiche).
+  const associationOfferte = estOuvert('assurance_maladie', modulesOuverts)
+    && sectionAssuranceMaladie(codeNaf, importsDeLaLecture(paiementsAssuranceMaladie.lu, dossierId)).offerte
   const associesAssuranceMaladie = useMemo(
     () => associesPourLesVentes(ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, paiementsAssuranceMaladie.lu),
     [paiementsAssuranceMaladie.lu],
