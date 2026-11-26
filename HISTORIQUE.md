@@ -54871,3 +54871,22 @@ EL… du … » sous l'écriture annulée, les deux à la suite si besoin ; un l
 Le CSV gagne la colonne « Contre-passation » après l'extourne, le PDF une ligne avant le motif — seulement si le contexte dit le lien
 lu (`contrePassation`, obligatoire) : le drapeau baissé, l'état d'hier. FEC, piste d'audit et 2035 inchangés (le FEC fictif à l'octet).
 Deux mutations mordent (le « non lu » tu ; le drapeau ignoré, à l'écran et dans le module).
+
+### 26/11/2026 — RA253 : LE FICHIER D'UNE PIÈCE CITÉE EN PRODUCTION (254)
+
+(Agent architecte ; appliquée le 26/11/2026 par la session, par l'outil, sur l'accord du cabinet : RA253-migration (A).)
+`fichier_cite_par_une_ecriture_libre` est la 254e migration, version `20261126065131`, sa ligne d'historique à l'empreinte du fichier
+(`66c3fcea…`, 10 251 caractères sans la dernière fin de ligne) ; rangée dans l'export sous cette version, texte inchangé, son retour
+dans `supabase/preparees/retour/` (celui d'INAL1 dit qu'il refuse désormais : le retour de 254 d'abord). `fichier_fige` porte en
+production le corps `5e7016c0…` : le fichier d'une pièce qu'une écriture libre cite, ouverte ou figée, ne se retire plus par l'API.
+INV3 reprise sur ce corps (REPET-Q2) : la condition des écritures libres gardée, la sienne après (`10a41852…`), son commentaire celui
+du jour plus l'inventaire, sans le nom de la policy ; son retour rend `5e7016c0…` et son commentaire. L'essai du fichier cité ne mute
+plus que la ligne des écritures libres, sans ce qui la suit : il passe avant et après INV3 ; `dossierPermanent` et
+`exemplairesDesFactures` n'admettent plus que `5e7016c0…` et `10a41852…` (SÛRS au banc du leurre, 190 et 324 verdicts). Sur une copie
+de `replique_227` portée à 254 : dérive 254 `8727d024…`, socle 84 `e54200f4…`, inventaire 3 518 `a6475fb0…`, égaux aux fichiers (la
+production à comparer par la session) ; `rls.sql` 0 sur 1 357, 178 mutations ; `pieceFigeeDansLeStockage` 28 + 9 ; `dossierPermanent`
+189 ; `exemplairesDesFactures` 323 ; l'essai du fichier cité 0/11 et 2 ; l'INV3 d'hier refuse à sa garde de tête ; INV2 puis INV3
+reprise s'appliquent (son essai 0/71 et 25, le fichier cité 0/11 et 2, `validationExercice` 250, `rls.sql` 0 sur 1 379 et 184 ;
+inventaire 3 566, 3 593, puis 3 566 après son retour). RA253-Q2 (B), à la recommandation : la pièce qu'une écriture d'un exercice
+validé cite garde ses champs modifiables — son fichier ne bouge plus (254), ses champs ne comptent nulle part tant qu'elle n'est pas
+validée ; rien à coder. RA253-Q1 (A) se traite à part.

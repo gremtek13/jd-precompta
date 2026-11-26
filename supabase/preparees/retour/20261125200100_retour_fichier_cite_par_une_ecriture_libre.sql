@@ -1,7 +1,9 @@
--- RETOUR DE `fichier_cite_par_une_ecriture_libre` (supabase/preparees/20261125200000_fichier_cite_par_une_ecriture_libre.sql) :
+-- RETOUR DE `fichier_cite_par_une_ecriture_libre` (supabase/schema/20261126065131_fichier_cite_par_une_ecriture_libre.sql, en
+-- production depuis le 26/11/2026, 254 ; le retour reste PRÉPARÉ) :
 -- `fichier_fige` reprend son corps de production d'avant (INAL1, 5372f8d2…) et son commentaire, au caractère près. Rien d'autre
 -- n'avait changé : aucune donnée, aucune policy, aucun droit (`create or replace` les garde). Après lui, le fichier d'une pièce
--- qu'une écriture libre cite se retire de nouveau par l'API du stockage, comme avant la migration.
+-- qu'une écriture libre cite se retire de nouveau par l'API du stockage, comme avant la migration. Il refuse après INV3
+-- (`validation_de_l_inventaire`), qui remplace `fichier_fige` en gardant cette condition : le retour d'INV3 d'abord.
 --
 -- LA VOIE : le commentaire d'hier nomme la policy de suppression du seau des pièces par son nom, qui porte le mot que l'outil
 -- d'application retient : ce retour SE COLLE dans l'éditeur SQL de Supabase, dans une transaction, sur l'accord du cabinet. Ni

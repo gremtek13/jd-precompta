@@ -11,7 +11,8 @@ import { definitionsSql, fichiersDuSchema, fichiersPrepares } from '../test/sche
 // l'écraser, et se reprend sur le corps du jour. La garde de la migration de l'inventaire (`validation_de_l_inventaire`, INV3)
 // le faisait déjà pour `valider_exercice` (923cfa1b…, son corps de production d'alors), ce que la répétition du 14/11/2026
 // avait cru absent ; une mutation d'un caractère de ce corps la fait refuser sur une copie de la réplique. Le 25/11/2026,
-// `codes_des_clients` (EXP58-Q2) a remplacé ce corps en production (65df5e35…) : INV3 s'est reprise dessus.
+// `codes_des_clients` (EXP58-Q2) a remplacé ce corps en production (65df5e35…) : INV3 s'est reprise dessus ; le 26/11/2026,
+// `fichier_cite_par_une_ecriture_libre` (254) a remplacé celui de `fichier_fige` (5e7016c0…) : INV3 aussi, sa condition gardée.
 //
 // Le scanner part de TOUTES les préparées (supabase/preparees) ; une exception porte sa raison et se compte ; un plancher
 // distingue « zéro faute » d'« aveugle » ; des défauts plantés prouvent qu'il voit (une garde sans l'empreinte, l'empreinte
@@ -78,6 +79,10 @@ describe('une migration préparée qui remplace une fonction en vérifie le corp
     // le même jour (EXP58Q2-Q3 (A)) ; avant, celui d'`empreinte_des_exercices_forme_2` (923cfa1b…).
     expect(liste.find((r) => r.migration === 'validation_de_l_inventaire' && r.fonction === 'valider_exercice')?.production)
       .toBe('65df5e35dc5d0d82534a9e22eaaa8429')
+    // `fichier_fige` en production depuis le 26/11/2026 : celui de `fichier_cite_par_une_ecriture_libre` (RA253, 254), sur
+    // lequel INV3 a été reprise le même jour ; avant, celui de `piece_figee_dans_le_stockage` (INAL1, 5372f8d2…).
+    expect(liste.find((r) => r.migration === 'validation_de_l_inventaire' && r.fonction === 'fichier_fige')?.production)
+      .toBe('5e7016c08bcdda1190d6e56202661113')
     // Aucune préparée ne remplace une fonction que l'export n'a pas : un `create or replace` d'une fonction neuve se lirait ici.
     expect(liste.filter((r) => r.production === null)).toEqual([])
   })
