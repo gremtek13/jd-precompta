@@ -1071,7 +1071,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
 
       {/* Les notes de frais du client (ligne 51.5, étape B8) : avec leur migration (B7) seulement — avant, leur table n'existe
           pas. Ici, où le cabinet valide les pièces qu'elles citent. */}
-      {NOTES_DE_FRAIS_PREVUES && <NotesDeFraisDuClient dossierId={dossierId} />}
+      {NOTES_DE_FRAIS_PREVUES && <NotesDeFraisDuClient dossierId={dossierId} mode={modele?.mode ?? null} />}
 
       <div style={{ marginBottom: 14 }}>
         <BarreRecherche

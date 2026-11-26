@@ -338,7 +338,7 @@ const ECRANS: Ecran[] = [
   // « Mes notes de frais » (ligne 51.5, étape B8) : les cases « Notes de frais » et « Achats » relues à la base avec les notes et
   // les pièces que le compte a déposées ; et, côté cabinet, la section de l'onglet Justificatifs : les notes et leurs justificatifs.
   { nom: 'ClientNotesDeFrais', fichier: 'pages/ClientNotesDeFrais.tsx', rendre: () => { notesDeFraisGarde.leve = true; return <MemoryRouter><ClientNotesDeFrais /></MemoryRouter> } },
-  { nom: 'NotesDeFraisDuClient', fichier: 'pages/dossier/NotesDeFraisDuClient.tsx', rendre: () => { notesDeFraisGarde.leve = true; return <NotesDeFraisDuClient dossierId="d1" /> } },
+  { nom: 'NotesDeFraisDuClient', fichier: 'pages/dossier/NotesDeFraisDuClient.tsx', rendre: () => { notesDeFraisGarde.leve = true; return <NotesDeFraisDuClient dossierId="d1" mode="tresorerie" /> } },
   // Les sections du cabinet (étape B3a), sous l'onglet des documents administratifs : documents, ouvertures et accès ; demandes,
   // réponses, relances et dépôts cités.
   { nom: 'DocumentsMisADisposition', fichier: 'pages/dossier/DocumentsMisADisposition.tsx', rendre: () => <DocumentsMisADisposition dossierId="d1" /> },

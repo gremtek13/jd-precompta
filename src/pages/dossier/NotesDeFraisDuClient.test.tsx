@@ -5,6 +5,10 @@ import { REFUS_DES_NOTES } from '../../lib/notesDeFrais'
 import { LIBELLE_MOTIF_REFUS_NOTE_DE_FRAIS } from '../../lib/droitsAcces'
 import type { NoteDeFrais } from '../../lib/notesDeFraisVue'
 import type { NotesDeFraisDuDossierLues } from '../../lib/notesDeFraisLecture'
+import {
+  PHRASE_MODELE_INCONNU, PHRASE_NOTE_D_UN_SALARIE_TRESORERIE, PHRASE_NOTE_DE_L_EXPLOITANT_TRESORERIE, PHRASE_POUR_QUI_INCONNU,
+  PHRASE_PROPOSE_EXPLOITANT,
+} from '../../lib/notesDeFraisEnComptabilite'
 
 // Les notes de frais du client, côté cabinet (étape B8), dans l'onglet Justificatifs : rien sous le drapeau baissé ; rien avant
 // le retour ; une lecture partielle n'offre aucun geste ; un brouillon ne se dit qu'en nombre ; approuver sur une confirmation
@@ -48,7 +52,9 @@ const note = (n: Partial<NoteDeFrais>): NoteDeFrais => ({
 })
 const lue = <T,>(lignes: T[], complete = true) => ({ lignes, complete, motif: complete ? null : 'lecture interrompue' })
 const lecture = (notes: NoteDeFrais[], p: Partial<NotesDeFraisDuDossierLues> = {}): NotesDeFraisDuDossierLues => ({
-  dossierId: 'd1', lesNotes: lue(notes), justificatifs: lue([{ id: 'p1', dossier_id: 'd1', nom_fichier: 'ticket-fictif.pdf', statut: 'a_valider' }]),
+  dossierId: 'd1', lesNotes: lue(notes),
+  justificatifs: lue([{ id: 'p1', dossier_id: 'd1', nom_fichier: 'ticket-fictif.pdf', statut: 'a_valider', type_piece: 'achat' as const }]),
+  acces: lue([{ id: 'm1', dossier_id: 'd1', user_id: 'u1', droit_achats: true }, { id: 'm2', dossier_id: 'd1', user_id: 'u2', droit_achats: false }]),
   ...p,
 })
 const carte = (nom: string) => screen.findByRole('listitem', { name: `Note « ${nom} »` })
@@ -56,21 +62,21 @@ const carte = (nom: string) => screen.findByRole('listitem', { name: `Note « ${
 describe('les notes de frais du client, côté cabinet', () => {
   it('rien sous le drapeau baissé ; rien avant le retour ; une lecture partielle n’offre rien ; un brouillon se compte seulement', async () => {
     faux.leve = false
-    const baisse = render(<NotesDeFraisDuClient dossierId="d1" />)
+    const baisse = render(<NotesDeFraisDuClient dossierId="d1" mode="tresorerie" />)
     expect(baisse.container.textContent).toBe('')
     expect(faux.lectures).toBe(0)
     baisse.unmount()
     faux.leve = true
-    const premier = render(<NotesDeFraisDuClient dossierId="d1" />)
+    const premier = render(<NotesDeFraisDuClient dossierId="d1" mode="tresorerie" />)
     expect(screen.getByText('Chargement…')).toBeTruthy()
     premier.unmount()
     faux.lecture = lecture([note({})], { justificatifs: lue([], false) })
-    const second = render(<NotesDeFraisDuClient dossierId="d1" />)
+    const second = render(<NotesDeFraisDuClient dossierId="d1" mode="tresorerie" />)
     expect(await screen.findByText(/Les notes de frais du client n'ont pas pu être lues/)).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
     second.unmount()
     faux.lecture = lecture([note({ etat: 'brouillon', soumise_le: null })])
-    render(<NotesDeFraisDuClient dossierId="d1" />)
+    render(<NotesDeFraisDuClient dossierId="d1" mode="tresorerie" />)
     expect(await screen.findByText(/Un brouillon est en cours/)).toBeTruthy()
     expect(screen.getByText('Le client n’a soumis aucune note de frais.')).toBeTruthy()
     expect(screen.queryByText(/Déjeuner fictif/)).toBeNull()
@@ -79,7 +85,7 @@ describe('les notes de frais du client, côté cabinet', () => {
   it('approuver : une confirmation qui nomme la note, un envoi pour deux clics, à la version lue', async () => {
     faux.lecture = lecture([note({ beneficiaire_salarie: 'Salarié fictif' })])
     const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<NotesDeFraisDuClient dossierId="d1" />)
+    render(<NotesDeFraisDuClient dossierId="d1" mode="tresorerie" />)
     const c = await carte('Repas du 02/11/2026')
     expect(within(c).getByText('Pour le salarié Salarié fictif, saisie par un accès du client')).toBeTruthy()
     expect(within(c).getByText('ticket-fictif.pdf')).toBeTruthy()
@@ -98,7 +104,7 @@ describe('les notes de frais du client, côté cabinet', () => {
     faux.lecture = lecture([note({}), note({ id: 'n2', etat: 'approuvee', approuvee_le: '2026-11-04T10:00:00Z', date_depense: '2026-11-01',
       nature: 'transport', motif: 'Train fictif', piece_id: null })])
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<NotesDeFraisDuClient dossierId="d1" />)
+    render(<NotesDeFraisDuClient dossierId="d1" mode="tresorerie" />)
     const c = await carte('Repas du 02/11/2026')
     fireEvent.click(within(c).getByRole('button', { name: 'Refuser' }))
     const champ = within(c).getByLabelText(LIBELLE_MOTIF_REFUS_NOTE_DE_FRAIS)
@@ -121,5 +127,61 @@ describe('les notes de frais du client, côté cabinet', () => {
     fireEvent.change(within(a).getByLabelText('Moyen du remboursement'), { target: { value: 'cheque' } })
     fireEvent.click(within(a).getByRole('button', { name: 'Déclarer le remboursement' }))
     expect(faux.appels).toEqual([{ nom: 'rembourser_note_de_frais', args: { p_note_id: 'n2', p_version_lue: 2, p_date: '2026-11-05', p_moyen: 'cheque' } }])
+  })
+})
+
+// Lot L3 (conception 58, § 2.1) : le type du justificatif d'une note approuvée ou remboursée, dit et signalé, sans rien écrire.
+describe('le type du justificatif d’une note (lot L3)', () => {
+  const exploitant = () => note({ id: 'n3', etat: 'approuvee', approuvee_le: '2026-11-04T10:00:00Z' })
+  const salarie = () => note({
+    id: 'n4', etat: 'approuvee', approuvee_le: '2026-11-04T10:00:00Z', beneficiaire_salarie: 'Salarié fictif', nature: 'transport',
+    date_depense: '2026-11-01', piece_id: 'p2',
+  })
+  const pieces = (t1: 'achat' | 'note_frais', t2: 'achat' | 'note_frais') => lue([
+    { id: 'p1', dossier_id: 'd1', nom_fichier: 'ticket-fictif.pdf', statut: 'a_valider', type_piece: t1 },
+    { id: 'p2', dossier_id: 'd1', nom_fichier: 'billet-fictif.pdf', statut: 'a_valider', type_piece: t2 },
+  ])
+
+  it('l’exploitant en « Note de frais », le salarié en « Achat » ; la pièce rangée autrement se signale ; rien ne s’écrit', async () => {
+    faux.lecture = lecture([exploitant(), salarie()], { justificatifs: pieces('achat', 'note_frais') })
+    render(<NotesDeFraisDuClient dossierId="d1" mode="tresorerie" />)
+    const e = await carte('Repas du 02/11/2026')
+    const typeE = within(e).getByRole('note', { name: 'Le type de son justificatif' })
+    expect(within(typeE).getByText('Justificatif à ranger')).toBeTruthy()
+    expect(within(typeE).getByText(PHRASE_NOTE_DE_L_EXPLOITANT_TRESORERIE)).toBeTruthy()
+    expect(within(typeE).getByText(PHRASE_PROPOSE_EXPLOITANT)).toBeTruthy()
+    expect(within(typeE).getByText('Son justificatif est rangé en « Achat » : à reprendre dans sa fiche, en « Note de frais ».')).toBeTruthy()
+    const s = await carte('Transport du 01/11/2026')
+    const typeS = within(s).getByRole('note', { name: 'Le type de son justificatif' })
+    expect(within(typeS).getByText(PHRASE_NOTE_D_UN_SALARIE_TRESORERIE)).toBeTruthy()
+    expect(within(typeS).getByText('Son justificatif est rangé en « Note de frais » : à reprendre dans sa fiche, en « Achat ».')).toBeTruthy()
+    expect(faux.appels).toEqual([])
+  })
+
+  it('bien rangé, rien ne se signale ; la confirmation du remboursement de l’exploitant dit le virement personnel', async () => {
+    faux.lecture = lecture([exploitant(), salarie()], { justificatifs: pieces('note_frais', 'achat') })
+    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<NotesDeFraisDuClient dossierId="d1" mode="tresorerie" />)
+    const e = await carte('Repas du 02/11/2026')
+    expect(within(e).queryByText('Justificatif à ranger')).toBeNull()
+    expect(within(await carte('Transport du 01/11/2026')).queryByText('Justificatif à ranger')).toBeNull()
+    fireEvent.click(within(e).getByRole('button', { name: 'Déclarer remboursée' }))
+    fireEvent.change(within(e).getByLabelText('Remboursée le'), { target: { value: '2026-11-05' } })
+    fireEvent.change(within(e).getByLabelText('Moyen du remboursement'), { target: { value: 'virement' } })
+    fireEvent.click(within(e).getByRole('button', { name: 'Déclarer le remboursement' }))
+    expect(confirmer.mock.calls[0]?.[0]).toMatch(/virement personnel : la dépense a compté à sa date\.$/)
+    expect(faux.appels).toEqual([])
+  })
+
+  it('le modèle non relu ne dit pas le type ; les accès non relus ne proposent rien pour une note saisie pour soi', async () => {
+    faux.lecture = lecture([exploitant()])
+    const sansModele = render(<NotesDeFraisDuClient dossierId="d1" mode={null} />)
+    expect(within(await carte('Repas du 02/11/2026')).getByText(PHRASE_MODELE_INCONNU)).toBeTruthy()
+    sansModele.unmount()
+    faux.lecture = lecture([exploitant()], { acces: lue([], false) })
+    render(<NotesDeFraisDuClient dossierId="d1" mode="tresorerie" />)
+    const e = await carte('Repas du 02/11/2026')
+    expect(within(e).getByText(PHRASE_POUR_QUI_INCONNU)).toBeTruthy()
+    expect(within(e).queryByText('Justificatif à ranger')).toBeNull()
   })
 })

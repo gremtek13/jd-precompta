@@ -3,6 +3,7 @@ import { messageErreur } from './messageErreur'
 import { supabase } from './supabase'
 import { NOTES_DE_FRAIS_PREVUES } from './notesDeFrais'
 import type { NoteDeFrais, PieceDeLAuteur } from './notesDeFraisVue'
+import type { TypePiece } from './types'
 
 // LES NOTES DE FRAIS, CE QUE LES ÉCRANS LISENT (espace client, ligne 51.5, étape B8 ; le patron : lib/achatsClientLecture.ts).
 // Aucune de ces lectures ne rejette : une requête qui lève ou un refus tombent du côté signalé, avec leur motif — jamais une
@@ -72,31 +73,63 @@ export async function lireMesNotesDeFrais(dossierId: string, moi: string): Promi
 // ── Côté cabinet ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // La section de l'onglet Justificatifs : toutes les notes du dossier (la base les ouvre au cabinet), et le nom des pièces
 // qu'elles citent — lues dans une seconde vague, par leurs identifiants.
+/** Le justificatif d'une note, tel que la section du cabinet le dit : son type décide de son écriture (lot L3). */
+export interface JustificatifDUneNote {
+  id: string
+  dossier_id: string
+  nom_fichier: string
+  statut: string
+  type_piece: TypePiece
+}
+
+/** Un accès du dossier et sa case « Achats » (lot L3 : la proposition de pour qui est une note saisie pour soi). */
+export interface AccesDUneNote {
+  id: string
+  dossier_id: string
+  user_id: string
+  droit_achats: boolean | null
+}
+
 export interface NotesDeFraisDuDossierLues {
   dossierId: string
   lesNotes: LectureComplete<NoteDeFrais>
-  justificatifs: LectureComplete<{ id: string; dossier_id: string; nom_fichier: string; statut: string }>
+  justificatifs: LectureComplete<JustificatifDUneNote>
+  /** Lue à part : illisible, rien ne se propose pour une note saisie pour soi, et le reste de la section se dit. */
+  acces: LectureComplete<AccesDUneNote>
+}
+
+// Les accès du dossier et leur case « Achats », sans jamais lever : une lecture refusée tombe du côté signalé.
+async function lireLesAcces(dossierId: string): Promise<LectureComplete<AccesDUneNote>> {
+  try {
+    const lus = await lireTout<AccesDUneNote>((debut, fin) =>
+      supabase.from('memberships').select('id, dossier_id, user_id, droit_achats', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin))
+    return lus.complete ? duDossier(lus, dossierId) : lus
+  } catch (erreur) {
+    return echec(messageErreur(erreur, 'lecture refusée'))
+  }
 }
 
 export async function lireLesNotesDeFraisDuDossier(dossierId: string): Promise<NotesDeFraisDuDossierLues> {
   if (!NOTES_DE_FRAIS_PREVUES) {
     const motif = 'les notes de frais ne sont pas encore en base'
-    return { dossierId, lesNotes: echec(motif), justificatifs: echec(motif) }
+    return { dossierId, lesNotes: echec(motif), justificatifs: echec(motif), acces: echec(motif) }
   }
+  const acces = await lireLesAcces(dossierId)
   try {
     const lues = await lireTout<NoteDeFrais>((debut, fin) =>
       supabase.from('notes_de_frais').select(COLONNES_NOTE, { count: 'exact' })
         .eq('dossier_id', dossierId).order('cree_le').order('id').range(debut, fin))
     const lesNotes = lues.complete ? duDossier(lues, dossierId) : lues
-    if (!lesNotes.complete) return { dossierId, lesNotes, justificatifs: echec(lesNotes.motif ?? 'les notes de frais n’ont pas été lues') }
+    if (!lesNotes.complete) return { dossierId, lesNotes, justificatifs: echec(lesNotes.motif ?? 'les notes de frais n’ont pas été lues'), acces }
     const ids = [...new Set(lesNotes.lignes.flatMap((n) => (n.piece_id === null ? [] : [n.piece_id])))].sort()
-    if (ids.length === 0) return { dossierId, lesNotes, justificatifs: { lignes: [], complete: true, motif: null } }
-    const justificatifs = await lireTout<{ id: string; dossier_id: string; nom_fichier: string; statut: string }>((debut, fin) =>
-      supabase.from('pieces').select('id, dossier_id, nom_fichier, statut', { count: 'exact' })
+    if (ids.length === 0) return { dossierId, lesNotes, justificatifs: { lignes: [], complete: true, motif: null }, acces }
+    const justificatifs = await lireTout<JustificatifDUneNote>((debut, fin) =>
+      supabase.from('pieces').select('id, dossier_id, nom_fichier, statut, type_piece', { count: 'exact' })
         .eq('dossier_id', dossierId).in('id', ids).order('id').range(debut, fin))
-    return { dossierId, lesNotes, justificatifs: justificatifs.complete ? duDossier(justificatifs, dossierId) : justificatifs }
+    return { dossierId, lesNotes, justificatifs: justificatifs.complete ? duDossier(justificatifs, dossierId) : justificatifs, acces }
   } catch (erreur) {
     const motif = messageErreur(erreur, 'lecture refusée')
-    return { dossierId, lesNotes: echec(motif), justificatifs: echec(motif) }
+    return { dossierId, lesNotes: echec(motif), justificatifs: echec(motif), acces }
   }
 }

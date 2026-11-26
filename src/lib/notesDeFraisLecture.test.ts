@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { lireMesNotesDeFrais } from './notesDeFraisLecture'
+import { lireLesNotesDeFraisDuDossier, lireMesNotesDeFrais } from './notesDeFraisLecture'
 
 // Ce que « Mes notes de frais » lit (étape B8) : RIEN, drapeau baissé (la table n'existe pas avant B7) ; levé, les cases
 // « Notes de frais » et « Achats » relues à la base, seul `true` accorde. B8-Q1 (12/11/2026) : « Achats » SEUL ouvre la
@@ -9,6 +9,8 @@ const faux = vi.hoisted(() => ({
   drapeau: true,
   droits: { data: { frais: true, achats: false } as unknown, error: null as unknown },
   lues: [] as string[],
+  colonnes: [] as string[],
+  refuser: null as string | null,
 }))
 
 vi.mock('./notesDeFrais', async (original) => ({
@@ -18,8 +20,13 @@ vi.mock('./notesDeFrais', async (original) => ({
 vi.mock('./supabase', () => {
   const requete = (table: string) => {
     const r = {
-      select: () => r, order: () => r, eq: () => r,
-      range: () => { faux.lues.push(table); return Promise.resolve({ data: [], error: null, count: 0 }) },
+      select: (c: string) => { faux.colonnes.push(`${table}: ${c}`); return r }, order: () => r, eq: () => r, in: () => r,
+      range: () => {
+        faux.lues.push(table)
+        return Promise.resolve(faux.refuser === table
+          ? { data: null, error: { message: 'refus fictif' }, count: null }
+          : { data: [], error: null, count: 0 })
+      },
     }
     return r
   }
@@ -27,7 +34,28 @@ vi.mock('./supabase', () => {
 })
 
 afterEach(() => {
-  faux.drapeau = true; faux.droits = { data: { frais: true, achats: false }, error: null }; faux.lues = []
+  faux.drapeau = true; faux.droits = { data: { frais: true, achats: false }, error: null }; faux.lues = []; faux.colonnes = []
+  faux.refuser = null
+})
+
+// Lot L3 : la section du cabinet lit aussi les accès du dossier et leur case « Achats » — à part : refusée, elle ne fait tomber
+// ni les notes ni leurs justificatifs —, et le type de chaque justificatif.
+describe('les notes de frais du dossier, côté cabinet : les accès et leur case « Achats » (lot L3)', () => {
+  it('drapeau baissé : rien ne se lit, les trois lectures en échec', async () => {
+    faux.drapeau = false
+    const l = await lireLesNotesDeFraisDuDossier('d1')
+    expect([l.lesNotes.complete, l.justificatifs.complete, l.acces.complete]).toEqual([false, false, false])
+    expect(faux.lues).toEqual([])
+  })
+
+  it('levé : les accès avec leur case « Achats » ; leur refus ne fait tomber que leur lecture', async () => {
+    const l = await lireLesNotesDeFraisDuDossier('d1')
+    expect(faux.colonnes).toContain('memberships: id, dossier_id, user_id, droit_achats')
+    expect([l.lesNotes.complete, l.justificatifs.complete, l.acces.complete]).toEqual([true, true, true])
+    faux.refuser = 'memberships'
+    const refusee = await lireLesNotesDeFraisDuDossier('d1')
+    expect([refusee.lesNotes.complete, refusee.justificatifs.complete, refusee.acces.complete]).toEqual([true, true, false])
+  })
 })
 
 describe('« Mes notes de frais » : les cases relues à la base', () => {
