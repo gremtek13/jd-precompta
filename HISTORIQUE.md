@@ -54977,3 +54977,7 @@ des comptes, les codes de journaux — est « à saisir », aucun préchoisi ; u
 zéro, une devise, deux pièces que la coupe confondrait se refusent. Ni auxiliaire, ni lettrage, ni les quatre champs du BNC (l'enregistrement
 `M` n'en a pas), dit avant le clic. La base ne garde pas ses réglages (`logiciels_d_export()` ne rend qu'`acd`) : EXP3-Q4. Trois mutations
 mordent (la devise à blanc, le justificatif sur chaque ligne, le sens inversé). Non éprouvé : tout import réel ; EXP3-Q1 à Q4 ouvertes.
+
+## 26/11/2026 — DEUX RETOUCHES : LES CALCULS LOURDS DANS UN `beforeAll`, LES EN-TÊTES D'ESSAIS À JOUR
+`ecrituresLibresAppelants.test.ts` (lecture et analyse de tout `src/`) et `refusDesBordereauxAuDepot.test.ts` (analyse de toute la source, deux fois) paient désormais ce calcul dans un `beforeAll` à délai propre, les `it` ne gardent que leurs assertions ; `caisseDuClient`, `agentComptableAnalyse`, `recuperationMotDePasse` et `acompteDevis` (sa batterie est déjà dans un `beforeAll`) restent tels quels, leur plus long `it` tenant sous une seconde. Une mutation par fichier mord (plancher relevé, compte attendu faussé), annulée.
+Six essais (`hausseDuChiffreDAffaires`, `pieceDUnPaiementDansSonDossier`, `plancherALEcartDAlignement`, `especesDuClientHorsDesReprises`, `auteurDesOuvertures`, `modeDeReglementDesMouvements`) disent en en-tête, en commentaire seulement, « en production depuis le … (n°) » et le chemin réel dans `supabase/schema/` ; aucun SQL exécutable touché.

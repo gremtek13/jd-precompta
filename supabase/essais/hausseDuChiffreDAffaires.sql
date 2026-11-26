@@ -1,6 +1,6 @@
 -- L'ALERTE DU CHIFFRE D'AFFAIRES : LES SEUILS DE HAUSSE ET DE BAISSE DU DOSSIER ET LA MARQUE « VUE AVEC LE CLIENT » (la
 -- migration `hausse_du_chiffre_d_affaires`, PRÉPARÉE le 15/11/2026, REPRISE le 16/11/2026 sur les réponses du cabinet,
--- supabase/preparees/20261115140000_hausse_du_chiffre_d_affaires.sql). Le récit : HISTORIQUE.md, « 15/11/2026 — L'ALERTE DE
+-- en production depuis le 16/11/2026 (230), supabase/schema/20261116151848_hausse_du_chiffre_d_affaires.sql). Le récit : HISTORIQUE.md, « 15/11/2026 — L'ALERTE DE
 -- HAUSSE DU CHIFFRE D'AFFAIRES » et « 16/11/2026 — L'ALERTE DU CHIFFRE D'AFFAIRES REPRISE ». À rejouer par `execute_sql` après
 -- toute migration qui touche `seuils_du_chiffre_d_affaires`, `hausses_vues_avec_le_client`, leurs gardes, leurs deux
 -- fonctions, `admin_du_dossier` ou `is_super_admin`. Le retrait d'une ligne ne se joue pas ici (l'outil d'exécution de la

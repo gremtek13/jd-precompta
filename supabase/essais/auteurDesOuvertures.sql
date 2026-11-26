@@ -1,5 +1,5 @@
 -- QUI A OUVERT UN ACCÈS CLIENT : LE COMPTE DU CABINET, ATTESTÉ SOUS SA SESSION (espace client, ligne 51.5, P1TQ2-Q1 ; la
--- migration PRÉPARÉE `auteur_des_ouvertures_d_acces`, supabase/preparees/20261116120000_auteur_des_ouvertures_d_acces.sql).
+-- migration `auteur_des_ouvertures_d_acces`, en production depuis le 16/11/2026 (234), supabase/schema/20261116174937_auteur_des_ouvertures_d_acces.sql).
 -- Le récit : HISTORIQUE.md, « 16/11/2026 — P1TQ2-Q1 : QUI A OUVERT UN ACCÈS CLIENT ». À rejouer par `execute_sql` après
 -- toute migration qui touche `memberships`, ses déclencheurs, `trace_des_droits`, `auteurs_des_ouvertures` ou leurs
 -- fonctions.

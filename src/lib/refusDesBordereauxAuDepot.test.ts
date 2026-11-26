@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // TOUT CHEMIN DE DÉPÔT D'UN FICHIER CHOISI PASSE PAR LE REFUS DES BORDEREAUX (BOR6, première partie ; lib/refusDesBordereaux.ts).
 //
@@ -117,15 +117,22 @@ describe('chaque préparateur d’un fichier choisi passe par le refus des borde
 })
 
 describe('`preparerContenu` n’est appelé qu’aux endroits comptés', () => {
-  const fichiers = lister(join(RACINE, 'src')).map((c) => ({ chemin: relative(RACINE, c), texte: readFileSync(c, 'utf8') }))
+  // La lecture et l'analyse de toute la source se paient une fois, hors des `it` (CLAUDE.md, « Tests »).
+  let reels: Record<string, number>
+  let avecPlante: Record<string, number>
+  beforeAll(() => {
+    const fichiers = lister(join(RACINE, 'src')).map((c) => ({ chemin: relative(RACINE, c), texte: readFileSync(c, 'utf8') }))
+    reels = appelsDePreparerContenu(fichiers)
+    const plante = [...fichiers, { chemin: 'src/pages/Neuf.tsx', texte: 'const p = preparerContenu(\'pieces\', fichierChoisi, \'application/pdf\')' }]
+    avecPlante = appelsDePreparerContenu(plante)
+  }, 120_000)
 
   it('au nombre près, chacun avec sa raison', () => {
     const attendus = Object.fromEntries(Object.entries(APPELS_DE_PREPARER_CONTENU).map(([c, { n }]) => [c, n]))
-    expect(appelsDePreparerContenu(fichiers)).toEqual(attendus)
+    expect(reels).toEqual(attendus)
   })
 
   it('un appel neuf se voit', () => {
-    const plante = [...fichiers, { chemin: 'src/pages/Neuf.tsx', texte: 'const p = preparerContenu(\'pieces\', fichierChoisi, \'application/pdf\')' }]
-    expect(appelsDePreparerContenu(plante)['src/pages/Neuf.tsx']).toBe(1)
+    expect(avecPlante['src/pages/Neuf.tsx']).toBe(1)
   })
 })

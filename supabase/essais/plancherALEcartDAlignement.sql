@@ -1,5 +1,5 @@
 -- LA PIÈCE CITÉE RÉGLÉE À L'ÉCART D'ALIGNEMENT PRÈS : LE PLANCHER PREND LA PIÈCE ENTIÈRE (ligne 51.5, A8Q5Q3Q2-Q3 ; la migration
--- préparée `plancher_a_l_ecart_d_alignement`, supabase/preparees/20261116141000_plancher_a_l_ecart_d_alignement.sql). Le
+-- `plancher_a_l_ecart_d_alignement`, en production depuis le 16/11/2026 (232), supabase/schema/20261116174644_plancher_a_l_ecart_d_alignement.sql). Le
 -- récit : HISTORIQUE.md, « 16/11/2026 — A8Q5-Q4, A8Q5Q3Q2-Q3 ET A8Q5Q3Q2Q2-Q1 : TROIS MIGRATIONS PRÉPARÉES APRÈS LA GARDE DES
 -- RÈGLEMENTS ». À rejouer après toute migration qui touche `recu_par_la_piece`, `recu_par_la_piece_au_montant`,
 -- `garder_plancher_d_une_piece_citee`, `garder_recu_d_une_piece_citee`, `enregistrer_encaissement`,

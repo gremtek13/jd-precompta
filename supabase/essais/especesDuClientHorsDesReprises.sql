@@ -1,5 +1,5 @@
--- LE CLIENT NE RÈGLE JAMAIS EN ESPÈCES L'ORIGINAL D'UNE FACTURE REPRISE (ligne 51.5, A8Q5Q3Q2Q2-Q1 ; la migration préparée
--- `especes_du_client_hors_des_reprises`, supabase/preparees/20261116142000_especes_du_client_hors_des_reprises.sql). Le récit :
+-- LE CLIENT NE RÈGLE JAMAIS EN ESPÈCES L'ORIGINAL D'UNE FACTURE REPRISE (ligne 51.5, A8Q5Q3Q2Q2-Q1 ; la migration
+-- `especes_du_client_hors_des_reprises`, en production depuis le 16/11/2026 (233), supabase/schema/20261116174819_especes_du_client_hors_des_reprises.sql). Le récit :
 -- HISTORIQUE.md, « 16/11/2026 — A8Q5-Q4, A8Q5Q3Q2-Q3 ET A8Q5Q3Q2Q2-Q1 : TROIS MIGRATIONS PRÉPARÉES APRÈS LA GARDE DES
 -- RÈGLEMENTS ». À rejouer après toute migration qui touche `garder_especes_du_client_hors_des_reprises`,
 -- `pieces_hors_de_la_caisse_du_client`, les fonctions ou les gardes de la caisse, `garder_reglement_d_une_piece_reprise`,
