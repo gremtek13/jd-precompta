@@ -19,6 +19,7 @@ import { genreDApercu } from '../../lib/genreDApercu'
 import { IconChevron, IconPrecedent } from '../../components/icons'
 import { messageErreur } from '../../lib/messageErreur'
 import { refusDeSuppressionParUneEcritureLibre } from '../../lib/pieceCiteeParUneEcritureLibre'
+import { NumerosEntiers } from '../../components/NumerosEntiers'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
 import { retirerFichiers } from '../../lib/stockage'
 import { fichierAMontrer, fichiersDeLaPiece } from '../../lib/fichiersPiece'
@@ -925,7 +926,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               validation se corrige sur l’exercice suivant.
             </p>
           )}
-          {citeePar && <p className="fiche-piece-figee">{citeePar}</p>}
+          {citeePar && <p className="fiche-piece-figee"><NumerosEntiers texte={citeePar} /></p>}
           {declareePar && <p className="fiche-piece-figee">{declareePar}</p>}
           {retenueParLaCaisse && <p className="fiche-piece-figee">{retenueParLaCaisse}</p>}
           {doublonProbable && (

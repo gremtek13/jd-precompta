@@ -13,8 +13,8 @@
 import { chromium } from 'playwright-core'
 import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 import {
-  SECTION_LIBRE, contrePassationFaite, contrePassationOuverte, ecritureLibrePassee, ecritureLibreRetiree, ecrituresFigeesOuvertes, exportOuvert,
-  reglagesEnregistres, saisieLibreOuverte, saisieLibreRemplie,
+  SECTION_LIBRE, contrePassationFaite, contrePassationOuverte, contrePassationRetiree, ecritureLibrePassee, ecritureLibreRetiree, ecrituresFigeesOuvertes, exportOuvert,
+  pieceCiteeFigeeOuverte, reglagesEnregistres, saisieLibreOuverte, saisieLibreRemplie,
 } from './ecrituresLibres.mjs'
 
 const BASE = 'http://127.0.0.1:5199/'
@@ -475,6 +475,10 @@ const VUES = [
       suffixe: 'contre-passation-2026', chemin: '#/dossiers/d9/ecritures',
       pas: async (page) => { await contrePassationFaite(page); await (await ecrituresFigeesOuvertes(page, '2026')).evaluate((e) => e.scrollIntoView({ block: 'start' })) },
     },
+    // Le retrait de la contre-passation encore ouverte (exercice 2026) : EL2025-0001 de nouveau offerte à « Contre-passer ». Puis la
+    // fiche de la pièce que cite EL2025-0002, figée : sa citation ne se retire plus (ELQ8Q1-Q1 (A)).
+    { suffixe: 'contre-passation-retiree', chemin: '#/dossiers/d9/ecritures', pas: async (page) => { await (await contrePassationRetiree(page)).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
+    { suffixe: 'piece-citee-figee', chemin: '#/dossiers/d9/pieces', pas: async (page) => { await (await pieceCiteeFigeeOuverte(page)).evaluate((e) => e.scrollIntoView({ block: 'center' })) } },
     { suffixe: 'export-lecture', chemin: '#/dossiers/d1/ecritures', pas: async (page) => { await (await exportOuvert(page, 'lente')).evaluate((e) => e.scrollIntoView({ block: 'center' })) } },
     { suffixe: 'export-a-saisir', chemin: '#/dossiers/d1/ecritures', pas: async (page) => { await (await exportOuvert(page)).evaluate((e) => e.scrollIntoView({ block: 'start' })) } },
     {
