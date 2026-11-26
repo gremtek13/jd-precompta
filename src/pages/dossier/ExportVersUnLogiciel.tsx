@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import type { NumerotationFec } from '../../lib/fec'
 import {
   FORMES_DES_TIERS, justificatifsDeLExport, journauxDuFec, LONGUEUR_DES_COMPTES_MAX, LONGUEUR_DES_COMPTES_MIN,
@@ -11,7 +11,14 @@ import {
   type JournalDeLApplication, type LectureDesReglagesDExport, type SaisieDesReglages,
 } from '../../lib/reglagesDExport'
 import { enregistrerLesReglagesDExport, lireLesReglagesDExport } from '../../lib/reglagesDExportLecture'
-import { fabriquerLArchive, mesurerLesJustificatifs, type PoidsDesJustificatifs } from '../../lib/exportVersUnLogicielLecture'
+import {
+  fabriquerLArchive, fabriquerLArchiveQuadra, mesurerLesJustificatifs, type PoidsDesJustificatifs,
+} from '../../lib/exportVersUnLogicielLecture'
+import {
+  ENCODAGES_QUADRA, FINS_D_ENREGISTREMENT_QUADRA, justificatifsDeLExportQuadra, LONGUEUR_DES_COMPTES_QUADRA_MAX,
+  LONGUEUR_DES_COMPTES_QUADRA_MIN, mettreEnFormePourQuadra, nomDuFichierQuadra, nomDuJustificatifQuadra, PROFIL_QUADRA,
+  PROFIL_QUADRA_OFFERT, type EncodageQuadra, type FinDEnregistrementQuadra,
+} from '../../lib/profilQuadra'
 import { messageErreur } from '../../lib/messageErreur'
 
 // « EXPORTER VERS UN LOGICIEL COMPTABLE » (EXP1, demande du cabinet du 17/11/2026), à côté du FEC dans l'onglet Écritures —
@@ -28,6 +35,11 @@ import { messageErreur } from '../../lib/messageErreur'
 // la saisie d'un seul geste contre la version lue (`enregistrer_reglages_d_export`), son refus dit avant le clic sous les mots
 // de la base (`refusDeLEnregistrement`), puis relit. Une lecture ratée ou partielle ne préremplit rien, le dit, et n'offre pas
 // l'enregistrement : l'export à la main reste possible, les réglages saisis ici.
+//
+// LE PROFIL CEGID QUADRA (EXP3, lib/profilQuadra.ts), derrière `PROFIL_QUADRA_OFFERT` BAISSÉ : levé, le choix du logiciel
+// l'offre, et sa section (`ExportVersQuadra`, plus bas) prend la place de celle d'ACD. Ses réglages ne se gardent pas — la
+// base n'en accepte que pour ACD (`logiciels_d_export()`) — : ils se saisissent à chaque export, tous « à saisir », aucun
+// préchoisi.
 //
 // Verrous `useRef` posés avant le `try`, relâchés dans le `finally` (après la relecture pour l'enregistrement) : deux clics ne
 // font qu'un export, qu'un enregistrement.
@@ -50,7 +62,7 @@ export default function ExportVersUnLogiciel({ dossierId, nomDuFec, fec, pieces,
   const lectureDemandee = useRef(0)
   const [ouvert, setOuvert] = useState(false)
   const [instantane, setInstantane] = useState<{ contenu: string; numerotation: NumerotationFec } | null>(null)
-  const [profil, setProfil] = useState<ProfilDExport>('acd')
+  const [profil, setProfil] = useState<ProfilDExport | typeof PROFIL_QUADRA.id>('acd')
   // Le drapeau baissé : les réglages proposés, ressaisis à chaque export (l'écran d'hier).
   const [longueur, setLongueur] = useState(String(REGLAGES_PROPOSES_ACD.longueurDesComptes))
   const [journaux, setJournaux] = useState<Record<string, string>>({})
@@ -86,7 +98,7 @@ export default function ExportVersUnLogiciel({ dossierId, nomDuFec, fec, pieces,
     setAvecJustificatifs(false)
     setPoids('a_mesurer')
     setOuvert(true)
-    if (REGLAGES_D_EXPORT_PREVUS) {
+    if (REGLAGES_D_EXPORT_PREVUS && profil !== PROFIL_QUADRA.id) {
       setLecture({ etat: 'en_cours' })
       setSaisie(SAISIE_A_SAISIR)
       setEnregistrement({ enCours: false, fait: null, erreur: null })
@@ -124,7 +136,8 @@ export default function ExportVersUnLogiciel({ dossierId, nomDuFec, fec, pieces,
   }
 
   async function enregistrerLesReglages() {
-    if (enregistrementEnCours.current || lus === null || refusDeLaSaisie !== null || rienAEnregistrer) return
+    // Quadra n'a pas de réglages gardés (la base ne connaît qu'ACD) : rien ne s'enregistre pour lui.
+    if (enregistrementEnCours.current || lus === null || refusDeLaSaisie !== null || rienAEnregistrer || profil === PROFIL_QUADRA.id) return
     enregistrementEnCours.current = true
     const versionLue = lus.gardes?.version ?? null
     setEnregistrement({ enCours: true, fait: null, erreur: null })
@@ -183,7 +196,28 @@ export default function ExportVersUnLogiciel({ dossierId, nomDuFec, fec, pieces,
     }
   }
 
-  const enLecture = REGLAGES_D_EXPORT_PREVUS && (lecture === null || lecture.etat === 'en_cours')
+  const enLecture = REGLAGES_D_EXPORT_PREVUS && profil !== PROFIL_QUADRA.id && (lecture === null || lecture.etat === 'en_cours')
+
+  const choixDuLogiciel = (
+    <label className="field">
+      <span>Logiciel</span>
+      <select value={profil} onChange={(e) => {
+        if (e.target.value === PROFIL_QUADRA.id) { setProfil(PROFIL_QUADRA.id); return }
+        const logiciel = e.target.value as ProfilDExport
+        setProfil(logiciel)
+        // Les réglages gardés sont ceux d'UN logiciel : un autre se relit, sa saisie repart de ce qu'il garde.
+        if (REGLAGES_D_EXPORT_PREVUS) {
+          setLecture({ etat: 'en_cours' })
+          setSaisie(SAISIE_A_SAISIR)
+          setEnregistrement({ enCours: false, fait: null, erreur: null })
+          void lireLesReglages(logiciel, () => true)
+        }
+      }}>
+        {PROFILS_D_EXPORT.map((p) => <option key={p.id} value={p.id}>{p.libelle}</option>)}
+        {PROFIL_QUADRA_OFFERT && <option value={PROFIL_QUADRA.id}>{PROFIL_QUADRA.libelle}</option>}
+      </select>
+    </label>
+  )
 
   return (
     <>
@@ -202,25 +236,14 @@ export default function ExportVersUnLogiciel({ dossierId, nomDuFec, fec, pieces,
           <p className="muted" role="status">Lecture des réglages que le dossier garde pour ce logiciel…</p>
         </div>
       )}
-      {ouvert && instantane !== null && misEnForme !== null && (
+      {ouvert && instantane !== null && profil === PROFIL_QUADRA.id && (
+        <ExportVersQuadra dossierId={dossierId} nomDuFec={nomDuFec} instantane={instantane} fec={fec} pieces={pieces}
+          choixDuLogiciel={choixDuLogiciel} />
+      )}
+      {ouvert && instantane !== null && profil !== PROFIL_QUADRA.id && misEnForme !== null && (
         <div className="card carte-export-logiciel" aria-label="Export vers un logiciel comptable">
           <div className="field-row aligne-bas" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <label className="field">
-              <span>Logiciel</span>
-              <select value={profil} onChange={(e) => {
-                const logiciel = e.target.value as ProfilDExport
-                setProfil(logiciel)
-                // Les réglages gardés sont ceux d'UN logiciel : un autre se relit, sa saisie repart de ce qu'il garde.
-                if (REGLAGES_D_EXPORT_PREVUS) {
-                  setLecture({ etat: 'en_cours' })
-                  setSaisie(SAISIE_A_SAISIR)
-                  setEnregistrement({ enCours: false, fait: null, erreur: null })
-                  void lireLesReglages(logiciel, () => true)
-                }
-              }}>
-                {PROFILS_D_EXPORT.map((p) => <option key={p.id} value={p.id}>{p.libelle}</option>)}
-              </select>
-            </label>
+            {choixDuLogiciel}
             {REGLAGES_D_EXPORT_PREVUS ? (
               <label className="field">
                 <span>Longueur des comptes ({LONGUEUR_DES_COMPTES_MIN} à {LONGUEUR_DES_COMPTES_MAX})</span>
@@ -359,6 +382,187 @@ export default function ExportVersUnLogiciel({ dossierId, nomDuFec, fec, pieces,
       )}
       {fait && <p className="muted" role="status" style={{ flexBasis: '100%' }}>{fait}</p>}
     </>
+  )
+}
+
+// LA SECTION DU PROFIL QUADRA (EXP3). Chaque réglage part « à saisir » — ni encodage, ni fin d'enregistrement, ni longueur,
+// ni code de journal préchoisi : la fiche de Cegid ne les fixe pas (lib/profilQuadra.ts) — et l'export se refuse en nommant
+// ce qui manque. L'aperçu dit avant le clic ce que la largeur fixe coupe et ce que l'enregistrement `M` ne porte pas. Avec
+// les justificatifs, leur nom s'écrit dans le fichier une fois leur type lu : l'archive les télécharge, puis compose.
+function ExportVersQuadra({ dossierId, nomDuFec, instantane, fec, pieces, choixDuLogiciel }: {
+  dossierId: string
+  nomDuFec: string
+  instantane: { contenu: string; numerotation: NumerotationFec }
+  fec: () => { contenu: string; numerotation: NumerotationFec } | null
+  pieces: readonly PieceDesJustificatifs[]
+  choixDuLogiciel: ReactNode
+}) {
+  const exportQuadraEnCours = useRef(false)
+  const [encodage, setEncodage] = useState<EncodageQuadra | null>(null)
+  const [finDEnregistrement, setFinDEnregistrement] = useState<FinDEnregistrementQuadra | null>(null)
+  const [longueur, setLongueur] = useState('')
+  const [journaux, setJournaux] = useState<Record<string, string>>({})
+  const [sansANouveaux, setSansANouveaux] = useState(false)
+  const [avecJustificatifs, setAvecJustificatifs] = useState(false)
+  const [poids, setPoids] = useState<PoidsDesJustificatifs | PoidsInconnu>('a_mesurer')
+  const [enCours, setEnCours] = useState(false)
+  const [erreur, setErreur] = useState<string | null>(null)
+  const [fait, setFait] = useState<string | null>(null)
+
+  const codes = useMemo(() => journauxDuFec(instantane.contenu), [instantane])
+  const reglages = useMemo(() => {
+    const t = longueur.trim()
+    return {
+      encodage, finDEnregistrement, journaux, sansANouveaux,
+      longueurDesComptes: t === '' ? null : /^[0-9]{1,2}$/.test(t) ? Number(t) : Number.NaN,
+    }
+  }, [encodage, finDEnregistrement, journaux, sansANouveaux, longueur])
+  const misEnForme = useMemo(() => mettreEnFormePourQuadra(instantane.contenu, reglages), [instantane, reglages])
+  const justificatifs = useMemo(
+    () => misEnForme.ok ? justificatifsDeLExportQuadra(dossierId, instantane.numerotation, pieces, misEnForme.numeros) : null,
+    [dossierId, instantane, misEnForme, pieces],
+  )
+  const nomDuFichier = nomDuFichierQuadra(nomDuFec)
+
+  async function cocherLesJustificatifs(coche: boolean) {
+    setAvecJustificatifs(coche)
+    if (!coche || justificatifs === null) return
+    setPoids('en_cours')
+    setPoids(await mesurerLesJustificatifs(dossierId, justificatifs.aJoindre))
+  }
+
+  async function exporter() {
+    if (exportQuadraEnCours.current || !misEnForme.ok) return
+    exportQuadraEnCours.current = true
+    setErreur(null)
+    setFait(null)
+    setEnCours(true)
+    try {
+      // Les écritures ont-elles bougé depuis l'aperçu ? Le fichier ne part que tel que l'écran l'a montré.
+      const maintenant = fec()
+      if (maintenant === null || maintenant.contenu !== instantane.contenu) {
+        setErreur('Les écritures ont changé depuis l’aperçu : referme puis rouvre l’export, et relance-le.')
+        return
+      }
+      if (!avecJustificatifs) {
+        await telecharger(nomDuFichier, misEnForme.octets, 'text/plain')
+        setFait(`Fichier téléchargé : ${misEnForme.ecritures} écriture(s), ${misEnForme.lignes} ligne(s).`)
+        return
+      }
+      if (justificatifs === null) return
+      const issue = await fabriquerLArchiveQuadra(dossierId, justificatifs.aJoindre, nomDuJustificatifQuadra, (noms) => {
+        const avecNoms = mettreEnFormePourQuadra(instantane.contenu, reglages, noms)
+        return avecNoms.ok ? { ok: true, nom: nomDuFichier, octets: avecNoms.octets } : { ok: false, message: avecNoms.refus.join(' ') }
+      }, new Date())
+      if (!issue.ok) { setErreur(issue.message); return }
+      await telecharger(nomDeLArchive(nomDuFichier), issue.bilan.zip, 'application/zip')
+      const manquants = [...justificatifs.ecartes, ...issue.bilan.manquants]
+      setFait(`Archive téléchargée : le fichier d’écritures et ${issue.bilan.joints} justificatif(s), chacun nommé dans le fichier`
+        + (manquants.length > 0 ? ` — ${manquants.length} justificatif(s) n’y sont PAS : ${manquants.join(' ')}` : '.'))
+    } catch (e) {
+      setErreur(`Rien n’est parti : ${messageErreur(e, 'l’export a été interrompu.')}`)
+    } finally {
+      exportQuadraEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  return (
+    <div className="card carte-export-logiciel" aria-label="Export vers un logiciel comptable">
+      <div className="field-row aligne-bas" style={{ flexWrap: 'wrap', gap: 12 }}>
+        {choixDuLogiciel}
+        <label className="field">
+          <span>Longueur des comptes ({LONGUEUR_DES_COMPTES_QUADRA_MIN} à {LONGUEUR_DES_COMPTES_QUADRA_MAX})</span>
+          <input type="number" min={LONGUEUR_DES_COMPTES_QUADRA_MIN} max={LONGUEUR_DES_COMPTES_QUADRA_MAX} value={longueur}
+            placeholder="à saisir" onChange={(e) => setLongueur(e.target.value)} />
+        </label>
+      </div>
+      <p className="muted">Ces réglages ne se gardent pas : la base ne garde de réglages que pour ACD. Rien n’est préchoisi — la fiche de Cegid ne fixe ni l’encodage, ni la fin d’enregistrement.</p>
+
+      <fieldset>
+        <legend>L’encodage{encodage === null ? ' — à saisir' : ''}</legend>
+        {ENCODAGES_QUADRA.map((o) => (
+          <label key={o.id} style={{ display: 'block' }}>
+            <input type="radio" name="encodage-quadra" checked={encodage === o.id} onChange={() => setEncodage(o.id)} /> {o.libelle}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset>
+        <legend>La fin d’enregistrement{finDEnregistrement === null ? ' — à saisir' : ''}</legend>
+        {FINS_D_ENREGISTREMENT_QUADRA.map((o) => (
+          <label key={o.id} style={{ display: 'block' }}>
+            <input type="radio" name="fin-quadra" checked={finDEnregistrement === o.id} onChange={() => setFinDEnregistrement(o.id)} /> {o.libelle}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset>
+        <legend>Les journaux (nos codes → ceux du dossier Quadra, une ou deux lettres ou chiffres)</legend>
+        <div className="field-row" style={{ flexWrap: 'wrap', gap: 12 }}>
+          {codes.filter((c) => !(sansANouveaux && c.code === 'AN')).map(({ code, libelle }) => (
+            <label key={code} className="field">
+              <span>{code} — {libelle}</span>
+              <input value={journaux[code] ?? ''} placeholder="à saisir" aria-label={`Code du journal ${code} dans le dossier Quadra`}
+                onChange={(e) => { const v = e.target.value; setJournaux((j) => ({ ...j, [code]: v })) }} />
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <label style={{ display: 'block' }}>
+        <input type="checkbox" checked={sansANouveaux} onChange={(e) => setSansANouveaux(e.target.checked)} /> Sans le journal des à-nouveaux
+      </label>
+      <label style={{ display: 'block' }}>
+        <input type="checkbox" checked={avecJustificatifs} onChange={(e) => { void cocherLesJustificatifs(e.target.checked) }} /> Avec les justificatifs (une archive ZIP)
+      </label>
+
+      <p role="note">Un fichier importé deux fois double les écritures dans le logiciel.</p>
+      <p role="note">Les comptes auxiliaires, le lettrage, DateRglt, ModeRglt, NatOp et IdClient n’ont pas de place dans l’enregistrement d’écriture de Quadra : ils ne partent pas.</p>
+
+      {!misEnForme.ok ? (
+        <div role="alert">
+          <p className="error-text">Rien ne peut partir :</p>
+          <ul>{misEnForme.refus.map((r) => <li key={r} className="error-text">{r}</li>)}</ul>
+        </div>
+      ) : (
+        <>
+          <p>{misEnForme.ecritures} écriture(s), {misEnForme.lignes} ligne(s), à largeur fixe, en {encodage === 'ascii' ? 'ASCII strict' : 'Windows-1252'}.</p>
+          <ul>
+            <li>{misEnForme.libellesCoupes} libellé(s) coupé(s) à trente caractères, {misEnForme.piecesCoupees} numéro(s) de pièce à vingt.</li>
+            <li>{misEnForme.auxiliairesNonRepris} ligne(s) perdent leur compte auxiliaire et restent sur leur compte collectif ; {misEnForme.lettragesNonRepris} ligne(s) lettrée(s) partent sans leur lettrage.</li>
+          </ul>
+          <div className="table-scroll">
+            <table>
+              <caption>Les journaux tels qu’ils partiront</caption>
+              <thead><tr><th>Dans l’application</th><th>Dans le fichier</th><th>Libellé</th></tr></thead>
+              <tbody>{misEnForme.journaux.map((j) => <tr key={j.nous}><td>{j.nous}</td><td>{j.eux}</td><td>{j.libelle}</td></tr>)}</tbody>
+            </table>
+          </div>
+          <div className="table-scroll">
+            <table>
+              <caption>Les comptes tels qu’ils partiront</caption>
+              <thead><tr><th>Dans l’application</th><th>Dans le fichier</th></tr></thead>
+              <tbody>{misEnForme.comptes.map((c) => <tr key={c.nous}><td>{c.nous}</td><td>{c.eux}</td></tr>)}</tbody>
+            </table>
+          </div>
+          {avecJustificatifs && justificatifs !== null && (
+            <div>
+              <p>
+                {justificatifs.aJoindre.length} justificatif(s) partent à côté du fichier, chacun sous l’empreinte courte de sa pièce,
+                {' '}son nom écrit dans le fichier une fois son type lu ;
+                {' '}{justificatifs.ecrituresSansJustificatif} écriture(s) n’en ont pas ; {phraseDuPoids(poids)}
+              </p>
+              {justificatifs.ecartes.length > 0 && <ul>{justificatifs.ecartes.map((e) => <li key={e}>{e}</li>)}</ul>}
+            </div>
+          )}
+        </>
+      )}
+
+      <button className="btn btn-primary btn-sm" disabled={enCours || !misEnForme.ok || (avecJustificatifs && poids === 'en_cours')} onClick={exporter}>
+        {enCours ? 'Export…' : avecJustificatifs ? 'Télécharger l’archive' : 'Télécharger le fichier'}
+      </button>
+      {erreur && <p className="error-text" role="alert">{erreur}</p>}
+      {fait && <p className="muted" role="status">{fait}</p>}
+    </div>
   )
 }
 
