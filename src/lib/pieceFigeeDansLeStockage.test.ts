@@ -122,10 +122,10 @@ describe('la migration du fichier d’une pièce figée', () => {
     }
   })
 
-  // Les essais admettent le corps en production (la dernière définition de l'export, celle d'INAL1 tant qu'aucune autre
-  // ne la remplace) ET celui de chaque migration préparée qui le remplace — INV3, `validation_de_l_inventaire` (ligne 35,
-  // INV3-Q1) : ils doivent passer aujourd'hui comme après son collage. Aucune autre empreinte : un corps que le dépôt ne
-  // pose nulle part tombe ici.
+  // Les essais admettent le corps en production (la dernière définition de l'export : celle d'INAL1 jusqu'au 26/11/2026,
+  // puis celle de `fichier_cite_par_une_ecriture_libre`, 254) ET celui de chaque migration préparée qui le remplace — INV3,
+  // `validation_de_l_inventaire` (ligne 35, INV3-Q1) : ils doivent passer aujourd'hui comme après son collage. Aucune autre
+  // empreinte : un corps que le dépôt ne pose nulle part tombe ici.
   it('les essais qui énumèrent le catalogue n’admettent fichier_fige qu’aux empreintes des corps que le dépôt pose', () => {
     const corpsPose = corps(blocEntre(MIGRATION().texte, 'create function public.fichier_fige(', '$$;\n'))
     const enProduction = md5(corps(derniereDefinitionSql('fichier_fige')))

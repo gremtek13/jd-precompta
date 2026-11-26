@@ -1,6 +1,7 @@
 -- INV3 : LA VALIDATION CONNAÎT L'INVENTAIRE (ligne 35) — PRÉPARÉE le 12/11/2026, récrite le 22/11/2026 (la porte d'accès
 -- posée en clair, § 5 bis), reprise le 25/11/2026 sur le corps de `valider_exercice` que `codes_des_clients` (EXP58-Q2, 253)
--- a posé en production (EXP58Q2-Q3 (A)), PAS APPLIQUÉE. PAR L'OUTIL
+-- a posé en production (EXP58Q2-Q3 (A)), puis le 26/11/2026 sur celui de `fichier_fige` que `fichier_cite_par_une_ecriture_libre`
+-- (RA253, 254) y a posé — sa condition des écritures libres gardée —, PAS APPLIQUÉE. PAR L'OUTIL
 -- (`apply_migration`) : aucune instruction ne retire une table, une colonne, une contrainte, une fonction ni une ligne ; le
 -- mot du retrait n'y paraît que dans `on delete cascade`, l'évènement d'un déclencheur et `tg_op = 'DELETE'`, les formes que
 -- `categories_du_dossier` et `modele_de_plan_du_cabinet` ont passées par l'outil. Aucune barre oblique inverse, aucun retour
@@ -72,7 +73,8 @@
 --      hier, ce que sa garde de fin rejoue sur toute la base.
 --   7. Le fichier d'une pièce que l'inventaire d'un exercice validé scelle ne change plus : ni son chemin, ni son empreinte de
 --      dépôt, ni sa version lisible (`garder_fichier_scelle_par_l_inventaire`), et le stockage ne le retire plus
---      (`fichier_fige`, comme INAL1 le fait pour une pièce qu'une écriture validée cite). Le reste de la pièce se traite comme
+--      (`fichier_fige`, comme INAL1 le fait pour une pièce qu'une écriture validée cite, et la migration 254 pour une pièce
+--      qu'une écriture libre cite). Le reste de la pièce se traite comme
 --      toute pièce : la facture de janvier qu'une facture non parvenue cite se valide et s'écrit dans l'exercice suivant.
 --
 -- CE QU'ELLE NE FAIT PAS : la déclaration de l'inventaire n'entre pas dans l'empreinte (elle est figée avec l'exercice, par sa
@@ -80,10 +82,11 @@
 -- confronte pas (INV3Q2-Q1 (A)). L'écran (INV5) non plus : aucun dossier n'est en engagement en production (12/11/2026), rien
 -- ne s'y déclare avant lui.
 --
--- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 25/11/2026, côté base, sur une copie de la réplique portée
--- à la production du jour, 253, après INV2 ; le 22/11/2026, à 249, les fichiers et la base égaux en simulation) : le socle
--- ne change pas (celui d'INV2, 85 instructions, `fb91c2a6…`) ; l'inventaire compte 27 objets de plus qu'après INV2 (3 566,
--- puis 3 593 : `86c20446…`, puis `9dc39b2f…`) ; son retour rend ceux d'INV2 et `valider_exercice` au corps 65df5e35….
+-- LE SOCLE ET L'INVENTAIRE, LE JOUR DE L'APPLICATION (relevés le 26/11/2026, côté base, sur une copie de la réplique portée
+-- à la production du jour, 254, après INV2 ; le 25/11/2026 à 253 et le 22/11/2026 à 249, les mêmes) : le socle ne change
+-- pas (celui d'INV2, 85 instructions, `fb91c2a6…`) ; l'inventaire compte 27 objets de plus qu'après INV2 (3 566, puis
+-- 3 593 : `86c20446…`, puis `9dc39b2f…`) ; son retour rend ceux d'INV2, `valider_exercice` au corps 65df5e35… et
+-- `fichier_fige` au corps 5e7016c0…, son commentaire avec.
 
 do $garde$
 declare
@@ -114,8 +117,9 @@ begin
   if to_regprocedure('public.acces_avant_les_gardes()') is null then
     raise exception 'validation_de_l_inventaire : la porte d''accès devant les gardes (acces_avant_les_gardes) manque : relire la base.';
   end if;
-  -- Les fonctions qu'elle remplace, telles que la production les porte : `valider_exercice` et `empreinte_exercice_forme_2`
-  -- depuis `empreinte_des_exercices_forme_2`, `fichier_fige` depuis `piece_figee_dans_le_stockage` ; celles qu'elle appelle ;
+  -- Les fonctions qu'elle remplace, telles que la production les porte : `valider_exercice` depuis `codes_des_clients`,
+  -- `empreinte_exercice_forme_2` depuis `empreinte_des_exercices_forme_2`, `fichier_fige` depuis
+  -- `fichier_cite_par_une_ecriture_libre` (254, le 26/11/2026) ; celles qu'elle appelle ;
   -- celles d'INV2, telles que sa migration préparée les pose, dont la validation suppose la conduite (une ligne d'inventaire
   -- n'est écrite que par sa régularisation, au 31 décembre ou au 1er janvier suivant, au 1er janvier seul pour une reprise ;
   -- une régularisation d'un exercice figé ne change plus). À l'empreinte de leur corps, les retours chariot d'un collage écartés.
@@ -127,7 +131,7 @@ begin
       ('empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)',
        'a62b0761a132e53c218bdc5b3820299e'),
       ('verifier_exercice_valide(uuid, integer)', '1478bda759c33e3912da7e0089ca9994'),
-      ('fichier_fige(text)', '5372f8d248432f0932598a6efca24ca2'),
+      ('fichier_fige(text)', '5e7016c08bcdda1190d6e56202661113'),
       ('exercice_figeant_la_piece(uuid)', '78624664a1794b06816acb2e70436802'),
       ('admin_du_dossier(uuid)', '30e9b7246cb939741fe58f4ffc27adf4'),
       ('is_super_admin()', 'a9159138778422a43ba8d8c21240c9bb'),
@@ -1273,8 +1277,10 @@ create trigger pieces_fichier_scelle_par_l_inventaire
   on public.pieces for each row execute function public.garder_fichier_scelle_par_l_inventaire();
 revoke execute on function public.garder_fichier_scelle_par_l_inventaire() from public, anon, authenticated;
 
--- `fichier_fige` (INAL1), au caractère près celle de la production, plus la pièce que l'inventaire d'un exercice validé
--- scelle : son fichier et sa version lisible ne se retirent plus du stockage (la policy `pieces_storage_delete`).
+-- `fichier_fige` (INAL1), au caractère près celle de la production — depuis le 26/11/2026, celle de
+-- `fichier_cite_par_une_ecriture_libre` (254), qui y ajoute la pièce qu'une écriture libre cite : sa condition reste —, plus
+-- la pièce que l'inventaire d'un exercice validé scelle : son fichier et sa version lisible ne se retirent plus du stockage
+-- (la policy de suppression du seau des pièces).
 create or replace function public.fichier_fige(p_chemin text)
 returns boolean
 language sql
@@ -1294,6 +1300,7 @@ as $$
            and (public.exercice_figeant_la_piece(p.id) is not null
                 or exists (select 1 from public.revision_preuves r where r.piece_id = p.id)
                 or exists (select 1 from public.dossier_permanent d where d.piece_id = p.id)
+                or exists (select 1 from public.ecritures_libres e where e.piece_citee_id = p.id)
                 or public.exercice_scellant_la_piece_citee(p.id) is not null))
       or exists (
         select 1 from public.documents_divers dd
@@ -1304,7 +1311,7 @@ as $$
 $$;
 
 comment on function public.fichier_fige(text) is
-  'Vrai quand le chemin est le fichier (ou la version lisible) d''une pièce que la base fige — une écriture validée la cite, directement ou par son bien immobilisé, ou la révision la cite, ou l''inventaire d''un exercice validé la scelle (INV3-Q1) — ou le fichier d''un document divers que la révision cite ; nul pour qui n''administre pas le dossier du chemin, et pour un chemin qui ne commence pas par un dossier. La policy pieces_storage_delete refuse la suppression d''un tel fichier (INAL1, ligne 44).';
+  'Vrai quand le chemin est le fichier (ou la version lisible) d''une pièce que la base fige — une écriture validée la cite, directement ou par son bien immobilisé, ou la révision la cite, ou une écriture libre la cite (relecture adverse du 25/11/2026), ou l''inventaire d''un exercice validé la scelle (INV3-Q1) — ou le fichier d''un document divers que la révision cite ; nul pour qui n''administre pas le dossier du chemin, et pour un chemin qui ne commence pas par un dossier. La policy de suppression du seau des pièces refuse la suppression d''un tel fichier (INAL1, ligne 44).';
 
 -- `empreinte_exercice_forme_2` (INAL2), au caractère près celle de la production hors de deux ajouts : les pièces que
 -- scelle l'inventaire rejoignent celles des écritures validées, et un SIXIÈME bloc porte les régularisations scellées,
@@ -1405,7 +1412,7 @@ begin
       ('public.pieces_scellees_par_l_inventaire(uuid, integer)', '243a354273994d727f7e51405825e601', true),
       ('public.exercice_scellant_la_piece_citee(uuid)', '33e20f9b621a76693354d9004b2ebc35', false),
       ('public.garder_fichier_scelle_par_l_inventaire()', 'c647bc6100b23faf3364b93eae996f26', false),
-      ('public.fichier_fige(text)', 'c0c78141ddb7ba3b6912fdb68ec87da1', true),
+      ('public.fichier_fige(text)', '10a4185293238a1ff0bcb51db73a2264', true),
       ('public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)',
        'cb18f6063974972974a1aa92eb5b3e92', true)) x(fonction, empreinte, connecte) loop
     if md5(replace((select p.prosrc from pg_proc p where p.oid = to_regprocedure(v.fonction)), chr(13), ''))

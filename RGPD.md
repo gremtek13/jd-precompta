@@ -701,6 +701,16 @@ patron : sa policy de suppression, au chef du cabinet du dossier, se lit au cata
 l'API posé. L'essai manuel, le jour où elle est appliquée : supprimer un dossier qui porte un document mis à
 disposition, par un chef qui n'est pas super-administrateur, et constater le seau vide sous `<dossier>/`.
 
+Le seau `pieces` (INAL1, en production depuis le 10/11/2026) : sa policy de suppression refuse le fichier, et la version
+lisible, d'une pièce que la base fige (une écriture validée la cite, ou son bien) ou que la révision ou le dossier permanent
+citent (`fichier_fige`) ; depuis le 26/11/2026 (migration `fichier_cite_par_une_ecriture_libre`, 254), aussi celui d'une pièce
+qu'une écriture libre cite, ouverte ou figée : l'écriture d'un exercice validé ne perd plus son justificatif par l'API du
+stockage. La fiche de la pièce, elle, reste modifiable (RA253-Q2 (B), 26/11/2026) : ses champs ne comptent dans aucune
+déclaration tant qu'elle n'est pas validée. Lue au catalogue par `rls.sql` (bloc PF) et par les essais qui épinglent le corps de
+`fichier_fige`, jouée sur une réplique par `pieceFigeeDansLeStockage.sql` et `fichierCiteParUneEcritureLibre.sql`, le réglage de
+l'API posé. L'essai manuel : retirer par l'API, depuis un client authentifié, le fichier d'une pièce qu'une écriture libre cite,
+et constater le refus.
+
 ### 8.7 — Hébergement de données de santé (HDS) *(tranché le 24/09/2026 : non requis, sous condition)*
 
 **La question** : l'article L.1111-8 du Code de la santé publique impose un hébergeur certifié HDS à

@@ -993,6 +993,15 @@ fichiers et 234 migrations, `17d67c7ac6db91e4ffc8dfa60e7180bb` ; le socle, 83 in
 (inchangé) ; l'inventaire, 3 211 objets, `9a97d1ee6165cfe7471bbeaa323a1bd3`. Leurs retours restent dans
 `supabase/preparees/retour/` (HISTORIQUE.md, « QUATRE MIGRATIONS EN PRODUCTION (231 À 234) »).
 
+**En production le 26/11/2026, `20261126065131_fichier_cite_par_une_ecriture_libre` (254), par l'outil, sur l'accord du
+cabinet (RA253-migration (A))** : `fichier_fige` garde dans le stockage le fichier d'une pièce qu'une écriture libre cite (corps
+`5e7016c0…`). Préparé sous la version provisoire `20261125200000`, le fichier entre ici sous sa version, texte inchangé : la
+ligne d'historique rend `66c3fcea6815eaa1c5cda9549c50771e` (10 251 caractères, sans le saut de ligne final), celle du fichier.
+Les trois contrôles attendus, égaux dans le dépôt et sur une copie de `replique_227` portée à 254 : la dérive, 254 fichiers,
+`8727d024eac14a49246970221114dab6` ; le socle, 84 instructions, `e54200f470db2f9199c62707d1df3f70` ; l'inventaire, 3 518
+objets, `a6475fb053efb7708ffeb60aac80a936` — les deux derniers inchangés (un corps remplacé, aucun nom). Son retour reste dans
+`supabase/preparees/retour/` (HISTORIQUE.md, « RA253 : LE FICHIER D'UNE PIÈCE CITÉE EN PRODUCTION (254) »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

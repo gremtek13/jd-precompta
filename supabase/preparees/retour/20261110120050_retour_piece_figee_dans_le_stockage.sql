@@ -9,6 +9,8 @@
 -- Ses deux gardes ne lisent que ce qu'il défait — la policy `pieces_storage_delete`, `fichier_fige` et ses trois index
 -- (INAL1R-Q1, 15/11/2026) : il s'applique sur la production d'aujourd'hui comme après B2 et SECU3-Q1, dans un ordre ou
 -- dans l'autre. Il refuse après INV3 (`validation_de_l_inventaire`), qui remplace `fichier_fige` : le retour d'INV3 d'abord.
+-- Il refuse aussi depuis le 26/11/2026 : `fichier_cite_par_une_ecriture_libre` (254, en production) a remplacé `fichier_fige`
+-- (5e7016c0…) ; son retour d'abord (supabase/preparees/retour/20261125200100_retour_fichier_cite_par_une_ecriture_libre.sql).
 
 do $garde$
 declare

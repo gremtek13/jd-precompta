@@ -4,8 +4,8 @@
 -- leur commentaire aussi : `valider_exercice` depuis `codes_des_clients` (md5 65df5e35… ; repris le 25/11/2026 avec la
 -- migration, EXP58Q2-Q3 (A) — son commentaire reste celui d'`empreinte_des_exercices_forme_2`, que `codes_des_clients` ne
 -- change pas), `empreinte_exercice_forme_2` depuis `empreinte_des_exercices_forme_2` (md5 a62b0761…), `fichier_fige` depuis
--- `piece_figee_dans_le_stockage` (md5 5372f8d2…). Ce qu'il rend : la base d'INV2 (et d'INV4, si elle y est) sans la
--- validation de l'inventaire.
+-- `fichier_cite_par_une_ecriture_libre` (md5 5e7016c0… et son commentaire ; repris le 26/11/2026 avec la migration, 254 en
+-- production). Ce qu'il rend : la base d'INV2 (et d'INV4, si elle y est) sans la validation de l'inventaire.
 -- Il se refuse tant qu'une déclaration existe (la relever par un SELECT, puis décider avec le cabinet), si une fonction
 -- qu'il rend n'est plus celle que la migration a posée (une migration suivante l'a remplacée : son retour d'abord), ou si
 -- un exercice validé scelle une régularisation ou une pièce par l'inventaire (INV3-Q1) : l'empreinte d'hier ne la verrait
@@ -26,7 +26,7 @@ begin
           where p.oid = 'public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure)
         is distinct from 'cb18f6063974972974a1aa92eb5b3e92'
      or (select md5(replace(p.prosrc, chr(13) || chr(10), chr(10))) from pg_proc p
-          where p.oid = 'public.fichier_fige(text)'::regprocedure) is distinct from 'c0c78141ddb7ba3b6912fdb68ec87da1' then
+          where p.oid = 'public.fichier_fige(text)'::regprocedure) is distinct from '10a4185293238a1ff0bcb51db73a2264' then
     raise exception 'retour_validation_de_l_inventaire : valider_exercice, l''empreinte ou fichier_fige n''est plus celle que la migration a posée ; rien à défaire sans la relire.';
   end if;
   if exists (select 1 from public.exercices_valides ev
@@ -600,7 +600,7 @@ comment on function public.valider_exercice(uuid, integer, jsonb, jsonb, jsonb) 
   'Valide un exercice terminé : vérifie la numérotation proposée par l''application, fige ses écritures — et les quatre champs du FEC d''un BNC que la numérotation porte (date, mode, nature et poste, identification du client), chacun dans sa forme, les mêmes sur les lignes d''une écriture, le client identifié par une facture validée du dossier seulement —, enregistre l''exercice sous son empreinte en forme 2 (l''en-tête, les écritures, les à-nouveaux et les soldes reportés chaînés, les fichiers des pièces citées, la 2035 validée : INAL2) et écrit l''ouverture du suivant (soldes_reportes) ; pour un dossier basculé, refuse aussi un mouvement réservé à des encaissements de factures, un virement ou un prélèvement sans son mouvement, et une vente facturée qui n''est pas écrite à jour. Refuse aussi un paiement d''une pièce par la caisse de l''exercice dont la contrepartie entière au compte de la caisse n''est pas au brouillon (relecture du 01/11/2026). Chef du cabinet seul.';
 
 -- INV3-Q1 (A) : l'empreinte et fichier_fige d'hier, puis la garde du fichier d'une pièce scellée et les trois aides.
--- fichier_fige : la définition de 20261110125435_piece_figee_dans_le_stockage.sql, son commentaire de 20261110125435_piece_figee_dans_le_stockage.sql.
+-- fichier_fige : la définition de 20261126065131_fichier_cite_par_une_ecriture_libre.sql, son commentaire de 20261126065131_fichier_cite_par_une_ecriture_libre.sql.
 create or replace function public.fichier_fige(p_chemin text)
 returns boolean
 language sql
@@ -619,7 +619,8 @@ as $$
          where (p.storage_path = p_chemin or p.lisible_path = p_chemin)
            and (public.exercice_figeant_la_piece(p.id) is not null
                 or exists (select 1 from public.revision_preuves r where r.piece_id = p.id)
-                or exists (select 1 from public.dossier_permanent d where d.piece_id = p.id)))
+                or exists (select 1 from public.dossier_permanent d where d.piece_id = p.id)
+                or exists (select 1 from public.ecritures_libres e where e.piece_citee_id = p.id)))
       or exists (
         select 1 from public.documents_divers dd
          where dd.storage_path = p_chemin
@@ -629,7 +630,7 @@ as $$
 $$;
 
 comment on function public.fichier_fige(text) is
-  'Vrai quand le chemin est le fichier (ou la version lisible) d''une pièce que la base fige — une écriture validée la cite, directement ou par son bien immobilisé, ou la révision la cite — ou le fichier d''un document divers que la révision cite ; nul pour qui n''administre pas le dossier du chemin, et pour un chemin qui ne commence pas par un dossier. La policy pieces_storage_delete refuse la suppression d''un tel fichier (INAL1, ligne 44).';
+  'Vrai quand le chemin est le fichier (ou la version lisible) d''une pièce que la base fige — une écriture validée la cite, directement ou par son bien immobilisé, ou la révision la cite, ou une écriture libre la cite (relecture adverse du 25/11/2026) — ou le fichier d''un document divers que la révision cite ; nul pour qui n''administre pas le dossier du chemin, et pour un chemin qui ne commence pas par un dossier. La policy de suppression du seau des pièces refuse la suppression d''un tel fichier (INAL1, ligne 44).';
 
 -- empreinte_exercice_forme_2 : la définition de 20261110124917_empreinte_des_exercices_forme_2.sql, son commentaire de 20261110124917_empreinte_des_exercices_forme_2.sql.
 create or replace function public.empreinte_exercice_forme_2(
@@ -714,7 +715,7 @@ begin
        where p.oid = 'public.empreinte_exercice_forme_2(uuid, integer, text, timestamp with time zone, uuid, text, integer, integer, numeric, numeric, jsonb)'::regprocedure)
        is distinct from 'a62b0761a132e53c218bdc5b3820299e'
      or (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = 'public.fichier_fige(text)'::regprocedure)
-       is distinct from '5372f8d248432f0932598a6efca24ca2'
+       is distinct from '5e7016c08bcdda1190d6e56202661113'
      or not (select p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=public']
                from pg_proc p where p.oid = 'public.fichier_fige(text)'::regprocedure)
      or has_function_privilege('anon', 'public.fichier_fige(text)', 'execute')

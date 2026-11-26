@@ -1,10 +1,13 @@
 -- LE FICHIER D'UNE PIÈCE QU'UNE ÉCRITURE LIBRE CITE NE SE RETIRE PLUS DU STOCKAGE (relecture adverse du 25/11/2026 ; migration
--- `fichier_cite_par_une_ecriture_libre`, PRÉPARÉE) — SUR UNE RÉPLIQUE SEULEMENT : il retire des lignes de `storage.objects`
--- et mute une fonction, qu'on ne joue pas sur la base du cabinet. Joué ENTIER, en une transaction qui s'annule (`begin` …
--- `rollback`), par psql, sans `-1`, sous le super-utilisateur de la réplique :
+-- `fichier_cite_par_une_ecriture_libre`, en production depuis le 26/11/2026, 254) — SUR UNE RÉPLIQUE SEULEMENT : il retire
+-- des lignes de `storage.objects` et mute une fonction, qu'on ne joue pas sur la base du cabinet. Joué ENTIER, en une
+-- transaction qui s'annule (`begin` … `rollback`), par psql, sans `-1`, sous le super-utilisateur de la réplique :
 --   psql -v ON_ERROR_STOP=1 -f supabase/essais/fichierCiteParUneEcritureLibre.sql
--- Sans la migration (le corps de `fichier_fige` ne nomme pas `ecritures_libres`), une ligne dit qu'il attend (EN ATTENTE). Le
--- récit : HISTORIQUE.md, « 25/11/2026 — LA RELECTURE ADVERSE DES TROIS MIGRATIONS DU JOUR (251 À 253) ».
+-- Sans la migration (le corps de `fichier_fige` ne nomme pas `ecritures_libres`), une ligne dit qu'il attend (EN ATTENTE) : la
+-- migration est en base depuis le 26/11/2026, l'attente n'est plus attendue, elle reste le garde d'une base qui l'aurait
+-- perdue (son retour collé). Il se joue aussi après INV3 (`validation_de_l_inventaire`, préparée), qui garde sa condition :
+-- ses mutations ne visent que la ligne des écritures libres, sans ce qui la suit. Les récits : HISTORIQUE.md, « 25/11/2026
+-- — LA RELECTURE ADVERSE DES TROIS MIGRATIONS DU JOUR (251 À 253) », « RA253 : LE FICHIER D'UNE PIÈCE CITÉE EN PRODUCTION (254) ».
 --
 -- POURQUOI LE RÉGLAGE DE L'API (le patron de pieceFigeeDansLeStockage.sql) : le stockage refuse toute suppression SQL directe de
 -- `storage.objects` (`storage.protect_delete`, 42501) ; l'API du stockage supprime sous la session de l'appelant, le réglage
@@ -134,7 +137,7 @@ declare
   fn regprocedure;
   e_figee uuid; e_ouverte uuid; e_remede uuid; e_autre uuid;
   issue text; texte text;
-  clause constant text := chr(10) || '                or exists (select 1 from public.ecritures_libres e where e.piece_citee_id = p.id)))';
+  clause constant text := chr(10) || '                or exists (select 1 from public.ecritures_libres e where e.piece_citee_id = p.id)';
 begin
   if to_regprocedure('public.fichier_fige(text)') is null
      or position('ecritures_libres' in (select p.prosrc from pg_proc p where p.oid = 'public.fichier_fige(text)'::regprocedure)) = 0 then
@@ -231,7 +234,7 @@ begin
 
   -- ══ MUTATIONS ══
   begin
-    perform pg_temp.muter(fn, clause, '))');
+    perform pg_temp.muter(fn, clause, '');
     texte := concat_ws(' | ', pg_temp.tente(chef, format('select public.fichier_fige(%L)::text', da || '/ouverte.pdf')),
                        pg_temp.tente(chef, pg_temp.retrait(da || '/ouverte.pdf')));
     raise exception 'ANNULATION_MUTATION';
@@ -241,7 +244,7 @@ begin
   -- Le verdict hors de la sous-transaction annulée, qui l'emporterait avec elle.
   perform pg_temp.mutation('M-FC1 — la condition des écritures libres retirée (le corps d''hier) : FC-3 et FC-5 tombent', texte, texte <> 'OK true | OK 0');
   begin
-    perform pg_temp.muter(fn, 'e.piece_citee_id = p.id)))', 'e.piece_citee_id = p.id and false)))');
+    perform pg_temp.muter(fn, 'e.piece_citee_id = p.id)', 'e.piece_citee_id = p.id and false)');
     texte := pg_temp.tente(membre, pg_temp.retrait(da || '/ouverte.pdf'));
     raise exception 'ANNULATION_MUTATION';
   exception when others then

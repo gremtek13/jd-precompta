@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { derniereDefinitionSql, finDuCorps, motifDeDefinition } from '../test/schema'
+import { contientSql, derniereDefinitionSql, fichiersDuSchema, finDuCorps, motifDeDefinition } from '../test/schema'
 
 // INV3-Q1 (A) : L'EMPREINTE D'UN EXERCICE VALIDÉ SCELLE AUSSI SON INVENTAIRE, SANS FORME NOUVELLE. La migration préparée
 // `validation_de_l_inventaire` reprend `empreinte_exercice_forme_2` et `fichier_fige` telles que la production les porte
@@ -45,6 +45,18 @@ function empreintesDe(bloc: string): Map<string, string> {
   return new Map([...bloc.matchAll(/\('(?:public\.)?(\w+)\([^']*\)',\s*'([0-9a-f]{32})'/g)].map((m) => [m[1], m[2]]))
 }
 const blocEntre = (texte: string, debut: string, fin: string) => texte.slice(texte.indexOf(debut), texte.indexOf(fin, texte.indexOf(debut)))
+/** Le texte du commentaire de `fichier_fige` qu'un texte pose (le seul), ses apostrophes doublées gardées. */
+function commentaireDeFichierFige(texte: string): string {
+  const trouves = [...texte.matchAll(/comment on function public\.fichier_fige\(text\) is\n {2}'((?:[^']|'')*)';/gi)].map((m) => m[1])
+  expect(trouves, 'un commentaire de fichier_fige').toHaveLength(1)
+  return trouves[0]
+}
+/** Le texte du dernier fichier de l'export qui commente une fonction (dans l'ordre de leurs versions). */
+function dernierFichierQuiCommente(signature: string): string {
+  const avec = fichiersDuSchema().filter((f) => contientSql(f.texte, `comment on function public.${signature} is`))
+  expect(avec.length, signature).toBeGreaterThan(0)
+  return avec[avec.length - 1].texte
+}
 
 describe('l’empreinte étendue (INV3-Q1 (A)) : la production, et l’inventaire seul en plus', () => {
   it('empreinte_exercice_forme_2 : celle de la production au caractère près, hors des pièces de l’inventaire et du bloc des régularisations', () => {
@@ -74,10 +86,13 @@ describe('l’empreinte étendue (INV3-Q1 (A)) : la production, et l’inventair
     expect(corps(definitionDans(INV3, 'regularisations_scellees'))).toMatch(/select string_agg\(/)
   })
 
-  it('fichier_fige : celle de la production au caractère près, plus la pièce que l’inventaire d’un exercice validé scelle', () => {
+  // REPET-Q2 (A) : depuis le 26/11/2026, le corps de production est celui de `fichier_cite_par_une_ecriture_libre` (254,
+  // 5e7016c0…), qui ajoute la pièce qu'une écriture libre cite ; INV3 s'y est reprise, cette condition gardée, la sienne après.
+  it('fichier_fige : celle de la production au caractère près (les écritures libres comprises), plus la pièce que l’inventaire d’un exercice validé scelle', () => {
+    expect(md5(corps(enProduction('fichier_fige')))).toBe('5e7016c08bcdda1190d6e56202661113')
     const attendue = uneFois(remplacee(enProduction('fichier_fige')),
-      '                or exists (select 1 from public.dossier_permanent d where d.piece_id = p.id)))\n',
-      '                or exists (select 1 from public.dossier_permanent d where d.piece_id = p.id)\n'
+      '                or exists (select 1 from public.ecritures_libres e where e.piece_citee_id = p.id)))\n',
+      '                or exists (select 1 from public.ecritures_libres e where e.piece_citee_id = p.id)\n'
       + '                or public.exercice_scellant_la_piece_citee(p.id) is not null))\n')
     expect(definitionDans(INV3, 'fichier_fige')).toBe(attendue)
   })
@@ -155,6 +170,10 @@ describe('les empreintes épinglées, recalculées des textes qui posent les fon
     const fin = blocEntre(RETOUR, 'do $fin$', '$fin$;')
     expect(fin).toContain(`'${md5(corps(enProduction('empreinte_exercice_forme_2')))}'`)
     expect(fin).toContain(`'${md5(corps(enProduction('fichier_fige')))}'`)
+    // Le commentaire de `fichier_fige` qu'il rend : le dernier que l'export pose (celui de 254 depuis le 26/11/2026).
+    expect(commentaireDeFichierFige(RETOUR)).toBe(commentaireDeFichierFige(dernierFichierQuiCommente('fichier_fige(text)')))
+    expect(commentaireDeFichierFige(RETOUR)).toContain('ou une écriture libre la cite')
+    expect(commentaireDeFichierFige(INV3)).toContain("ou une écriture libre la cite (relecture adverse du 25/11/2026), ou l''inventaire")
     for (const objet of ['drop trigger pieces_fichier_scelle_par_l_inventaire on public.pieces;',
       'drop function public.garder_fichier_scelle_par_l_inventaire();', 'drop function public.exercice_scellant_la_piece_citee(uuid);',
       'drop function public.pieces_scellees_par_l_inventaire(uuid, integer);', 'drop function public.regularisations_scellees(uuid, integer);']) {
@@ -165,8 +184,9 @@ describe('les empreintes épinglées, recalculées des textes qui posent les fon
   })
 
   it('les essais qui admettent fichier_fige à son empreinte admettent celle de la production et celle d’INV3', () => {
-    // Les deux d'abord, dans cet ordre ; d'autres corps préparés peuvent suivre dans la liste (celui de
-    // `fichier_cite_par_une_ecriture_libre`, que fichierCiteParUneEcritureLibre.test.ts y exige).
+    // Les deux d'abord, dans cet ordre (celui de la production est, depuis le 26/11/2026, le corps de
+    // `fichier_cite_par_une_ecriture_libre`, que fichierCiteParUneEcritureLibre.test.ts y exige aussi) ; d'autres corps
+    // préparés pourraient suivre dans la liste.
     for (const essai of ['supabase/essais/dossierPermanent.sql', 'supabase/essais/exemplairesDesFactures.sql']) {
       expect(lire(essai), essai).toContain(`md5(replace(prosrc, chr(13), '')) in ('${md5(corps(enProduction('fichier_fige')))}', '${empreinteDans(INV3, 'fichier_fige')}'`)
     }

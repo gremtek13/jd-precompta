@@ -1374,12 +1374,14 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   échéance de cotisation se fige à la date qui la compte ; préalables dits avant le clic (`prealablesValidation.ts`)
   → « UN EXERCICE VALIDÉ SE FIGE EN BASE » ; depuis le 10/11/2026, son empreinte en forme 2 scelle aussi les pièces
   citées et la 2035, et le stockage garde le fichier d'une pièce figée (`fichier_fige`) → « INAL1 ET INAL2 : LA PIÈCE
-  FIGÉE DANS LE STOCKAGE ET L'EMPREINTE EN FORME 2 (PRÉPARÉES, PAS APPLIQUÉES) » ; la numérotation n'appelle plus les
+  FIGÉE DANS LE STOCKAGE ET L'EMPREINTE EN FORME 2 (PRÉPARÉES, PAS APPLIQUÉES) », et depuis le 26/11/2026 (254) celui d'une
+  pièce qu'une écriture libre cite → « RA253 : LE FICHIER D'UNE PIÈCE CITÉE EN PRODUCTION (254) » ; la numérotation n'appelle plus les
   deux gardes par ligne là où elles ne refusent rien (deux jumeaux sous WHEN, en production depuis le 12/11/2026 ; `jd.validation_exercice` ne se
   pose qu'après le verrou exclusif de la validation) → « LA VALIDATION D'UN GROS EXERCICE : LES GARDES ALLÉGÉES ».
   **Cinq chantiers préparés remplacent `valider_exercice`** (les gardes allégées, INV3, LIA5, AFF3, EXD3) : chacun part
   du corps EN PRODUCTION le jour de son collage et reprend les filets des précédents, jamais d'une copie d'avant (INV3, reprise
-  le 25/11/2026 sur celui de `codes_des_clients`, md5 65df5e35…, EXP58Q2-Q3 (A)) ; de
+  le 25/11/2026 sur celui de `codes_des_clients`, md5 65df5e35…, EXP58Q2-Q3 (A), et le 26/11/2026 sa `fichier_fige` sur
+  celui de 254, md5 5e7016c0…) ; de
   même, une colonne de source neuve du brouillon (MCB5g, INV2, LIA2, demain AFF2) laisse intacte la contrainte « sans
   autre source » d'hier et pose, si l'autre colonne est déjà là, une contrainte par PAIRE au même nom des deux côtés
   (`ecritures_brouillon_inventaire_hors_des_stocks`…), sa garde de tête acceptant les colonnes neuves des autres.
