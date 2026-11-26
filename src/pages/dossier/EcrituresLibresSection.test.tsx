@@ -16,7 +16,13 @@ const faux = vi.hoisted(() => ({
   // Le drapeau de la contre-passation (EL7) : baissé pour les tests d'EL5, qui gardent ainsi leur état éprouvé quel que soit
   // celui du dépôt ; levé par ceux d'EL7, plus bas.
   contrePassation: false,
+  // Les fichiers texte que la section télécharge (l'état des écritures libres en CSV).
+  telecharges: [] as { nom: string; contenu: string }[],
 }))
+vi.mock('../../lib/fec', async (original) => {
+  const m = await original<typeof import('../../lib/fec')>()
+  return { ...m, telechargerTexte: (nom: string, contenu: string) => { faux.telecharges.push({ nom, contenu }) } }
+})
 vi.mock('../../lib/contrePassationDesEcrituresLibres', async (original) => {
   const m = await original<typeof import('../../lib/contrePassationDesEcrituresLibres')>()
   return { ...m, get CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE() { return faux.contrePassation } }
@@ -92,6 +98,7 @@ beforeEach(() => {
   faux.erreur = null
   faux.tables = []
   faux.contrePassation = false
+  faux.telecharges = []
   relire.mockClear()
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
@@ -304,6 +311,23 @@ describe('EcrituresLibresSection — la contre-passation (EL7)', () => {
   const lignesProposees = () => screen.getByRole('list', { name: 'Lignes de la contre-passation' }).textContent ?? ''
 
   beforeEach(() => { faux.contrePassation = true })
+
+  it('l’état en CSV nomme l’écriture contre-passée d’après le lien, le libellé changé ; baissé, l’état d’hier (RA253-Q1 (A))', () => {
+    const renommee = { ...CONTRE, libelle: 'Annulation de la part privée' }
+    monterFigee(lues([ECRITURE, renommee]), { annee: 2026 })
+    fireEvent.click(screen.getByText('État des écritures libres (CSV)'))
+    expect(faux.telecharges.map((t) => t.nom)).toEqual(['etat-des-ecritures-libres-2026.csv'])
+    const rangs = faux.telecharges[0].contenu.slice(1).split('\r\n')
+    expect(rangs[0]).toContain(';Extourne au 1er janvier;Contre-passation;Version;')
+    expect(rangs.slice(1).map((r) => r.split(';')[10])).toEqual(['Contre-passe EL2025-0001 du 30/06/2025', 'Contre-passe EL2025-0001 du 30/06/2025'])
+    cleanup()
+    faux.contrePassation = false
+    faux.telecharges = []
+    monterFigee(lues([ECRITURE, renommee]), { annee: 2026 })
+    fireEvent.click(screen.getByText('État des écritures libres (CSV)'))
+    expect(faux.telecharges[0].contenu).not.toContain('Contre-passe ')
+    expect(faux.telecharges[0].contenu.slice(1).split('\r\n')[0]).not.toContain('Contre-passation')
+  })
 
   it('le drapeau baissé, la même écriture figée : les deux gestes d’EL5, aucune contre-passation', () => {
     faux.contrePassation = false

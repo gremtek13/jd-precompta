@@ -651,8 +651,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   L'EXPERT-COMPTABLE : LA CONCEPTION », « EL1 ET EL2 : L'ÉCRITURE LIBRE, LE MODULE ET LA MIGRATION », « EXP58-Q3 ET NOE4-Q1 »,
   « EL3 : L'ÉCRITURE LIBRE DANS LE FEC », « EL4 : L'ÉCRITURE LIBRE DANS LA 2035 », « EL4-Q1 : LES COTISATIONS DE L'ESTIMATION ».
   EL7 (24/11/2026), la contre-passation d'une écriture figée (`contre_passe_id`, `contre_passer_ecriture_libre` et sa garde), en production
-  depuis le 25/11/2026 (251, par l'outil), `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` levé (l'écran et la sauvegarde) → « EL7 : LA
-  CONTRE-PASSATION D'UNE ÉCRITURE LIBRE VALIDÉE », « TROIS MIGRATIONS EN PRODUCTION (251 À 253) ».
+  depuis le 25/11/2026 (251, par l'outil), `CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE` levé (l'écran et la sauvegarde) ; l'état
+  nomme l'écriture contre-passée d'après le lien, RA253-Q1 (A) → « EL7 : LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE VALIDÉE », « TROIS
+  MIGRATIONS EN PRODUCTION (251 À 253) », « RA253-Q1 ».
 - **Les options par cabinet** (demande du 17/11/2026), conçues (`docs/conceptions/56-options-par-cabinet.md`), hors MVP : le socle
   (la précomptabilité) et huit modules que le super-administrateur ouvre seul (`options_des_cabinets`), refusés à l'écran et dans
   les Edge Functions, en base la seule frontière de la tenue (le cabinet non inscrit) ; OPT1 à OPT7, OPT-Q1 à Q7 → « LES OPTIONS PAR CABINET : LA CONCEPTION ».

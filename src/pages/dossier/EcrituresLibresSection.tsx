@@ -197,10 +197,12 @@ export default function EcrituresLibresSection({
   }
 
   const piecesParId = new Map(pieces.map((p) => [p.id, p]))
-  const contexteDeLEtat = { mode, auteurs: lue.auteurs, pieces: piecesParId }
+  // La lecture porte le lien de la contre-passation sous le même drapeau que ses gestes : l'état le nomme (RA253-Q1 (A)).
+  const contexteDeLEtat = { mode, auteurs: lue.auteurs, pieces: piecesParId, contrePassation: contrePassationOfferte }
   function telechargerCsv() {
     if (exercice === null) return
-    telechargerTexte(nomDuFichierDeLEtat(exercice, 'csv'), genererEtatDesEcrituresLibresCsv(lignesDeLEtat(toutes, exercice, contexteDeLEtat)))
+    telechargerTexte(nomDuFichierDeLEtat(exercice, 'csv'),
+      genererEtatDesEcrituresLibresCsv(lignesDeLEtat(toutes, exercice, contexteDeLEtat), contexteDeLEtat.contrePassation))
   }
   async function telechargerPdf() {
     if (exercice === null) return
