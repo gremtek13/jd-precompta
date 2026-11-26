@@ -10,6 +10,10 @@ import {
   type NoteDeFrais,
 } from '../../lib/notesDeFraisVue'
 import { lireLesNotesDeFraisDuDossier, type NotesDeFraisDuDossierLues } from '../../lib/notesDeFraisLecture'
+import {
+  achatsDesAccesLus, pourQuiEstLaNote, rangementDuJustificatif, suiteDuRemboursement,
+} from '../../lib/notesDeFraisEnComptabilite'
+import type { ModeComptable } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import DecisionDeLaNoteDeFrais, { type DecisionSaisie } from '../../components/DecisionDeLaNoteDeFrais'
 
@@ -21,13 +25,19 @@ import DecisionDeLaNoteDeFrais, { type DecisionSaisie } from '../../components/D
 // par sa fonction seule, à la version lue, sur une confirmation qui nomme la note, sous un verrou `useRef` relâché après la
 // relecture. Rien ne s'écrit en comptabilité d'ici : l'écriture d'une note au 421 vient après. Une lecture partielle ou
 // refusée le dit et n'offre aucun geste. Tous ses boutons sont `type="button"`.
+//
+// Lot L3 (conception 58, § 2.1 ; lib/notesDeFraisEnComptabilite.ts) : pour une note approuvée ou remboursée, la section dit
+// quel type son justificatif doit porter — « Note de frais » pour celle de l'exploitant, qui compte à sa date face au compte de
+// l'exploitant ; « Achat » pour celle d'un salarié, qui compte à son remboursement — et signale une pièce rangée autrement,
+// sans rien changer : le cabinet décide en validant la pièce. `mode` : le modèle comptable que la page a lu, sans défaut (null :
+// il ne s'est pas relu, et le type ne se dit pas).
 
 const BADGE: Readonly<Record<NoteDeFrais['etat'], string>> = {
   brouillon: 'badge-neutral', soumise: 'badge-warning', approuvee: 'badge-ok', refusee: 'badge-danger', remboursee: 'badge-ok',
   retiree: 'badge-neutral',
 }
 
-export default function NotesDeFraisDuClient({ dossierId }: { dossierId: string }) {
+export default function NotesDeFraisDuClient({ dossierId, mode }: { dossierId: string; mode: ModeComptable | null }) {
   const [lecture, setLecture] = useState<NotesDeFraisDuDossierLues | null>(null)
   const [decision, setDecision] = useState<{ noteId: string; genre: 'refus' | 'remboursement' } | null>(null)
   const [message, setMessage] = useState<{ noteId: string; genre: 'ok' | 'erreur'; texte: string } | null>(null)
@@ -76,14 +86,14 @@ export default function NotesDeFraisDuClient({ dossierId }: { dossierId: string 
     void agir(n, 'approuver_note_de_frais', { p_note_id: n.id, p_version_lue: n.version }, 'La note est approuvée.', 'La note n’est pas approuvée')
   }
 
-  function decider(n: NoteDeFrais, d: DecisionSaisie) {
+  function decider(n: NoteDeFrais, d: DecisionSaisie, suite: string | null) {
     if (decisionEnCours.current) return
     if (d.genre === 'refus') {
       if (!window.confirm(confirmationDuRefus(n, d.motif))) return
       void agir(n, 'refuser_note_de_frais', { p_note_id: n.id, p_version_lue: n.version, p_motif: d.motif },
         'La note est refusée ; son auteur lit le motif.', 'La note n’est pas refusée')
     } else {
-      if (!window.confirm(confirmationDuRemboursement(n, d.date, d.moyen))) return
+      if (!window.confirm(confirmationDuRemboursement(n, d.date, d.moyen) + (suite === null ? '' : ` ${suite}`))) return
       void agir(n, 'rembourser_note_de_frais', { p_note_id: n.id, p_version_lue: n.version, p_date: d.date, p_moyen: d.moyen },
         'Le remboursement est déclaré.', 'Le remboursement n’est pas déclaré')
     }
@@ -92,6 +102,7 @@ export default function NotesDeFraisDuClient({ dossierId }: { dossierId: string 
   const lue = lecture !== null && lecture.dossierId === dossierId ? lecture : null
   const lesNotes = lue !== null && lue.lesNotes.complete ? lue.lesNotes.lignes : null
   const justificatifs = lue !== null && lue.justificatifs.complete ? lue.justificatifs.lignes : null
+  const achats = lue !== null ? achatsDesAccesLus(lue.acces) : null
   const aujourdhui = aujourdHuiAParis()
 
   return (
@@ -123,6 +134,8 @@ export default function NotesDeFraisDuClient({ dossierId }: { dossierId: string 
                   const justificatif = n.piece_id === null ? null : justificatifs.find((p) => p.id === n.piece_id) ?? null
                   const kilometres = detailDesKilometres(n)
                   const signal = signalDeLaNote(n, lesNotes, 'cabinet')
+                  const rangement = rangementDuJustificatif(n, justificatif, achats, mode)
+                  const suite = suiteDuRemboursement(pourQuiEstLaNote(n, achats), mode)
                   return (
                     <li key={n.id} aria-label={`Note « ${LIBELLES_DES_NATURES[n.nature]} du ${formatDate(n.date_depense)} »`}
                       style={{ borderTop: '1px solid var(--color-border)', paddingTop: 8 }}>
@@ -145,9 +158,15 @@ export default function NotesDeFraisDuClient({ dossierId }: { dossierId: string 
                       )}
                       {passagesDeLaNote(n).length > 0 && <p className="muted" style={{ margin: '4px 0' }}>{passagesDeLaNote(n).join(' · ')}</p>}
                       {signal !== null && <p className="muted" role="note" style={{ margin: '4px 0' }}>{signal}</p>}
+                      {rangement !== null && (
+                        <div role="note" aria-label="Le type de son justificatif" style={{ margin: '4px 0' }}>
+                          {rangement.aRanger && <span className="badge badge-warning">Justificatif à ranger</span>}
+                          {rangement.phrases.map((p) => <p key={p} className="muted" style={{ margin: '2px 0' }}>{p}</p>)}
+                        </div>
+                      )}
                       {ouverte !== null ? (
                         <DecisionDeLaNoteDeFrais note={n} genre={ouverte.genre} espace="cabinet" libelleDuMotif={LIBELLE_MOTIF_REFUS_NOTE_DE_FRAIS}
-                          aujourdhui={aujourdhui} occupe={occupe} annuler={() => setDecision(null)} envoyer={(d) => decider(n, d)} />
+                          aujourdhui={aujourdhui} occupe={occupe} annuler={() => setDecision(null)} envoyer={(d) => decider(n, d, suite)} />
                       ) : (gestes.approuver || gestes.rembourser) && (
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
                           {gestes.approuver && (
@@ -173,7 +192,7 @@ export default function NotesDeFraisDuClient({ dossierId }: { dossierId: string 
             )}
             <p className="muted" style={{ marginBottom: 0 }}>
               Une note approuvée ou remboursée n’écrit rien en comptabilité : le remboursement est déclaré, et la pièce qui la
-              justifie se valide comme les autres.
+              justifie se valide comme les autres, au type que la note dit.
             </p>
           </>
         )
