@@ -54962,3 +54962,18 @@ de la contre-passation encore ouverte (EL2026-0001 retirée, EL2025-0001 sans «
 lues (le PDF par `pdftotext`, chacune sur une ligne) et regardées en image (`pdftoppm`), sans coupe ni débordement. Vu et corrigé : sur
 téléphone, la phrase de la fiche coupait « EL2025- / 0002 » ; elle passe par `NumerosEntiers` (PiecesTab.test.tsx : la référence dans
 `.numero-entier`, la mutation mord).
+
+### 26/11/2026 — EXP3 : LE PROFIL CEGID QUADRA (DERRIÈRE SON DRAPEAU BAISSÉ)
+
+(Agent dev ; rien en production, aucune migration.) EXP-Q6 (B) faisait écrire Quadra puis le TRA après le MVP. Quadra d'abord : sa
+fiche « Fichier d'entrée ASCII dans Cegid Quadra Comptabilité » (KB0014530, 08/2023, « Document Public », relue le 26/11/2026 sur le
+wiki de Dolibarr, SHA-256 `df71f839…ecd14ecc`) donne chaque zone de l'enregistrement `M` ; le TRA n'a que deux descriptions
+redistribuées de versions différentes. `lib/profilQuadra.ts` relit le FEC réglementaire et n'en récrit que la forme, chaque zone citant
+sa ligne de la fiche : compte sur 8, journal en 10 ET en 111, folio « 000 », date JJMMAA, sens, centimes signés en 43, « EUR » en 108
+(la fiche : « Espace = FRF »), libellé sur 30 en 117, pièce sur 20 en 232, justificatif 8+3 en 182 (l'empreinte courte, sur la première
+ligne de l'écriture), les fichiers à côté dans le ZIP (`fabriquerLArchiveQuadra`, qui télécharge avant de composer : le nom porte
+l'extension que le type décide). Ce que la fiche ne fixe pas — l'encodage (« ASCII »), la fin d'enregistrement (« Return »), la longueur
+des comptes, les codes de journaux — est « à saisir », aucun préchoisi ; un code de trois caractères, un débit ET un crédit, une ligne à
+zéro, une devise, deux pièces que la coupe confondrait se refusent. Ni auxiliaire, ni lettrage, ni les quatre champs du BNC (l'enregistrement
+`M` n'en a pas), dit avant le clic. La base ne garde pas ses réglages (`logiciels_d_export()` ne rend qu'`acd`) : EXP3-Q4. Trois mutations
+mordent (la devise à blanc, le justificatif sur chaque ligne, le sens inversé). Non éprouvé : tout import réel ; EXP3-Q1 à Q4 ouvertes.
