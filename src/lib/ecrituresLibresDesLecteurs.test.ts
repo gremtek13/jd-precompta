@@ -278,7 +278,8 @@ describe('le lettrage : une ligne de tiers d’une écriture libre reste non let
 })
 
 describe('l’état des écritures libres : la pièce de chaque écriture, le motif compris', () => {
-  const contexte = { mode: 'tresorerie' as const, auteurs: AUTEURS, pieces: new Map([[PIECE_CITEE.id, PIECE_CITEE]]) }
+  // Sans le lien de la contre-passation : l'état d'avant EL7, que ces cas gardent (le lien : etatDesEcrituresLibres.test.ts).
+  const contexte = { mode: 'tresorerie' as const, auteurs: AUTEURS, pieces: new Map([[PIECE_CITEE.id, PIECE_CITEE]]), contrePassation: false }
 
   it('une ligne par ligne saisie, dans l’ordre des numéros ; l’effet sur la 2035 ; seulement l’exercice demandé', () => {
     const lignes = lignesDeLEtat([EL4, EL3, libre({ id: 'el-25', exercice: 2025, numero: 1, date: '2025-06-30' })], 2026, contexte)
@@ -306,7 +307,7 @@ describe('l’état des écritures libres : la pièce de chaque écriture, le mo
 
   it('le CSV : BOM UTF-8, point-virgule, CRLF, chaque texte par champCsv, virgule décimale', () => {
     const ecriture = libre({ ...EL3, motif: 'Un motif ; sur\ndeux lignes, avec des "guillemets"' })
-    const csv = genererEtatDesEcrituresLibresCsv(lignesDeLEtat([ecriture], 2026, contexte))
+    const csv = genererEtatDesEcrituresLibresCsv(lignesDeLEtat([ecriture], 2026, contexte), false)
     expect(csv.startsWith('﻿Numéro;Date;Libellé;Motif;Compte;')).toBe(true)
     const rangs = csv.slice(1).split('\r\n')
     expect(rangs).toHaveLength(3)

@@ -14,7 +14,8 @@ import { NON_VALIDEE } from '../test/ecritures'
 import { SANS_ECRITURE_DE_VENTE, ventesFactureesVides } from '../test/ventesFacturees'
 
 // EL7 : LA 2035, LE FEC ET L'ÉTAT LISENT UNE CONTRE-PASSATION COMME UNE ÉCRITURE LIBRE ORDINAIRE. Aucun moteur ne lit
-// `contre_passe_id` : la même écriture, avec ou sans son lien, rend la même 2035, le même FEC et le même état ; ses lignes au sens
+// `contre_passe_id` : la même écriture, avec ou sans son lien, rend la même 2035, le même FEC et le même état, à la mention près
+// que l'état fait du lien (RA253-Q1 (A)) ; ses lignes au sens
 // inverse diminuent les postes de l'exercice de la contre-passation (ses postes gardés), ou s'y déclarent hors de la 2035 ; la
 // 2035 de l'exercice d'origine ne bouge pas. Données FICTIVES.
 
@@ -90,9 +91,12 @@ describe('le FEC et l’état la lisent de même', () => {
   })
 
   it('l’état de l’exercice de la contre-passation : ses lignes au sens inverse, son libellé et son motif, comme toute écriture', () => {
-    const contexte = { mode: 'tresorerie' as const, auteurs: new Map<string, string>(), pieces: new Map() }
+    // Le lien lu : l'état le NOMME en plus (RA253-Q1 (A), etatDesEcrituresLibres.test.ts), et rien d'autre ne change.
+    const contexte = { mode: 'tresorerie' as const, auteurs: new Map<string, string>(), pieces: new Map(), contrePassation: true }
     const avec = lignesDeLEtat([ORIGINE, contrePassation(false)], 2026, contexte)
-    expect(avec).toEqual(lignesDeLEtat([ORIGINE, contrePassation(false, false)], 2026, contexte))
+    expect(avec.map((l) => l.contrePassation)).toEqual(['Contre-passe EL2025-0003 du 30/06/2025', 'Contre-passe EL2025-0003 du 30/06/2025'])
+    expect(avec.map(({ contrePassation: _lien, ...reste }) => reste))
+      .toEqual(lignesDeLEtat([ORIGINE, contrePassation(false, false)], 2026, contexte).map(({ contrePassation: _lien, ...reste }) => reste))
     expect(avec.map((l) => [l.reference, l.compte, l.debitCentimes, l.creditCentimes, l.effetSur2035, l.motif])).toEqual([
       ['EL2026-0001', '606100', 0, 5000, 'Achats', 'Le téléphone était personnel.'],
       ['EL2026-0001', '108000', 5000, 0, '—', 'Le téléphone était personnel.'],

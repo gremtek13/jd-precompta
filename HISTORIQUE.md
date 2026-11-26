@@ -54860,3 +54860,14 @@ le témoin du dossier permanent, aucune). Préparée : `fichier_cite_par_une_ecr
 condition, `5e7016c0…`, par l'outil ; son retour, à coller), son essai 0/11 et 2 mutations ; avec elle `rls.sql`, `dossierPermanent`
 (189) et `exemplairesDesFactures` (323), qui admettent son empreinte, SÛRS au banc ; INV3 et elle se refusent l'une après
 l'autre (REPET-Q2). Questions : RA253-migration, RA253-Q1, RA253-Q2.
+
+### 26/11/2026 — RA253-Q1 : L'ÉTAT DES ÉCRITURES LIBRES NOMME L'ÉCRITURE CONTRE-PASSÉE, D'APRÈS LE LIEN
+
+Tranchée (A) par le cabinet le 26/11/2026. Sans migration : la lecture de l'onglet Écritures portait déjà `contre_passe_id` sous
+`CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE`. `contrePassationDansLEtat` (lib/etatDesEcrituresLibres.ts), sur les écritures du
+dossier lues en entier (tous exercices) : « Contre-passe EL2025-0003 du 30/06/2025 » sous une contre-passation, « Contre-passée par
+EL… du … » sous l'écriture annulée, les deux à la suite si besoin ; un lien vers une écriture absente de la lecture, « Contre-passe une
+écriture non lue ». La référence par `referenceDeLEcritureLibre`, la date par `formatDate` ; ni libellé ni motif de l'autre écriture.
+Le CSV gagne la colonne « Contre-passation » après l'extourne, le PDF une ligne avant le motif — seulement si le contexte dit le lien
+lu (`contrePassation`, obligatoire) : le drapeau baissé, l'état d'hier. FEC, piste d'audit et 2035 inchangés (le FEC fictif à l'octet).
+Deux mutations mordent (le « non lu » tu ; le drapeau ignoré, à l'écran et dans le module).
