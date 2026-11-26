@@ -2083,7 +2083,9 @@ const levierDuBanc = (cle: string): string | null => (typeof localStorage === 'u
 
 // LA CONTRE-PASSATION D'UNE ÉCRITURE LIBRE FIGÉE (EL7, en production depuis le 25/11/2026) : sous le levier `banc-ecritures-figees`,
 // deux écritures libres FICTIVES de l'exercice 2025 validé de la kinésithérapeute (d9), donc figées — la part privée du téléphone,
-// sous son poste de la 2035, qui se contre-passe, et une charge constatée d'avance du 31 décembre extournée, que son état retient.
+// sous son poste de la 2035, qui se contre-passe, et une charge à payer du 31 décembre extournée, que son état retient, qui cite la
+// facture du loyer de janvier 2026 (k4, d'un exercice OUVERT ; les trois pièces de 2025 sont déjà citées par la révision ou le dossier
+// permanent, dont la phrase passe devant) : la fiche de cette pièce dit que sa citation ne se retire plus (ELQ8Q1-Q1 (A)).
 // Levier retiré, elles partent avec ce qui les contre-passe (et ses lignes au brouillon) : les visites de la Révision de d9 et de sa
 // Balance se mesurent sans elles, comme hier.
 const ECRITURES_FIGEES_DU_BANC: Ligne[] = [
@@ -2097,11 +2099,11 @@ const ECRITURES_FIGEES_DU_BANC: Ligne[] = [
     version: 1, cree_par: 'u1', cree_le: '2025-07-01T08:30:00Z', modifie_par: null, modifie_le: null, contre_passe_id: null,
   },
   {
-    id: 'el-figee-2', dossier_id: 'd9', exercice: 2025, numero: 2, date: '2025-12-31', libelle: 'Abonnement du logiciel de 2026 payé d’avance',
-    motif: 'Charge constatée d’avance : l’abonnement de 2026 réglé en décembre 2025', avec_extourne: true, piece_citee_id: null,
+    id: 'el-figee-2', dossier_id: 'd9', exercice: 2025, numero: 2, date: '2025-12-31', libelle: 'Loyer de décembre 2025 facturé en janvier',
+    motif: 'Charge à payer : le loyer de décembre 2025, facturé le 5 janvier 2026, rattaché à son exercice', avec_extourne: true, piece_citee_id: 'k4',
     lignes: [
-      { compte: '486000', sens: 'debit', centimes: 24000, poste_2035: null, compte_lib: null },
-      { compte: '618000', sens: 'credit', centimes: 24000, poste_2035: null, compte_lib: null },
+      { compte: '613200', sens: 'debit', centimes: 70000, poste_2035: null, compte_lib: null },
+      { compte: '408100', sens: 'credit', centimes: 70000, poste_2035: null, compte_lib: null },
     ],
     version: 1, cree_par: 'u1', cree_le: '2026-01-15T10:00:00Z', modifie_par: null, modifie_le: null, contre_passe_id: null,
   },

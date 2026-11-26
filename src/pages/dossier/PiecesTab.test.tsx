@@ -1615,6 +1615,9 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
   const PHRASE = 'Cette pièce est citée par l’écriture libre EL2026-0003 : elle ne se supprime plus, sauf avec son dossier. '
     + 'Pour la supprimer, retire d’abord la citation de l’écriture, dans l’onglet Écritures.'
   const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  // La phrase de la fiche, lue entière : ses références d'écriture vivent dans des `span` (components/NumerosEntiers.tsx).
+  const phraseDuVolet = () => [...volet().querySelectorAll('.fiche-piece-figee')].map((e) => e.textContent ?? '')
+    .find((t) => t.startsWith('Cette pièce est citée par l’écriture libre')) ?? null
   async function ouvrir(tiers: string) {
     const cellule = await screen.findByText(tiers, { selector: 'td' })
     await act(async () => { fireEvent.click(cellule) })
@@ -1635,12 +1638,14 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
     citer()
     monter('toutes')
     await ouvrir('ALPHA')
-    expect(within(volet()).getByText(PHRASE)).toBeTruthy()
+    expect(phraseDuVolet()).toBe(PHRASE)
+    // La référence ne se coupe pas à son trait d'union (vu au banc le 26/11/2026, sur téléphone : « EL2026- / 0003 »).
+    expect([...volet().querySelectorAll('.fiche-piece-figee .numero-entier')].map((e) => e.textContent)).toEqual(['EL2026-0003'])
     expect(screen.queryByText(/secret/)).toBeNull()
     expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
 
     await ouvrir('BETA')
-    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(phraseDuVolet()).toBeNull()
     expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
   })
 
@@ -1652,8 +1657,9 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
     faux.parTable.exercices_valides = [{ dossier_id: 'dossier-de-test', annee: 2026 }]
     monter('toutes')
     await ouvrir('ALPHA')
-    expect(within(volet()).getByText('Cette pièce est citée par l’écriture libre EL2026-0003 : elle ne se supprime plus, sauf avec son '
-      + 'dossier. L’écriture EL2026-0003 est d’un exercice validé : sa citation ne se retire plus, et la pièce reste au dossier.')).toBeTruthy()
+    expect(phraseDuVolet()).toBe('Cette pièce est citée par l’écriture libre EL2026-0003 : elle ne se supprime plus, sauf avec son '
+      + 'dossier. L’écriture EL2026-0003 est d’un exercice validé : sa citation ne se retire plus, et la pièce reste au dossier.')
+    expect([...volet().querySelectorAll('.fiche-piece-figee .numero-entier')].map((e) => e.textContent)).toEqual(['EL2026-0003', 'EL2026-0003'])
     expect(within(volet()).queryByText(/retire d’abord/)).toBeNull()
     expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
   })
@@ -1663,7 +1669,7 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
     citer('autre-dossier')
     monter('toutes')
     await ouvrir('ALPHA')
-    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(phraseDuVolet()).toBeNull()
     expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
   })
 
@@ -1710,7 +1716,7 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
     monter('toutes')
     expect(await screen.findByText(/^Les écritures libres du dossier n'ont pas pu être lues en entier .*Une pièce citée par une écriture libre peut donc paraître supprimable/)).toBeTruthy()
     await ouvrir('ALPHA')
-    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(phraseDuVolet()).toBeNull()
     await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Supprimer' })) })
     expect(await within(volet()).findByText(/^Cette pièce est citée par une écriture libre du dossier : elle ne se supprime plus/)).toBeTruthy()
     expect(faux.suppressions).toEqual(['p-citee'])

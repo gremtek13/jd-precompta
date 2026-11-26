@@ -54950,3 +54950,15 @@ il ouvre la tenue de ce cabinet, 251/251 ; rls.sql 295 invariants 0 en faute, 17
 sa fiche sous l'assurance maladie ; le scanner `sectionsDesModules.test.ts` (sections déclarées et fichiers nommés d'un module, la
 garde lue dans la condition de l'expression, quatre défauts plantés). L'export vers un logiciel et ses réglages restent au socle.
 Effet à l'application : un cabinet créé depuis le 19/11/2026 ne valide plus rien sans la tenue (OPT6-Q1).
+
+### 26/11/2026 — LA CONTRE-PASSATION, L'ÉTAT DES ÉCRITURES LIBRES ET LA PIÈCE CITÉE, ÉPROUVÉS DANS UN NAVIGATEUR
+
+(Agent dev ; rien en base.) Au banc, sur d9 (`banc-ecritures-figees`) : EL2025-0002, l'extournée, devient une charge à payer qui cite
+k4 (le loyer de janvier 2026 ; les trois pièces de 2025 sont déjà citées par la révision ou le dossier permanent, dont la phrase passe
+devant celle de l'écriture). Deux gestes neufs dans ecrituresLibres.mjs, vues de vitrine.mjs et visites de debordements.mjs : le retrait
+de la contre-passation encore ouverte (EL2026-0001 retirée, EL2025-0001 sans « Contre-passée par » et de nouveau offerte à
+« Contre-passer ») ; la fiche de k4, la phrase « sa citation ne se retire plus » mesurée dans `.fiche-piece-corps`.
+`etatDesEcrituresLibres.mjs` télécharge l'état de 2025 et de 2026 par leurs boutons, en CSV et en PDF : les deux mentions de RA253-Q1
+lues (le PDF par `pdftotext`, chacune sur une ligne) et regardées en image (`pdftoppm`), sans coupe ni débordement. Vu et corrigé : sur
+téléphone, la phrase de la fiche coupait « EL2025- / 0002 » ; elle passe par `NumerosEntiers` (PiecesTab.test.tsx : la référence dans
+`.numero-entier`, la mutation mord).

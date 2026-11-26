@@ -168,6 +168,43 @@ export async function contrePassationFaite(page) {
   return section
 }
 
+/**
+ * La contre-passation EL2026-0001, encore OUVERTE (son exercice 2026 n'est pas validé), retirée par son « Retirer », la confirmation
+ * acceptée : le message du retrait, puis, dans l'exercice 2025, EL2025-0001 sans sa mention « Contre-passée par » et de nouveau
+ * offerte à « Contre-passer ». Rend la section, sur l'exercice 2025.
+ */
+export async function contrePassationRetiree(page) {
+  await contrePassationFaite(page)
+  const section = await ecrituresFigeesOuvertes(page, '2026')
+  const ligne = section.locator('tr', { has: page.getByRole('cell', { name: /EL2026-0001$/ }) })
+  page.once('dialog', (d) => d.accept())
+  await ligne.getByRole('button', { name: 'Retirer', exact: true }).click()
+  await section.getByText('Écriture libre EL2026-0001 retirée.', { exact: true }).waitFor({ timeout: 10000 })
+  const avant = await ecrituresFigeesOuvertes(page)
+  await avant.getByRole('button', { name: 'Contre-passer', exact: true }).first().waitFor({ timeout: 10000 })
+  if ((await avant.getByText(/^Contre-passée par/).count()) !== 0) throw new Error('la mention « Contre-passée par » survit au retrait')
+  return avant
+}
+
+/**
+ * LA FICHE D'UNE PIÈCE CITÉE PAR UNE ÉCRITURE LIBRE D'UN EXERCICE VALIDÉ (ELQ8Q1-Q1 (A)) : la facture du loyer de janvier 2026 (k4),
+ * que cite EL2025-0002, figée — sa fiche ouverte dans l'onglet Justificatifs de la kinésithérapeute, sur l'exercice 2026. Rend la phrase.
+ */
+export async function pieceCiteeFigeeOuverte(page) {
+  await panneauFerme(page)
+  await page.evaluate(() => localStorage.setItem('banc-ecritures-figees', '1'))
+  await page.goto('http://127.0.0.1:5199/#/dossiers/d9/checklist')
+  await page.waitForTimeout(300)
+  await page.goto('http://127.0.0.1:5199/#/dossiers/d9/pieces')
+  await page.getByRole('tab', { name: '2026', exact: true }).first().click()
+  const cellule = page.getByRole('cell', { name: 'SCI Les Platanes' }).first()
+  await cellule.waitFor({ timeout: 10000 })
+  await cellule.click()
+  const phrase = page.locator('#panneau-droit, .fiche-piece').getByText(/sa citation ne se retire plus, et la pièce reste au dossier\.$/).first()
+  await phrase.waitFor({ timeout: 10000 })
+  return phrase
+}
+
 // LES RÉGLAGES DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP-Q4 (A) ; `REGLAGES_D_EXPORT_PREVUS` levé le 25/11/2026), à côté du FEC de
 // l'onglet Écritures du cabinet infirmier (d1). Le levier `banc-reglages-export` du faux Supabase (lu à chaque appel) joue la lecture
 // lente (« Lecture… ») et la lecture refusée ; sans lui, la table du faux, vide au départ, garde ce qu'on enregistre — dans un même

@@ -64,8 +64,8 @@
 import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
 import {
-  SECTION_LIBRE, contrePassationFaite, contrePassationOuverte, ecritureLibrePassee, ecritureLibreRetiree, ecrituresFigeesOuvertes, ecrituresLibresSemees,
-  ensembleDeLExerciceClos, exportOuvert, panneauFerme, reglagesEnregistres, saisieLibreRemplie,
+  SECTION_LIBRE, contrePassationFaite, contrePassationOuverte, contrePassationRetiree, ecritureLibrePassee, ecritureLibreRetiree, ecrituresFigeesOuvertes, ecrituresLibresSemees,
+  ensembleDeLExerciceClos, exportOuvert, panneauFerme, pieceCiteeFigeeOuverte, reglagesEnregistres, saisieLibreRemplie,
 } from './ecrituresLibres.mjs'
 
 // LA CAISSE (ligne 26.6, étape C4) : `CAISSE=1` joue l'onglet Caisse et la fiche de son versement d'espèces, le drapeau
@@ -205,6 +205,16 @@ const VISITES_DES_ECRITURES_LIBRES = [
       await contrePassationFaite(page)
       await (await ecrituresFigeesOuvertes(page, '2026')).getByText(/^Contre-passe EL2025-0001/).scrollIntoViewIfNeeded()
     },
+  },
+  // Le retrait de la contre-passation encore ouverte (2026), EL2025-0001 de nouveau offerte à « Contre-passer » ; puis la fiche de la
+  // pièce que cite EL2025-0002, figée : la phrase « sa citation ne se retire plus », mesurée dans le corps de la fiche (26/11/2026).
+  {
+    dossier: 'd9', onglet: 'ecritures', nom: 'ecritures-libres/contre-passation-retiree',
+    apres: async (page) => { await (await contrePassationRetiree(page)).getByRole('button', { name: 'Contre-passer', exact: true }).first().scrollIntoViewIfNeeded() },
+  },
+  {
+    dossier: 'd9', onglet: 'pieces', nom: 'ecritures-libres/piece-citee-figee', fenetre: '.fiche-piece-corps',
+    apres: async (page) => { await (await pieceCiteeFigeeOuverte(page)).scrollIntoViewIfNeeded() },
   },
 ]
 
