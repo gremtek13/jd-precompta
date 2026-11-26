@@ -1277,7 +1277,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   ÉCRITURES ».
 - **En trésorerie, la note de frais de l'exploitant ne justifie aucun mouvement** (`lib/noteDeFraisEnTresorerie.ts`) : ni
   proposée, ni au choix, ni dans un lot, refusée au rapprochement ; son remboursement se propose en virement personnel, et un
-  ancien rapprochement se dit en attention (`notes-de-frais-rapprochees`). **Un compte de charge ou de produit alimente une
+  ancien rapprochement se dit en attention (`notes-de-frais-rapprochees`). Une note de B7 approuvée ou remboursée : la section
+  du cabinet dit le type de son justificatif (l'exploitant en « Note de frais », un salarié en « Achat », compté à son
+  remboursement), proposé d'après la case « Achats » pour une note saisie pour soi, et signale une pièce rangée autrement, sans
+  rien écrire (`lib/notesDeFraisEnComptabilite.ts`, lot L3 ; L3-Q1 à Q3 ouvertes) → « L3 : LA NOTE DU DIRIGEANT AU COMPTE DE
+  L'EXPLOITANT ». **Un compte de charge ou de produit alimente une
   seule ligne de la 2035 par exercice** : sinon une attention (`comptes-sur-plusieurs-postes`, `lib/unCompteUnPoste.ts`) → « L1 :
   LA NOTE DE FRAIS REMBOURSÉE EN VIREMENT PERSONNEL, ET UN COMPTE POUR UN SEUL POSTE ».
 - **La caisse d'un BNC** (ligne 26.6, MVP-D2) : `lib/caisse.ts` juge les saisies, une caisse bornée par son ouverture ;

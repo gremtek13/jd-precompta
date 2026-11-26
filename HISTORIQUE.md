@@ -54903,3 +54903,19 @@ l'export (`hausseDuChiffreDAffaires`, 230 ; `pieceDUnPaiementDansSonDossier`, `p
 `especesDuClientHorsDesReprises`, `auteurDesOuvertures`, 231 à 234 ; `modeDeReglementDesMouvements`, 240) sortis : 25 cas
 particuliers ; SÛRS au banc sur la copie à 254 (196 verdicts, 0 en faute, aucun « EN ATTENTE »). Leurs en-têtes disent encore
 « préparée » : à reprendre en passant. Les huit restants de « apres » visent des migrations encore dans `supabase/preparees/`.
+
+### 26/11/2026 — L3 : LA NOTE DU DIRIGEANT AU COMPTE DE L'EXPLOITANT, CELLE D'UN SALARIÉ À SON REMBOURSEMENT (DERRIÈRE B8)
+
+(Agent architecte, lot L3 de la conception 58 ; rien en base, aucune migration, `NOTES_DE_FRAIS_PREVUES` toujours baissé.) Le
+code par client (EXP58-Q2) étant en production (253), restait de L3 « dans B8, la note du dirigeant au compte de l'exploitant »
+(§ 2.1). Une note de B7 n'écrit rien : c'est le TYPE de son justificatif qui décide. `lib/notesDeFraisEnComptabilite.ts`, pur :
+pour une note approuvée ou remboursée, l'exploitant en « Note de frais » (à sa date, face au compte de l'exploitant ; le virement
+qui le rembourse, un virement personnel — la règle de L1, `estNoteDeLExploitant`, confrontée), un salarié en « Achat » en
+trésorerie (compté à son remboursement, CGI art. 93, 1 : le mouvement ou la caisse qui le rembourse en est le paiement), rien en
+engagement pour un salarié (le 421 sans écriture ; la « Note de frais » y est signalée). Pour qui : un salarié nommé, certain ; une
+note saisie pour soi, PROPOSÉE d'après la case « Achats » de l'auteur (MEG2-Q6 : l'accès « Achats » est le dirigeant), cases
+relues en entier, sinon rien de proposé. La section « Notes de frais du client » (Justificatifs) dit le type, signale « Justificatif
+à ranger », et la confirmation du remboursement dit la suite du mouvement ; la lecture du cabinet prend `type_piece` et, à part,
+`memberships.droit_achats` (refusée, seule elle tombe) ; le modèle passé par PiecesTab, sans défaut. Rien ne change de type seul :
+le cabinet décide dans la fiche de la pièce. Restent la Vue d'ensemble, l'écriture au 421 en engagement (B7) et la levée de B8.
+Questions : L3-Q1 (pour qui, une note saisie pour soi), L3-Q2 (le 421 en trésorerie), L3-Q3 (le signal hors de la section).

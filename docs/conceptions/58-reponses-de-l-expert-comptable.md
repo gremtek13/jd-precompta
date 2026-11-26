@@ -439,7 +439,9 @@ une migration sans fonction de garde), grande (une fonction de garde ou un calcu
    barème au compte de l'exploitant (§ 3.2).
 
 **L3 — avant la validation de 2026** : le code par client (EXP58-Q2) (§ 1.4) ; dans B8, la note du dirigeant au compte de
-l'exploitant (§ 2.1).
+l'exploitant (§ 2.1). État au 26/11/2026 : EXP58-Q2 en production (253) ; la note du dirigeant dite dans la section du cabinet
+de B8, sans écriture (`lib/notesDeFraisEnComptabilite.ts`) ; L3-Q1 à Q3 ouvertes (HISTORIQUE.md, « L3 : LA NOTE DU DIRIGEANT
+AU COMPTE DE L'EXPLOITANT »).
 
 **L4 — après le MVP** : l'emploi de la date de valeur à la frontière du 31/12 ; l'écart d'un débit en frais divers ; le
 barème des repas ; l'attention du plafond des facultatives ; le refus d'un exercice décalé pour tout BNC ; l'alerte de B9 ;
