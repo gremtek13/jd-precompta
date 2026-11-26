@@ -890,8 +890,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   VF8A EN PRODUCTION », « LES TROIS MIGRATIONS DE VF8E-Q1, VF8E ET VF5H2Q1-Q2 EN PRODUCTION », « LES DEUX MIGRATIONS DE
   23Q2Q2-Q3 ET VF8F EN PRODUCTION ».
 - **Bac à sable Super PDP** : l'essai réel de l'émission avec le cabinet.
-- **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision n'a pas encore
-  les préalables de la validation ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
+- **Révision des comptes** (ligne 41, neuf étapes R1 à R9) : R1 à R5 et R7 en ligne ; l'onglet Révision montre les
+  préalables de la validation en lecture seule (« Avant de valider l'exercice », 26/11/2026), par la lecture même de Clôture,
+  sortie dans `pages/dossier/useClotureDuDossier.ts` (`lib/prealablesDeLaRevision.ts`) → « LES PRÉALABLES DE LA VALIDATION
+  DANS L'ONGLET RÉVISION » ; R6 (Q1 : la révision retient la validation) attend un premier exercice réel révisé ;
   puis R8 (une citation de fichier, `fichier_id`, refusée jusque-là) et R9 → « LA RÉVISION DES COMPTES : LA
   CONCEPTION ».
 - **L'espace client, logiciel de gestion du client** (décision du cabinet du 09/10/2026 : devis, factures et facture

@@ -387,6 +387,9 @@ const VUES = [
   { nom: 'pc-revision-historique', chemin: '#/dossiers/d9/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le compte 218300$', vers: 'Historique du compte' },
   { nom: 'pc-revision-1024', chemin: '#/dossiers/d9/revision', l: 1024, h: 768, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le compte 108000$' },
   { nom: 'pc-revision-a-justifier', chemin: '#/dossiers/d10/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025' },
+  // Les préalables de la validation, en lecture seule (ligne 41) : la section « Avant de valider l'exercice », et sur téléphone.
+  { nom: 'pc-revision-prealables', chemin: '#/dossiers/d10/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Avant de valider l’exercice 2025' },
+  { nom: 'mobile-revision-prealables', chemin: '#/dossiers/d10/revision', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', vers: 'Avant de valider l’exercice 2025' },
   // Les cycles (étape R4, phase C) : le panneau d'un cycle conclu et revu, la synthèse, et sur téléphone.
   { nom: 'pc-revision-cycle', chemin: '#/dossiers/d9/revision', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', apres: '^Ouvrir le cycle Trésorerie$' },
   { nom: 'pc-revision-cycle-sombre', chemin: '#/dossiers/d9/revision', l: 1280, h: 800, theme: 'dark', reduite: false, exercice: '2025', apres: '^Ouvrir le cycle Ensemble$' },

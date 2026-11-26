@@ -51,6 +51,9 @@ import { estOuvert } from '../../lib/modulesDuCabinet'
 import { useGardePanneau, usePanneauDroit } from '../../lib/panneauDroit'
 import PanneauDroit from '../../components/PanneauDroit'
 import BandeauLecturePartielle, { type AccordLecture } from '../../components/BandeauLecturePartielle'
+import { useClotureDuDossier } from './useClotureDuDossier'
+import { ListePrealables } from './ValidationExerciceCard'
+import type { PrealablesDeLaRevision } from '../../lib/prealablesDeLaRevision'
 import KpiTile from '../../components/widgets/KpiTile'
 import FicheSolde from './FicheSolde'
 import FicheCycle, { type GesteDuCycle } from './FicheCycle'
@@ -332,7 +335,10 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
 }) {
   // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
   const { banques } = useBanquesDuDossier(dossierId, modele.plan)
-  const { annee } = useAnnee()
+  const { annee, setAnnee } = useAnnee()
+  // LES PRÉALABLES DE LA VALIDATION (ligne 41) : la lecture et les calculs mêmes de Clôture (useClotureDuDossier), jamais une
+  // seconde lecture ni une règle recopiée — la section « Avant de valider l'exercice » dit ce que la carte de Clôture juge.
+  const cloture = useClotureDuDossier({ dossierId, assujettiTva, periodiciteTva, modele, ventesParLesFactures })
   // Les écritures libres de l'expert-comptable (EL5), que la 2035 de la revue compte : le drapeau baissé, l'absence sans requête.
   const { lu: lectureDesLibres } = useEcrituresLibres(dossierId)
   const { exercices, frontiere } = useExercicesValides()
@@ -1062,6 +1068,10 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
         onOuvrirLaLigne={ouvrirLaLigne}
       />
 
+      <AvantDeValider
+        annee={annee} prealables={cloture.prealablesDeLExercice(annee)} onNavigate={onNavigate} onChoisirExercice={setAnnee}
+      />
+
       {sectionDuPermanent}
 
       {(revision.horsDuMotif.length > 0 || revision.controlesHorsCycle.length > 0 || revision.controlesInconnus.length > 0) && (
@@ -1159,6 +1169,58 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
         </PanneauDroit>
       )}
     </>
+  )
+}
+
+// AVANT DE VALIDER L'EXERCICE (ligne 41) : les préalables de la validation, EN LECTURE SEULE, tels que la carte « Valider
+// l'exercice » de Clôture les juge (lib/prealablesDeLaRevision.ts) — bloquants et attentions à part, chacun avec l'onglet qui le
+// règle. Aucun geste de validation : elle se fait dans Clôture. Rien avant la lecture revenue, rien sur une lecture partielle.
+function AvantDeValider({ annee, prealables, onNavigate, onChoisirExercice }: {
+  annee: number
+  prealables: PrealablesDeLaRevision
+  onNavigate: (tab: DossierTab) => void
+  onChoisirExercice: (annee: number) => void
+}) {
+  return (
+    <section className="card" style={{ marginTop: 20 }} aria-label="Avant de valider l’exercice">
+      <h3 style={{ marginTop: 0 }}>{`Avant de valider l’exercice ${annee}`}</h3>
+      <p className="muted">
+        Ce que la carte « Valider l’exercice » de l’onglet Clôture juge, tel qu’elle le dit : la révision le montre, la validation
+        se fait dans Clôture.
+      </p>
+      {prealables.etat === 'en_cours' ? (
+        <p className="muted" style={{ marginBottom: 0 }}>Chargement…</p>
+      ) : prealables.etat === 'incomplete' ? (
+        <BandeauLecturePartielle
+          quoi="Les entrées de la validation"
+          accord="lues"
+          motif={prealables.motif}
+          consequence="Ses préalables ne se disent pas sur une lecture incomplète : ni ce qui la retient, ni ce qui se lit avant. Recharge la page."
+        />
+      ) : prealables.etat === 'valide' ? (
+        <p style={{ marginBottom: 0 }}>{`L’exercice ${annee} est validé : plus rien ne le retient.`}</p>
+      ) : (
+        <>
+          {prealables.bloquants.length > 0 ? (
+            <>
+              <p style={{ marginBottom: 4 }}><strong>Ce qui empêche de valider</strong></p>
+              <ListePrealables ici="revision" prealables={prealables.bloquants} onNavigate={onNavigate} onChoisirExercice={onChoisirExercice} />
+            </>
+          ) : (
+            <p>Rien n’empêche de valider cet exercice.</p>
+          )}
+          {prealables.attentions.length > 0 && (
+            <>
+              <p style={{ marginBottom: 4 }}><strong>À lire avant de valider</strong></p>
+              <ListePrealables ici="revision" prealables={prealables.attentions} onNavigate={onNavigate} onChoisirExercice={onChoisirExercice} />
+            </>
+          )}
+        </>
+      )}
+      <div className="field-row">
+        <button className="btn btn-outline btn-sm" onClick={() => onNavigate('cloture')}>Aller à la Clôture</button>
+      </div>
+    </section>
   )
 }
 

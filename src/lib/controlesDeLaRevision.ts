@@ -11,8 +11,9 @@ import type { PointsDeLaChecklist } from './pointsDeLaChecklist'
 // exercice : un relevé manquant de 2026 ne dit rien des soldes de 2025. Les autres (`informations`, le véhicule, les
 // justificatifs à cocher) valent pour tout exercice.
 //
-// Les préalables de la validation (lib/prealablesValidation.ts) n'y sont pas encore : ils demandent la 2035 de l'exercice
-// et sa concordance, que Clôture calcule (étape R6).
+// Les préalables de la validation (lib/prealablesValidation.ts) ne s'y rangent pas : ils demandent la 2035 de l'exercice et sa
+// concordance, que Clôture calcule. L'onglet les montre à part, en lecture seule, par la lecture même de Clôture
+// (pages/dossier/useClotureDuDossier.ts, lib/prealablesDeLaRevision.ts) ; R6 — la révision qui RETIENT la validation — reste à faire.
 
 export interface ControleExistant {
   id: string
