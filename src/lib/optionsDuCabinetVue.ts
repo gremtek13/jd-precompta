@@ -1,4 +1,6 @@
 import {
+  FRONTIERE_DE_LA_TENUE_PREVUE,
+  phrasesDeLaFermetureDeLaTenue,
   CE_QU_OUVRE_LE_MODULE,
   DEPENDANCES,
   EXTINCTIONS_GARDEES,
@@ -205,5 +207,6 @@ export function motsDeLaConfirmation(cabinet: string, c: CaseDUnModule): MotsDeL
   ]
   if (c.module === 'facture_electronique') phrases.push(ENCAISSEMENTS_A_DECLARER)
   if (c.module === 'assurance_maladie' && c.jugeParLaBaseSeule) phrases.push(ASSURANCE_MALADIE_JUGEE_PAR_LA_BASE)
+  if (c.module === 'tenue') phrases.push(...phrasesDeLaFermetureDeLaTenue(FRONTIERE_DE_LA_TENUE_PREVUE))
   return { titre: `Fermer le module ${module} au cabinet « ${cabinet} » ?`, phrases, bouton: 'Fermer le module' }
 }

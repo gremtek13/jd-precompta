@@ -676,6 +676,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   PRODUCTION ». OPT5 écrit (20/11/2026, sans migration, le bloc OPTION DU CABINET : 403 module fermé, 503 illisible, après
   l'appelant), les huit fonctions déployées le 20/11/2026 au commit `6cb1f936` (`agent-comptable`, `proposer-categorie`,
   `banque-connexion`, `plateforme-agreee`, `superpdp-credentials`, `superpdp-emit`, `superpdp-sync`, `send-email`) → « OPT5 : LES EDGE FUNCTIONS REFUSENT ».
+  OPT6 préparée (26/11/2026, `frontiere_de_la_tenue`, par l'outil, `FRONTIERE_DE_LA_TENUE_PREVUE` baissé) : sans la tenue, la base refuse
+  (P0001) la validation, la publication d'une situation et l'écriture libre, par des déclencheurs AFTER ROW (la RLS juge avant ; ni porte
+  ni heurt avec INAL5) ; une section d'un module ne se monte que sous `estOuvert` (`MODULE_DE_LA_SECTION`, `sectionsDesModules.test.ts`)
+  → « OPT6 : LA FRONTIÈRE DE LA TENUE, EN BASE ».
 - **Les exports vers les logiciels comptables** (17/11/2026), recherchés, rien d'écrit (`docs/conceptions/57-exports-vers-les-logiciels-comptables.md`) :
   le FEC avec ses pièces en ZIP est le pivot (ACD d'abord), puis l'ASCII Quadra et le TRA ; EXP-Q1 à Q8, EXP-E1 à E7 → « LES
   EXPORTS VERS LES LOGICIELS COMPTABLES : LA RECHERCHE ».

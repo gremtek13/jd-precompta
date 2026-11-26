@@ -398,6 +398,9 @@ begin
         perform set_config('request.jwt.claims', '', true);
       end $a9a$$q$, '', ''],
     array['jeu', 'cabinet jetable', 'postgres', $q$insert into cabinets (id, nom) values ('{CJ}', 'ESSAI VALIDATION CABINET')$q$, '', ''],
+    -- Le module « Tenue et déclarations » ouvert au cabinet jetable (OPT6, la frontière de la tenue en base : un cabinet neuf
+    -- n'a que le socle, OPT-Q3 (B), et la validation s'y refuserait) ; la table des options est en production depuis le 19/11/2026.
+    array['jeu', 'sa tenue ouverte', 'postgres', $q$insert into options_des_cabinets (cabinet_id, module, ouverte) values ('{CJ}', 'tenue', true)$q$, '', ''],
     array['jeu', 'son dossier', 'postgres', $q$insert into dossiers (id, nom, cabinet_id) values ('{J1}', 'ESSAI VALIDATION J1', '{CJ}')$q$, '', ''],
     -- La numérotation qui continue (étape A9a, préparée) : le cabinet valide dans la série de son mandataire (M, MA) ; les
     -- dossiers de cet essai lui posent la série d'hier (F, A), celle du client prenant C et D, pour que les numéros qu'il

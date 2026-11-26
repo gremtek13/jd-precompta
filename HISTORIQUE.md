@@ -54933,3 +54933,20 @@ rien de plus à un exercice validé). Le jumeau de la revue analytique (`revueAn
 conception (§ 4.2) voulait aussi RANGER chaque préalable dans son cycle (la table de `revisionCycles.ts` existe) : laissé à une
 question (RPV-Q1). R6 reste à faire. Banc : deux captures (`*-revision-prealables`), `debordements.mjs` à 0 sur les visites
 « revision » à 1 440, 1 280, 1 024, 720 et 390 px.
+
+### 26/11/2026 — OPT6 : LA FRONTIÈRE DE LA TENUE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production.) Sur OPT-Q1 (A) et OPT-Q4 (A). `20261126120000_frontiere_de_la_tenue` (par l'outil : ni
+`drop` ni suppression ; son retour, à coller) : `garder_frontiere_de_la_tenue`, `security definer` au chemin vide, refuse en P0001
+(`REFUS_DE_LA_TENUE`) l'insertion d'un exercice validé, d'une situation publiée (le RETRAIT permis) et d'une écriture libre, et sa
+modification à nouvelle version, aux dossiers d'un cabinet sans la tenue (ligne absente = fermée) ; le super-administrateur passe.
+Écart à la conception : AFTER ROW, non BEFORE — un BEFORE `security definer` exigeait la porte sur `exercices_valides` et
+`situations_publiees`, que la tête d'INAL5 refuserait alors ; un BEFORE invoker répondait P0001 là où rls.sql exige 42501. Défaut
+trouvé à l'essai : `tg_table_name = … and new.geste = …` lève 42703 sur les autres tables (PL/pgSQL évalue le champ) ; deux `if`.
+Copie de `replique_227` portée à 254 : seconde application refusée ; essai 15/15, six mutations sur six ; retour : signature égale
+après aller-retour, essai EN ATTENTE ; `validationExercice.sql` mettait 2 verdicts en faute (son cabinet jetable n'a que le socle) :
+il ouvre la tenue de ce cabinet, 251/251 ; rls.sql 295 invariants 0 en faute, 178 mutations sur 178 ; seize autres essais verts.
+À l'écran, deux trous de module refermés : la section des écritures libres sous `estOuvert('tenue')`, l'association d'un crédit dans
+sa fiche sous l'assurance maladie ; le scanner `sectionsDesModules.test.ts` (sections déclarées et fichiers nommés d'un module, la
+garde lue dans la condition de l'expression, quatre défauts plantés). L'export vers un logiciel et ses réglages restent au socle.
+Effet à l'application : un cabinet créé depuis le 19/11/2026 ne valide plus rien sans la tenue (OPT6-Q1).
