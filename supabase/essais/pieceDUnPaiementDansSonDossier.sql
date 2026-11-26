@@ -1,5 +1,5 @@
--- LA PIÈCE D'UN PAIEMENT, TENUE DANS SON DOSSIER (ligne 51.5, A8Q5-Q4 ; la migration préparée
--- `piece_d_un_paiement_dans_son_dossier`, supabase/preparees/20261116140000_piece_d_un_paiement_dans_son_dossier.sql). Le
+-- LA PIÈCE D'UN PAIEMENT, TENUE DANS SON DOSSIER (ligne 51.5, A8Q5-Q4 ; la migration
+-- `piece_d_un_paiement_dans_son_dossier`, en production depuis le 16/11/2026 (231), supabase/schema/20261116174425_piece_d_un_paiement_dans_son_dossier.sql). Le
 -- récit : HISTORIQUE.md, « 16/11/2026 — A8Q5-Q4, A8Q5Q3Q2-Q3 ET A8Q5Q3Q2Q2-Q1 : TROIS MIGRATIONS PRÉPARÉES APRÈS LA GARDE DES
 -- RÈGLEMENTS ». À rejouer après toute migration qui touche `garder_piece_dans_son_dossier`, les gardes BEFORE de
 -- `lignes_bancaires`, `reglements_groupes` ou `pieces`, `regler_pieces_par_mouvement` ou les fonctions de la caisse. SANS LA

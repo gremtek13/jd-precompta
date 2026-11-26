@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // AUCUN APPELANT DE L'APPLICATION N'OMET LES ÉCRITURES LIBRES (EL5). La 2035, la situation intermédiaire, l'estimation et le FEC
 // les reçoivent en DERNIER paramètre, sous un défaut (EL3, EL4) : l'absence le drapeau baissé, et — pour la 2035 et ce qui s'en
@@ -60,6 +60,12 @@ function appels(): { cle: string; nom: string; arguments: number }[] {
 }
 
 describe('les écritures libres passées par chaque appelant des moteurs (EL5)', () => {
+  // La lecture de tout le dépôt se paie une fois, hors des `it` (CLAUDE.md, « Tests »).
+  let tous: ReturnType<typeof appels>
+  beforeAll(() => {
+    tous = appels()
+  }, 120_000)
+
   it('chaque moteur se trouve, et prend les écritures libres en dernier paramètre', () => {
     for (const nom of Object.keys(MOTEURS)) {
       expect(parametres(nom), nom).toBeGreaterThan(1)
@@ -68,7 +74,6 @@ describe('les écritures libres passées par chaque appelant des moteurs (EL5)',
   })
 
   it('aucun appel de l’application ne s’en remet au défaut', () => {
-    const tous = appels()
     // Le plancher : le scanner voit les appels des écrans, sans quoi « zéro faute » serait « aveugle ».
     expect(tous.length).toBeGreaterThanOrEqual(14)
     const fautes = tous.filter((a) => a.arguments !== parametres(a.nom)).map((a) => `${a.cle} ${a.nom} (${a.arguments}/${parametres(a.nom)})`)
