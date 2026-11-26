@@ -11,6 +11,7 @@ const faux = vi.hoisted(() => ({
   lues: [] as string[],
   colonnes: [] as string[],
   refuser: null as string | null,
+  lever: null as string | null,
 }))
 
 vi.mock('./notesDeFrais', async (original) => ({
@@ -23,6 +24,7 @@ vi.mock('./supabase', () => {
       select: (c: string) => { faux.colonnes.push(`${table}: ${c}`); return r }, order: () => r, eq: () => r, in: () => r,
       range: () => {
         faux.lues.push(table)
+        if (faux.lever === table) throw new Error('requête rompue')
         return Promise.resolve(faux.refuser === table
           ? { data: null, error: { message: 'refus fictif' }, count: null }
           : { data: [], error: null, count: 0 })
@@ -35,7 +37,7 @@ vi.mock('./supabase', () => {
 
 afterEach(() => {
   faux.drapeau = true; faux.droits = { data: { frais: true, achats: false }, error: null }; faux.lues = []; faux.colonnes = []
-  faux.refuser = null
+  faux.refuser = null; faux.lever = null
 })
 
 // Lot L3 : la section du cabinet lit aussi les accès du dossier et leur case « Achats » — à part : refusée, elle ne fait tomber
@@ -55,6 +57,11 @@ describe('les notes de frais du dossier, côté cabinet : les accès et leur cas
     faux.refuser = 'memberships'
     const refusee = await lireLesNotesDeFraisDuDossier('d1')
     expect([refusee.lesNotes.complete, refusee.justificatifs.complete, refusee.acces.complete]).toEqual([true, true, false])
+    // Une requête qui LÈVE ne fait pas rejeter la lecture : elle tombe du côté signalé, avec son motif.
+    faux.refuser = null
+    faux.lever = 'memberships'
+    const rompue = await lireLesNotesDeFraisDuDossier('d1')
+    expect([rompue.lesNotes.complete, rompue.acces.complete, rompue.acces.motif]).toEqual([true, false, 'requête rompue'])
   })
 })
 
