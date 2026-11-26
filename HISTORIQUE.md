@@ -54890,3 +54890,16 @@ reprise s'appliquent (son essai 0/71 et 25, le fichier cité 0/11 et 2, `validat
 inventaire 3 566, 3 593, puis 3 566 après son retour). RA253-Q2 (B), à la recommandation : la pièce qu'une écriture d'un exercice
 validé cite garde ses champs modifiables — son fichier ne bouge plus (254), ses champs ne comptent nulle part tant qu'elle n'est pas
 validée ; rien à coder. RA253-Q1 (A) se traite à part.
+
+### 26/11/2026 — L'EXPORT REJOUÉ DANS UNE BASE VIDE À 254, ET SIX ENTRÉES PÉRIMÉES DU BANC DU LEURRE
+
+(Agent architecte ; rien en production, aucune migration changée.) Le dernier rejeu réel datait du 07/11/2026 (177 ; depuis, des
+rejeux d'exports SIMULÉS, à 250 puis 253). `reprise/rejouer.py`, dans une grappe PostgreSQL 17 neuve (ICU `en-US`, UTF8), rend
+« 254 migrations rejouées, 102 objets du socle intercalés, 6 forme(s) provisoire(s), 0 reprise(s) », sans un geste de plus :
+`reprise/` inchangé. La base rejouée et une copie de `replique_227` portée à 254 par les fichiers (avec leur ligne d'historique) :
+dérive 254 `8727d024…`, socle 84 `e54200f4…`, inventaire 3 518 `a6475fb0…` des deux côtés et aux fichiers ; `signature.sql` égal sur
+ses neuf familles. `outils/leurre/regles.json` : six essais de la famille « apres » dont la migration est en production et dans
+l'export (`hausseDuChiffreDAffaires`, 230 ; `pieceDUnPaiementDansSonDossier`, `plancherALEcartDAlignement`,
+`especesDuClientHorsDesReprises`, `auteurDesOuvertures`, 231 à 234 ; `modeDeReglementDesMouvements`, 240) sortis : 25 cas
+particuliers ; SÛRS au banc sur la copie à 254 (196 verdicts, 0 en faute, aucun « EN ATTENTE »). Leurs en-têtes disent encore
+« préparée » : à reprendre en passant. Les huit restants de « apres » visent des migrations encore dans `supabase/preparees/`.

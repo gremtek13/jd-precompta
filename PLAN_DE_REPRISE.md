@@ -282,7 +282,10 @@ incompréhensible trois étapes plus loin.
    preuve, contre la production (`execute_sql` en lecture) ou la réplique mère : `supabase/essais/signature.sql` (neuf
    familles), `inventaire.sql`, `socle.sql` et la dérive du README du schéma. Mesuré le 07/11/2026 : neuf familles sur
    neuf, inventaire 2 440 objets `062299d0…`, socle 81 instructions `3a79a158…`, dérive 177 lignes `8bfc4f4e…`, et le
-   relevé complet des droits (MAINTAIN, colonnes, défauts, schéma public) égal à celui de la mère.
+   relevé complet des droits (MAINTAIN, colonnes, défauts, schéma public) égal à celui de la mère. Rejoué le 26/11/2026 :
+   « 254 migrations rejouées, 102 objets du socle intercalés, 6 forme(s) provisoire(s), 0 reprise(s) » ; neuf familles sur
+   neuf contre une copie de réplique portée à 254, dérive 254 `8727d024…`, socle 84 `e54200f4…`, inventaire 3 518
+   `a6475fb0…`.
 
    **Les pièges.**
    - **pg_net** n'existe pas dans une grappe nue, et `20260918111836` l'installe : `--doublure-pg-net` copie

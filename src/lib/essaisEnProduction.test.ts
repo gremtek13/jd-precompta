@@ -531,7 +531,11 @@ describe('les essais de la base, rejoués en production', () => {
     // migration préparée ; joué sur une copie de la réplique à 250 (30 verdicts sur 30, seule et après EL7 et EXP-Q4).
     // Trente et un le 25/11/2026 : `codesDesClients` sorti (EXP58-Q2 en production, 20261125124544, par l'outil ; il ne
     // cherche aucun semis, il se joue comme un essai de la production).
-    expect(cas.length).toBe(31)
+    // Vingt-cinq le 26/11/2026 : six entrées périmées sorties, leurs migrations en production depuis longtemps et rangées
+    // dans l'export — `hausseDuChiffreDAffaires` (230), `pieceDUnPaiementDansSonDossier`, `plancherALEcartDAlignement`,
+    // `especesDuClientHorsDesReprises` et `auteurDesOuvertures` (231 à 234), `modeDeReglementDesMouvements` (240) ; aucun
+    // ne cherche un semis ni le super-utilisateur, ils se jouent comme des essais de la production.
+    expect(cas.length).toBe(25)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)
