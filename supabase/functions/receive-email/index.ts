@@ -1428,6 +1428,75 @@ const BORDEREAUX_ECARTES_A_LA_RECEPTION = true
 const LECTURE_DES_PDF_MS = 1000
 const OCTETS_DECOMPRESSES_MAX = 48 * 1024 * 1024
 
+// LE PLAFOND DES LECTURES AUTOMATIQUES (RECEP-Q1 (A), réponse du cabinet du 27/11/2026 ; relecture adverse de sécurité des
+// Edge Functions du même jour). Quiconque connaît l'adresse de collecte d'un dossier y envoie des pièces jointes, et chacune
+// partait chez extract-piece — Textract, puis le modèle — sans plafond : une dépense que l'expéditeur, pas le cabinet, décidait.
+// Au-delà de PLAFOND_DES_LECTURES_PAR_JOUR pièces jointes reçues par e-mail et lues pour un même dossier dans le jour de Paris,
+// la pièce jointe se dépose SANS lecture automatique, comme une lecture ratée (« à valider », champs vides, en tête de la
+// relecture groupée du cabinet) : rien ne se perd, rien ne se dépense. Sans migration, le compte se lit dans ce que la base
+// garde déjà de la réception du jour : les pièces d'origine `email`, les documents du dossier (la table ne dit pas leur
+// origine : ceux du cabinet se comptent aussi — le côté fermé) et les pièces jointes écartées comme bordereau (une lecture
+// les a peut-être reconnues). Trois comptes bornés au dossier (ses index), lus AVANT la première lecture de l'e-mail, puis
+// tenus à la main dans la boucle ; un compte illisible ferme la lecture pour tout l'e-mail. Le compte se LIT, il ne se
+// réserve pas : deux e-mails traités ensemble peuvent dépasser le plafond de leurs pièces jointes (une réservation demanderait
+// une fonction SQL). Le journal dit COMBIEN de pièces jointes sont parties sans lecture, et pourquoi — jamais le compte lu.
+//
+// UN BORDEREAU AU-DELÀ DU PLAFOND (BOR6) : celui qui porte une couche de texte se reconnaît toujours, avant la lecture et sans
+// dépense (`formeDUnBordereauDansLePdf`) ; une PHOTO ou un PDF numérisé, que seule la lecture reconnaît, n'est plus lu, donc
+// plus reconnu : il entre au stockage comme une pièce non lue, et la relecture du cabinet (« Extraire », la relecture groupée)
+// le reconnaît alors et le dit (`BORDEREAU_DEJA_AU_DOSSIER`) — RECEPQ1-Q1, au cabinet.
+export const PLAFOND_DES_LECTURES_PAR_JOUR = 100
+
+// ── DÉBUT JOUR DE PARIS ──────────────────────────────────────────────────────────────────────────────────────────────
+// Le jour de Paris qui contient l'instant `ms`, en instants : de son minuit à celui du lendemain (23 ou 25 heures aux
+// changements d'heure). La fonction tourne en UTC ; compté en UTC, le plafond repartirait à 1 h ou 2 h du matin.
+// Minuit tombe à Paris la veille à 22 h ou 23 h UTC, et l'heure change à 1 h UTC : l'avance de Paris lue à minuit UTC
+// d'un jour est donc celle de son minuit. `plafondEmails.test.ts` confronte ce bloc à `dateAParis` (src/lib/format.ts).
+function jourDeParis(ms: number): { debut: string; fin: string } {
+  const parties = (instant: number) => Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Paris", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(instant)).map((p) => [p.type, Number(p.value)]))
+  const ici = parties(ms)
+  const minuit = (jour: number) => {
+    const t = Date.UTC(ici.year, ici.month - 1, jour)
+    const p = parties(t)
+    return t - (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - t)
+  }
+  return { debut: new Date(minuit(ici.day)).toISOString(), fin: new Date(minuit(ici.day + 1)).toISOString() }
+}
+// ── FIN JOUR DE PARIS ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Les pièces jointes déjà lues pour ce dossier dans le jour de Paris, ou `null` si la base ne le dit pas (le côté fermé). */
+async function lecturesDuJour(supabase: ReturnType<typeof createClient>, dossierId: string): Promise<number | null> {
+  try {
+    const { debut, fin } = jourDeParis(Date.now())
+    const [pieces, documents, bordereaux] = await Promise.all([
+      supabase.from("pieces").select("id", { count: "exact", head: true })
+        .eq("dossier_id", dossierId).eq("source", "email").gte("created_at", debut).lt("created_at", fin),
+      supabase.from("documents_divers").select("id", { count: "exact", head: true })
+        .eq("dossier_id", dossierId).gte("created_at", debut).lt("created_at", fin),
+      supabase.from("pieces_jointes_ecartees").select("id", { count: "exact", head: true })
+        .eq("dossier_id", dossierId).eq("raison", "bordereau").gte("recue_le", debut).lt("recue_le", fin),
+    ])
+    const erreur = pieces.error ?? documents.error ?? bordereaux.error
+    if (erreur) {
+      console.error(`[receive-email] compte des lectures du jour illisible (${erreur.code || "sans code"} ${erreur.message})`)
+      return null
+    }
+    const comptes = [pieces.count, documents.count, bordereaux.count]
+    // Un compte absent n'est pas zéro : la réponse ne dit rien, la lecture se ferme.
+    if (!comptes.every((c) => typeof c === "number" && Number.isSafeInteger(c) && c >= 0)) {
+      console.error("[receive-email] compte des lectures du jour illisible (compte absent de la réponse)")
+      return null
+    }
+    return (comptes as number[]).reduce((a, b) => a + b, 0)
+  } catch (err) {
+    console.error(`[receive-email] compte des lectures du jour illisible (${String(err)})`)
+    return null
+  }
+}
+
 /** La forme d'un bordereau dans ce PDF : reconnue, absente, ou illisible (et la raison, un code fixe). */
 async function formeDUnBordereauDansLePdf(
   bytes: Uint8Array, finDesLecturesMs: number,
@@ -1531,6 +1600,10 @@ Deno.serve(async (req: Request) => {
   console.log(`[receive-email] dossier ${dossier.id} : ${compteDesElementsIntegres(attachments ?? [])}`)
 
   let nbImportees = 0
+  // Le compte des lectures du jour (RECEP-Q1) : `undefined` tant qu'aucune pièce jointe n'a demandé de lecture, `null` s'il
+  // est illisible (aucune lecture pour tout l'e-mail), sinon tenu à la main à chaque lecture demandée.
+  let lectures: number | null | undefined = undefined
+  let nbSansLecture = 0
   // L'échéance commune des lectures de PDF de cet e-mail (BOR6) : posée une fois, avant la première pièce jointe.
   const finDesLecturesMs = performance.now() + LECTURE_DES_PDF_MS
   for (const fichier of fichiers) {
@@ -1632,7 +1705,19 @@ Deno.serve(async (req: Request) => {
       // ou image uniquement) — classé directement en relevé bancaire sur son extension, comme les autres points d'entrée. Les
       // autres formats passent par la même extraction/classification que l'import manuel ou en masse.
       const estCsv = nomFichier.toLowerCase().endsWith(".csv")
-      const lecture = estCsv ? null : await classifierEtExtraire(bytes, supabaseUrl, cleSecrete)
+      // LE PLAFOND DES LECTURES (RECEP-Q1) : jugé avant l'appel, sur le compte lu une fois pour l'e-mail. Au-delà, ou sur un
+      // compte illisible, la pièce jointe part comme une lecture ratée, sans rien envoyer à extract-piece.
+      let lecture: LectureDUnePieceJointe | null = null
+      if (!estCsv) {
+        if (lectures === undefined) lectures = await lecturesDuJour(supabase, dossier.id)
+        if (lectures === null || lectures >= PLAFOND_DES_LECTURES_PAR_JOUR) {
+          nbSansLecture++
+          lecture = { etat: "ratee" }
+        } else {
+          lectures++
+          lecture = await classifierEtExtraire(bytes, supabaseUrl, cleSecrete)
+        }
+      }
       // Sous la même constante que l'écart d'un PDF : baissée (le retour de la migration 249, qui ne connaît plus la raison
       // `bordereau`), la pièce jointe part comme une lecture ratée, sans texte.
       if (BORDEREAUX_ECARTES_A_LA_RECEPTION && lecture?.etat === "bordereau") {
@@ -1713,6 +1798,11 @@ Deno.serve(async (req: Request) => {
     }
   }
 
+  if (nbSansLecture > 0) {
+    // Un compte et sa raison, jamais le compte lu ni une pièce jointe : le cabinet voit les pièces « à valider » non lues.
+    const raison = lectures === null ? "compte des lectures du jour illisible" : `plafond de ${PLAFOND_DES_LECTURES_PAR_JOUR} lectures par jour atteint`
+    console.warn(`[receive-email] lecture automatique non faite : ${nbSansLecture} pièce(s) jointe(s) de l'e-mail ${email_id} (${raison})`)
+  }
   console.log(`E-mail ${email_id} → dossier ${dossier.id} : ${nbImportees}/${fichiers.length} pièce(s) importée(s)`)
   return new Response("ok", { status: 200 })
 })

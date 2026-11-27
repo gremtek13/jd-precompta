@@ -67,6 +67,15 @@ describe('la copie du bloc nomDeLEmetteur dans send-email (FACT-Q2)', () => {
     }
   })
 
+  // FACT-Q5 (A), 27/11/2026 : les deux fonctions qui transmettent la facture électronique portent le bloc aussi, à côté du
+  // générateur, qui nomme le vendeur (BT-27) par lui ; copiesFacturation.test.ts les exécute seuls contre src/lib.
+  it.each(['superpdp-emit', 'plateforme-agreee'])('%s : au caractère près le bloc, lu par la dénomination figée', (fonction) => {
+    const source = readFileSync(new URL(`../../supabase/functions/${fonction}/index.ts`, import.meta.url), 'utf8')
+    expect(blocDe(source, fonction)).toBe(ORIGINE)
+    expect(source).toContain('      nom: nomDeLEmetteur(facture),\n')
+    expect(source).toMatch(/const COLONNES_FACTURE = [^;]*"denomination_imprimee"/)
+  })
+
   it('la fonction s’en sert partout où elle nomme l’émetteur d’une facture, et ne lit plus `emetteur_nom` à la place', () => {
     const horsDuBloc = FONCTION.replace(COPIE, '')
     expect(horsDuBloc.match(/nomDeLEmetteur\((facture|f|factureData as FactureRow)\)/g)).toHaveLength(4)

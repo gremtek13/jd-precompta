@@ -8,6 +8,7 @@ import type { DossierCii, FactureCii, FactureEnBase, LigneCii } from './factureC
 import { ACOMPTES_PREVUS } from './devis'
 import * as montants from './montantsFacture'
 import * as statut from './statutTva'
+import * as emetteur from './nomDeLEmetteur'
 import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from './types'
 
 // LES FONCTIONS QUI TRANSMETTENT UNE FACTURE (superpdp-emit, plateforme-agreee) RECOPIENT TROIS BLOCS DE
@@ -24,7 +25,7 @@ import type { ArticleExoneration, FactureEmise, FactureLigne, StatutTva } from '
 //   3. La fonction s'en SERT-elle ? Un générateur parfait que le gestionnaire n'appelle plus garde du code mort.
 //   4. Le garde mord-il ? Des défauts PLANTÉS dans une source synthétique doivent le faire tomber.
 
-type Nom = 'montantsFacture' | 'statutTva' | 'factureCii'
+type Nom = 'montantsFacture' | 'statutTva' | 'nomDeLEmetteur' | 'factureCii'
 interface Bloc {
   nom: Nom
   source: string
@@ -43,6 +44,9 @@ const BLOCS: Bloc[] = [
     pieces: /\b(?:exonerationDe|motifExoneration|refusTauxPositif|EXONERATIONS|VATEX_FRANCHISE)\b/,
     types: ['StatutTva', 'ArticleExoneration'],
   },
+  // Le nom que la facture imprime pour son émetteur (FACT-Q5 (A), 27/11/2026) : le générateur nomme le vendeur (BT-27) par
+  // lui ; send-email le porte aussi depuis FACT-Q2, sans le générateur.
+  { nom: 'nomDeLEmetteur', source: lib('./nomDeLEmetteur.ts'), pieces: /\bnomDeLEmetteur\b/, types: [] },
   {
     nom: 'factureCii', source: lib('./factureCii.ts'), pieces: /\b(?:factureCii|refusEmission|montantsDuDocument)\b/,
     types: ['StatutTva', 'ArticleExoneration', 'NatureOperation'],
@@ -74,7 +78,7 @@ const porte = (source: string, b: Bloc) => source.includes(debut(b.nom)) || b.pi
 function controler(source: string, ou: string): string[] {
   const portes = BLOCS.filter((b) => porte(source, b))
   if (portes.some((b) => b.nom === 'factureCii')) {
-    for (const n of ['montantsFacture', 'statutTva']) expect(portes.map((b) => b.nom), `${ou} : le générateur sans le bloc ${n}`).toContain(n)
+    for (const n of ['montantsFacture', 'statutTva', 'nomDeLEmetteur']) expect(portes.map((b) => b.nom), `${ou} : le générateur sans le bloc ${n}`).toContain(n)
   }
   const blocs = portes
     .map((b) => {
@@ -95,8 +99,8 @@ function horsDesBlocs(source: string, blocs: string[]): string {
   return blocs.reduce((s, b) => s.replace(b, ''), source)
 }
 
-type Execute = typeof montants & typeof statut & typeof cii
-const ORIGINAUX = { ...montants, ...statut, ...cii } as Execute
+type Execute = typeof montants & typeof statut & typeof emetteur & typeof cii
+const ORIGINAUX = { ...montants, ...statut, ...emetteur, ...cii } as Execute
 
 /** Les blocs SEULS, transpilés et exécutés : tout nom qu'ils emprunteraient au reste d'un fichier lèverait. */
 function executer(blocs: string[]): Execute {
@@ -120,8 +124,8 @@ const DECLARATIONS = ['StatutTva', 'ArticleExoneration', 'NatureOperation'].map(
 // hors de lui — le défaut planté du dernier garde.
 const EMPRUNTE = ORIGINE.factureCii.replace("PROFIL_EN16931 = 'urn:cen.eu:en16931:2017'", "PROFIL_EN16931 = formatDate('urn:cen.eu:en16931:2017')")
 const COMPILES = {
-  blocs: [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.factureCii].join('\n'),
-  emprunte: [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, EMPRUNTE].join('\n'),
+  blocs: [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.nomDeLEmetteur, ORIGINE.factureCii].join('\n'),
+  emprunte: [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.nomDeLEmetteur, EMPRUNTE].join('\n'),
 }
 
 // La compilation se paye UNE fois par fichier, ici : elle relit et vérifie la bibliothèque standard, et refaite dans
@@ -163,6 +167,7 @@ const LECTURES_D_ACOMPTE: Parameters<typeof cii.acompteLu>[] = [
   [{}, [{ ordre: 1 }, { ordre: 2, reprise_facture_id: 'a1' }, { ordre: 3, reprise_facture_id: 7 }], {}, [{ id: 'a1', numero: 'F1', date_emission: '2026-09-01' }]],
   [{ acompte: 'oui', date_versement_acompte: 20260828 }, [], { acompte: true }, [{ id: 'a1', numero: null, date_emission: '2026-09-01', acompte: true }]],
 ]
+const DENOMINATIONS = ['Démo Conseil SARL', '', '  ', null, undefined]
 const essai = (f: () => unknown) => {
   try {
     return f()
@@ -196,11 +201,14 @@ const EPREUVES: Record<string, (m: Execute) => unknown> = {
   refusEmission: (m) => [...EXEMPLES.map((e) => m.refusEmission(e.donnees)), ...CAS_DE_REFUS.map(([, c]) => m.refusEmission(donnees(c)))],
   cadreDeFacturation: (m) => (['biens', 'services', 'mixte'] as const).map((n) => m.cadreDeFacturation(n)),
   // Les deux premiers exemples sont d'avant A7 ; les exemples « figee-… » ont figé leurs mentions, que le dossier ne change pas.
+  // La dénomination figée (FACT-Q5) : présente, blanche ou absente, sur une facture d'avant comme sur une figée.
   donneesDeLaFacture: (m) => [...EXEMPLES.slice(0, 2), ...EXEMPLES.filter((x) => x.nom.startsWith('figee-'))].flatMap((e) => STATUTS.flatMap((s) => IDENTIFIANTS.flatMap((siret) =>
-    [false, true].map((attribue) => m.donneesDeLaFacture(
-      { ...e.donnees.facture, emetteur_nom: 'Démo', emetteur_siret: siret ?? null, emetteur_adresse: null }, e.donnees.lignes,
+    [false, true].flatMap((attribue) => DENOMINATIONS.map((denomination) => m.donneesDeLaFacture(
+      { ...e.donnees.facture, emetteur_nom: 'Démo', emetteur_siret: siret ?? null, emetteur_adresse: null, denomination_imprimee: denomination }, e.donnees.lignes,
       { statut_tva: s, article_exoneration: s === 'exonere' ? 'cgi_261_4_1' : null, numero_tva_attribue: attribue },
-      e.donnees.origine, cii.SANS_ACOMPTE_CII, '2026-10-08'))))),
+      e.donnees.origine, cii.SANS_ACOMPTE_CII, '2026-10-08')))))),
+  nomDeLEmetteur: (m) => [true, false, undefined].flatMap((mentions_figees) => DENOMINATIONS.flatMap((denomination_imprimee) =>
+    ['nom-interne', null].map((emetteur_nom) => m.nomDeLEmetteur({ mentions_figees, denomination_imprimee, emetteur_nom })))),
   factureCii: (m) => [...EXEMPLES.map((e) => m.factureCii(e.donnees)), ...CAS_DE_REFUS.map(([, c]) => m.factureCii(donnees(c)))],
   SANS_ACOMPTE_CII: (m) => m.SANS_ACOMPTE_CII,
   INDEMNITE_DE_RECOUVREMENT: (m) => m.INDEMNITE_DE_RECOUVREMENT,
@@ -253,6 +261,9 @@ const LUES_PAR_LE_GENERATEUR: Record<keyof FactureEnBase, true> = {
   date_prestation: true, periode_debut: true, periode_fin: true, livraison_adresse: true, livraison_code_postal: true,
   livraison_ville: true, livraison_pays: true, option_debits: true, emetteur_nom: true, emetteur_siret: true,
   emetteur_adresse: true,
+  // La dénomination figée, le nom du vendeur (BT-27) d'une facture figée depuis FACT-Q5 : sans elle, la fonction transmettrait
+  // le nom interne du dossier quand le papier imprime la dénomination.
+  denomination_imprimee: true,
   // Ce que la facture a figé (A7a), que le CII lit depuis A7c : sans elles, la fonction transmettrait le statut et le numéro
   // de TVA du dossier d'aujourd'hui, et ni le RIB ni les conditions de paiement que le papier imprime.
   mentions_figees: true, statut_tva: true, article_exoneration: true, numero_tva_attribue: true, numero_tva_imprime: true,
@@ -307,9 +318,9 @@ describe('les blocs de facturation recopiés dans les Edge Functions', () => {
     expect(FONCTIONS.filter((f) => porte(sourceDe(f), GENERATEUR))).toEqual(expect.arrayContaining(['plateforme-agreee', 'superpdp-emit']))
   })
 
-  it('plancher : send-email porte le bloc des montants, lui seul, et le HT de chaque ligne de l’e-mail en vient', () => {
+  it('plancher : send-email porte le bloc des montants et celui du nom de l’émetteur, pas le générateur, et le HT de chaque ligne de l’e-mail en vient', () => {
     const source = sourceDe('send-email')
-    expect(BLOCS.filter((b) => porte(source, b)).map((b) => b.nom)).toEqual(['montantsFacture'])
+    expect(BLOCS.filter((b) => porte(source, b)).map((b) => b.nom)).toEqual(['montantsFacture', 'nomDeLEmetteur'])
     const code = horsDesBlocs(source, controler(source, 'send-email'))
     expect(code).toContain('const ht = calculerLigne(l.quantite, l.prix_unitaire_ht, l.taux_tva).montant_ht')
     // Plus aucun HT calculé à part, en virgule flottante : c'était l'écart d'un centime avec la facture.
@@ -395,7 +406,7 @@ describe('les blocs de src/lib', () => {
   })
 
   it('exécutés seuls, rendent ce que rendent les modules', () => {
-    const blocs = [ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.factureCii]
+    const blocs = [ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.nomDeLEmetteur, ORIGINE.factureCii]
     comparer(executer(blocs), 'src/lib', blocs)
   })
 
@@ -417,7 +428,7 @@ describe('les blocs de src/lib', () => {
 // ── Le garde mord : des défauts plantés dans une source qui, sans eux, passe ────────────────────────────────────
 const GESTIONNAIRE = 'Deno.serve(() => { const d = donneesDeLaFacture(f, l, s, o, j); const refus = refusEmission(d); '
   + 'const r = factureCii(d); return refus ?? r })'
-const SYNTHETIQUE = [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.factureCii, GESTIONNAIRE].join('\n')
+const SYNTHETIQUE = [DECLARATIONS, ORIGINE.montantsFacture, ORIGINE.statutTva, ORIGINE.nomDeLEmetteur, ORIGINE.factureCii, GESTIONNAIRE].join('\n')
 
 function tout(source: string) {
   const blocs = controler(source, 'synthétique')
@@ -453,6 +464,16 @@ describe('le garde mord sur un défaut planté', () => {
 
   it('le générateur sans le bloc des montants', () => {
     expect(echoue(() => tout(SYNTHETIQUE.replace(ORIGINE.montantsFacture, '')))).toBe(true)
+  })
+
+  it('le générateur sans le bloc du nom de l’émetteur (FACT-Q5)', () => {
+    expect(echoue(() => tout(SYNTHETIQUE.replace(ORIGINE.nomDeLEmetteur, '')))).toBe(true)
+  })
+
+  it('le nom de l’émetteur qui dérive (la dénomination d’une facture d’avant, prise aussi) : les épreuves le voient', () => {
+    const derive = ORIGINE.nomDeLEmetteur.replace('f.mentions_figees === true && ', '')
+    expect(derive).not.toBe(ORIGINE.nomDeLEmetteur)
+    expect(echoue(() => comparer(executer([derive]), 'dérive', [derive]))).toBe(true)
   })
 
   it('une copie sans ses bornes', () => {

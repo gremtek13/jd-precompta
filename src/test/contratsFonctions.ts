@@ -844,6 +844,45 @@ function ecartsConsignes(
   return fautes
 }
 
+// LE PLAFOND DES LECTURES (RECEP-Q1) : les noms des scénarios, que les défauts plantés désignent.
+export const LECTURES_AU_PLAFOND = 'cent pièces jointes reçues par e-mail ce jour : la suivante se dépose sans lecture, comme une lecture ratée, et le journal le compte'
+export const LECTURES_AU_BORD = 'quatre-vingt-dix-neuf ce jour, deux pièces jointes : la première se lit, la seconde se dépose sans lecture'
+export const LECTURES_DES_TROIS_SOURCES = 'soixante pièces, trente documents et dix bordereaux écartés ce jour font le plafond'
+export const LECTURES_HORS_DU_COMPTE = 'hier, un autre dossier, une autre origine, une autre raison ne comptent pas : la centième pièce jointe du jour se lit'
+export const LECTURES_ILLISIBLES = 'le compte des lectures du jour illisible : la pièce jointe se dépose sans lecture, le côté fermé'
+// Une autre image que PNG, pour qu'une seconde pièce jointe ne soit pas le doublon de la première.
+const PNG_DIFFERENTE = new Uint8Array([...PNG, 0])
+
+/** Ce que la base garde déjà de la réception du jour pour le dossier du harnais : des lignes datées de maintenant. */
+function lecturesDuJourEnBase(m: Monde, n: { pieces?: number; documents?: number; bordereaux?: number }) {
+  const maintenant = new Date().toISOString()
+  const fois = (k: number, ligne: () => Record<string, unknown>) => Array.from({ length: k }, () => ({ id: identifiantGenere(), ...ligne() }))
+  ;(m.base.pieces ??= []).push(...fois(n.pieces ?? 0, () => ({ dossier_id: D, source: 'email', created_at: maintenant })))
+  ;(m.base.documents_divers ??= []).push(...fois(n.documents ?? 0, () => ({ dossier_id: D, created_at: maintenant })))
+  ;(m.base.pieces_jointes_ecartees ??= []).push(...fois(n.bordereaux ?? 0, () => ({ dossier_id: D, raison: 'bordereau', recue_le: maintenant })))
+}
+
+/**
+ * Les `n` pièces jointes de l'e-mail déposées sans lecture : aucun appel d'extract-piece, chaque pièce posée (celles que la
+ * fonction écrit, sans `created_at` dans le faux PostgREST) « à valider », d'origine `email`, sans tiers ni confiance ; et
+ * UNE ligne qui compte, sous sa raison, jamais le compte lu.
+ */
+function sansLecture(m: Monde, n: number, raison: string): string[] {
+  const fautes: string[] = []
+  const appels = (m.notes.appelsExtractPiece ?? []) as unknown[]
+  if (appels.length !== 0) fautes.push(`${appels.length} appel(s) d’extract-piece au-delà du plafond`)
+  const posees = lignes(m, 'pieces').filter((p) => p.created_at === undefined)
+  if (posees.length !== n || posees.some((p) => p.statut !== 'a_valider' || p.source !== 'email' || p.tiers != null || p.confiance != null || p.montant_ttc != null)) {
+    fautes.push(`pièces posées : ${JSON.stringify(posees.map((p) => ({ statut: p.statut, tiers: p.tiers ?? null, confiance: p.confiance ?? null })))}`)
+  }
+  const attendue = `[receive-email] lecture automatique non faite : ${n} pièce(s) jointe(s) de l'e-mail ${EMAIL_ID} (${raison})`
+  const lignesDuPlafond = m.journaux.filter((j) => j.texte.startsWith('[receive-email] lecture automatique non faite'))
+  if (lignesDuPlafond.length !== 1 || lignesDuPlafond[0].texte !== attendue) {
+    fautes.push(`journal du plafond : ${JSON.stringify(lignesDuPlafond.map((j) => j.texte.slice(0, 200)))}`)
+  }
+  return fautes
+}
+
 const RECEIVE_EMAIL: ContratFonction = {
   slug: 'receive-email',
   navigateur: false,
@@ -987,6 +1026,101 @@ const RECEIVE_EMAIL: ContratFonction = {
         statut: 200,
         depenses: [...deposeeApres(), 'écriture insert pieces'],
         verifier: (_r, m) => (m.journaux.some((j) => /extract-piece a répondu 401/.test(j.texte)) ? [] : ['refus de lecture non journalisé']),
+      },
+    },
+    // LE PLAFOND DES LECTURES AUTOMATIQUES (RECEP-Q1 (A), 27/11/2026) : au-delà de cent pièces jointes reçues et lues pour un
+    // dossier dans le jour de Paris, la pièce jointe se dépose sans lecture, comme une lecture ratée ; le compte se lit dans
+    // les pièces d'origine `email`, les documents du dossier et les bordereaux écartés du jour, et un compte illisible ferme.
+    {
+      nom: LECTURES_AU_PLAFOND,
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine); lecturesDuJourEnBase(m, { pieces: 100 }) },
+      requete: requeteWebhook(evenementRecu()),
+      attendu: {
+        statut: 200,
+        depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`, 'stockage upload pieces', 'écriture insert pieces'],
+        verifier: (_r, m) => [
+          ...sansLecture(m, 1, 'plafond de 100 lectures par jour atteint'),
+          ...bilanAuJournal(m, 1, 1),
+        ],
+      },
+    },
+    {
+      nom: LECTURES_AU_BORD,
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine, { octetsPar: { 'pj-1': PNG_DIFFERENTE } })
+        lecturesDuJourEnBase(m, { pieces: 99 })
+      },
+      requete: requeteWebhook(evenementRecu({ pieces: 2 })),
+      attendu: {
+        statut: 200,
+        depenses: [...deposee('pj-0'), 'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-1`, 'stockage upload pieces', 'écriture insert pieces'],
+        verifier: (_r, m) => {
+          const fautes = journalise(m, /^\[receive-email\] lecture automatique non faite : 1 pièce\(s\) jointe\(s\) de l'e-mail courriel-du-harnais \(plafond de 100 lectures par jour atteint\)$/, 'la pièce jointe non lue')
+          const appels = (m.notes.appelsExtractPiece ?? []) as unknown[]
+          if (appels.length !== 1) fautes.push(`${appels.length} appel(s) d’extract-piece au lieu d’un`)
+          const posees = lignes(m, 'pieces').filter((p) => p.created_at === undefined)
+          if (posees.length !== 2 || posees[0].tiers !== TIERS_LU || posees[1].tiers != null || posees[1].confiance != null) {
+            fautes.push(`pièces posées : ${JSON.stringify(posees.map((p) => ({ lue: p.tiers === TIERS_LU, confiance: p.confiance })))}`)
+          }
+          return fautes
+        },
+      },
+    },
+    {
+      nom: LECTURES_DES_TROIS_SOURCES,
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine); lecturesDuJourEnBase(m, { pieces: 60, documents: 30, bordereaux: 10 }) },
+      requete: requeteWebhook(evenementRecu()),
+      attendu: {
+        statut: 200,
+        depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`, 'stockage upload pieces', 'écriture insert pieces'],
+        verifier: (_r, m) => sansLecture(m, 1, 'plafond de 100 lectures par jour atteint'),
+      },
+    },
+    {
+      nom: LECTURES_HORS_DU_COMPTE,
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        lecturesDuJourEnBase(m, { pieces: 99 })
+        const hier = new Date(Date.now() - 2 * 24 * 3_600_000).toISOString()
+        const ailleurs = identifiantGenere()
+        const maintenant = new Date().toISOString()
+        const nombre = (n: number, ligne: () => Record<string, unknown>) => Array.from({ length: n }, () => ({ id: identifiantGenere(), ...ligne() }))
+        ;(m.base.pieces ??= []).push(
+          ...nombre(100, () => ({ dossier_id: D, source: 'email', created_at: hier })),
+          ...nombre(100, () => ({ dossier_id: ailleurs, source: 'email', created_at: maintenant })),
+          ...nombre(100, () => ({ dossier_id: D, source: 'upload', created_at: maintenant })),
+        )
+        ;(m.base.documents_divers ??= []).push(
+          ...nombre(100, () => ({ dossier_id: D, created_at: hier })),
+          ...nombre(100, () => ({ dossier_id: ailleurs, created_at: maintenant })),
+        )
+        ;(m.base.pieces_jointes_ecartees ??= []).push(
+          ...nombre(100, () => ({ dossier_id: D, raison: 'format', recue_le: maintenant })),
+          ...nombre(100, () => ({ dossier_id: D, raison: 'bordereau', recue_le: hier })),
+        )
+      },
+      requete: requeteWebhook(evenementRecu()),
+      attendu: {
+        statut: 200,
+        depenses: [...deposeeApres('AWS textract DetectDocumentText', 'modèle'), 'écriture insert pieces'],
+        verifier: (_r, m) => (((m.notes.appelsExtractPiece ?? []) as unknown[]).length === 1 ? [] : ['la centième lecture du jour n’a pas eu lieu']),
+      },
+    },
+    {
+      nom: LECTURES_ILLISIBLES,
+      preparer: (m, voisine) => {
+        boiteAuxLettres(m, voisine)
+        // La première lecture des pièces est celle du doublon : la seconde, celle du compte, tombe.
+        m.pannes.push({ table: 'pieces', operation: 'select', erreur: { message: 'délai dépassé' }, sauter: 1 })
+      },
+      requete: requeteWebhook(evenementRecu()),
+      attendu: {
+        statut: 200,
+        depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`, 'stockage upload pieces', 'écriture insert pieces'],
+        verifier: (_r, m) => [
+          ...sansLecture(m, 1, 'compte des lectures du jour illisible'),
+          ...journalise(m, /^\[receive-email\] compte des lectures du jour illisible \(sans code délai dépassé\)$/, 'le compte illisible'),
+        ],
       },
     },
     {

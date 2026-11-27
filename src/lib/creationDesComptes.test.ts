@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest'
 import {
   CE_QUE_PERD_LE_CLIENT, ceQuePerdLeClientSelon, CE_QUI_RESTE_AU_CLIENT, CHAMP_DE_LA_CONFIRMATION, CHAMP_DE_L_ENTREE, LIBELLE_DU_ROLE,
   MARQUEUR_DE_L_ENTREE, MARQUEUR_DU_RATTACHEMENT, avisDeLAccesCree, avisDuMembreAjoute, compteDeLaReponse,
-  confirmationDeLEntree, confirmationDuRattachement, copieDuRefus, corpsDeLaCreation, corpsDuMembre, entreeAConfirmer,
-  rattachementAConfirmer, refusAConfirmerLEntree, refusARattacher,
+  confirmationDeLEntree, confirmationDuRattachement, copieDuRefus, corpsDeLaCreation, corpsDuMembre, echecDuLienApresRattachement,
+  entreeAConfirmer, LIEN_DEJA_EN_COURS, rattachementAConfirmer, refusAConfirmerLEntree, refusARattacher,
 } from './creationDesComptes'
 import { CE_QUE_DONNE_UN_ACCES, DOMAINES } from './droitsAcces'
 import { ACHATS_DU_CLIENT_PREVUS } from './achatsClient'
@@ -182,6 +182,19 @@ describe('le rattachement d’un compte que ce cabinet ne connaît pas, ou plus 
     expect(`${phrase} ${c.paragraphes.join(' ')}`).not.toContain('communique-lui')
     expect(c.titre).toBe('Rattacher ce compte au dossier ?')
     expect(c.bouton).toBe('Rattacher ce compte')
+    // ACCES-Q1 (A) : le mot de passe a pu être choisi ailleurs, et la case qui envoie le lien dans le même geste ; elle ne
+    // nomme aucune adresse (celle de la phrase, sous `.courriel`, suffit).
+    expect(c.paragraphes.join(' ')).toContain('Ce mot de passe a pu être choisi ailleurs, par un autre cabinet ou par celui qui a ouvert ce compte')
+    expect(c.paragraphes.join(' ')).toContain("l'ancien reste valable tant qu'il n'en a pas choisi un autre par ce lien")
+    expect(c.caseDuLien).toBe('Envoyer aussi à cette adresse le lien « Mot de passe oublié »')
+    expect(c.caseDuLien).not.toContain(adresse)
+  })
+
+  it('le lien manqué après un rattachement se dit sans le défaire, avec le geste qui reste (ACCES-Q1)', () => {
+    const t = echecDuLienApresRattachement('aucun lien n’est parti.')
+    expect(t).toBe("Le compte est bien rattaché au dossier, mais le lien n'est pas parti : aucun lien n’est parti. "
+      + "Tu peux l'envoyer depuis la liste des accès (« Envoyer un lien de réinitialisation »).")
+    expect(echecDuLienApresRattachement(LIEN_DEJA_EN_COURS)).toContain('un autre lien part en ce moment depuis la liste des accès.')
   })
 
   // Le module et la fonction parlent du même champ et du même marqueur : le contrat HTTP envoie le corps du module, et la

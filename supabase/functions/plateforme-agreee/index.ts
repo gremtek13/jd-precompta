@@ -134,7 +134,8 @@ const COLONNES_FACTURE = "id, numero, statut, type, facture_origine_id, date_emi
   "tiers_adresse_electronique, code_service, numero_engagement, nature_operation, date_prestation, periode_debut, " +
   "periode_fin, livraison_adresse, livraison_code_postal, livraison_ville, livraison_pays, option_debits, emetteur_nom, " +
   "emetteur_siret, emetteur_adresse, superpdp_invoice_id, mentions_figees, statut_tva, article_exoneration, " +
-  "numero_tva_attribue, numero_tva_imprime, moyen_prefere, escompte, penalites, iban_imprime, bic_imprime, titulaire_imprime"
+  "numero_tva_attribue, numero_tva_imprime, moyen_prefere, escompte, penalites, iban_imprime, bic_imprime, titulaire_imprime, " +
+  "denomination_imprimee"
 const COLONNES_TRANSMISSION = "id, facture_id, canal, hote, flux_id, sha256, etat, detail, cree_le, maj_le"
 
 // L'ACOMPTE D'UN DEVIS (P5b4a) : la marque d'acompte d'une facture et les reprises de ses lignes vivent dans des colonnes
@@ -1713,6 +1714,26 @@ export function refusTauxPositif(statut: StatutTva | null, taux: number): string
 }
 // ── FIN COPIE statutTva ──────────────────────────────────────────────────────────────────────────────────────────────
 
+// LE NOM QUE LA FACTURE IMPRIME POUR SON ÉMETTEUR (FACT-Q5 (A), réponse du cabinet du 27/11/2026) : le nom du vendeur (BT-27)
+// d'une facture figée est la dénomination qu'elle a figée, celle que le papier imprime, et non le nom interne du dossier
+// recopié dans `emetteur_nom` ; le générateur (`donneesDeLaFacture`) le prend de ce bloc, copié de src/lib/nomDeLEmetteur.ts
+// au caractère près (copiesFacturation.test.ts, nomDeLEmetteurCopie.test.ts). Une facture d'avant s'écrit comme hier.
+// ── DÉBUT COPIE nomDeLEmetteur ───────────────────────────────────────────────────────────────────────────────────────
+/** Ce qu'une facture lue porte de son émetteur : le drapeau des mentions figées, la dénomination figée, le nom recopié. */
+export interface EmetteurDeLaFacture {
+  mentions_figees?: boolean | null
+  denomination_imprimee?: string | null
+  emetteur_nom: string | null
+}
+
+/** Le nom que la facture imprime pour son émetteur : la dénomination figée d'une facture figée, sinon `emetteur_nom`. */
+export function nomDeLEmetteur(f: EmetteurDeLaFacture): string | null {
+  const denomination = f.denomination_imprimee
+  if (f.mentions_figees === true && typeof denomination === 'string' && denomination.trim() !== '') return denomination
+  return f.emetteur_nom
+}
+// ── FIN COPIE nomDeLEmetteur ─────────────────────────────────────────────────────────────────────────────────────────
+
 // ── DÉBUT COPIE factureCii ───────────────────────────────────────────────────────────────────────────────────────────
 // Ce bloc est recopié AU CARACTÈRE PRÈS dans les Edge Functions qui transmettent une facture (superpdp-emit,
 // plateforme-agreee), après ceux de montantsFacture.ts et de statutTva.ts : elles sont auto-portées, et ce qu'elles
@@ -1825,6 +1846,9 @@ export interface FactureCii {
   iban_imprime?: string | null
   bic_imprime?: string | null
   titulaire_imprime?: string | null
+  // La dénomination que la facture a figée (A7a), que le papier imprime pour l'émetteur : le nom du vendeur (BT-27) d'une
+  // facture figée depuis FACT-Q5, par la règle de l'aperçu et de l'e-mail (`nomDeLEmetteur`, bloc copié à côté de celui-ci).
+  denomination_imprimee?: string | null
 }
 
 // ── Ce que la facture a figé : ses conditions de paiement (étape A7c) ───────────────────────────────────────────────
@@ -2685,7 +2709,9 @@ export function donneesDeLaFacture(
     facture,
     lignes,
     vendeur: {
-      nom: facture.emetteur_nom,
+      // Le nom que la facture imprime (FACT-Q5 (A), réponse du cabinet du 27/11/2026) : la dénomination figée d'une facture
+      // figée, sinon `emetteur_nom` — une facture d'avant s'écrit à l'octet près comme hier.
+      nom: nomDeLEmetteur(facture),
       siret: facture.emetteur_siret,
       adresse: facture.emetteur_adresse,
       ...tva,

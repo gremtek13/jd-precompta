@@ -22,18 +22,19 @@ import * as encaissements from './encaissementsFactures'
 //
 // Et le garde mord : des défauts plantés le font tomber.
 
-type Nom = 'montantsFacture' | 'statutTva' | 'factureCii' | 'centimesExacts' | 'cdarEncaissee'
+type Nom = 'montantsFacture' | 'statutTva' | 'nomDeLEmetteur' | 'factureCii' | 'centimesExacts' | 'cdarEncaissee'
 
 const lib = (fichier: string) => readFileSync(new URL(fichier, import.meta.url), 'utf8')
 const SOURCES: Record<Nom, string> = {
   montantsFacture: lib('./montantsFacture.ts'),
   statutTva: lib('./statutTva.ts'),
+  nomDeLEmetteur: lib('./nomDeLEmetteur.ts'),
   factureCii: lib('./factureCii.ts'),
   centimesExacts: lib('./encaissementsFactures.ts'),
   cdarEncaissee: lib('./cdarEncaissee.ts'),
 }
 // L'ordre d'une fonction : chaque bloc après ceux qu'il lit.
-const ORDRE: Nom[] = ['montantsFacture', 'statutTva', 'factureCii', 'centimesExacts', 'cdarEncaissee']
+const ORDRE: Nom[] = ['montantsFacture', 'statutTva', 'nomDeLEmetteur', 'factureCii', 'centimesExacts', 'cdarEncaissee']
 
 const debut = (nom: Nom) => `// ── DÉBUT COPIE ${nom} ─`
 const fin = (nom: Nom) => `// ── FIN COPIE ${nom} ─`

@@ -128,6 +128,11 @@ export interface ConfirmationDuRattachement {
   /** La phrase qui nomme l'adresse, en trois morceaux : l'écran met l'adresse dans `.courriel`, qui ne la coupe pas. */
   adresse: { avant: string; adresse: string; apres: string }
   paragraphes: readonly string[]
+  /**
+   * La case de la fenêtre qui envoie aussi le lien « Mot de passe oublié » au titulaire de l'adresse, dans le même geste
+   * (ACCES-Q1 (A)) : son libellé. Cochée d'emblée ; décochée, rien ne part que le rattachement.
+   */
+  caseDuLien: string
   bouton: string
 }
 
@@ -150,12 +155,33 @@ export function confirmationDuRattachement(adresse: string, dossierNom: string):
     paragraphes: [
       CE_QUE_DONNE_UN_ACCES,
       `L'accès arrive sans les cases ${cases} : tu les coches ensuite dans la liste des accès, si besoin.`,
-      "Le mot de passe initial que tu as saisi ne sert pas : ce compte garde le sien, et rien n'y est changé. Si ton client "
-        + `ne s'en souvient plus, envoie-lui un lien depuis la liste des accès (${BOUTON_DU_LIEN}).`,
+      "Le mot de passe initial que tu as saisi ne sert pas : ce compte garde le sien, et rien n'y est changé.",
+      // ACCES-Q1 (A), réponse du cabinet du 27/11/2026 (relecture adverse de sécurité des Edge Functions) : ce mot de passe,
+      // ce cabinet ne l'a jamais vu ; un autre cabinet qui a ouvert ce compte au même client, ou quiconque l'a créé, peut le
+      // connaître, et ouvrirait ce dossier.
+      "Ce mot de passe a pu être choisi ailleurs, par un autre cabinet ou par celui qui a ouvert ce compte : quiconque le "
+        + "connaît ouvrira ce dossier. Le lien « Mot de passe oublié » laisse au titulaire de l'adresse le choix d'un nouveau "
+        + "mot de passe ; l'ancien reste valable tant qu'il n'en a pas choisi un autre par ce lien. Sans la case ci-dessous, tu "
+        + `peux l'envoyer plus tard depuis la liste des accès (${BOUTON_DU_LIEN}).`,
     ],
+    // L'adresse est nommée plus haut, sous `.courriel` : la case n'en répète aucune, qui se couperait au milieu d'un mot.
+    caseDuLien: 'Envoyer aussi à cette adresse le lien « Mot de passe oublié »',
     bouton: 'Rattacher ce compte',
   }
 }
+
+/**
+ * Ce que l'onglet dit du lien qui n'est pas parti après un rattachement (ACCES-Q1 (A)) : le rattachement tient — il ne se
+ * défait pas pour un lien manqué —, l'erreur du lien aux mots de l'envoi depuis la liste (`erreurDuLien`, celle de
+ * `messageErreurDuLienEnvoye`), et le geste qui reste.
+ */
+export function echecDuLienApresRattachement(erreurDuLien: string): string {
+  return `Le compte est bien rattaché au dossier, mais le lien n'est pas parti : ${erreurDuLien} `
+    + `Tu peux l'envoyer depuis la liste des accès (${BOUTON_DU_LIEN}).`
+}
+
+/** Un lien demandé depuis la liste des accès est encore en vol : celui du rattachement ne part pas à côté de lui. */
+export const LIEN_DEJA_EN_COURS = 'un autre lien part en ce moment depuis la liste des accès.'
 
 // ── L'ENTRÉE DANS L'ÉQUIPE D'UN CLIENT DE CE CABINET (23Q2Q2-Q1) ────────────────────────────────────────────────────────
 // Décision du cabinet du 26/10/2026, à la recommandation : « le confirmer, en nommant l'adresse, le rôle et ce qu'il
