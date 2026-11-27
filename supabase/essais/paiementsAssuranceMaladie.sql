@@ -16,7 +16,10 @@
 -- organisme), un indu seul, un net négatif, un indu sur un forfait, admis ; une somme positive sans facture sur la part
 -- obligatoire et un indu écrit sans régularisation, refusés —, et l'organisme complémentaire (BOR-Q5 (B), BORQ5-Q1 (A)) —
 -- nommé à côté du non dit, refusé sur la part obligatoire, à onze chiffres, en texte, ou absent de la forme ; de la clé du
--- conflit et de « rien de neuf ».
+-- conflit et de « rien de neuf ». Depuis le 27/11/2026 (NOE4R-Q1 (A), la migration `periode_des_imports_assurance_maladie`,
+-- préparée) : les étapes 24 et 72, qui lisent la période d'un import dont des paiements étaient déjà en base, attendent la règle
+-- que la base porte — celle de tout le fichier sans la migration, celle des seuls paiements insérés avec elle (le marqueur
+-- `NOE4R-Q1` du corps de la fonction d'import) ; le reste de la règle : periodeDesImportsAssuranceMaladie.sql.
 --
 -- Trois dossiers jetables du cabinet du dossier `test` (préfixe `e5300000-0000-4000-8000`) : DB, où l'accès du client d'essai
 -- porte « Banque », DS, où il ne la porte pas, et DX, où il n'a aucun accès. Chaque étape se joue dans sa sous-transaction et
@@ -39,6 +42,10 @@ declare
   inconnu constant text := 'e5300000-0000-4000-8000-0000000000f1';
   cabinet uuid := (select cabinet_id from dossiers where id = '001c7ed7-c23b-4590-901e-693489f8af24');
   jour constant date := (now() at time zone 'Europe/Paris')::date;
+  -- La règle de la période que la base porte (NOE4R-Q1 (A)) : vrai quand la fonction d'import ne date un import que par les
+  -- paiements qu'il insère.
+  periode_des_inseres constant boolean := exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace
+    and p.proname = 'importer_paiements_assurance_maladie' and p.prosrc like '%NOE4R-Q1%');
   -- L'import d'essai : quatre paiements sur trois journées (la part obligatoire et la complémentaire d'une même journée, un
   -- forfait sans organisme dit, une journée régularisée) et deux rejets ; des centimes.
   base jsonb;
@@ -152,9 +159,9 @@ begin
         $q$with t as (update paiements_assurance_maladie set nombre_de_factures = nombre_de_factures where dossier_id = '{DB}' returning 1) select count(*)::text from t$q$, 'OK', '0'),
       (23, '23. le même fichier réimporté : rien de neuf (22023)', 'select 1 from {IMP}', null, 'chef',
         $q$select 1 from {IMP}$q$, '22023', 'Ces paiements sont déjà tous importés : rien de neuf.'),
-      (24, '24. un fichier qui recouvre le premier s''importe ; la période lue est la sienne', 'select 1 from {IMP}', null, 'client',
+      (24, '24. un fichier qui recouvre le premier s''importe ; sa période : celle de tout le fichier, ou des seuls paiements insérés (NOE4R-Q1)', 'select 1 from {IMP}', null, 'client',
         $q$select i.periode_du || ' ' || i.periode_au from importer_paiements_assurance_maladie('{DB}', '{I+}'::jsonb) i$q$,
-        'OK', '{J-3} {J}'),
+        'OK', '{P24}'),
       (124, '24 bis. … et seule la journée nouvelle entre : deux imports, l''un de quatre paiements, l''autre d''un',
         $q$select 1 from {IMP}; select 1 from importer_paiements_assurance_maladie('{DB}', '{I+}'::jsonb)$q$, null, 'client',
         $q$select string_agg(n::text, ',' order by n) from (select count(*) as n from paiements_assurance_maladie p where p.dossier_id = '{DB}' group by p.import_id) c$q$,
@@ -258,13 +265,18 @@ begin
         $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', ('{I}'::jsonb -> 'paiements') || jsonb_build_array(jsonb_set('{I}'::jsonb -> 'paiements' -> 1, '{organisme_complementaire}', '1234567890'))))$q$, null, 'chef',
         $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', ('{I}'::jsonb -> 'paiements') || jsonb_build_array(jsonb_set(jsonb_set('{I}'::jsonb -> 'paiements' -> 1, '{organisme_complementaire}', '1234567890'), '{montant_centimes}', '2346'))))$q$, '22023',
         'Un paiement de l''import est déjà en base avec d''autres chiffres (la journée comptable du {J-3fr}) : retirer d''abord l''import qui le porte.'),
-      (72, '72. … et celui d''un autre organisme complémentaire, la même journée et la même caisse, est neuf',
+      (72, '72. … et celui d''un autre organisme complémentaire, la même journée et la même caisse, est neuf (sa période : NOE4R-Q1)',
         $q$select 1 from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', ('{I}'::jsonb -> 'paiements') || jsonb_build_array(jsonb_set('{I}'::jsonb -> 'paiements' -> 1, '{organisme_complementaire}', '1234567890'))))$q$, null, 'chef',
         $q$select i.periode_du || ' ' || i.periode_au from importer_paiements_assurance_maladie('{DB}', jsonb_set('{I}'::jsonb, '{paiements}', ('{I}'::jsonb -> 'paiements') || jsonb_build_array(jsonb_set(jsonb_set('{I}'::jsonb -> 'paiements' -> 1, '{organisme_complementaire}', '1234567891'), '{montant_centimes}', '999')))) i$q$,
-        'OK', '{J-3} {J-1}')
+        'OK', '{P72}')
     ) as t(rang, etape, pose, pose_proprietaire, profil, requete, code, attendu) loop
       v_code := 'OK'; v_msg := null; v_obs := null;
-      v_attendu := replace(replace(replace(replace(replace(replace(e.attendu,
+      -- La période attendue des étapes 24 et 72 (NOE4R-Q1) : sous la règle d'hier, celle de tout le fichier ; sous la migration,
+      -- celle des seuls paiements insérés (la journée du jour pour 24, la journée J-3 du seul organisme neuf pour 72).
+      v_attendu := replace(replace(e.attendu,
+        '{P24}', case when periode_des_inseres then '{J} {J}' else '{J-3} {J}' end),
+        '{P72}', case when periode_des_inseres then '{J-3} {J-3}' else '{J-3} {J-1}' end);
+      v_attendu := replace(replace(replace(replace(replace(replace(v_attendu,
         '{J-3fr}', to_char(jour - 3, 'DD/MM/YYYY')), '{J-3}', to_char(jour - 3, 'YYYY-MM-DD')), '{J-1}', to_char(jour - 1, 'YYYY-MM-DD')),
         '{J}', to_char(jour, 'YYYY-MM-DD')), '{CHEF}', chef), '{CLIENT}', client);
       begin

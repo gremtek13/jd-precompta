@@ -121,7 +121,7 @@ const factureLue = (complete = true): FactureLu => ({
 })
 const payeLu = (): PaiementsLus => ({
   dossierId: 'd1', etat: 'lus', imports: lue([importPaye('2026-03-05', '2026-04-10')]), paiements: lue([paiement('2026-03-09', 10_000)]),
-  associations: null,
+  associations: null, remplacements: null,
 })
 
 beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-04-20T10:00:00Z')) })
@@ -185,7 +185,7 @@ describe('« Ma banque » : ce que l’assurance maladie te doit (DU-Q3)', () =>
   it('drapeau levé, un code hors de la santé et aucun import lu : rien ne se dit au client', async () => {
     faux.drapeau = true; faux.codeNaf = '62.01Z'
     faux.facture = { dossierId: 'd1', etat: 'lus', imports: lue([]), totaux: lue([]) }
-    faux.paye = { dossierId: 'd1', etat: 'lus', imports: lue([]), paiements: lue([]), associations: null }
+    faux.paye = { dossierId: 'd1', etat: 'lus', imports: lue([]), paiements: lue([]), associations: null, remplacements: null }
     await monter()
     expect(screen.queryByRole('region', { name: TITRE_DU_DU_AU_CLIENT })).toBeNull()
   })

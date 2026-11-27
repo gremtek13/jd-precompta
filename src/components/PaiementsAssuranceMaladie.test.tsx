@@ -42,7 +42,7 @@ afterEach(() => { faux.drapeau = true; faux.lecture = null; faux.lectures = 0; f
 
 const lue = <T,>(lignes: T[], complete = true) => ({ lignes, complete, motif: complete ? null : 'lecture interrompue' })
 const lus = (paiements: PaiementAssuranceMaladie[] = [], complete = true): PaiementsLus =>
-  ({ dossierId: 'd1', etat: 'lus', imports: lue([]), paiements: lue(paiements, complete), associations: null })
+  ({ dossierId: 'd1', etat: 'lus', imports: lue([]), paiements: lue(paiements, complete), associations: null, remplacements: null })
 
 // Ce qui ne doit jamais paraître à l'écran : les valeurs du fichier qui ne sont pas des agrégats.
 const SECRETS = ['F-778801', 'DUPONT-ESSAI', 'Jeannine', 'MARTIN-FICTIF', 'LEFAUX', '2 99 99 99', '26,50', '19,00']
@@ -108,13 +108,13 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
       id: 'i1', dossier_id: 'd1', periode_du: '2026-03-03', periode_au: '2026-03-03', nombre_de_rejets: 0,
       montant_rejete_centimes: 0, importe_par: 'u', importe_le: '2026-03-06T09:00:00Z',
     }
-    const avecUnImport: PaiementsLus = { dossierId: 'd1', etat: 'lus', imports: lue([IMPORT_LU]), paiements: lue([]), associations: null }
+    const avecUnImport: PaiementsLus = { dossierId: 'd1', etat: 'lus', imports: lue([IMPORT_LU]), paiements: lue([]), associations: null, remplacements: null }
     faux.lecture = avecUnImport
     const vue = render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="69.20Z" />)
     expect(await screen.findByRole('button', { name: 'Importer un fichier de paiements' })).toBeTruthy()
     vue.unmount()
     // Une lecture partielle qui ne rend aucune ligne ne prouve rien : le code décide seul.
-    const enPartie: PaiementsLus = { dossierId: 'd1', etat: 'lus', imports: lue([], false), paiements: lue([]), associations: null }
+    const enPartie: PaiementsLus = { dossierId: 'd1', etat: 'lus', imports: lue([], false), paiements: lue([]), associations: null, remplacements: null }
     faux.lecture = enPartie
     const { container } = render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf={null} />)
     await act(async () => {})
@@ -176,7 +176,7 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
     regler()
     fireEvent.click(screen.getByRole('button', { name: 'Importer 1 paiement' }))
     expect(lisible(within(fenetre()).getByRole('status').textContent))
-      .toMatch(/^1 paiement de l’assurance maladie part en base, journée comptable du 02\/11\/2026, pour 45,50 € au total ; 1 rejet, 12,00 €\. Rien d’autre ne part/)
+      .toMatch(/^1 paiement de l’assurance maladie part en base, journée comptable du 02\/11\/2026, pour 45,50 € au total ; rejets du fichier : 1 rejet, 12,00 €\. Rien d’autre ne part/)
     const confirmer = screen.getByRole('button', { name: 'Confirmer l’import' })
     act(() => { fireEvent.click(confirmer); fireEvent.click(confirmer) })
     expect(faux.appels).toEqual([{
@@ -205,7 +205,7 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
     caisse: 691, organisme_complementaire: null, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 }
   const ASSOCIEE = { id: 'a1', dossier_id: 'd1', paiement_id: 'p1', ligne_bancaire_id: 'm1', associe_par: 'u1', associe_le: '2026-11-05T09:00:00Z' }
   const avecAssociations = (lignes: typeof ASSOCIEE[], complete = true): PaiementsLus =>
-    ({ dossierId: 'd1', etat: 'lus', imports: lue([IMPORT]), paiements: lue([PAYE]), associations: lue(lignes, complete) })
+    ({ dossierId: 'd1', etat: 'lus', imports: lue([IMPORT]), paiements: lue([PAYE]), associations: lue(lignes, complete), remplacements: null })
 
   it('un import associé : « Retirer » n’est pas offert, et la raison se dit avant le clic, dans les deux espaces', async () => {
     for (const espace of ['cabinet', 'client'] as const) {

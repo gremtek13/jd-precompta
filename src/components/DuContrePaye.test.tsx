@@ -60,6 +60,7 @@ const factureLue = (complete = true): FactureLu => ({
 })
 const payeLu = (): PaiementsLus => ({
   dossierId: 'd1', etat: 'lus', imports: lue([importPaye('2026-03-05', '2026-04-10')]), paiements: lue([paiement('2026-03-09', 10_000)]), associations: null,
+  remplacements: null,
 })
 
 const texte = () => document.body.textContent ?? ''

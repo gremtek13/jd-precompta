@@ -10,7 +10,7 @@ import {
 } from '../lib/contactsImportFichier'
 import {
   PAIEMENTS_ASSURANCE_MALADIE_PREVUS, confrontationAuxPaiementsEnBase, genresDesColonnes, importAEnvoyer, lireLesPaiements,
-  refusAvantLEnvoi, refusDuReglage, type ImportAEnvoyer,
+  refusAvantLEnvoi, refusDeLImport, refusDuReglage, type ImportAEnvoyer,
 } from '../lib/paiementsAssuranceMaladie'
 import {
   LIBELLES_DES_PARTS, PRESENTATION_AU_CABINET, PRESENTATION_AU_CLIENT, RAPPEL_AU_CABINET, SANS_LA_CASE_BANQUE, USAGES, VIDE_DIT,
@@ -18,12 +18,17 @@ import {
   refusDeLaTailleDesPaiements, reglageChoisi, reglageVide, rejetsDits, totalDesPaiements, type ReglageDUnePartALEcran,
   type UsageDUneColonne,
 } from '../lib/paiementsAssuranceMaladieVue'
+import {
+  REMPLACEMENT_DES_JOURNEES_PREVU, boutonDuRemplacement, confirmationDuRemplacement, journeeARemplacerDite,
+  journeesRemplacees, presentationDuRemplacement, refusDeLaJourneeAssociee, refusDeLaJourneeAssocieeDit,
+  refusDuRemplacementAvantLEnvoi, remplacementDesJournees,
+} from '../lib/remplacementDesJourneesAssuranceMaladie'
 import type { PaiementsLus } from '../lib/paiementsAssuranceMaladieLecture'
 import { useLesPaiementsAssuranceMaladie } from '../lib/lecturePaiementsAssuranceMaladie'
 import { importsAssocies, refusDuRetraitDImportDit } from '../lib/associationsAssuranceMaladieVue'
 import { importsDeLaLecture, sectionAssuranceMaladie } from '../lib/sectionAssuranceMaladie'
 import BandeauLecturePartielle from './BandeauLecturePartielle'
-import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/types'
+import type { ImportAssuranceMaladie, PaiementAssuranceMaladie, RemplacementAssuranceMaladie } from '../lib/types'
 
 // LES PAIEMENTS DE L'ASSURANCE MALADIE, À L'ÉCRAN (conception 53, lot NOE4 ; docs/conceptions/53-import-noemie-et-remboursements.md).
 // Une section des deux espaces : l'onglet Banque du cabinet, « Ma banque » du praticien sous « Banque » (NOE-Q1). Elle ne se
@@ -47,6 +52,16 @@ import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/ty
 // qu'un import du dossier est lu (NOE4Q1-Q2 (A)) : la section reste alors offerte, gestes compris. Les imports se lisent donc
 // avant la règle ; une lecture partielle, refusée ou pas revenue ne dit pas qu'il n'y en a pas, et le code décide seul.
 // L'onglet Informations du cabinet dit pourquoi.
+//
+// LE REMPLACEMENT D'UNE JOURNÉE (NOE4R-Q2, lib/remplacementDesJourneesAssuranceMaladie.ts), sous
+// `REMPLACEMENT_DES_JOURNEES_PREVU` seulement (baissé tant que sa migration n'est pas en base) : là où un paiement en base avec
+// d'autres chiffres refuse l'import, l'aperçu nomme chaque journée à remplacer, son total en base et son total après ; une
+// journée associée à un crédit du relevé se dit refusée, sans geste ; sinon « Remplacer … et importer », une confirmation qui
+// nomme les journées et ce que le geste ne défera pas, puis `remplacer_journees_assurance_maladie`, sous le même verrou, avec
+// les identifiants de tous les paiements en base de ces journées tels qu'ils ont été lus (la version que la base vérifie). La
+// trace se lit avec les paiements : lue en partie, aucun geste ; la liste des imports montre les journées remplacées, et la
+// confirmation du retrait d'un import qui en a remplacé dit qu'ils ne reviennent pas. Baissé : un conflit refuse l'import sous
+// les mots d'hier.
 
 export interface LecturePartagee {
   lu: PaiementsLus | null
@@ -97,18 +112,24 @@ function Section({ espace, dossierId, lecture, children }: {
   const relire = lecture.relire
   const lu = lecture.lu?.dossierId === dossierId ? lecture.lu : null
   const entier = lu?.etat === 'lus' && lu.imports.complete && lu.paiements.complete
-    && (lu.associations === null || lu.associations.complete) ? lu : null
+    && (lu.associations === null || lu.associations.complete)
+    && (lu.remplacements === null || lu.remplacements.complete) ? lu : null
   // Les imports dont un paiement est associé à un crédit : leur retrait se refuse, et se dit avant le clic.
   const associes = entier ? importsAssocies(entier.paiements.lignes, entier.associations) : null
+  // Les paiements associés à un crédit (NOE4R-Q2) : une journée qui en porte un ne se remplace pas, et se dit avant le clic.
+  const paiementsAssocies = new Set(entier?.associations?.lignes.map((a) => a.paiement_id) ?? [])
 
-  async function importer(imp: ImportAEnvoyer) {
+  // Importer, ou remplacer des journées puis importer (NOE4R-Q2) : un geste, sous le même verrou, relâché après la relecture.
+  async function importer(imp: ImportAEnvoyer, paiementsLus: readonly string[] | null) {
     if (ecritureEnCours.current || !entier) return
     ecritureEnCours.current = true
     setEnCours(true)
     setErreur(null)
     setApres(null)
     try {
-      const { error } = await supabase.rpc('importer_paiements_assurance_maladie', { p_dossier_id: dossierId, p_import: imp })
+      const { error } = paiementsLus === null
+        ? await supabase.rpc('importer_paiements_assurance_maladie', { p_dossier_id: dossierId, p_import: imp })
+        : await supabase.rpc('remplacer_journees_assurance_maladie', { p_dossier_id: dossierId, p_import: imp, p_paiements_lus: [...paiementsLus] })
       if (error) {
         setErreur(pourLEspace(espace, messageErreur(error, 'L’import n’a pas pu se faire.')))
         return
@@ -185,6 +206,15 @@ function Section({ espace, dossierId, lecture, children }: {
                 : 'Aucun geste n’est offert : un import associé paraîtrait libre, un paiement associé se proposerait de nouveau.'}
             />
           )}
+          {lu.remplacements && (
+            <BandeauLecturePartielle
+              quoi={client ? 'Les journées remplacées de tes paiements' : 'Les journées remplacées'} accord="lues"
+              motif={lu.remplacements.motif} technique={false}
+              consequence={client
+                ? 'Rien ne t’est proposé : le retrait d’un import ne dirait pas ce qu’il a remplacé. Recharge la page.'
+                : 'Aucun geste n’est offert : le retrait d’un import ne dirait pas ce qu’il a remplacé.'}
+            />
+          )}
           {apres && <p role="status">{apres}</p>}
           {erreur && !fenetre && <p className="error-text" role="alert">{erreur}</p>}
           {entier && (
@@ -196,7 +226,7 @@ function Section({ espace, dossierId, lecture, children }: {
               </div>
               <ListeDesImports
                 espace={espace} imports={entier.imports.lignes} paiements={entier.paiements.lignes} enCours={enCours}
-                associes={associes ?? new Set()}
+                associes={associes ?? new Set()} remplacements={entier.remplacements?.lignes ?? []}
                 aRetirer={aRetirer} onDemanderRetrait={setARetirer} onRetirer={(id) => { void retirer(id) }}
               />
               {children}
@@ -207,8 +237,8 @@ function Section({ espace, dossierId, lecture, children }: {
 
       {fenetre && entier && createPortal(
         <FenetreDImport
-          espace={espace} enBase={entier.paiements.lignes} occupe={enCours} erreur={erreur}
-          onImporter={(imp) => { void importer(imp) }} onClose={() => { setErreur(null); setFenetre(false) }}
+          espace={espace} enBase={entier.paiements.lignes} associes={paiementsAssocies} occupe={enCours} erreur={erreur}
+          onImporter={(imp, paiementsLus) => { void importer(imp, paiementsLus) }} onClose={() => { setErreur(null); setFenetre(false) }}
         />,
         document.body,
       )}
@@ -216,13 +246,15 @@ function Section({ espace, dossierId, lecture, children }: {
   )
 }
 
-function ListeDesImports({ espace, imports, paiements, enCours, associes, aRetirer, onDemanderRetrait, onRetirer }: {
+function ListeDesImports({ espace, imports, paiements, enCours, associes, remplacements, aRetirer, onDemanderRetrait, onRetirer }: {
   espace: EspaceVentes
   imports: readonly ImportAssuranceMaladie[]
   paiements: readonly PaiementAssuranceMaladie[]
   enCours: boolean
   /** Les imports dont un paiement est associé à un crédit du relevé : « Retirer » s'y refuse, avant le clic. */
   associes: ReadonlySet<string>
+  /** La trace des remplacements (NOE4R-Q2), lue en entier ; vide sous son drapeau baissé. */
+  remplacements: readonly RemplacementAssuranceMaladie[]
   aRetirer: string | null
   onDemanderRetrait: (id: string | null) => void
   onRetirer: (id: string) => void
@@ -230,12 +262,13 @@ function ListeDesImports({ espace, imports, paiements, enCours, associes, aRetir
   if (imports.length === 0) return <p className="muted" style={{ margin: 0 }}>{VIDE_DIT[espace]}</p>
   const recents = [...imports].reverse()
   const enConfirmation = recents.find((i) => i.id === aRetirer && !associes.has(i.id)) ?? null
+  const remplaceesParJournee = journeesRemplacees(remplacements)
   return (
     <>
       <h4 style={{ marginBottom: 6 }}>Les imports</h4>
       <div className="table-scroll tableau-adaptable">
         <table className="table-empilable-etroite" aria-label="Imports des paiements de l’assurance maladie">
-          <thead><tr><th>Importé le</th><th>Journées</th><th>Paiements</th><th>Total</th><th>Rejets</th><th></th></tr></thead>
+          <thead><tr><th>Importé le</th><th>Journées</th><th>Paiements</th><th>Total</th><th>Rejets du fichier</th><th></th></tr></thead>
           <tbody>
             {recents.map((i) => {
               const siens = paiements.filter((p) => p.import_id === i.id)
@@ -245,7 +278,7 @@ function ListeDesImports({ espace, imports, paiements, enCours, associes, aRetir
                   <td data-libelle="Journées">{`du ${formatDate(i.periode_du)} au ${formatDate(i.periode_au)}`}</td>
                   <td data-libelle="Paiements">{siens.length}</td>
                   <td data-libelle="Total">{montantDit(totalDesPaiements(siens))}</td>
-                  <td data-libelle="Rejets">{rejetsDits({ nombre: i.nombre_de_rejets, montant_centimes: i.montant_rejete_centimes })}</td>
+                  <td data-libelle="Rejets du fichier">{rejetsDits({ nombre: i.nombre_de_rejets, montant_centimes: i.montant_rejete_centimes })}</td>
                   <td data-libelle="">
                     {associes.has(i.id) ? (
                       <span className="muted" style={{ fontSize: '0.85rem' }}>{refusDuRetraitDImportDit(espace)}</span>
@@ -263,7 +296,9 @@ function ListeDesImports({ espace, imports, paiements, enCours, associes, aRetir
       </div>
       {enConfirmation && (
         <div role="alert" style={{ marginTop: 10 }}>
-          <p style={{ marginTop: 0 }}>{confirmationDuRetrait(enConfirmation, paiements, espace)}</p>
+          <p style={{ marginTop: 0 }}>
+            {confirmationDuRetrait(enConfirmation, paiements, espace, remplacements.filter((t) => t.import_id === enConfirmation.id).length)}
+          </p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button type="button" className="btn btn-outline" disabled={enCours} onClick={() => onDemanderRetrait(null)}>Garder</button>
             <button type="button" className="btn btn-danger" disabled={enCours} onClick={() => onRetirer(enConfirmation.id)}>
@@ -271,6 +306,27 @@ function ListeDesImports({ espace, imports, paiements, enCours, associes, aRetir
             </button>
           </div>
         </div>
+      )}
+      {remplaceesParJournee.length > 0 && (
+        <>
+          <h4 style={{ marginBottom: 6 }}>Les journées remplacées</h4>
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable-etroite" aria-label="Journées remplacées">
+              <thead><tr><th>Journée comptable</th><th>Remplacée le</th><th>Paiements remplacés</th><th>Avant</th><th>Après</th></tr></thead>
+              <tbody>
+                {remplaceesParJournee.map((r) => (
+                  <tr key={`${r.importId}|${r.journee}`}>
+                    <td data-libelle="Journée comptable">{formatDate(r.journee)}</td>
+                    <td data-libelle="Remplacée le">{formatDate(r.le)}</td>
+                    <td data-libelle="Paiements remplacés">{r.paiements}</td>
+                    <td data-libelle="Avant">{montantDit(r.avant)}</td>
+                    <td data-libelle="Après">{montantDit(r.apres)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
       <h4 style={{ marginBottom: 6 }}>Les paiements importés</h4>
       <TableauDesPaiements paiements={paiements} libelle="Paiements importés" />
@@ -313,12 +369,15 @@ type FichierLu = { jeton: number; texte: string; encodage: EncodageDuFichier } |
 // ont d'autres colonnes, et le réglage repart vide.
 interface ReglageRetenu { cle: string; parts: ReglageDUnePartALEcran[] }
 
-function FenetreDImport({ espace, enBase, occupe, erreur, onImporter, onClose }: {
+function FenetreDImport({ espace, enBase, associes, occupe, erreur, onImporter, onClose }: {
   espace: EspaceVentes
   enBase: readonly PaiementAssuranceMaladie[]
+  /** Les paiements associés à un crédit du relevé, lus en entier (NOE4R-Q2 : leur journée ne se remplace pas). */
+  associes: ReadonlySet<string>
   occupe: boolean
   erreur: string | null
-  onImporter: (imp: ImportAEnvoyer) => void
+  /** L'import qui part ; avec, pour un remplacement (NOE4R-Q2), les paiements en base de ses journées tels qu'ils ont été lus. */
+  onImporter: (imp: ImportAEnvoyer, paiementsLus: readonly string[] | null) => void
   onClose: () => void
 }) {
   const client = espace === 'client'
@@ -387,8 +446,16 @@ function FenetreDImport({ espace, enBase, occupe, erreur, onImporter, onClose }:
   const refusReglage = tableau && choisi?.reglage ? refusDuReglage(choisi.reglage, tableau.colonnes.length) : null
   const lecture = tableau && choisi?.reglage && !refusReglage ? lireLesPaiements(tableau.lignes, choisi.reglage) : null
   const imp = lecture ? importAEnvoyer(lecture) : null
-  const refus = imp ? refusAvantLEnvoi(imp, aujourdHuiAParis(), enBase) : null
-  const dejaImportes = imp ? confrontationAuxPaiementsEnBase(imp, enBase).dejaImportes : 0
+  const jour = aujourdHuiAParis()
+  const confrontation = imp ? confrontationAuxPaiementsEnBase(imp, enBase) : null
+  // Le remplacement d'une journée (NOE4R-Q2), sous son drapeau : un import bien formé dont un paiement est en base avec
+  // d'autres chiffres ne se refuse plus — il se propose en remplacement, nommé, confirmé.
+  const remplacement = REMPLACEMENT_DES_JOURNEES_PREVU && imp !== null && refusDeLImport(imp, jour) === null
+    && confrontation?.conflit != null ? remplacementDesJournees(imp, enBase, associes) : null
+  const refus = imp === null ? null
+    : remplacement ? refusDuRemplacementAvantLEnvoi(imp, jour, remplacement) : refusAvantLEnvoi(imp, jour, enBase)
+  const journeeAssociee = remplacement?.journees.find((j) => j.associee) ?? null
+  const dejaImportes = confrontation?.dejaImportes ?? 0
   const pret = imp !== null && refus === null
 
   return (
@@ -513,7 +580,22 @@ function FenetreDImport({ espace, enBase, occupe, erreur, onImporter, onClose }:
                             + `au total ; ${rejetsDits(imp.rejets)}.`}
                         </p>
                         <TableauDesPaiements paiements={imp.paiements} libelle="Aperçu des paiements" />
-                        {refus && <p className="error-text" role="alert">{pourLEspace(espace, refus)}</p>}
+                        {remplacement && remplacement.journees.length > 0 && (
+                          <>
+                            <h3 style={{ marginBottom: 6 }}>Les journées à remplacer</h3>
+                            <p className="muted" style={{ marginTop: 0 }}>{presentationDuRemplacement(remplacement.journees.length, espace)}</p>
+                            <ul aria-label="Journées à remplacer" style={{ marginTop: 0 }}>
+                              {remplacement.journees.map((j) => <li key={j.journee}>{journeeARemplacerDite(j)}</li>)}
+                            </ul>
+                          </>
+                        )}
+                        {refus && (
+                          <p className="error-text" role="alert">
+                            {journeeAssociee && refus === refusDeLaJourneeAssociee(journeeAssociee.journee)
+                              ? refusDeLaJourneeAssocieeDit(journeeAssociee.journee, espace)
+                              : pourLEspace(espace, refus)}
+                          </p>
+                        )}
                       </>
                     )}
                   </>
@@ -524,19 +606,30 @@ function FenetreDImport({ espace, enBase, occupe, erreur, onImporter, onClose }:
         )}
 
         {aConfirmer && imp && pret && (
-          <p role="status" style={{ marginBottom: 0 }}>{confirmationDeLImport(imp, enBase, espace)}</p>
+          <p role="status" style={{ marginBottom: 0 }}>
+            {remplacement
+              ? `${confirmationDuRemplacement(remplacement, espace)} ${confirmationDeLImport(imp, enBase, espace)}`
+              : confirmationDeLImport(imp, enBase, espace)}
+          </p>
         )}
         {erreur && <p className="error-text" role="alert">{erreur}</p>}
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12, flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-outline" onClick={onClose} disabled={occupe}>Annuler</button>
           {aConfirmer && imp && pret ? (
-            <button type="button" className="btn btn-primary" disabled={occupe} onClick={() => onImporter(imp)}>
-              {occupe ? 'Import…' : 'Confirmer l’import'}
+            <button
+              type="button" className="btn btn-primary" disabled={occupe}
+              onClick={() => onImporter(imp, remplacement ? remplacement.paiementsLus : null)}
+            >
+              {occupe ? 'Import…' : remplacement ? 'Confirmer le remplacement' : 'Confirmer l’import'}
             </button>
           ) : (
             <button type="button" className="btn btn-primary" disabled={occupe || !pret} onClick={() => setAConfirmer(true)}>
-              {imp && pret ? `Importer ${imp.paiements.length - dejaImportes} paiement${imp.paiements.length - dejaImportes > 1 ? 's' : ''}` : 'Importer'}
+              {imp && pret
+                ? remplacement
+                  ? boutonDuRemplacement(remplacement.journees.length)
+                  : `Importer ${imp.paiements.length - dejaImportes} paiement${imp.paiements.length - dejaImportes > 1 ? 's' : ''}`
+                : 'Importer'}
             </button>
           )}
         </div>

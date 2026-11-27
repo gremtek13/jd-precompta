@@ -1,10 +1,11 @@
 import type { EspaceVentes } from './espaceVentes'
 import { formatDate, formatMoney } from './format'
 import {
-  LIBELLES_DES_ECARTS, cleDUnPaiement,
+  LIBELLES_DES_ECARTS, paiementsInseres, periodeDeLImport,
   type ColonnesDUnePart, type GenreDUneColonne, type ImportAEnvoyer, type LectureDesPaiements, type PartDUneLigne,
   type PaiementAgrege, type PaiementEnBase, type PartDuPaiement, type ReglageDesColonnes,
 } from './paiementsAssuranceMaladie'
+import { retraitDUnImportQuiARemplaceDit } from './remplacementDesJourneesAssuranceMaladie'
 import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from './types'
 
 // LES MOTS ET LES RÈGLES DE L'ÉCRAN D'IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53, lot NOE4 ; la lecture du
@@ -156,17 +157,28 @@ export function rejetsDits(rejets: ImportAEnvoyer['rejets'] | { nombre: number |
   return `${pluriel(rejets.nombre, 'rejet')}, ${montantDit(rejets.montant_centimes)}`
 }
 
+/** Les rejets d'un import, dits comme la base les garde (NOE4R-Q1 (A)) : CEUX DU FICHIER, le nombre et le montant qu'il dit —
+ *  jamais ceux des seuls paiements qui partent, qu'aucune clé ne relie à un rejet. */
+export function rejetsDuFichierDits(rejets: ImportAEnvoyer['rejets']): string {
+  if (rejets === null) return 'les rejets ne sont pas dits par le fichier'
+  if (rejets.nombre === 0) return 'aucun rejet dans le fichier'
+  return `rejets du fichier : ${rejetsDits(rejets)}`
+}
+
 /** Le total net d'un ensemble de paiements, en centimes. */
 export const totalDesPaiements = (paiements: readonly { montant_centimes: number }[]) =>
   paiements.reduce((s, p) => s + p.montant_centimes, 0)
 
-/** Les journées d'un ensemble de paiements, en mots : « journée comptable du … » d'un seul jour, « journées comptables du …
- *  au … » de plusieurs. */
+/** Une période de journées, en mots : « journée comptable du … » d'un seul jour, « journées comptables du … au … » de
+ *  plusieurs. */
+function periodeDite(p: { du: string; au: string }): string {
+  return p.du === p.au ? `journée comptable du ${formatDate(p.du)}` : `journées comptables du ${formatDate(p.du)} au ${formatDate(p.au)}`
+}
+
+/** Les journées d'un ensemble de paiements, en mots. */
 function journeesDites(paiements: readonly Pick<PaiementAgrege, 'date_journee_comptable'>[]): string {
   const journees = paiements.map((p) => p.date_journee_comptable).sort()
-  const du = journees[0]
-  const au = journees[journees.length - 1]
-  return du === au ? `journée comptable du ${formatDate(du)}` : `journées comptables du ${formatDate(du)} au ${formatDate(au)}`
+  return periodeDite({ du: journees[0], au: journees[journees.length - 1] })
 }
 
 /**
@@ -175,22 +187,22 @@ function journeesDites(paiements: readonly Pick<PaiementAgrege, 'date_journee_co
  * total) ; les rejets ; puis ce qui ne part pas. Relecture du 27/11/2026 : le total et les journées nommés étaient ceux du
  * fichier entier, paiements passés compris, sous « N paiements partent ». La confrontation est celle de la base et de
  * `confrontationAuxPaiementsEnBase` : la même clé, les mêmes chiffres ; un paiement en base à d'autres chiffres n'est pas
- * passé (la base refuse l'import, `refusAvantLEnvoi` le dit avant le clic, et cette phrase ne se montre pas).
+ * passé (la base refuse l'import, `refusAvantLEnvoi` le dit avant le clic, et cette phrase ne se montre pas — ou, sous le
+ * remplacement d'une journée, NOE4R-Q2, il part et remplace). Les journées nommées sont la période que la base écrit sur
+ * l'import (`periodeDeLImport`, NOE4R-Q1 (A)) ; les rejets, CEUX DU FICHIER, et la phrase le dit — aussi quand des journées du
+ * fichier sont déjà en base : un rejet ne porte aucune clé que la base saurait passer.
  */
 export function confirmationDeLImport(imp: ImportAEnvoyer, enBase: readonly PaiementEnBase[], espace: EspaceVentes): string {
-  const parCle = new Map(enBase.map((p) => [cleDUnPaiement(p), p]))
-  const passes = imp.paiements.filter((p) => {
-    const deja = parCle.get(cleDUnPaiement(p))
-    return deja !== undefined && deja.montant_centimes === p.montant_centimes
-      && deja.regularisations_centimes === p.regularisations_centimes && deja.nombre_de_factures === p.nombre_de_factures
-  })
-  const nouveaux = imp.paiements.filter((p) => !passes.includes(p))
-  const partent = nouveaux.length === 0 ? 'Aucun paiement nouveau ne part en base.'
+  const nouveaux = paiementsInseres(imp, enBase)
+  const passes = imp.paiements.filter((p) => !nouveaux.includes(p))
+  const periode = periodeDeLImport(imp, enBase)
+  const partent = nouveaux.length === 0 || periode === null ? 'Aucun paiement nouveau ne part en base.'
     : `${pluriel(nouveaux.length, 'paiement')} de l’assurance maladie ${nouveaux.length > 1 ? 'partent' : 'part'} en base, `
-      + `${journeesDites(nouveaux)}, pour ${montantDit(totalDesPaiements(nouveaux))} au total ; ${rejetsDits(imp.rejets)}.`
+      + `${periodeDite(periode)}, pour ${montantDit(totalDesPaiements(nouveaux))} au total ; ${rejetsDuFichierDits(imp.rejets)}.`
   const passesDits = passes.length > 0
     ? ` ${pluriel(passes.length, 'paiement')} déjà ${passes.length > 1 ? 'importés' : 'importé'} aux mêmes chiffres `
-      + `${passes.length > 1 ? 'sont passés' : 'est passé'} : ${journeesDites(passes)}, ${montantDit(totalDesPaiements(passes))}.`
+      + `${passes.length > 1 ? 'sont passés' : 'est passé'} : ${journeesDites(passes)}, ${montantDit(totalDesPaiements(passes))}`
+      + (imp.rejets !== null && imp.rejets.nombre > 0 ? ' ; les rejets comptés restent ceux du fichier entier, ces journées comprises.' : '.')
     : ''
   const reste = espace === 'client'
     ? ' Rien d’autre ne part : les noms, les numéros de sécurité sociale, les actes, les numéros de facture et de lot restent '
@@ -228,8 +240,10 @@ export const PRESENTATION_AU_CABINET = 'L’export des paiements du logiciel de 
   + 'partir que ces chiffres. Ils justifient et contrôlent les crédits du relevé ; ils n’entrent ni dans la 2035, ni dans la '
   + 'CA3, ni dans le FEC. Chacun s’associe au crédit qui le verse : dans la fiche du crédit, ou en lot sous les imports.'
 
-/** La confirmation d'un retrait, qui nomme ce qui part. */
-export function confirmationDuRetrait(imp: ImportAssuranceMaladie, paiements: readonly PaiementAssuranceMaladie[], espace: EspaceVentes): string {
+/** La confirmation d'un retrait, qui nomme ce qui part ; et, quand l'import a remplacé des paiements d'un import antérieur
+ *  (`remplacesParLui`, lu dans la trace des remplacements, NOE4R-Q2 ; zéro sans elle), qu'ils ne reviennent pas. */
+export function confirmationDuRetrait(imp: ImportAssuranceMaladie, paiements: readonly PaiementAssuranceMaladie[], espace: EspaceVentes,
+  remplacesParLui: number): string {
   const siens = paiements.filter((p) => p.import_id === imp.id)
   return `Retirer l’import des journées du ${formatDate(imp.periode_du)} au ${formatDate(imp.periode_au)} : `
     + `${pluriel(siens.length, 'paiement')}, ${montantDit(totalDesPaiements(siens))} au total, `
@@ -237,6 +251,7 @@ export function confirmationDuRetrait(imp: ImportAssuranceMaladie, paiements: re
     + (espace === 'client'
       ? 'Tu pourras importer de nouveau le même fichier.'
       : 'Le même fichier pourra s’importer de nouveau.')
+    + (remplacesParLui > 0 ? retraitDUnImportQuiARemplaceDit(remplacesParLui, espace) : '')
 }
 
 export const VIDE_DIT: Readonly<Record<EspaceVentes, string>> = {
