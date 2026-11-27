@@ -492,12 +492,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 ## Fonctionnalités actuellement en cours
 
 - **Proposition de catégorie** : à éprouver par un premier clic réel du cabinet.
-- **La répétition générale des migrations préparées** (14/11/2026, sur une copie de la réplique) : 30 des 31 s'appliquent sur
-  la production du jour, dans tous les ordres éprouvés, leurs retours rendant la base d'avant ; e7a refuse (son texte
-  d'`enregistrer_facture` est dépassé : REPET-Q1) ;
-  l'ordre de collage recommandé est dans le récit ; deux préparées du 13/11 ont été corrigées par une relecture adverse
-  (la version d'une connexion posée par la base ; ce qu'une pièce a reçu lu dans son seul dossier)
-  → « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES », « LA RELECTURE ADVERSE DE SIX MIGRATIONS PRÉPARÉES ».
+- **La répétition générale des migrations préparées**, refaite le 27/11/2026 à 254 : 21 des 22 s'appliquent, seules et en
+  chaîne, retours compris ; e7a refuse (REPET-Q1) ; le tableau et l'ordre de collage dans `docs/conceptions/60-…` → « LA
+  RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 254 », « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES ».
 - **En production le 15/11/2026, neuf migrations (218 → 227)**, leurs drapeaux levés : le 468 sur le relevé (PC4Q2-Q1), une
   reprise retient la trésorerie (A8B-Q3), le registre d'une facture reprise part de ce que sa pièce citée a reçu
   (A8Q5Q3-Q2), l'auteur d'une connexion de plateforme (B4RS-Q1 ; `plateforme-agreee` déployée, v14), le
