@@ -4,8 +4,9 @@ import PaiementsAssuranceMaladie from './PaiementsAssuranceMaladie'
 import { REFUS_DE_LA_FONCTION, refusDuConflit } from '../lib/paiementsAssuranceMaladie'
 import { phraseApresLImport } from '../lib/paiementsAssuranceMaladieVue'
 import { refusDuRetraitDImportDit } from '../lib/associationsAssuranceMaladieVue'
+import { refusDeLaJourneeAssocieeDit } from '../lib/remplacementDesJourneesAssuranceMaladie'
 import type { PaiementsLus } from '../lib/paiementsAssuranceMaladieLecture'
-import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/types'
+import type { ImportAssuranceMaladie, PaiementAssuranceMaladie, RemplacementAssuranceMaladie } from '../lib/types'
 
 // L'écran des paiements de l'assurance maladie (NOE4) : drapeau baissé, rien n'est monté ni lu ; rien avant le retour ; une
 // lecture partielle n'offre aucun geste ; le fichier — FABRIQUÉ, des noms et des numéros manifestement faux — ne montre que ses
@@ -14,6 +15,8 @@ import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from '../lib/ty
 
 const faux = vi.hoisted(() => ({
   drapeau: true,
+  // Le drapeau du remplacement d'une journée (NOE4R-Q2) : baissé, son état tant que sa migration n'est pas en base.
+  remplacement: false,
   lecture: null as PaiementsLus | null,
   lectures: 0,
   appels: [] as { nom: string; args: Record<string, unknown> }[],
@@ -23,6 +26,10 @@ const faux = vi.hoisted(() => ({
 vi.mock('../lib/paiementsAssuranceMaladie', async (original) => ({
   ...await original<typeof import('../lib/paiementsAssuranceMaladie')>(),
   get PAIEMENTS_ASSURANCE_MALADIE_PREVUS() { return faux.drapeau },
+}))
+vi.mock('../lib/remplacementDesJourneesAssuranceMaladie', async (original) => ({
+  ...await original<typeof import('../lib/remplacementDesJourneesAssuranceMaladie')>(),
+  get REMPLACEMENT_DES_JOURNEES_PREVU() { return faux.remplacement },
 }))
 vi.mock('../lib/paiementsAssuranceMaladieLecture', () => ({
   lireLesPaiementsAssuranceMaladie: () => { faux.lectures++; return faux.lecture ? Promise.resolve(faux.lecture) : new Promise(() => {}) },
@@ -38,7 +45,7 @@ vi.mock('../lib/supabase', () => ({
 
 beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-17T10:00:00Z')) })
 afterAll(() => { vi.useRealTimers() })
-afterEach(() => { faux.drapeau = true; faux.lecture = null; faux.lectures = 0; faux.appels = []; faux.retenir = [] })
+afterEach(() => { faux.drapeau = true; faux.remplacement = false; faux.lecture = null; faux.lectures = 0; faux.appels = []; faux.retenir = [] })
 
 const lue = <T,>(lignes: T[], complete = true) => ({ lignes, complete, motif: complete ? null : 'lecture interrompue' })
 const lus = (paiements: PaiementAssuranceMaladie[] = [], complete = true): PaiementsLus =>
@@ -232,5 +239,83 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
     render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="86.90D" partagee={lecture}><p>le rapprochement</p></PaiementsAssuranceMaladie>)
     expect(screen.getByText('le rapprochement')).toBeTruthy()
     expect(faux.lectures).toBe(0)
+  })
+})
+
+// NOE4R-Q2 : le remplacement d'une journée, sous son drapeau levé (son état d'après la migration). Baissé, le conflit refuse
+// l'import (le test « le refus de la base se dit avant le clic », plus haut, joue cet état).
+describe('le remplacement d’une journée, à l’écran (NOE4R-Q2)', () => {
+  const EN_BASE: PaiementAssuranceMaladie = { id: 'p1', dossier_id: 'd1', import_id: 'i1', date_journee_comptable: '2026-11-02', regime: null,
+    caisse: 691, organisme_complementaire: null, part: 'obligatoire', montant_centimes: 9999, regularisations_centimes: 0, nombre_de_factures: 2 }
+  const IMPORT_EN_BASE: ImportAssuranceMaladie = { id: 'i1', dossier_id: 'd1', periode_du: '2026-11-02', periode_au: '2026-11-02',
+    nombre_de_rejets: 0, montant_rejete_centimes: 0, importe_par: 'u1', importe_le: '2026-11-04T09:00:00Z' }
+  const avecLaBase = (associes: string[] = [], remplacements: RemplacementAssuranceMaladie[] = [], completes = true): PaiementsLus => ({
+    dossierId: 'd1', etat: 'lus', imports: lue([IMPORT_EN_BASE]), paiements: lue([EN_BASE]),
+    associations: lue(associes.map((p, i) => ({ id: `a${i}`, dossier_id: 'd1', paiement_id: p, ligne_bancaire_id: `m${i}`, associe_par: 'u1', associe_le: '2026-11-05T09:00:00Z' }))),
+    remplacements: lue(remplacements, completes),
+  })
+
+  it('drapeau levé : la journée à remplacer est nommée avec ses deux totaux ; la confirmation la nomme ; un seul envoi, la version lue', async () => {
+    faux.remplacement = true
+    faux.lecture = avecLaBase()
+    render(<PaiementsAssuranceMaladie espace="client" dossierId="d1" codeNaf="86.90D" />)
+    await ouvrirEtDeposer()
+    regler()
+    const journees = within(fenetre()).getByRole('list', { name: 'Journées à remplacer' })
+    expect(lisible(journees.textContent)).toBe('Journée comptable du 02/11/2026 : 99,99 € en base, 45,50 € après le remplacement — 1 paiement remplacé.')
+    expect(within(fenetre()).queryByText(refusDuConflit('2026-11-02'))).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Remplacer la journée et importer' }))
+    const confirmation = lisible(within(fenetre()).getByRole('status').textContent)
+    expect(confirmation).toMatch(/^Remplacer une journée comptable — le 02\/11\/2026, 99,99 € en base, 45,50 € après\. 1 paiement en base quitte/)
+    expect(confirmation).toContain('il faudrait réimporter ton ancien fichier. 1 paiement de l’assurance maladie part en base')
+    const confirmer = screen.getByRole('button', { name: 'Confirmer le remplacement' })
+    act(() => { fireEvent.click(confirmer); fireEvent.click(confirmer) })
+    expect(faux.appels).toEqual([{
+      nom: 'remplacer_journees_assurance_maladie',
+      args: {
+        p_dossier_id: 'd1',
+        p_import: {
+          version: 1,
+          paiements: [{ date_journee_comptable: '2026-11-02', regime: null, caisse: 691, organisme_complementaire: null, part: 'obligatoire', montant_centimes: 4550, regularisations_centimes: 0, nombre_de_factures: 2 }],
+          rejets: { nombre: 1, montant_centimes: 1200 },
+        },
+        p_paiements_lus: ['p1'],
+      },
+    }])
+    await act(async () => { faux.retenir.forEach((r) => r()) })
+    expect(await screen.findByText(phraseApresLImport('client'))).toBeTruthy()
+  })
+
+  it('une journée associée à un crédit du relevé : le refus se dit avant le clic, dans les deux espaces, et rien ne part', async () => {
+    faux.remplacement = true
+    for (const espace of ['client', 'cabinet'] as const) {
+      faux.lecture = avecLaBase(['p1'])
+      const vue = render(<PaiementsAssuranceMaladie espace={espace} dossierId="d1" codeNaf="86.90D" />)
+      await ouvrirEtDeposer()
+      regler()
+      expect(within(fenetre()).getByText(refusDeLaJourneeAssocieeDit('2026-11-02', espace))).toBeTruthy()
+      expect((screen.getByRole('button', { name: 'Importer' }) as HTMLButtonElement).disabled).toBe(true)
+      vue.unmount()
+    }
+    expect(faux.appels).toEqual([])
+  })
+
+  it('la trace : les journées remplacées dans la liste ; le retrait de l’import qui a remplacé dit qu’ils ne reviennent pas ; lue en partie, aucun geste', async () => {
+    faux.remplacement = true
+    const trace: RemplacementAssuranceMaladie = { id: 't1', dossier_id: 'd1', import_id: 'i1', ancien_import_id: 'i0',
+      date_journee_comptable: '2026-11-02', regime: null, caisse: 691, organisme_complementaire: null, part: 'obligatoire',
+      ancien_montant_centimes: 8000, ancien_regularisations_centimes: 0, ancien_nombre_de_factures: 1, nouveau_montant_centimes: 9999,
+      nouveau_regularisations_centimes: 0, nouveau_nombre_de_factures: 2, remplace_par: 'u1', remplace_le: '2026-11-04T09:00:00Z' }
+    faux.lecture = avecLaBase([], [trace])
+    const vue = render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="86.90D" />)
+    const tableau = await screen.findByRole('table', { name: 'Journées remplacées' })
+    expect(lisible(within(tableau).getAllByRole('row')[1].textContent)).toBe('02/11/202604/11/2026180,00 €99,99 €')
+    fireEvent.click(screen.getByRole('button', { name: 'Retirer' }))
+    expect(screen.getByText(/Il avait remplacé 1 paiement d’un import antérieur : il ne reviendra pas/)).toBeTruthy()
+    vue.unmount()
+    faux.lecture = avecLaBase([], [trace], false)
+    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="86.90D" />)
+    expect(await screen.findByText(/Les journées remplacées n.ont pas pu être/)).toBeTruthy()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 })

@@ -286,6 +286,21 @@ begin
          and exists (select 1 from public.imports_factures_assurance_maladie i where i.dossier_id = lc.d)$i$;
   end if;
 end $assurance_maladie$;
+-- La trace des paiements de l'assurance maladie remplacés (migration `remplacement_des_journees_assurance_maladie`, NOE4R-Q2, sur
+-- la réplique qui la porte) : le remplisseur ne compose pas des chiffres d'après autres que ceux d'avant (sa contrainte
+-- `autres_chiffres`). Une trace par leurre, selon ses CHECK (des centimes, d'autres chiffres après qu'avant) ; sans texte libre
+-- (la table n'en a pas), le montant du leurre est le marqueur ; ses deux imports, nommés sans clé, des identifiants du leurre.
+do $remplacements$
+begin
+  if to_regclass('public.remplacements_assurance_maladie') is not null then
+    execute $i$insert into public.remplacements_assurance_maladie (dossier_id, import_id, ancien_import_id, date_journee_comptable,
+        regime, caisse, organisme_complementaire, part, ancien_montant_centimes, ancien_regularisations_centimes,
+        ancien_nombre_de_factures, nouveau_montant_centimes, nouveau_regularisations_centimes, nouveau_nombre_de_factures, remplace_par)
+      select d, (pfx || '-0000-4000-8000-0000000007' || h || '1')::uuid, (pfx || '-0000-4000-8000-0000000007' || h || '2')::uuid,
+             '2025-06-17', 1, 691, null, 'obligatoire', (montant * 100)::bigint, 0, 1, (montant * 100)::bigint + 1, 0, 2, chef
+        from lc where not exists (select 1 from public.remplacements_assurance_maladie t where t.dossier_id = lc.d)$i$;
+  end if;
+end $remplacements$;
 -- Les écritures libres de l'expert-comptable (migration `ecritures_libres`, EL2, ligne 26.9, sur la réplique qui la porte) : le
 -- remplisseur ne compose ni un exercice qui soit l'année de la date (il écrit 7), ni des lignes en tableau de deux au moins.
 -- Une écriture par leurre — son libellé et son motif marqués, son montant celui du leurre en centimes, la pièce du leurre citée —

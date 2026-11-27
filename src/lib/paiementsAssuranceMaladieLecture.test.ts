@@ -8,6 +8,7 @@ import { lireLesPaiementsAssuranceMaladie } from './paiementsAssuranceMaladieLec
 const faux = vi.hoisted(() => ({
   drapeau: true,
   associations: false,
+  remplacements: false,
   tables: {} as Record<string, Record<string, unknown>[]>,
   droits: { data: { banque: true } as unknown, error: null as unknown },
   lues: [] as string[],
@@ -21,6 +22,10 @@ vi.mock('./paiementsAssuranceMaladie', async (original) => ({
 vi.mock('./rapprochementAssuranceMaladie', async (original) => ({
   ...await original<typeof import('./rapprochementAssuranceMaladie')>(),
   get ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES() { return faux.associations },
+}))
+vi.mock('./remplacementDesJourneesAssuranceMaladie', async (original) => ({
+  ...await original<typeof import('./remplacementDesJourneesAssuranceMaladie')>(),
+  get REMPLACEMENT_DES_JOURNEES_PREVU() { return faux.remplacements },
 }))
 vi.mock('./supabase', () => {
   const requete = (table: string) => {
@@ -38,7 +43,7 @@ vi.mock('./supabase', () => {
   return { supabase: { from: requete, rpc: (nom: string) => { faux.lues.push(`rpc:${nom}`); return Promise.resolve(faux.droits) } } }
 })
 
-afterEach(() => { faux.drapeau = true; faux.associations = false; faux.tables = {}; faux.droits = { data: { banque: true }, error: null }; faux.lues = []; faux.lever = false })
+afterEach(() => { faux.drapeau = true; faux.associations = false; faux.remplacements = false; faux.tables = {}; faux.droits = { data: { banque: true }, error: null }; faux.lues = []; faux.lever = false })
 
 describe('les paiements de l’assurance maladie, lus', () => {
   it('drapeau baissé : rien ne se lit, et l’échec se dit — jamais une liste vide', async () => {
@@ -79,5 +84,19 @@ describe('les paiements de l’assurance maladie, lus', () => {
     faux.tables.paiements_assurance_maladie_mouvements = [{ id: 'a', dossier_id: 'd2' }]
     const autre = await lireLesPaiementsAssuranceMaladie('d1', 'cabinet')
     expect(autre.etat === 'lus' && autre.associations?.complete).toBe(false)
+  })
+
+  it('la trace des remplacements (NOE4R-Q2) : drapeau baissé, rien de lu et nulle ; levée, lue avec le reste, une ligne d’un autre dossier la rend incomplète', async () => {
+    const baisse = await lireLesPaiementsAssuranceMaladie('d1', 'cabinet')
+    expect(baisse.etat === 'lus' && baisse.remplacements).toBeNull()
+    expect(faux.lues).not.toContain('remplacements_assurance_maladie')
+    faux.remplacements = true
+    faux.tables.remplacements_assurance_maladie = [{ id: 't', dossier_id: 'd1', import_id: 'i2', ancien_import_id: 'i1' }]
+    const leve = await lireLesPaiementsAssuranceMaladie('d1', 'client')
+    expect(leve.etat === 'lus' && leve.remplacements?.lignes.map((r) => r.id)).toEqual(['t'])
+    expect(faux.lues).toContain('remplacements_assurance_maladie')
+    faux.tables.remplacements_assurance_maladie = [{ id: 't', dossier_id: 'd2' }]
+    const autre = await lireLesPaiementsAssuranceMaladie('d1', 'cabinet')
+    expect(autre.etat === 'lus' && autre.remplacements?.complete).toBe(false)
   })
 })

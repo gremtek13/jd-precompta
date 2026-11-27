@@ -47,6 +47,8 @@ ci-dessous restent ceux de la répétition.
 | 18 | `20261112210000_exercices_du_dossier` | EXD2, les exercices du dossier | `EXERCICES_DECALES_PREVUS` | par l'outil (aucun retrait ; l'en-tête ne le dit pas) | — | EXD3 (à écrire), EXD-Q1 à Q8 ; hors de REPET-Q3 | 63/0 ; son retour garde `btree_gist` (voulu) |
 | 19 | `20261111241000_plan_depuis_la_balance` | PC6, la reprise propose le plan | `PLAN_DEPUIS_LA_BALANCE_PREVU` | à coller | la levée de son drapeau et le déploiement | hors de REPET-Q3 | 26/0 |
 | 19 bis | `20261127200000_piece_d_une_ecriture_libre_dans_son_dossier` | SECU4-Q1, la pièce qu'une écriture libre cite tenue dans son dossier (relecture de sécurité du 27/11/2026) | aucun (l'application ne déplace jamais une pièce) | par l'outil | — (EL2 et EL7, en production) | SECU4-Q1 (et SECU4-Q2, plus large) | sur 259 : 12/12, 4 mutations sur 4 ; `rls.sql` 295/1 357/0/178 |
+| 19 ter | `20261127190000_periode_des_imports_assurance_maladie` | NOE4R-Q1 (A), la période d'un import sur ses seuls paiements insérés | aucun (l'écran ne dit rien que la règle décide) | par l'outil | — (NOE3, en production) | rien : prête | sur 259 : 11/11, la seconde application refusée, le retour rend la signature |
+| 19 quater | `20261127191000_remplacement_des_journees_assurance_maladie` | NOE4R-Q2 (B), le remplacement d'une journée non associée, sa trace | `REMPLACEMENT_DES_JOURNEES_PREVU` | à coller (un `delete` dans le corps de sa fonction) | 19 ter (sa garde en exige le corps) | NOE4RQ2-Q1 à Q4 ; la lecture du client présentée au cabinet | sur 259 et 19 ter : 35/35, cinq mutations sur cinq ; refusée sans 19 ter |
 | 20 | `20261107160000_deux_facteurs_exiges` | C7, la double authentification exigée | `DEUX_FACTEURS_EXIGES_EXPORTE` ; `DEUX_FACTEURS_EXIGES_EN_BASE` (quatorze Edge Functions) | à coller ; retour en deux temps | en dernier | SEC2-Q1 : après le MVP | 42/0, 15 sur 15 |
 | — | `20261107120000_facture_internationale` | e7a, la facture à un client hors de France | `FACTURE_INTERNATIONALE_EXPORTEE` | à coller | — | REPET-Q1 (B) : rebasée à son collage, après le MVP | REFUSE (sa garde vise le corps d'`enregistrer_facture` d'`acomptes_des_devis`) |
 | 21 | `20261127190000_ouverture_suivante_a_la_validation` | MCBR-Q2 (A), la validation refuse l'ouverture suivante qu'elle figerait sans remède | aucun (le préalable `ouverture-suivante-retenue` part seul) | par l'outil | — (258 et 259, en production) ; avant ou après les autres | l'accord | sur 259 : 13/13, 5 sur 5 ; puis sous et sur la chaîne (276) |
@@ -86,3 +88,16 @@ application refusée, son retour rend la signature de 259 ; les 173 essais, avan
 du sien, de `signature.sql` et `inventaire.sql` (deux déclencheurs et une fonction de plus), et d'EL-F1 et CP-F2, repris pour
 admettre son déclencheur ; SÛR au banc du leurre (famille « apres »). Au bout de la chaîne (les seize, elle, puis la double
 authentification, 20) : son essai 12/12, `rls.sql` 346 lignes, 1 692 vérifications, 0 en faute, 220 mutations sur 220.
+
+**Préparées depuis, le même soir** (27/11/2026, NOE4R-Q1 et NOE4R-Q2 ; HISTORIQUE.md, « 27/11/2026 — NOE4R-Q1 ET NOE4R-Q2 ») :
+deux de plus, lignes 19 ter et 19 quater, indépendantes de 19 bis, éprouvées sur une copie de `replique_227` portée à 259 par
+l'export (dérive `a540bcd9…`, inventaire 3 542 `58b4a599…`, socle 85 `585debf7…`) — seules, en chaîne (19 ter puis 19 quater :
+dérive 261 `170b1f02…` égale aux fichiers simulés rangés, inventaire 3 576 `63de153d…` égal aux fichiers), leurs essais
+(`periodeDesImportsAssuranceMaladie` 11/11, `remplacementDesJourneesAssuranceMaladie` 35/35, sa suppression 7/7 ;
+`paiementsAssuranceMaladie` 66/66 avant et après 19 ter), `rls.sql` entier (sur 19 quater : 479 lignes, 1 372 vérifications, 0 en
+faute, 180 mutations sur 180 ; sur 259 et 19 ter : RJ EN ATTENTE), `restauration.sql` IDENTIQUE (111 tables), les retours à rebours
+(signature et commentaires égaux à 259), le banc du leurre SÛR sur les quatre essais changés. Ni la répétition ci-dessus ni le
+bout de la chaîne ne les ont rejouées : aucune préparée ne remplace une des cinq fonctions que la garde de 19 quater épingle (B1,
+ligne 5, récrit `client_du_dossier` en gardant la ligne « banque » qu'elle lit) ; sa restrictive `deux_facteurs` se pose sous
+condition, avant comme après 20 (`deuxFacteursDesTablesNeuves.test.ts`) ; le retour de NOE3 exige désormais celui de 19 ter
+d'abord.

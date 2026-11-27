@@ -55324,3 +55324,20 @@ se lit sous `TAILLE_MAX_LECTURE` (10 Mio, sous les 20 de `TAILLE_MAX_PIECE`) —
 la borne —, 413 en français, avant AWS. **superpdp-sync** : un `item.id` qui n'est pas `Number.isSafeInteger` s'écarte et se
 compte (réponse `ecartees`, une ligne d'`erreurs`), jamais recopié ; la pagination s'arrête sur un dernier identifiant illisible.
 Seize défauts plantés gardent le tout (edgeFunctionsHttp, relancesHttp).
+
+### 27/11/2026 — NOE4R-Q1 ET NOE4R-Q2 : LA PÉRIODE D'UN IMPORT ET LE REMPLACEMENT D'UNE JOURNÉE (PRÉPARÉES, PAS APPLIQUÉES)
+
+(Agent architecte ; aucun outil de la base, rien en production.) **NOE4R-Q1 (A)** : `periode_des_imports_assurance_maladie`
+(préparée, par l'outil : aucun mot de retrait) remplace le corps d'`importer_paiements_assurance_maladie` (garde de tête sur
+`62b9f0f6…`) — la période d'un import est celle de ses seuls paiements insérés ; les rejets restent ceux du fichier, et l'écran le dit
+(« rejets du fichier », la colonne de la liste) ; un import qui n'insère rien se refuse comme hier plutôt que de s'écrire sans période
+(ses rejets se compteraient deux fois, la table perdrait son contrat). `paiementsInseres`, `periodeDeLImport` redisent la règle ; les
+étapes 24 et 72 de `paiementsAssuranceMaladie.sql` suivent la règle que la base porte (le marqueur `NOE4R-Q1`). **NOE4R-Q2 (B)** :
+conçue (conception 53, § 14.2) et préparée, `remplacement_des_journees_assurance_maladie` (à coller : un `delete` dans sa fonction ;
+après Q1, dont elle exige le corps) — la journée telle que l'export la porte (ce qui diffère remplacé, le neuf entré, l'égal passé, ce
+que le fichier ne porte pas gardé), la version de TOUS les paiements des journées nommées, jamais une journée dont un paiement est
+associé, la trace `remplacements_assurance_maladie` (aucun texte, deux imports nommés sans clé), tout ou rien par la fonction d'import
+elle-même ; le module, la lecture, l'écran et le plan de sauvegarde derrière `REMPLACEMENT_DES_JOURNEES_PREVU` baissé. **Éprouvé** sur
+une copie de `replique_227` portée à 259 : 11/11, 35/35 et cinq mutations sur cinq, la suppression 7/7 ; `rls.sql` 0 en faute (1 372,
+180 mutations) ; restauration IDENTIQUE ; retours à rebours rendant la signature ; inventaire, dérive et socle simulés égaux ; banc SÛR.
+Questions : NOE4RQ2-Q1 à Q4.
