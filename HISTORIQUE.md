@@ -55205,3 +55205,31 @@ Financement, dont la lecture dépend des banques). La fiche d'un mouvement dit l
 `importDeLaConnexion` — dès deux comptes, la connexion bancaire n'offre ni récupération ni import, et le dit (la base refusait
 après le clic, 23502) ; « Ma trésorerie à 90 jours » laisse hors du départ un compte clos au plus tard aujourd'hui, et le dit
 (sans relevé, il rendait la projection muette ; avec un vieux relevé, il reculait le départ à sa date) ; tous clos, rien ne change.
+### 27/11/2026 — LE BANC DE CHARGE D'UNE ANNÉE, AU NIVEAU D'AUJOURD'HUI : LA PISTE D'AUDIT ET LE LOT DU RAPPROCHEMENT ACCÉLÉRÉS
+
+Agent dev, sans migration. Le banc (`outils/charge/annee.mts`, `--seul=<motif>` pour un profil `node --cpu-prof`) tire son année
+de `src/test/anneeDeCharge.ts` : 1 500 pièces, 3 000 mouvements sur deux comptes (`COMPTES_BANCAIRES_PREVUS` levé, le second à
+son 512 propre), 300 factures sources encaissées, une caisse, 100 journées de l'assurance maladie associées et leur facturé,
+8 écritures libres, 12 règles, un relevé contrôlé par mois et par compte ; le brouillon (5 316 lignes) composé par les moteurs,
+mouvements classés compris. À N, rien ne passait 300 ms ; six causes trouvées au profil, corrigées sans changer un rendu :
+`dateAParis` construisait un `Intl.DateTimeFormat` à chaque appel (60 % de la piste d'audit), `formatMoney` un formateur par
+`toLocaleString` ; `ecrituresSansObjet` cherchait chaque pièce dans la liste (pièces × groupes), `analyserEcritures` recopiait
+chaque groupe à chaque ligne ; `etatsDesVentesFacturees` filtrait la composition entière pour chaque source ; le lot du
+rapprochement automatique jugeait toutes les pièces pour chaque mouvement (un index par montant au centime, ±2 centimes, le
+même prédicat ensuite). `chargeEmpreintes.test.ts` compare le SHA-256 de quinze rendus (dont des pièces aux bornes de la
+tolérance) à celui du code d'avant (0236b386) ; l'index à ±0 centime y vire au rouge. Médianes, machine chargée, en ms (N / 2N) :
+
+| Calcul | avant | après |
+|---|---:|---:|
+| Piste d'audit | 190 / 395 | 42 / 50 |
+| Lot du rapprochement automatique | 22 / 160 | 2 / 5 |
+| Vue d'ensemble (Checklist) | 148 / 206 | 113 / 110 |
+| États des ventes facturées | 34 / 110 | 17 / 37 |
+| Préalables de la validation | 112 / 239 | 98 / 211 |
+| Concordance 2035 | 19 / 33 | 13 / 16 |
+| FEC | 49 / 71 | 48 / 60 |
+
+Restent, sous 300 ms à N : les préalables (le FEC numéroté, l'analyse du brouillon, chacun linéaire) ; la pièce proposée de
+chaque ligne de l'onglet Banque (`suggestion`, `candidatsPieces` par ligne affichée, 27 / 107 ms) et `suggestionRecurrente`,
+qui parcourt le relevé pour chaque ligne, sans pagination ni `useMemo` ; et `useClotureDuDossier`, qui recalcule les états des
+ventes et les préalables de chaque exercice à chaque rendu.
