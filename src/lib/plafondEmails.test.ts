@@ -13,12 +13,16 @@ import { dateAParis } from './format'
 
 const SOURCE = readFileSync(new URL('../../supabase/functions/send-email/index.ts', import.meta.url), 'utf8')
 
-function blocDe(nom: string): string {
-  const debut = SOURCE.indexOf(`// ── DÉBUT ${nom} `)
-  const fin = SOURCE.indexOf(`// ── FIN ${nom} `)
-  expect(debut, `bornes du bloc ${nom} introuvables dans send-email`).toBeGreaterThan(-1)
+// receive-email en porte une copie (RECEP-Q1 (A), 27/11/2026 : le plafond des lectures automatiques par dossier et par jour de
+// Paris), jugée de même, seule, contre `dateAParis` — jamais contre celle de send-email.
+const SOURCE_RECEPTION = readFileSync(new URL('../../supabase/functions/receive-email/index.ts', import.meta.url), 'utf8')
+
+function blocDe(nom: string, source = SOURCE, fonction = 'send-email'): string {
+  const debut = source.indexOf(`// ── DÉBUT ${nom} `)
+  const fin = source.indexOf(`// ── FIN ${nom} `)
+  expect(debut, `bornes du bloc ${nom} introuvables dans ${fonction}`).toBeGreaterThan(-1)
   expect(fin).toBeGreaterThan(debut)
-  return SOURCE.slice(debut, SOURCE.indexOf('\n', fin) + 1)
+  return source.slice(debut, source.indexOf('\n', fin) + 1)
 }
 
 type JourDeParis = (ms: number) => { debut: string; fin: string }
@@ -99,5 +103,34 @@ describe('send-email : le jour de Paris du plafond d’un accès client', () => 
     expect(plafond).toBeLessThan(gestionnaire.indexOf('resend.emails.send('))
     expect(gestionnaire).toContain('if (envoyes >= PLAFOND_CLIENT_PAR_JOUR) {')
     expect(gestionnaire).toContain('.eq("dossier_id", dossierId).gte("created_at", jour.debut).lt("created_at", jour.fin)')
+  })
+})
+
+describe('receive-email : le jour de Paris du plafond des lectures (RECEP-Q1)', () => {
+  const bloc = blocDe('JOUR DE PARIS', SOURCE_RECEPTION, 'receive-email')
+  const jourDeLaReception = executer(bloc)
+
+  it('pour chaque jour d’une année, le jour de l’instant, de minuit à minuit à Paris', () => {
+    const fautes = INSTANTS.flatMap((ms) => fautesPour(jourDeLaReception, ms).map((x) => `${new Date(ms).toISOString()} : ${x}`))
+    expect(fautes.slice(0, 5)).toEqual([])
+  })
+
+  it('le jour UTC se voit aussi dans cette copie', () => {
+    const utc = bloc.replace(
+      'return { debut: new Date(minuit(ici.day)).toISOString(), fin: new Date(minuit(ici.day + 1)).toISOString() }',
+      'const j = new Date(ms).toISOString().split("T")[0]; return { debut: `${j}T00:00:00.000Z`, fin: new Date(Date.parse(`${j}T00:00:00.000Z`) + 86_400_000).toISOString() }',
+    )
+    expect(utc).not.toBe(bloc)
+    expect(INSTANTS.some((ms) => fautesPour(executer(utc), ms).length > 0)).toBe(true)
+  })
+
+  it('cent lectures par dossier et par jour, le compte jugé avant l’unique appel d’extract-piece', () => {
+    expect(SOURCE_RECEPTION).toMatch(/\nexport const PLAFOND_DES_LECTURES_PAR_JOUR = 100\n/)
+    const gestionnaire = SOURCE_RECEPTION.slice(SOURCE_RECEPTION.indexOf('Deno.serve('))
+    const plafond = gestionnaire.indexOf('if (lectures === null || lectures >= PLAFOND_DES_LECTURES_PAR_JOUR) {')
+    expect(plafond).toBeGreaterThan(-1)
+    expect(plafond).toBeLessThan(gestionnaire.indexOf('await classifierEtExtraire('))
+    expect(gestionnaire.match(/classifierEtExtraire\(/g)).toHaveLength(1)
+    expect(SOURCE_RECEPTION).toContain('const { debut, fin } = jourDeParis(Date.now())')
   })
 })

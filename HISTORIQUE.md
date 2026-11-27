@@ -55433,3 +55433,18 @@ session : les trois contrôles et `signature.sql` relevés en production, et les
 **FACT-Q4 (A)** : l'avoir d'un particulier propose la mention de sa facture sans la phrase des pénalités (`mentionDeLAvoirProposee`, lib/mentionsFigeesVue.ts, par `sansPhraseDeRetard`) ; seule la phrase telle que l'application la propose se retire, écrite désormais une fois (`PHRASE_DE_RETARD`, lib/mentionsFacture.ts, que `mentionsLegalesParDefaut` emploie) ; un texte à la main, la mention de TVA et un professionnel restent tels quels ; les deux espaces.
 **MCBR2-Q1 (A)** : la fiche des comptes bancaires avertit, avant le clic et dans la confirmation, d'un compte ouvert au plus tard le 31/12 du dernier exercice validé et au 512 propre au lendemain (`avertissementDuSoldeHorsDesComptes`, lib/ficheDesComptesBancaires.ts) ; muette pour le principal, un compte clos ce 31/12, une ouverture non datée, des exercices validés illisibles ; le bouton reste offert.
 Chaque point : son module testé et son test d'écran (ClientUpload.bordereau, FactureAvoirModal, ComptesBancairesCard), rouges sur la source d'avant. Questions : BOR6TQ1Q1-Q1 (le module « Assurance maladie » fermé), MCBR2Q1-Q1 (un compte ouvert vide).
+### 27/11/2026 — RECEP-Q1, ACCES-Q1 ET FACT-Q5 : LE PLAFOND DES LECTURES REÇUES PAR E-MAIL, LE LIEN AU RATTACHEMENT, LE NOM DU VENDEUR
+
+(Agent architecte ; aucune migration ; `receive-email`, `superpdp-emit` et `plateforme-agreee` à redéployer.) Chaque point rouge sur
+la source d'avant. **RECEP-Q1 (A)** : au-delà de `PLAFOND_DES_LECTURES_PAR_JOUR` (100) pièces jointes lues pour un dossier dans le jour
+de Paris (le bloc `JOUR DE PARIS` de send-email, copié, jugé par plafondEmails.test.ts), la pièce jointe se dépose sans lecture, comme
+une lecture ratée ; le compte se lit une fois par e-mail, avant la première lecture, en trois `count` bornés au dossier (les pièces
+d'origine `email`, les documents du dossier — leur origine n'est pas en base, ceux du cabinet comptent : le côté fermé —, les
+bordereaux écartés), puis se tient à la main ; illisible, aucune lecture ; le journal compte et dit la raison. Cinq scénarios HTTP,
+huit défauts plantés. Une photo de bordereau au-delà du plafond n'est plus reconnue et entre au stockage (RECEPQ1-Q1) ; le PDF à couche
+de texte reste écarté. **ACCES-Q1 (A)** : la fenêtre du rattachement (23-Q2) dit que le mot de passe a pu être choisi ailleurs, et sa
+case, cochée d'emblée, envoie le lien « Mot de passe oublié » après le rattachement réussi, par l'appel de la liste (`demanderLeLien`),
+sous le verrou des liens ; un échec se dit sans rien défaire (`echecDuLienApresRattachement`). **FACT-Q5 (A)** : le défaut était réel —
+BT-27 d'une facture figée venait d'`emetteur_nom` ; `donneesDeLaFacture` prend `nomDeLEmetteur`, dont le bloc est copié dans les deux
+fonctions qui transmettent (`denomination_imprimee` lue) ; une facture d'avant et une figée sans dénomination à l'octet près comme hier,
+les exemples validés inchangés (leurs empreintes) ; quatre gardes de copie suivent le cinquième bloc.

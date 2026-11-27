@@ -653,6 +653,8 @@ describe('une facture qui a figé ses mentions transmet ce qu’elle a figé, un
     statut_tva: 'franchise', article_exoneration: null, numero_tva_attribue: false, numero_tva_imprime: 'FR00000000000',
     moyen_prefere: 'cheque', escompte: 'Escompte : 2 % à 10 jours.', penalites: 'Pénalités : 10 %.', iban_imprime: IBAN_FICTIF,
     bic_imprime: BIC_FICTIF, titulaire_imprime: 'Quelqu’un', numero_engagement: 'BC-1',
+    // FACT-Q5 : la dénomination figée ne nomme le vendeur (BT-27) que d'une facture figée.
+    denomination_imprimee: 'Un Autre Nom Légal SAS',
   }
 
   it.each(AVANT)('$nom : `mentions_figees` faux ou absent, le XML est celui d’hier à l’octet près, quoi que portent les colonnes figées', (e) => {
@@ -664,6 +666,13 @@ describe('une facture qui a figé ses mentions transmet ce qu’elle a figé, un
       if (organismePublic) f.numero_engagement = e.donnees.facture.numero_engagement
       const lignes = e.donnees.lignes.map((l) => ({ ...l, unite: 'HUR', reference: 'REF-1' }))
       expect(xmlDe({ ...e.donnees, facture: f, lignes })).toBe(hier)
+      // Et par l'assemblage des fonctions (`donneesDeLaFacture`) : la dénomination d'une facture d'avant ne nomme rien
+      // (FACT-Q5), le vendeur reste son `emetteur_nom`, le XML celui d'hier.
+      const sans = { ...e.donnees.facture, mentions_figees: marque } as FactureEmise
+      const avec = { ...sans, denomination_imprimee: 'Un Autre Nom Légal SAS' }
+      const assemble = (x: FactureEmise) => donneesDeLaFacture(x, e.donnees.lignes, DOSSIER_CHANGE, e.donnees.origine, e.donnees.acompte, AUJOURD_HUI)
+      expect(assemble(avec).vendeur).toEqual(assemble(sans).vendeur)
+      expect(assemble(avec).vendeur.nom).toBe(sans.emetteur_nom)
     }
   })
 
@@ -679,6 +688,33 @@ describe('une facture qui a figé ses mentions transmet ce qu’elle a figé, un
     const faux = { ...e.donnees.facture, numero_tva_imprime: 'FR00123456782' } as FactureEmise
     expect(refusEmission(donneesDeLaFacture(faux, e.donnees.lignes, DOSSIER_CHANGE, null, SANS_ACOMPTE_CII, AUJOURD_HUI)))
       .toContain('Le numéro de TVA intracommunautaire du dossier ne correspond pas à son SIREN.')
+  })
+
+  // FACT-Q5 (A), réponse du cabinet du 27/11/2026 : le nom du vendeur (BT-27) d'une facture figée venait d'`emetteur_nom`, le
+  // nom interne du dossier recopié à l'émission, quand le papier imprime la dénomination figée. Il suit désormais la règle de
+  // l'aperçu et de l'e-mail (lib/nomDeLEmetteur.ts) ; une facture d'avant, et une figée sans dénomination, comme hier.
+  it('BT-27 d’une facture figée : la dénomination qu’elle a figée, le nom même que le papier imprime', () => {
+    const e = EXEMPLES.find((x) => x.nom === 'figee-entreprise')!
+    const f = { ...(e.donnees.facture as FactureEmise), denomination_imprimee: 'Atelier Démo Conseil SARL' }
+    const d = donneesDeLaFacture(f, e.donnees.lignes, DOSSIER_CHANGE, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
+    expect(d.vendeur.nom).toBe('Atelier Démo Conseil SARL')
+    expect(ceQueLaFactureImprime(f)?.nom).toBe('Atelier Démo Conseil SARL')
+    const x = xmlDe(d)
+    expect(x).toMatch(/<ram:SellerTradeParty>\s*<ram:Name>Atelier Démo Conseil SARL<\/ram:Name>/)
+    expect(x).not.toContain(`<ram:Name>${f.emetteur_nom}</ram:Name>`)
+    // Le reste du fichier ne change pas : seul le nom du vendeur diffère de l'exemple validé.
+    expect(x.replace('Atelier Démo Conseil SARL', String(f.emetteur_nom))).toBe(xmlDe(e.donnees))
+  })
+
+  it('une facture figée sans dénomination (nulle, vide, blanche) transmet son `emetteur_nom`, à l’octet près comme hier', () => {
+    for (const e of EXEMPLES.filter((x) => x.nom.startsWith('figee-'))) {
+      for (const denomination of [null, undefined, '', '   ']) {
+        const f = { ...(e.donnees.facture as FactureEmise), denomination_imprimee: denomination }
+        expect(xmlDe({ ...e.donnees, facture: f, vendeur: { ...e.donnees.vendeur } }), `${e.nom} ${String(denomination)}`).toBe(xmlDe(e.donnees))
+        const d = donneesDeLaFacture(f, e.donnees.lignes, DOSSIER_CHANGE, null, SANS_ACOMPTE_CII, AUJOURD_HUI)
+        expect(d.vendeur.nom).toBe(f.emetteur_nom)
+      }
+    }
   })
 
   it('le motif d’exonération (BT-120, BT-121) découle du statut figé, pas de celui du dossier', () => {

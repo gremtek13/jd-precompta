@@ -29,7 +29,8 @@ import {
   fixerLaNatureDesRecettes, lireLesCategoriesDeLaNature, type LectureDesCategoriesDeLaNature,
 } from '../../lib/natureDesRecettesLecture'
 import {
-  avisDeLAccesCree, compteDeLaReponse, confirmationDuRattachement, copieDuRefus, corpsDeLaCreation, refusARattacher,
+  avisDeLAccesCree, compteDeLaReponse, confirmationDuRattachement, copieDuRefus, corpsDeLaCreation, echecDuLienApresRattachement,
+  LIEN_DEJA_EN_COURS, refusARattacher,
 } from '../../lib/creationDesComptes'
 import { CE_QUE_DIT_LA_COLLECTE } from '../../lib/piecesJointesEcarteesClient'
 import { adresseDeCollecte } from '../../lib/adresseCollecte'
@@ -85,6 +86,9 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   // fonction a refusé la création en disant qu'une confirmation est possible. L'adresse et le mot de passe sont gardés
   // TELS QU'ILS SONT PARTIS : la fenêtre nomme l'adresse que le second appel enverra, quoi qu'il arrive ensuite au champ.
   const [aRattacher, setARattacher] = useState<{ email: string; password: string } | null>(null)
+  // La case de la fenêtre du rattachement (ACCES-Q1 (A)) : envoyer aussi au titulaire le lien « Mot de passe oublié ». Cochée à
+  // chaque ouverture de la fenêtre ; lue au clic sur « Rattacher ce compte », jamais après.
+  const [lienAuRattachement, setLienAuRattachement] = useState(true)
   const [relanceDe, setRelanceDe] = useState<AccesLu | null>(null)
   // « Aucun accès client pour ce dossier » est une AFFIRMATION, pas un écran vide : une lecture
   // refusée rendait la même liste vide, et le cabinet en concluait qu'il ne restait aucun accès.
@@ -233,11 +237,28 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     if (creationEnCours.current) return
     const demande = aRattacher
     if (demande === null) return
+    const avecLeLien = lienAuRattachement
     creationEnCours.current = true
     setInviting(true)
     setError(null)
+    if (avecLeLien) setAvisLien(null)
     try {
       await envoyerLaCreation(demande.email, demande.password, true)
+      // ACCES-Q1 (A) : le lien part APRÈS le rattachement réussi (un refus l'a levé avant), sous le verrou des liens, par le
+      // même appel que celui de la liste ; son échec se dit sans rien défaire : le compte reste rattaché.
+      if (avecLeLien) {
+        if (envoiLienEnCours.current) {
+          setAvisLien({ envoye: false, texte: echecDuLienApresRattachement(LIEN_DEJA_EN_COURS) })
+        } else {
+          envoiLienEnCours.current = true
+          try {
+            const avis = await demanderLeLien(demande.email)
+            setAvisLien(avis.envoye ? avis : { envoye: false, texte: echecDuLienApresRattachement(avis.texte) })
+          } finally {
+            envoiLienEnCours.current = false
+          }
+        }
+      }
     } catch (err) {
       setError(messageErreur(err))
     } finally {
@@ -273,6 +294,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       // (aucune boucle), il se dit comme tout refus.
       if (!confirme && await refusARattacher(copie)) {
         setARattacher({ email: adresse, password: motDePasse })
+        setLienAuRattachement(true)
         return
       }
       throw new Error(message)
@@ -398,16 +420,23 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     setLienEnCours(acces.id)
     setAvisLien(null)
     try {
-      const { error: erreurLien } = await supabase.auth.resetPasswordForEmail(adresse, { redirectTo: ADRESSE_DE_RETOUR })
-      setAvisLien(erreurLien
-        ? { envoye: false, texte: messageErreurDuLienEnvoye(adresse, erreurLien) }
-        : { envoye: true, texte: avisDuLienEnvoye(adresse) })
-    } catch (x) {
-      // auth-js relance ce qui n'est pas une erreur d'authentification : il se dit aussi, jamais en erreur non gérée.
-      setAvisLien({ envoye: false, texte: messageErreurDuLienEnvoye(adresse, x) })
+      setAvisLien(await demanderLeLien(adresse))
     } finally {
       envoiLienEnCours.current = false
       setLienEnCours(null)
+    }
+  }
+
+  // L'appel du lien, commun à la liste et au rattachement (ACCES-Q1) : sous le verrou de son appelant, il ne rejette jamais.
+  async function demanderLeLien(adresse: string): Promise<{ envoye: boolean; texte: string }> {
+    try {
+      const { error: erreurLien } = await supabase.auth.resetPasswordForEmail(adresse, { redirectTo: ADRESSE_DE_RETOUR })
+      return erreurLien
+        ? { envoye: false, texte: messageErreurDuLienEnvoye(adresse, erreurLien) }
+        : { envoye: true, texte: avisDuLienEnvoye(adresse) }
+    } catch (x) {
+      // auth-js relance ce qui n'est pas une erreur d'authentification : il se dit aussi, jamais en erreur non gérée.
+      return { envoye: false, texte: messageErreurDuLienEnvoye(adresse, x) }
     }
   }
 
@@ -756,6 +785,13 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
               {confirmation.adresse.avant}<strong className="courriel">{confirmation.adresse.adresse}</strong>{confirmation.adresse.apres}
             </p>
             {confirmation.paragraphes.map((p) => <p key={p}>{p}</p>)}
+            <label>
+              <input
+                type="checkbox" checked={lienAuRattachement} disabled={inviting}
+                onChange={(e) => setLienAuRattachement(e.target.checked)}
+              />{' '}
+              {confirmation.caseDuLien}
+            </label>
           </ConfirmationArticle>
         )
       })()}

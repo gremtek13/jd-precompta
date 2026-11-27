@@ -1329,6 +1329,72 @@ describe('AccesTab — rattacher un compte que ce cabinet ne connaît pas, ou pl
     expect(corpsDeLAppel(2)).toEqual({ dossierId: 'd1', email: 'ancien@exemple.fr', password: MOT_DE_PASSE })
   })
 
+  // ACCES-Q1 (A), réponse du cabinet du 27/11/2026 : le mot de passe d'un compte rattaché sur confirmation a pu être choisi
+  // ailleurs ; la fenêtre le dit, et envoie au titulaire, dans le même geste, le lien « Mot de passe oublié » (la case cochée
+  // d'emblée). Le lien part après le rattachement réussi, par le même appel que la liste ; son échec ne défait rien.
+  const caseDuLien = () => {
+    const f = fenetre()
+    if (!f) throw new Error('la fenêtre de confirmation n’est pas ouverte')
+    return within(f).getByRole<HTMLInputElement>('checkbox', { name: 'Envoyer aussi à cette adresse le lien « Mot de passe oublié »' })
+  }
+  async function rattacherAvecSucces() {
+    await act(async () => { dansLaFenetre('Rattacher ce compte').click() })
+    faux.lignes = [...faux.lignes, acces({ id: 'm9', user_id: 'u9', email: 'ancien@exemple.fr', created_at: '2026-10-09T08:00:00Z' })]
+    await act(async () => { faux.resoudre?.({ data: { ok: true, compte: 'existant' }, error: null }) })
+    await laisserPasserUnTour()
+  }
+
+  it('la fenêtre dit que le mot de passe a pu être choisi ailleurs, et propose le lien, la case cochée d’emblée', async () => {
+    const dialogue = await ouvrirLaConfirmation()
+    expect(dialogue.textContent).toContain('Ce mot de passe a pu être choisi ailleurs, par un autre cabinet')
+    expect(dialogue.textContent).toContain("l'ancien reste valable tant qu'il n'en a pas choisi un autre par ce lien")
+    expect(caseDuLien().checked).toBe(true)
+    // Rien n'est parti à l'ouverture de la fenêtre.
+    expect(faux.appelsLien).toEqual([])
+  })
+
+  it('« Rattacher ce compte », la case cochée : le lien part vers l’adresse rattachée, APRÈS le rattachement, et se dit', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { dansLaFenetre('Rattacher ce compte').click() })
+    // Le second appel est en vol : aucun lien avant sa réponse.
+    expect(faux.appelsLien).toEqual([])
+    faux.lignes = [...faux.lignes, acces({ id: 'm9', user_id: 'u9', email: 'ancien@exemple.fr', created_at: '2026-10-09T08:00:00Z' })]
+    await act(async () => { faux.resoudre?.({ data: { ok: true, compte: 'existant' }, error: null }) })
+    await laisserPasserUnTour()
+    expect(faux.appelsLien).toEqual([{ adresse: 'ancien@exemple.fr', options: { redirectTo: 'https://compta.jdarnis.fr/' } }])
+    expect(await screen.findByText('Un lien de réinitialisation est parti vers ancien@exemple.fr. Il ne sert qu\'une fois.')).toBeTruthy()
+    expect(avisDeCreation()[0]).toContain("L'accès de ancien@exemple.fr est créé.")
+  })
+
+  it('la case décochée : le rattachement seul, aucun lien', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { fireEvent.click(caseDuLien()) })
+    expect(caseDuLien().checked).toBe(false)
+    await rattacherAvecSucces()
+    expect(avisDeCreation()[0]).toContain("L'accès de ancien@exemple.fr est créé.")
+    expect(faux.appelsLien).toEqual([])
+  })
+
+  it('le lien refusé par le service : le rattachement tient, l’échec se dit, avec le geste qui reste', async () => {
+    faux.erreurLien = { name: 'AuthApiError', message: 'For security purposes, you can only request this after 42 seconds.', status: 429, code: 'over_email_send_rate_limit' }
+    await ouvrirLaConfirmation()
+    await rattacherAvecSucces()
+    expect(faux.appelsLien).toHaveLength(1)
+    expect(avisDeCreation()[0]).toContain("L'accès de ancien@exemple.fr est créé.")
+    const alerte = (await screen.findAllByRole('alert')).map((e) => e.textContent ?? '').find((t) => t.includes('bien rattaché'))
+    expect(alerte).toContain("Le compte est bien rattaché au dossier, mais le lien n'est pas parti : Trop de demandes rapprochées")
+    expect(alerte).toContain('« Envoyer un lien de réinitialisation »')
+    expect(screen.getByText('ancien@exemple.fr').closest('tr')).toBeTruthy()
+  })
+
+  it('le rattachement refusé : aucun lien ne part', async () => {
+    await ouvrirLaConfirmation()
+    await act(async () => { dansLaFenetre('Rattacher ce compte').click() })
+    await act(async () => { faux.resoudre?.(refusHttp({ error: PARTICULIER })) })
+    expect(await screen.findByText(PARTICULIER)).toBeTruthy()
+    expect(faux.appelsLien).toEqual([])
+  })
+
   it('une nouvelle soumission ferme la confirmation restée ouverte, et ne porte aucune confirmation', async () => {
     await ouvrirLaConfirmation()
     await act(async () => { fireEvent.change(screen.getByLabelText('Email du client'), { target: { value: 'autre@exemple.fr' } }) })

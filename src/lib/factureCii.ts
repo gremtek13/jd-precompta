@@ -2,6 +2,7 @@ import { estUneFactureReprise } from './facturesReprises'
 import { calculerLigne } from './montantsFacture'
 import { formatDate } from './format'
 import { motifExoneration, refusTauxPositif } from './statutTva'
+import { nomDeLEmetteur } from './nomDeLEmetteur'
 import type { ArticleExoneration, FactureEmise, NatureOperation, StatutTva } from './types'
 
 // LA FACTURE ÉLECTRONIQUE ÉMISE (ligne 28.5 de la feuille de route, étape c) : une facture validée de l'application,
@@ -138,6 +139,9 @@ export interface FactureCii {
   iban_imprime?: string | null
   bic_imprime?: string | null
   titulaire_imprime?: string | null
+  // La dénomination que la facture a figée (A7a), que le papier imprime pour l'émetteur : le nom du vendeur (BT-27) d'une
+  // facture figée depuis FACT-Q5, par la règle de l'aperçu et de l'e-mail (`nomDeLEmetteur`, bloc copié à côté de celui-ci).
+  denomination_imprimee?: string | null
 }
 
 // ── Ce que la facture a figé : ses conditions de paiement (étape A7c) ───────────────────────────────────────────────
@@ -998,7 +1002,9 @@ export function donneesDeLaFacture(
     facture,
     lignes,
     vendeur: {
-      nom: facture.emetteur_nom,
+      // Le nom que la facture imprime (FACT-Q5 (A), réponse du cabinet du 27/11/2026) : la dénomination figée d'une facture
+      // figée, sinon `emetteur_nom` — une facture d'avant s'écrit à l'octet près comme hier.
+      nom: nomDeLEmetteur(facture),
       siret: facture.emetteur_siret,
       adresse: facture.emetteur_adresse,
       ...tva,

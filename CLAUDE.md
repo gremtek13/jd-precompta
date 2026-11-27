@@ -130,7 +130,8 @@ L'expert-comptable ne se sollicite plus : ce qui manque se cherche dans les sour
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs ; réservée à un compte RATTACHÉ et à `receive-email` (clé
     secrète en `apikey`) ; le corps lu sous la borne de la lecture (10 Mio, 413), jamais en entier avant elle.
-  - `receive-email` (webhook Resend, par dossier) ; `send-email` (facture : le cabinet et le client « Ventes », trente
+  - `receive-email` (webhook Resend, par dossier ; au-delà de `PLAFOND_DES_LECTURES_PAR_JOUR` (100) pièces jointes lues par
+    dossier et par jour de Paris, ou sur un compte illisible, la pièce jointe se dépose sans lecture, RECEP-Q1) ; `send-email` (facture : le cabinet et le client « Ventes », trente
     e-mails par dossier et par jour de Paris pour un client ; relance de pièces : le cabinet seul ; relance d'une
     facture en retard : le cabinet et le client « Ventes » (MEG3-Q3), dans le même plafond) ; une facture figée et sa
     relance nomment la dénomination figée (`lib/nomDeLEmetteur.ts`, copié, FACT-Q2), l'e-mail d'un avoir cite sa facture,
@@ -452,7 +453,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Créer un accès ne touche jamais au mot de passe d'un compte existant** (décision du cabinet du 10/10/2026) :
   `compte: "cree"` ou `"existant"` ; d'un compte d'ailleurs, le 409 dit qu'il existe, rien de plus, et l'onglet Accès le
   rattache après une confirmation qui nomme l'adresse (le marqueur, puis le booléen `true` seul), jamais un membre d'un
-  cabinet ni un super-administrateur (23-Q2) ; l'équipe n'accueille pas un compte client d'un autre cabinet, sous une
+  cabinet ni un super-administrateur (23-Q2), la fenêtre disant que son mot de passe a pu être choisi ailleurs et envoyant
+  le lien « Mot de passe oublié » dans le même geste, la case cochée d'emblée, un échec qui ne défait rien (ACCES-Q1) ; l'équipe n'accueille pas un compte client d'un autre cabinet, sous une
   phrase qui ne le dit pas (23Q2-Q2) ; une lecture qui dit un compte connu lit son erreur (500, rien d'écrit) → « LA
   CRÉATION D'UN ACCÈS NE CHANGE PLUS LE MOT DE PASSE D'UN COMPTE EXISTANT », « UN COMPTE QUE LE CABINET NE CONNAÎT PAS
   SE RATTACHE APRÈS UNE CONFIRMATION », « L'ÉQUIPE N'ACCUEILLE PAS LE CLIENT D'UN AUTRE CABINET ».
@@ -1476,7 +1478,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   une case (`numero_tva_attribue`) ; sans elle, ses factures sans TVA ne partent pas (G1.47).
 - **Le générateur CII** refuse avant le clic → « LA FACTURE ÉLECTRONIQUE S'ÉCRIT EN CII ». Depuis A7c (06/11/2026),
   une facture figée lui donne ses seules valeurs figées — TVA, unité et référence des lignes, bon de commande, RIB
-  (BG-16 sous le moyen préféré, le code 1 sans moyen), conditions de paiement de `conditionsFigees`, celles du papier —
+  (BG-16 sous le moyen préféré, le code 1 sans moyen), conditions de paiement de `conditionsFigees`, celles du papier, le nom du vendeur (BT-27) par
+  `nomDeLEmetteur`, copié à côté du générateur (FACT-Q5) —
   et une facture d'avant s'écrit à l'octet près comme hier → « LA FACTURE ÉLECTRONIQUE LIT CE QUE LA FACTURE A FIGÉ
   (A7C, LIGNE 28.55) ». **Une facture validée est
   figée en base** ; la numérotation par `enregistrer_facture` seule → « UNE FACTURE VALIDÉE SE FIGE EN BASE ». Depuis

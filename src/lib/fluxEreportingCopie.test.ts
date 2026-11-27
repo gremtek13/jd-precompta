@@ -24,17 +24,18 @@ import type { DonneesFrr, FuseauFrr } from './fluxEreporting'
 //
 // Et le garde mord : des défauts plantés le font tomber.
 
-type Nom = 'montantsFacture' | 'statutTva' | 'factureCii' | 'fluxEreporting'
+type Nom = 'montantsFacture' | 'statutTva' | 'nomDeLEmetteur' | 'factureCii' | 'fluxEreporting'
 
 const lib = (fichier: string) => readFileSync(new URL(fichier, import.meta.url), 'utf8')
 const SOURCES: Record<Nom, string> = {
   montantsFacture: lib('./montantsFacture.ts'),
   statutTva: lib('./statutTva.ts'),
+  nomDeLEmetteur: lib('./nomDeLEmetteur.ts'),
   factureCii: lib('./factureCii.ts'),
   fluxEreporting: lib('./fluxEreporting.ts'),
 }
 // L'ordre de la fonction : chaque bloc après ceux qu'il lit.
-const ORDRE: Nom[] = ['montantsFacture', 'statutTva', 'factureCii', 'fluxEreporting']
+const ORDRE: Nom[] = ['montantsFacture', 'statutTva', 'nomDeLEmetteur', 'factureCii', 'fluxEreporting']
 
 const debut = (nom: Nom) => `// ── DÉBUT COPIE ${nom} ─`
 const fin = (nom: Nom) => `// ── FIN COPIE ${nom} ─`

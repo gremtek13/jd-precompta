@@ -1,7 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { CONTRATS, DEFAUTS_CONNUS, jugerScenario, type ContratFonction, type Contexte } from '../test/contratsFonctions'
+import {
+  CONTRATS, DEFAUTS_CONNUS, jugerScenario, LECTURES_AU_BORD, LECTURES_AU_PLAFOND, LECTURES_DES_TROIS_SOURCES, LECTURES_HORS_DU_COMPTE,
+  LECTURES_ILLISIBLES, type ContratFonction, type Contexte,
+} from '../test/contratsFonctions'
 import { CLE_PUBLIABLE, URL_PROJET, muter, prechauffer, slugsDesFonctions, sourceDe } from '../test/fonctionsEdge'
 
 // LES EDGE FUNCTIONS APPELÉES EN HTTP, DANS LA SUITE (ligne 23 de la feuille de route).
@@ -495,6 +498,48 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     slug: 'receive-email', quoi: 'le filtre du domaine de collecte retiré',
     remplacements: [['    .filter((adresse) => adresse.endsWith(suffixe))\n', '']],
     scenario: 'plusieurs destinataires, l’adresse de collecte en second : la pièce jointe va au dossier qu’elle désigne',
+  },
+  // LE PLAFOND DES LECTURES AUTOMATIQUES (RECEP-Q1 (A), 27/11/2026) : le plafond ignoré, décalé d'un cran, ouvert sur un compte
+  // illisible, le compte qui n'avance pas dans l'e-mail, et chacun des filtres du compte retiré.
+  {
+    slug: 'receive-email', quoi: 'le plafond des lectures ignoré',
+    remplacements: [['        if (lectures === null || lectures >= PLAFOND_DES_LECTURES_PAR_JOUR) {', '        if (false) {']],
+    scenario: LECTURES_AU_PLAFOND,
+  },
+  {
+    slug: 'receive-email', quoi: 'le plafond décalé d’un cran (la centième lecture du jour de trop)',
+    remplacements: [['lectures >= PLAFOND_DES_LECTURES_PAR_JOUR) {', 'lectures > PLAFOND_DES_LECTURES_PAR_JOUR) {']],
+    scenario: LECTURES_AU_PLAFOND,
+  },
+  {
+    slug: 'receive-email', quoi: 'un compte illisible qui laisse lire (le côté ouvert)',
+    remplacements: [['        if (lectures === null || lectures >= PLAFOND_DES_LECTURES_PAR_JOUR) {', '        if (lectures !== null && lectures >= PLAFOND_DES_LECTURES_PAR_JOUR) {']],
+    scenario: LECTURES_ILLISIBLES,
+  },
+  {
+    slug: 'receive-email', quoi: 'le compte qui n’avance pas dans l’e-mail',
+    remplacements: [['          lectures++\n', '']],
+    scenario: LECTURES_AU_BORD,
+  },
+  {
+    slug: 'receive-email', quoi: 'le compte des pièces sans le jour',
+    remplacements: [['.eq("source", "email").gte("created_at", debut).lt("created_at", fin)', '.eq("source", "email")']],
+    scenario: LECTURES_HORS_DU_COMPTE,
+  },
+  {
+    slug: 'receive-email', quoi: 'le compte des pièces sans leur origine',
+    remplacements: [['.eq("dossier_id", dossierId).eq("source", "email")', '.eq("dossier_id", dossierId)']],
+    scenario: LECTURES_HORS_DU_COMPTE,
+  },
+  {
+    slug: 'receive-email', quoi: 'le compte des bordereaux sans leur raison',
+    remplacements: [['.eq("raison", "bordereau")', '']],
+    scenario: LECTURES_HORS_DU_COMPTE,
+  },
+  {
+    slug: 'receive-email', quoi: 'les documents hors du compte',
+    remplacements: [['[pieces.count, documents.count, bordereaux.count]', '[pieces.count, 0, bordereaux.count]']],
+    scenario: LECTURES_DES_TROIS_SOURCES,
   },
   // LA TRACE D'UNE PIÈCE JOINTE ÉCARTÉE (ligne 22.7) : jetée, mal écrite, instable au rejeu, tirée du poids au lieu des
   // identifiants, ou gardant l'identifiant de Resend tel quel ; et son refus par la base, tu.
