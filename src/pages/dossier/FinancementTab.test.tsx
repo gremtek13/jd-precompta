@@ -976,7 +976,7 @@ describe('FinancementTab — les emprunts et le relevé', () => {
   }
   function mouvement(o: Partial<LigneBancaire>): LigneBancaire {
     return {
-      id: 'l', dossier_id: 'd', date: '2025-03-06', libelle: 'PRLV ECHEANCE PRET', libelle_brut: null, montant: -540,
+      id: 'l', dossier_id: 'd', compte_bancaire_id: 'cb-essai', date: '2025-03-06', libelle: 'PRLV ECHEANCE PRET', libelle_brut: null, montant: -540,
       statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       source_fichier: null, emprunt_id: 'emp-1', emprunt_echeance: 2, emprunt_interets: 34.55, emprunt_assurance: 21.03,
       ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2025-03-06T09:00:00Z', encaissements_de_factures: false, ...o,
@@ -1336,7 +1336,7 @@ describe('FinancementTab — une échéance de cotisation payée par le relevé'
   }
   function prelevement(o: Partial<LigneBancaire> = {}): LigneBancaire {
     return {
-      id: 'l-passee', dossier_id: 'd', date: '2026-08-20', libelle: 'PRLV URSSAF', montant: -500, statut: 'rapprochee',
+      id: 'l-passee', dossier_id: 'd', compte_bancaire_id: 'cb-essai', date: '2026-08-20', libelle: 'PRLV URSSAF', montant: -500, statut: 'rapprochee',
       piece_id: null, cotisation_id: 'c-passee', categorie_id: null, taux_tva: null, emprunt_id: null,
       emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
       reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,

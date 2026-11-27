@@ -207,7 +207,7 @@ function piece(o: Partial<Piece> = {}): Piece {
 // le jeu d'essai à la table.
 function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
-    id: 'l1', dossier_id: 'dossier-de-test', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
+    id: 'l1', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
     montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     prelevement_personnel: false, source_fichier: null, libelle_brut: null,

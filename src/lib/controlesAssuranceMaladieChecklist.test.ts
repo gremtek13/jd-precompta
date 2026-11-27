@@ -26,7 +26,7 @@ const IDS = [
 
 function ligne(o: Partial<LigneBancaire>): LigneBancaire {
   return {
-    id: 'l', dossier_id: 'd1', date: '2026-03-04', libelle: 'VIR CPAM 75 FICTIF', montant: 123.45, statut: 'non_rapprochee', piece_id: null,
+    id: 'l', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-03-04', libelle: 'VIR CPAM 75 FICTIF', montant: 123.45, statut: 'non_rapprochee', piece_id: null,
     cotisation_id: null, categorie_id: null, taux_tva: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
     emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
     prelevement_personnel: false, source_fichier: 'releve.csv', libelle_brut: null, id_externe: null,

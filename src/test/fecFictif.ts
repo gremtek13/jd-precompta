@@ -74,7 +74,7 @@ export function composerLeFecFictif(choix: ChoixChampsBnc): FecFictif {
   const lignes: LigneBancaire[] = MOUVEMENTS.map((x, i) => {
     const k = x.classement
     return {
-      id: `00000000-0000-4000-8002-${String(i).padStart(12, '0')}`, dossier_id: D, date: x.date, libelle: x.libelle, montant: x.montant,
+      id: `00000000-0000-4000-8002-${String(i).padStart(12, '0')}`, dossier_id: D, compte_bancaire_id: 'cb-essai', date: x.date, libelle: x.libelle, montant: x.montant,
       statut: k.type === 'personnel' ? 'ignoree' : 'rapprochee',
       piece_id: k.type === 'piece' ? k.pieceId : null, cotisation_id: k.type === 'cotisation' ? k.cotisationId : null,
       categorie_id: k.type === 'categorie' ? k.categorie.id : null, taux_tva: null, prelevement_personnel: k.type === 'personnel',

@@ -159,7 +159,7 @@ describe('absenceFec', () => {
 })
 
 const ligneBancaire = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-  id: 'l1', dossier_id: 'd1', date: '2026-03-12', libelle: 'PRLV SEPA TRANSMEDICAL',
+  id: 'l1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-03-12', libelle: 'PRLV SEPA TRANSMEDICAL',
   montant: -100, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
@@ -611,7 +611,7 @@ describe('pisteAudit — la liquidation de la TVA', () => {
 
   it('son paiement est un mouvement justifié par le relevé', () => {
     const prelevement = {
-      id: 'l-tva', dossier_id: 'd1', date: '2026-04-20', libelle: 'PRLV DGFIP TVA', montant: -79, statut: 'rapprochee',
+      id: 'l-tva', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-04-20', libelle: 'PRLV DGFIP TVA', montant: -79, statut: 'rapprochee',
       piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
       reglement_groupe: false, compte_bilan: null, declaration_tva_id: 'q1', id_externe: null,

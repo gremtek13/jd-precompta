@@ -4,7 +4,7 @@ import { restesAReglerDesPieces } from './controles'
 import { formatMoney } from './format'
 import { AUCUN_CANDIDAT } from './mouvementsDesVentes'
 import { SANS_FACTURE_SOURCE } from '../test/ventesFacturees'
-import { paiementsDesPieces, type PaiementsDesPieces, type PartPayeeParLaCaisse } from './rattachement'
+import { paiementsDesPieces, type LignePayante, type PaiementsDesPieces, type PartPayeeParLaCaisse } from './rattachement'
 import { justificatifPossible } from './reglesAffectation'
 import { refusReglementGroupe, refusSecondPaiement, rejetAccepte } from './reglementGroupe'
 import {
@@ -27,7 +27,7 @@ const piece = (o: Partial<Piece> = {}): Piece => ({
 })
 
 const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-  id: 'l', dossier_id: 'd', date: '2025-12-20', libelle: 'PRLV SEPA ASSUREUR FICTIF', montant: -1200, statut: 'rapprochee',
+  id: 'l', dossier_id: 'd', compte_bancaire_id: 'cb-essai', date: '2025-12-20', libelle: 'PRLV SEPA ASSUREUR FICTIF', montant: -1200, statut: 'rapprochee',
   piece_id: 'prime', cotisation_id: null, categorie_id: null, taux_tva: null, emprunt_id: null, emprunt_echeance: null,
   emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
   declaration_tva_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null, id_externe: null,
@@ -39,9 +39,16 @@ const REJET = ligne({ id: 'rejet', date: '2025-12-28', montant: 1200, libelle: '
 const REPRISE = ligne({ id: 'reprise', date: '2026-01-05', montant: -1200, statut: 'non_rapprochee', piece_id: null })
 const rapproche = (l: LigneBancaire): LigneBancaire => ({ ...l, statut: 'rapprochee', piece_id: 'prime' })
 
-function paiements(lignes: readonly LigneBancaire[], caisse: readonly PartPayeeParLaCaisse[] = []): PaiementsDesPieces {
+function paiements(lignes: readonly LignePayante[], caisse: readonly PartPayeeParLaCaisse[] = []): PaiementsDesPieces {
   return paiementsDesPieces(lignes, [], [], caisse)
 }
+
+// Un mouvement lu sans son compte bancaire, comme une lecture qui ne le demande pas (les badges des justificatifs) : la règle
+// d'avant MCB3.
+const sansCompte = (l: LigneBancaire): LignePayante => ({
+  id: l.id, piece_id: l.piece_id, date: l.date, montant: l.montant, statut: l.statut, reglement_groupe: l.reglement_groupe,
+  encaissements_de_factures: l.encaissements_de_factures,
+})
 
 const resume = (...montants: number[]) => montants.map((montant, i) => ({ id: `m${i}`, montant }))
 
@@ -305,8 +312,8 @@ describe('MCB3 — le rejet ne défait qu’un paiement de son compte', () => {
   })
 
   it('sans compte, comme hier — et le paiement ne porte la clé que si la ligne la porte', () => {
-    expect(Object.keys(paiements([DEBIT]).get('prime')![0])).not.toContain('compte_bancaire_id')
-    expect(piecesDuRejet(REJET, [piece()], paiements([{ ...DEBIT, compte_bancaire_id: 'A' }]), new Set())).toHaveLength(1)
-    expect(piecesDuRejet({ ...REJET, compte_bancaire_id: 'B' }, [piece()], paiements([DEBIT]), new Set())).toHaveLength(1)
+    expect(Object.keys(paiements([sansCompte(DEBIT)]).get('prime')![0])).not.toContain('compte_bancaire_id')
+    expect(piecesDuRejet(sansCompte(REJET), [piece()], paiements([{ ...DEBIT, compte_bancaire_id: 'A' }]), new Set())).toHaveLength(1)
+    expect(piecesDuRejet({ ...REJET, compte_bancaire_id: 'B' }, [piece()], paiements([sansCompte(DEBIT)]), new Set())).toHaveLength(1)
   })
 })

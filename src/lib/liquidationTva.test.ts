@@ -47,7 +47,7 @@ function declaration(o: Partial<DeclarationTva> = {}): DeclarationTva {
 
 function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
-    id: 'm1', dossier_id: 'd1', date: '2026-04-20', libelle: 'PRLV DGFIP TVA', montant: -79,
+    id: 'm1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-04-20', libelle: 'PRLV DGFIP TVA', montant: -79,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,

@@ -220,7 +220,7 @@ const FRONTIERES: (string | null)[] = [null, '2025-03-09', '2025-03-10', '2025-0
 // Un mouvement rapproché de la pièce : il DATE l'écriture en trésorerie, et appelle un RÈGLEMENT en
 // engagement.
 const paiement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-  id: 'l1', dossier_id: 'd1', date: '2025-04-02', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
+  id: 'l1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2025-04-02', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   created_at: '2025-04-02T09:00:00Z', encaissements_de_factures: false, ...o,
@@ -674,17 +674,17 @@ describe.each(PLANS_DES_GARDES)('agent-comptable / analyserEcritures (copie dép
     // crédit classé par ses encaissements paie un exemplaire, celui d'une pièce que paie aussi un acompte compris.
     expect(enObjet(paiementsDesPieces(lignes, parts, encaissees, []))).toEqual({
       p1: [
-        { id: 'a', date: '2025-04-01', montant: -20, origine: 'rapprochement' },
-        { id: 'g', date: '2025-04-01', montant: -60, origine: 'groupe' },
-        { id: 'b', date: '2025-05-02', montant: -40, origine: 'rapprochement' },
+        { compte_bancaire_id: 'cb-essai', id: 'a', date: '2025-04-01', montant: -20, origine: 'rapprochement' },
+        { compte_bancaire_id: 'cb-essai', id: 'g', date: '2025-04-01', montant: -60, origine: 'groupe' },
+        { compte_bancaire_id: 'cb-essai', id: 'b', date: '2025-05-02', montant: -40, origine: 'rapprochement' },
       ],
-      p2: [{ id: 'g', date: '2025-04-01', montant: -200, origine: 'groupe' }],
+      p2: [{ compte_bancaire_id: 'cb-essai', id: 'g', date: '2025-04-01', montant: -200, origine: 'groupe' }],
       p4: [
-        { id: 'ac', date: '2025-03-28', montant: 30, origine: 'rapprochement' },
-        { id: 'vm', date: '2025-04-08', montant: 90, origine: 'encaissements' },
+        { compte_bancaire_id: 'cb-essai', id: 'ac', date: '2025-03-28', montant: 30, origine: 'rapprochement' },
+        { compte_bancaire_id: 'cb-essai', id: 'vm', date: '2025-04-08', montant: 90, origine: 'encaissements' },
       ],
-      p5: [{ id: 'vm', date: '2025-04-08', montant: 120, origine: 'encaissements' }],
-      p6: [{ id: 'vp', date: '2025-04-11', montant: 75, origine: 'rapprochement' }],
+      p5: [{ compte_bancaire_id: 'cb-essai', id: 'vm', date: '2025-04-08', montant: 120, origine: 'encaissements' }],
+      p6: [{ compte_bancaire_id: 'cb-essai', id: 'vp', date: '2025-04-11', montant: 75, origine: 'rapprochement' }],
     })
   })
 
@@ -1578,7 +1578,7 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
     const derivee = entreesSous(extraire(seuilSansArrondi(), plan), plan)
     const p = piece({ id: 'p1', montant_ttc: 256.16 })
     const paye: LigneBancaire[] = [{
-      id: 'l1', dossier_id: 'd1', date: '2025-04-02', libelle: 'PRLV', montant: -251.16, statut: 'rapprochee',
+      id: 'l1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2025-04-02', libelle: 'PRLV', montant: -251.16, statut: 'rapprochee',
       piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
       created_at: '2025-04-02T09:00:00Z',

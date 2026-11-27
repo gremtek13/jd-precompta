@@ -64,7 +64,7 @@ const cotisation = (o: Partial<CotisationDeclaree> = {}): CotisationDeclaree => 
   montant_autres_impots: 20, previsionnel: false, created_at: '2026-01-05T09:00:00Z', paiement_personnel_le: null, ...o,
 })
 const mouvement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-  id: 'l1', dossier_id: 'd1', date: '2026-03-05', montant: -500, libelle: 'PRLV URSSAF', libelle_brut: null, statut: 'rapprochee',
+  id: 'l1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-03-05', montant: -500, libelle: 'PRLV URSSAF', libelle_brut: null, statut: 'rapprochee',
   piece_id: null, cotisation_id: 'k1', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
   compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-03-06T09:00:00Z', encaissements_de_factures: false, ...o,

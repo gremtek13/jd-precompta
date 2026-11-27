@@ -29,7 +29,7 @@ function piece(o: Partial<Piece> = {}): Piece {
 
 function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
-    id: 'l1', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV FOURNISSEUR', montant: -1000,
+    id: 'l1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-01-05', libelle: 'PRLV FOURNISSEUR', montant: -1000,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: '2026-01-06T09:00:00Z', encaissements_de_factures: false, ...o,
@@ -184,8 +184,8 @@ describe('paiementsDesPieces', () => {
     const parPiece = paiementsDesPieces(lignes, [], [], [])
     expect([...parPiece.keys()].sort()).toEqual(['p1', 'p2'])
     expect(parPiece.get('p1')).toEqual([
-      { id: 'a', date: '2026-01-05', montant: -1000, origine: 'rapprochement' },
-      { id: 'b', date: '2026-02-01', montant: -1000, origine: 'rapprochement' },
+      { compte_bancaire_id: 'cb-essai', id: 'a', date: '2026-01-05', montant: -1000, origine: 'rapprochement' },
+      { compte_bancaire_id: 'cb-essai', id: 'b', date: '2026-02-01', montant: -1000, origine: 'rapprochement' },
     ])
   })
 
@@ -198,8 +198,8 @@ describe('paiementsDesPieces', () => {
       { ligne_bancaire_id: 'g', piece_id: 'p2', montant: 100 },
     ]
     const parPiece = paiementsDesPieces([groupe], parts, [], [])
-    expect(parPiece.get('p1')).toEqual([{ id: 'g', date: '2026-03-10', montant: -1000, origine: 'groupe' }])
-    expect(parPiece.get('p2')).toEqual([{ id: 'g', date: '2026-03-10', montant: 100, origine: 'groupe' }])
+    expect(parPiece.get('p1')).toEqual([{ compte_bancaire_id: 'cb-essai', id: 'g', date: '2026-03-10', montant: -1000, origine: 'groupe' }])
+    expect(parPiece.get('p2')).toEqual([{ compte_bancaire_id: 'cb-essai', id: 'g', date: '2026-03-10', montant: 100, origine: 'groupe' }])
   })
 
   it('réunit une part et un rapprochement simple de la même pièce, triés par date', () => {
@@ -264,7 +264,7 @@ describe('paiementsDesPieces', () => {
 
   it('rend la part d’un virement mixte comme un paiement de l’exemplaire, à la date du mouvement et de son montant', () => {
     const parPiece = paiementsDesPieces([mixte()], [], [{ ligne_bancaire_id: 'mx', piece_id: 'p1', montant: 120 }], [])
-    expect(parPiece.get('p1')).toEqual([{ id: 'mx', date: '2027-01-08', montant: 120, origine: 'encaissements' }])
+    expect(parPiece.get('p1')).toEqual([{ compte_bancaire_id: 'cb-essai', id: 'mx', date: '2027-01-08', montant: 120, origine: 'encaissements' }])
     expect([...piecesPayees(parPiece)]).toEqual(['p1'])
   })
 

@@ -212,20 +212,29 @@ export interface ControleReleveBancaire {
   coherent: boolean
   periode_debut: string | null
   periode_fin: string | null
-  // Le compte bancaire du relevé (MCB1, migration `comptes_bancaires`, en production depuis le 12/11/2026) : NOT NULL en base.
-  // Encore FACULTATIF ici, `COMPTES_BANCAIRES_PREVUS` levé le 27/11/2026 : les lectures par liste de colonnes ne le demandent
-  // pas toutes, et un absent n'est pas un nul. Le rendre obligatoire, comme ce commentaire l'annonçait pour la levée, est un lot
-  // à part (mesuré le 27/11/2026 : 138 erreurs de type, dont quatre lectures de l'application et des dizaines de jeux d'essai).
-  compte_bancaire_id?: string
+  // Le compte bancaire du relevé (MCB1, migration `comptes_bancaires`, en production depuis le 12/11/2026) : NOT NULL en base,
+  // posé par le déclencheur quand l'insertion ne le dit pas et que le dossier n'a qu'un compte. OBLIGATOIRE ici depuis le
+  // 27/11/2026 : ce type décrit la table. Une lecture par liste de colonnes qui ne le demande pas — ou ne le demande que
+  // `COMPTES_BANCAIRES_PREVUS` levé — ne lit pas une ligne entière : son type le dit (`Pick`, `Omit`, `CompteBancaireSiDemande`),
+  // et un absent n'est jamais un compte inventé.
+  compte_bancaire_id: string
   created_at: string
 }
+
+/**
+ * Le compte bancaire d'un mouvement ou d'un relevé, pour un module qui le lit d'une lecture qui ne le demande que le drapeau
+ * `COMPTES_BANCAIRES_PREVUS` levé (lib/comptesBancaires.ts) : absent drapeau baissé — la colonne n'était pas en base, la
+ * nommer faisait échouer la lecture —, jamais inventé. Le module qui le reçoit dit ce que vaut un absent (le plus souvent : la
+ * règle d'avant MCB, au caractère près). La ligne de la table, elle, le porte toujours (`LigneBancaire`, `ControleReleveBancaire`).
+ */
+export type CompteBancaireSiDemande = Partial<Pick<LigneBancaire, 'compte_bancaire_id'>>
 
 export interface LigneBancaire {
   id: string
   dossier_id: string
-  // Le compte bancaire du mouvement (MCB1, en production depuis le 12/11/2026) : NOT NULL en base, encore facultatif ici, comme
-  // sur `ControleReleveBancaire` (sa raison là-haut).
-  compte_bancaire_id?: string
+  // Le compte bancaire du mouvement (MCB1, en production depuis le 12/11/2026) : NOT NULL en base, obligatoire ici, comme sur
+  // `ControleReleveBancaire` (sa raison là-haut).
+  compte_bancaire_id: string
   date: string
   libelle: string
   montant: number
@@ -2439,7 +2448,7 @@ export interface Contact {
   // LM3 (migration `fiche_liee_au_dossier_du_client`, en base depuis le 12/11/2026) : le dossier du client qu'une fiche du
   // dossier du cabinet désigne. Liée, la fiche n'a ni nom ni identité (`contacts_fiche_liee_sans_identite`), qui se lisent
   // du dossier (`identites_des_fiches_liees`) ; `estFicheLiee` écarte ces lignes des lecteurs d'hier, et un lecteur du nom
-  // passe par `nomDuContact` (lib/fichesLiees.ts), jamais une chaîne vide affichée comme un nom.
+  // passe par `contactNomme` (lib/fichesLiees.ts), jamais une chaîne vide affichée comme un nom.
   dossier_client_id: string | null
   /** LM3-Q1 (B) : quand la fiche a été déliée du dossier de son client, et par qui, entiers ou nuls. */
   delie_le: string | null

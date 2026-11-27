@@ -133,7 +133,7 @@ const declaration = (o: Partial<TransmissionEncaissement> = {}): TransmissionEnc
   etat: 'depose', detail: null, note: null, cree_par: null, cree_le: '2027-10-08T09:00:00Z', maj_le: '2027-10-08T09:00:00Z', ...o,
 })
 const mouvement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-  id: 'm1', dossier_id: 'd1', date: '2027-10-05', montant: 600, libelle: 'VIR SEPA ALPHA FICTIVE', libelle_brut: null,
+  id: 'm1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2027-10-05', montant: 600, libelle: 'VIR SEPA ALPHA FICTIVE', libelle_brut: null,
   statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
   source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
   reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2027-10-06T08:00:00Z', encaissements_de_factures: false, ...o,

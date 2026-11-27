@@ -119,7 +119,7 @@ function piece(o: Partial<Piece>): Piece {
 
 function ligne(o: Partial<LigneBancaire>): LigneBancaire {
   return {
-    id: 'l', dossier_id: DOSSIER, date: '2025-06-01', libelle: 'VIREMENT FICTIF', montant: 10, statut: 'non_rapprochee',
+    id: 'l', dossier_id: DOSSIER, compte_bancaire_id: 'cb-essai', date: '2025-06-01', libelle: 'VIREMENT FICTIF', montant: 10, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, emprunt_id: null, emprunt_echeance: null,
     emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
     declaration_tva_id: null, prelevement_personnel: false, source_fichier: 'releve-fictif.pdf', libelle_brut: 'VIREMENT FICTIF',

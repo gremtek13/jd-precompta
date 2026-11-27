@@ -7,7 +7,7 @@ import {
 } from './releveParCompte'
 import { moisManquantsDe } from './resteAEnvoyer'
 import { detailDesRuptures, jonctionsDesReleves, phraseDeLaRupture, rupturesDesReleves } from './suiteDesReleves'
-import type { ControleReleveBancaire, LigneBancaire } from './types'
+import type { CompteBancaireSiDemande, ControleReleveBancaire, LigneBancaire } from './types'
 
 // LE RELEVÉ JUGÉ COMPTE PAR COMPTE (MCB4) : le partage, la suite des soldes, les mois manquants (et la règle de
 // `couverture_du_releve`, confrontée au texte de sa migration), le 31 décembre par 512, le premier relevé, le rappel de janvier.
@@ -22,10 +22,13 @@ const lus = (...comptes: CompteDuReleve[]): LectureDesComptes => ({ etat: 'lus',
 const SANS: LectureDesComptes = { etat: 'sans_objet' }
 
 let n = 0
-const ligne = (compteId: string | undefined, date: string, montant: number, source_fichier: string | null = null): LigneBancaire =>
+// Un mouvement tel qu'une lecture par liste de colonnes le rend : sans compte bancaire, celle d'avant la migration.
+type MouvementLu = Pick<LigneBancaire, 'id' | 'dossier_id' | 'date' | 'libelle' | 'montant' | 'statut' | 'source_fichier'>
+  & CompteBancaireSiDemande
+const ligne = (compteId: string | undefined, date: string, montant: number, source_fichier: string | null = null): MouvementLu =>
   ({ id: `l${n++}`, dossier_id: 'd', compte_bancaire_id: compteId, date, libelle: 'x', montant, statut: 'non_rapprochee',
-    source_fichier } as LigneBancaire)
-const controle = (compteId: string | undefined, o: Partial<ControleReleveBancaire>): ControleReleveBancaire => ({
+    source_fichier })
+const controle = (compteId: string, o: Partial<ControleReleveBancaire>): ControleReleveBancaire => ({
   id: `k${n++}`, dossier_id: 'd', compte_bancaire_id: compteId, source_fichier: null, solde_initial: 0, solde_final: 0,
   somme_mouvements: 0, ecart: 0, coherent: true, periode_debut: '2025-12-01', periode_fin: '2025-12-31', created_at: '2026-01-01T00:00:00Z', ...o,
 })
@@ -76,7 +79,7 @@ describe('la suite des soldes, compte après compte', () => {
 
 describe('les mois manquants, compte par compte (la règle de couverture_du_releve)', () => {
   const ex = { annee: 2026, moisAttendus: [1, 2, 3, 4], enCours: true }
-  const mois = (lect: LectureDesComptes, lignes: LigneBancaire[]) => moisManquantsParCompte(ex, parts(releveParCompte(lect, lignes, [])))
+  const mois = (lect: LectureDesComptes, lignes: MouvementLu[]) => moisManquantsParCompte(ex, parts(releveParCompte(lect, lignes, [])))
   it('une part (drapeau baissé, un compte) : exactement moisManquantsDe', () => {
     const lignes = [ligne('P', '2026-01-05', -1), ligne('P', '2026-03-05', -1)]
     expect(mois(SANS, lignes)).toEqual({ mois: moisManquantsDe(ex, lignes), comptes: new Map() })

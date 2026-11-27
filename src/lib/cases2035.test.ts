@@ -909,7 +909,7 @@ describe('carburantSousLeBareme — le carburant sous le barème kilométrique',
     facture_id: null, vente_hors_des_factures: false, created_at: '2025-03-10T09:00:00Z', updated_at: '2025-03-10T09:00:00Z', ...o,
   })
   const mouvement = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-    id, dossier_id: 'd1', date: '2025-05-12', libelle: 'CB STATION FICTIVE', montant: -80, statut: 'rapprochee',
+    id, dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2025-05-12', libelle: 'CB STATION FICTIVE', montant: -80, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
     compte_bilan: null, declaration_tva_id: null, id_externe: null, source_fichier: 'releve-2025.pdf', libelle_brut: null,
