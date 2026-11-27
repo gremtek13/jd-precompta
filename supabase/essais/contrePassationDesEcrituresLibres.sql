@@ -424,9 +424,12 @@ begin
   select string_agg(tgname::text, ',' order by tgname collate "C") into texte
     from pg_trigger where tgrelid = 'public.ecritures_libres'::regclass and not tgisinternal;
   -- Puis, quand la frontière de la tenue est en base (OPT6, migration préparée `frontiere_de_la_tenue` : sa garde au catalogue),
-  -- ses deux déclencheurs AFTER (répétition du 27/11/2026).
+  -- ses deux déclencheurs AFTER (répétition du 27/11/2026) ; avant eux, quand la garde de la pièce qu'une écriture cite est en
+  -- base (SECU4-Q1, migration préparée `piece_d_une_ecriture_libre_dans_son_dossier` : sa garde au catalogue), la sienne.
   perform pg_temp.verdict('CP-F2. les déclencheurs : la porte, la garde de la table, puis celle de la contre-passation', texte,
     texte = '_acces_avant_les_gardes,ecritures_libres_garde,ecritures_libres_garde_de_la_contre_passation'
+      || case when to_regprocedure('public.garder_piece_d_une_ecriture_libre()') is not null
+              then ',ecritures_libres_piece_de_son_dossier' else '' end
       || case when to_regprocedure('public.garder_frontiere_de_la_tenue()') is not null
               then ',frontiere_de_la_tenue,frontiere_de_la_tenue_a_la_modification' else '' end);
   select has_function_privilege('anon', fn, 'execute')::text || has_function_privilege('authenticated', fn, 'execute')::text

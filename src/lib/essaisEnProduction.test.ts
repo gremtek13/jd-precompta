@@ -536,8 +536,10 @@ describe('les essais de la base, rejoués en production', () => {
     // `especesDuClientHorsDesReprises` et `auteurDesOuvertures` (231 à 234), `modeDeReglementDesMouvements` (240) ; aucun
     // ne cherche un semis ni le super-utilisateur, ils se jouent comme des essais de la production.
     // Vingt-quatre le 27/11/2026 : `sousDossierDansSonDossier` sorti (DOCF-Q1-B en production, 20261127055603, par l'outil ; il
-    // ne cherche aucun semis, il se joue comme un essai de la production).
-    expect(cas.length).toBe(24)
+    // ne cherche aucun semis, il se joue comme un essai de la production). Vingt-cinq le même jour :
+    // `pieceDUneEcritureLibreDansSonDossier` (SECU4-Q1, `piece_d_une_ecriture_libre_dans_son_dossier`) entré dans la famille
+    // « apres », après sa migration préparée ; SÛR au banc, sur une copie de la réplique portée à 259.
+    expect(cas.length).toBe(25)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

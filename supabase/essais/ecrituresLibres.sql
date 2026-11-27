@@ -383,12 +383,16 @@ begin
   -- La garde de la contre-passation (EL7, migration `contre_passation_des_ecritures_libres`, préparée) tire après celle de la
   -- table, quand sa migration est en base : son essai est supabase/essais/contrePassationDesEcrituresLibres.sql. Les deux
   -- déclencheurs AFTER de la frontière de la tenue (OPT6, migration préparée `frontiere_de_la_tenue`), quand elle est en base
-  -- (sa garde au catalogue) : son essai est supabase/essais/frontiereDeLaTenue.sql (répétition du 27/11/2026).
+  -- (sa garde au catalogue) : son essai est supabase/essais/frontiereDeLaTenue.sql (répétition du 27/11/2026). La garde de la
+  -- pièce qu'une écriture cite (SECU4-Q1, migration préparée `piece_d_une_ecriture_libre_dans_son_dossier`), quand elle est en
+  -- base (sa garde au catalogue) : son essai est supabase/essais/pieceDUneEcritureLibreDansSonDossier.sql.
   perform pg_temp.verdict('EL-F1. la RLS, la lecture et la restauration, la porte devant la garde', texte,
     texte = 'true ecritures_libres_lecture:r,ecritures_libres_restauration:a _acces_avant_les_gardes,ecritures_libres_garde'
       || case when exists (select 1 from pg_attribute a where a.attrelid = 'public.ecritures_libres'::regclass
                              and a.attname = 'contre_passe_id' and not a.attisdropped)
               then ',ecritures_libres_garde_de_la_contre_passation' else '' end
+      || case when to_regprocedure('public.garder_piece_d_une_ecriture_libre()') is not null
+              then ',ecritures_libres_piece_de_son_dossier' else '' end
       || case when to_regprocedure('public.garder_frontiere_de_la_tenue()') is not null
               then ',frontiere_de_la_tenue,frontiere_de_la_tenue_a_la_modification' else '' end);
   select has_function_privilege('anon', 'public.enregistrer_ecriture_libre(uuid, jsonb, jsonb, integer)', 'execute')::text
