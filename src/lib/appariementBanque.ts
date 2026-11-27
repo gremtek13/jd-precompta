@@ -389,6 +389,46 @@ export function candidatsPieces(
   return piecesEnFace(ligne, piecesValidees, dejaRapprochees, sources, joursTolerance).filter((p) => sensCoherent(p, ligne))
 }
 
+// LES PIÈCES PAR MONTANT, POUR UN LOT QUI INTERROGE TOUT LE RELEVÉ (le banc de charge, 27/11/2026). Le lot du rapprochement
+// automatique posait `candidatsPieces` à chaque mouvement libre, sur toutes les pièces : un produit mouvements × pièces, le
+// plus lourd calcul de l'onglet Banque sur une année de 3 000 mouvements. L'index range chaque pièce sous son montant absolu
+// au centime arrondi ; un mouvement ne regarde que les pièces de cinq centimes voisins, puis les juge par le MÊME prédicat
+// (`piecesEnFace`, puis le sens), dans l'ordre de la liste d'origine. Rien ne se perd : `montantEgal` exige
+// |(|a| − |b|)| ≤ 0,01, donc des montants en centimes à 1 près (plus l'erreur d'arrondi du produit par cent), dont les
+// arrondis diffèrent de 2 au plus. chargeEmpreintes.test.ts garde le rendu du lot à l'octet sur l'année du banc.
+interface PiecesParMontant {
+  readonly pieces: readonly Piece[]
+  readonly rangsParCentimes: ReadonlyMap<number, readonly number[]>
+}
+
+const ECART_DES_CENTIMES_VOISINS = 2
+
+function piecesParMontant(pieces: readonly Piece[]): PiecesParMontant {
+  const rangsParCentimes = new Map<number, number[]>()
+  pieces.forEach((p, rang) => {
+    if (p.montant_ttc == null) return
+    const cle = Math.round(Math.abs(p.montant_ttc) * 100)
+    const rangs = rangsParCentimes.get(cle)
+    if (rangs) rangs.push(rang)
+    else rangsParCentimes.set(cle, [rang])
+  })
+  return { pieces, rangsParCentimes }
+}
+
+/** `candidatsPieces`, sur l'index : le même rendu, dans le même ordre. */
+function candidatsPiecesDeLIndex(
+  ligne: LigneBancaire, index: PiecesParMontant, dejaRapprochees: ReadonlySet<string>, sources: FacturesSources, joursTolerance: number,
+): Piece[] {
+  const centre = Math.round(Math.abs(ligne.montant) * 100)
+  const rangs: number[] = []
+  for (let ecart = -ECART_DES_CENTIMES_VOISINS; ecart <= ECART_DES_CENTIMES_VOISINS; ecart++) {
+    for (const rang of index.rangsParCentimes.get(centre + ecart) ?? []) rangs.push(rang)
+  }
+  if (rangs.length === 0) return []
+  rangs.sort((x, y) => x - y)
+  return candidatsPieces(ligne, rangs.map((r) => index.pieces[r]), dejaRapprochees, sources, joursTolerance)
+}
+
 /**
  * LA QUESTION INVERSE : ce mouvement a-t-il PEUT-ÊTRE son justificatif au dossier ? Elle ne rapproche rien, elle retient un
  * lot (`justificatifPossible`, lib/reglesAffectation.ts) — elle se pose donc LARGE : dans la fenêtre de l'appariement
@@ -488,8 +528,9 @@ export function planRapprochementAutomatique(
   const lignesParPiece = new Map<string, number>()
   const lignesParCotisation = new Map<string, number>()
 
+  const index = piecesParMontant(piecesValidees)
   for (const ligne of lignesNonRapprochees) {
-    const pieces = candidatsPieces(ligne, piecesValidees, dejaRapprochees.pieces, sources, joursTolerance)
+    const pieces = candidatsPiecesDeLIndex(ligne, index, dejaRapprochees.pieces, sources, joursTolerance)
     const cotis = candidatsCotisations(ligne, cotisations, dejaRapprochees.cotisations, joursTolerance)
     parLignePieces.set(ligne.id, pieces)
     parLigneCotisations.set(ligne.id, cotis)

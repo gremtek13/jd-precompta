@@ -1,255 +1,63 @@
 // LE BANC DE CHARGE D'UNE ANNÉE — combien de temps prennent les calculs que les écrans refont à chaque affichage, sur une
-// année FICTIVE à l'échelle d'un praticien BNC, avant que les données réelles du premier dossier entrent (MVP-D6).
+// année FICTIVE à l'échelle d'un praticien de santé en BNC, avant que les données réelles du premier dossier entrent.
 //
 // Mode d'emploi, depuis la racine du dépôt (`tsx` n'est pas une dépendance : le lanceur passe par Vite, déjà installé) :
 //
 //     node outils/charge/lancer.mjs            # l'année N, puis 2N
 //     node outils/charge/lancer.mjs 1 2 4      # d'autres facteurs de volume
+//     node --cpu-prof --cpu-prof-dir=<dossier> outils/charge/lancer.mjs 1 --seul=piste   # une mesure, pour un profil
 //
 // (`npx tsx outils/charge/annee.mts` marche aussi là où `tsx` est installé.) Le banc n'entre pas dans `npm test` : un temps
 // mesuré dans la CI serait instable. Il est type-vérifié par `npx tsc -b` (tsconfig.app.json l'inclut), pour que chaque
 // moteur y soit appelé avec ses VRAIS paramètres obligatoires, comme l'écran qui l'appelle.
 //
-// Les données sont FICTIVES, tirées d'une graine fixe (mulberry32), sans aucun nom réel : « Fournisseur 17 », « Client 4 ».
-// Volumes de l'année N : 600 pièces (85 % de dépenses, 15 % de ventes), 1 200 mouvements dont 900 rapprochés (pièces,
-// cotisations, encaissements de factures, catégories), 150 factures sources et leurs encaissements (dossier basculé), une
-// caisse tenue 250 jours (une recette par jour, 40 sorties dont 20 paiements de pièces), 60 échéances de cotisations,
-// 10 immobilisations ; le brouillon est COMPOSÉ par les moteurs de l'application (pièces, caisse, ventes facturées), jamais
-// inventé ligne à ligne. Chaque mesure est la médiane de cinq passes, en millisecondes, après une passe de chauffe.
+// L'année vient de src/test/anneeDeCharge.ts (ses volumes en tête : 1 500 pièces, 3 000 mouvements sur deux comptes, 300
+// factures sources encaissées, une caisse, 100 journées de l'assurance maladie associées, des écritures libres) : les tests
+// d'égalité des optimisations (src/lib/chargeEmpreintes.test.ts) rejouent la même. Chaque mesure est la médiane de cinq
+// passes, en millisecondes, après une passe de chauffe. Le récit : HISTORIQUE.md, « LE BANC DE CHARGE D'UNE ANNÉE ».
 
-import { ECRITURES_LIBRES_ABSENTES } from '../../src/lib/ecrituresLibresDesExports.ts'
-import { AUCUNE_PIECE_CITEE } from '../../src/lib/facturesSources'
-import { analyserAppariements, candidatsPieces } from '../../src/lib/appariementBanque'
+import { analyseDeMaBanque, anneeDeMaBanque } from '../../src/lib/analyseDeMaBanque'
+import { analyserAppariements, candidatsPieces, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique } from '../../src/lib/appariementBanque'
+import { rapprochementDeLOnglet, associesPourLesVentes } from '../../src/lib/associationsAssuranceMaladieVue'
+import { ACCES_SANS_OBJET } from '../../src/lib/auteursVentes'
 import { bilanDeLExercice } from '../../src/lib/bilan'
-import { INVENTAIRE_DES_CONTROLES_SANS_OBJET } from '../../src/lib/inventaireDesControles'
-import { ecritureDeLOperation, soldesDeLaCaisse, premierJourNegatif, type EtatDeLaCaisse } from '../../src/lib/caisse'
+import { soldesDeLaCaisse, premierJourNegatif, type EtatDeLaCaisse } from '../../src/lib/caisse'
 import { caisseRejouee, type JourDeLaCaisseDuClient } from '../../src/lib/caisseClient'
-import { cotisationsComptees } from '../../src/lib/cotisationRapprochee'
+import { repriseEtReleveDeBanque } from '../../src/lib/caisseEcran'
 import { concordance2035 } from '../../src/lib/concordance2035'
+import { controlesDeLAssuranceMaladie, retenusDeLaChecklist, type LectureDesControles } from '../../src/lib/controlesAssuranceMaladie'
+import { operationsDeCaisseDuDossier, operationsPourLesControles, versementsDEspecesHorsDesLots } from '../../src/lib/controlesDeLaCaisse'
+import { cotisationsComptees } from '../../src/lib/cotisationRapprochee'
 import { calculerDeclaration2035 } from '../../src/lib/declaration2035'
-import { mouvementsClassesParEncaissements } from '../../src/lib/ecrituresVentesFactureesEcran'
 import { calculerCa3 } from '../../src/lib/declarationTva'
 import { doublonsProbables, piecesRegleesPourLesDoublons } from '../../src/lib/doublonsProbables'
-import { calculerBalance, ecrituresAGenerer, piecesAComptabiliser } from '../../src/lib/ecritures'
-import { ecrituresDesVentesPourLa2035, type EncaissementDesEcritures, type FactureDesEcritures, type SourcesDesEcrituresDeVente } from '../../src/lib/ecrituresVentesFactureesEcran'
-import type { LigneDeFacture } from '../../src/lib/encaissementsFactures'
+import { duContrePaye } from '../../src/lib/duContrePaye'
+import { calculerBalance } from '../../src/lib/ecritures'
+import { ecrituresDesVentesPourLa2035, etatsDesVentesFacturees, mouvementsClassesParEncaissements } from '../../src/lib/ecrituresVentesFactureesEcran'
+import { AUCUNE_PIECE_CITEE } from '../../src/lib/facturesSources'
 import { CHAMPS_BNC_NON_EXPORTES, formaterFec, numeroterFec } from '../../src/lib/fec'
+import { INVENTAIRE_DES_CONTROLES_SANS_OBJET } from '../../src/lib/inventaireDesControles'
+import { INVENTAIRE_SANS_OBJET } from '../../src/lib/inventaireDeLaValidation'
 import { lettrages } from '../../src/lib/lettrage'
+import { candidatsDeLaVente, horsDesLotsAvecLesCandidats, mouvementsHorsDesLots, ventesDuReleve } from '../../src/lib/mouvementsDesVentes'
+import { horsDesNotesDeLExploitant, notesRembourseesPeutEtre, RAISON_REMBOURSEMENT_D_UNE_NOTE } from '../../src/lib/noteDeFraisEnTresorerie'
+import { paiementsParLaCaisseDuDossier } from '../../src/lib/paiementParLaCaisse'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { pisteAudit } from '../../src/lib/pisteAudit'
 import { pointsDeLaChecklist } from '../../src/lib/pointsDeLaChecklist'
 import { prealablesDeValidation } from '../../src/lib/prealablesValidation'
+import { paiementsDesPieces, piecesPayees } from '../../src/lib/rattachement'
+import { recettesDeCaisseDuDossier, recettesPourLesMoteurs } from '../../src/lib/recettesDeCaisse'
+import { justificatifPossible, planAffectationParRegles } from '../../src/lib/reglesAffectation'
+import { jonctionsParCompte, releveParCompte } from '../../src/lib/releveParCompte'
 import { AUCUNE_SAISIE_2035 } from '../../src/lib/saisies2035'
-import { INVENTAIRE_SANS_OBJET } from '../../src/lib/inventaireDeLaValidation'
-import { ventesDeLaChecklist } from '../../src/lib/ventesDeLaChecklist'
-import { etatsDesVentesFacturees } from '../../src/lib/ecrituresVentesFactureesEcran'
-import { paiementsDesPieces } from '../../src/lib/rattachement'
 import { calculerSituationIntermediaire } from '../../src/lib/situationIntermediaire'
-import type { Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire, OperationCaisse, Piece } from '../../src/lib/types'
-import { SANS_ACOMPTE, ventesFacturees, type PartVendue } from '../../src/lib/ventesFacturees'
-import { lignesAuBrouillon, ecrituresDesVentesFacturees } from '../../src/lib/ecrituresVentesFacturees'
-import { recettesDeCaisseDuDossier, recettesPourLesMoteurs, type CaisseLue } from '../../src/lib/recettesDeCaisse'
-import { operationsDeCaisseDuDossier, operationsPourLesControles } from '../../src/lib/controlesDeLaCaisse'
-import { paiementsParLaCaisseDuDossier } from '../../src/lib/paiementParLaCaisse'
-import { NON_VALIDEE } from '../../src/test/ecritures'
-import { modeleDeTest } from '../../src/test/modeles'
-import { factureVendue } from '../../src/test/ventesFacturees'
-
-const D = 'd-charge'
-const ANNEE = 2026
-const MODELE = modeleDeTest('tresorerie')
-const PLAN = MODELE.plan
-// Un seul compte bancaire, la banque du rôle (MCB5) : l'écriture d'hier.
-const BANQUES = { cas: 'role', compte: PLAN.banque, connus: null } as const
-
-// ── Le tirage, d'une graine fixe ─────────────────────────────────────────────────────────────────────────────────────
-function mulberry32(graine: number): () => number {
-  let a = graine >>> 0
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0
-    let t = a
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-const deux = (n: number) => String(n).padStart(2, '0')
-const centimes = (x: number) => Math.round(x * 100) / 100
-const uuid = (genre: number, n: number) => `00000000-0000-4000-8${deux(genre % 100).padStart(3, '0')}-${String(n).padStart(12, '0')}`
-
-function jourDeLAnnee(rang: number): string {
-  const d = new Date(Date.UTC(ANNEE, 0, 1 + rang))
-  return `${d.getUTCFullYear()}-${deux(d.getUTCMonth() + 1)}-${deux(d.getUTCDate())}`
-}
-
-// ── Les catégories, neutres ──────────────────────────────────────────────────────────────────────────────────────────
-const CATEGORIES: Categorie[] = [
-  ['achats', 'Achats', '606100', 'Achats'],
-  ['fournitures', 'Fournitures de bureau', '606400', 'Fournitures de bureau'],
-  ['loyers', 'Loyers', '613200', 'Loyers et charges locatives'],
-  ['honoraires', 'Honoraires', '622600', 'Honoraires ne constituant pas des rétrocessions'],
-  ['telecom', 'Télécommunications', '626000', 'Frais postaux et de télécommunications'],
-  ['frais_fin', 'Frais bancaires', '627000', 'Frais financiers'],
-  ['divers', 'Divers', '618000', 'Autres frais divers de gestion'],
-  ['recettes', 'Recettes', '706000', 'Recettes'],
-].map(([code, libelle, compte, poste], i): Categorie => ({
-  id: `cat-${code}`, dossier_id: null, code, libelle, ordre: i, compte_comptable: compte, poste_2035: poste,
-}))
-const DEPENSES = CATEGORIES.filter((c) => c.code !== 'recettes')
-const RECETTES = CATEGORIES.find((c) => c.code === 'recettes')!
-
-// ── Une année, au facteur de volume `k` ──────────────────────────────────────────────────────────────────────────────
-interface Annee {
-  pieces: Piece[]
-  lignes: LigneBancaire[]
-  cotisations: CotisationDeclaree[]
-  immobilisations: Immobilisation[]
-  operations: OperationCaisse[]
-  factures: FactureDesEcritures[]
-  lignesDeFacture: LigneDeFacture[]
-  encaissements: EncaissementDesEcritures[]
-  parts: PartVendue[]
-}
-
-function piece(o: Partial<Piece> & Pick<Piece, 'id'>): Piece {
-  return {
-    dossier_id: D, uploaded_by: null, source: 'upload', storage_path: `${D}/${o.id}.pdf`, nom_fichier: 'piece.pdf', storage_hash: null,
-    date_piece: `${ANNEE}-01-01`, tiers: null, montant_ht: 0, montant_tva: 0, montant_ttc: 0, devise: 'EUR',
-    montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
-    statut: 'validee', confiance: 'haute', superpdp_invoice_id: null, flux_hote: null, flux_id: null, lisible_path: null,
-    identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false, updated_at: `${ANNEE}-01-01T10:00:00Z`,
-    created_at: `${ANNEE}-01-01T10:00:00Z`, ...o,
-  }
-}
-
-function mouvement(o: Partial<LigneBancaire> & Pick<LigneBancaire, 'id'>): LigneBancaire {
-  return {
-    dossier_id: D, compte_bancaire_id: 'cb-essai', date: `${ANNEE}-01-01`, libelle: 'OPERATION', montant: 0,
-    statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
-    compte_bilan: null, declaration_tva_id: null, id_externe: null, source_fichier: 'releve.csv', libelle_brut: null,
-    created_at: `${ANNEE}-12-31T10:00:00Z`, encaissements_de_factures: false, ...o,
-  }
-}
-
-function genererAnnee(k: number, assujetti: boolean): Annee {
-  const hasard = mulberry32(20261107 + k)
-  const entre = (a: number, b: number) => a + Math.floor(hasard() * (b - a + 1))
-  const montant = (a: number, b: number) => centimes(a + hasard() * (b - a))
-  const nbPieces = 600 * k
-  const pieces: Piece[] = []
-  for (let i = 0; i < nbPieces; i++) {
-    const vente = i % 20 < 3 // 15 %
-    const ttc = vente ? montant(40, 900) : montant(5, 1500)
-    const taux = assujetti ? 0.2 : 0
-    const ht = centimes(ttc / (1 + taux))
-    const categorie = vente ? RECETTES : DEPENSES[entre(0, DEPENSES.length - 1)]
-    pieces.push(piece({
-      id: uuid(1, i), date_piece: jourDeLAnnee(entre(0, 360)), tiers: vente ? `Client ${entre(1, 80 * k)}` : `Fournisseur ${entre(1, 120 * k)}`,
-      montant_ttc: ttc, montant_ht: ht, montant_tva: centimes(ttc - ht), categorie_id: categorie.id, type_piece: vente ? 'vente' : 'achat',
-    }))
-  }
-
-  // Les mouvements : 900 rapprochés sur 1 200, au facteur près.
-  const lignes: LigneBancaire[] = []
-  let n = 0
-  const parCaisse = new Set(pieces.slice(0, 20 * k).map((p) => p.id)) // les 20 sorties de caisse qui paient une pièce
-  const payees = pieces.filter((p) => !parCaisse.has(p.id)).slice(0, 540 * k)
-  for (const p of payees) {
-    const signe = p.type_piece === 'vente' ? 1 : -1
-    const jour = Math.min(364, entre(0, 6) + Number(new Date(`${p.date_piece}T00:00:00Z`).getTime() - Date.UTC(ANNEE, 0, 1)) / 86_400_000)
-    lignes.push(mouvement({
-      id: uuid(2, n++), date: jourDeLAnnee(jour), montant: signe * (p.montant_ttc ?? 0), libelle: `CB ${p.tiers?.toUpperCase()}`,
-      statut: 'rapprochee', piece_id: p.id,
-    }))
-  }
-  const cotisations: CotisationDeclaree[] = []
-  for (let i = 0; i < 60 * k; i++) {
-    const appele = montant(150, 900)
-    const echeance = jourDeLAnnee(Math.floor((i % 60) * 6) + 2)
-    cotisations.push({
-      id: uuid(3, i), dossier_id: D, echeance, montant_appele: appele, montant_verse: appele, montant_csg_crds: centimes(appele * 0.3),
-      previsionnel: false, created_at: `${ANNEE}-01-01T10:00:00Z`, paiement_personnel_le: null,
-    })
-    lignes.push(mouvement({ id: uuid(2, n++), date: echeance, montant: -appele, libelle: 'PRLV ORGANISME SOCIAL', statut: 'rapprochee', cotisation_id: uuid(3, i) }))
-  }
-  // Les factures sources et leurs encaissements, chacune réglée par un virement classé par ses encaissements.
-  const factures: Annee['factures'] = []
-  const lignesDeFacture: LigneDeFacture[] = []
-  const encaissements: EncaissementDesEcritures[] = []
-  const parts: PartVendue[] = []
-  for (let i = 0; i < 150 * k; i++) {
-    const id = uuid(4, i)
-    const emission = jourDeLAnnee(Math.floor((i / (150 * k)) * 330))
-    const ht = montant(60, 1200)
-    const taux = assujetti ? 20 : 0
-    const ttc = centimes(ht * (1 + taux / 100))
-    factures.push({
-      ...factureVendue({ id, dossier_id: D, numero: `F${ANNEE}-${String(i + 1).padStart(4, '0')}`, date_emission: emission, tiers_nom: `Client ${i % 80}` }),
-      montant_ttc: ttc,
-    })
-    lignesDeFacture.push({ facture_id: id, ordre: 1, designation: 'Prestation', quantite: 1, prix_unitaire_ht: ht, taux_tva: taux })
-    const ligneId = uuid(2, n++)
-    const date = jourDeLAnnee(Math.min(364, Math.floor((i / (150 * k)) * 330) + entre(5, 30)))
-    lignes.push(mouvement({ id: ligneId, date, montant: ttc, libelle: 'VIR RECU', statut: 'rapprochee', encaissements_de_factures: true }))
-    const enc: EncaissementDesEcritures = {
-      id: uuid(5, i), dossier_id: D, facture_id: id, date_encaissement: date, montant: ttc, moyen: 'virement', ligne_bancaire_id: ligneId,
-      annule_id: null, cree_le: `${date}T10:00:00Z`, retire_le: null, cree_par: null, compte_contrepartie: null,
-    }
-    encaissements.push(enc)
-    parts.push({ encaissement_id: enc.id, dossier_id: D, taux, montant: ttc })
-  }
-  // Les mouvements classés par une catégorie (frais bancaires, recettes sans pièce), puis les mouvements libres.
-  while (lignes.length < 900 * k) {
-    const recette = hasard() < 0.4
-    lignes.push(mouvement({
-      id: uuid(2, n++), date: jourDeLAnnee(entre(0, 364)), montant: recette ? montant(20, 300) : -montant(1, 40),
-      libelle: recette ? 'VIR ORGANISME' : 'FRAIS TENUE DE COMPTE', statut: 'rapprochee',
-      categorie_id: recette ? RECETTES.id : 'cat-frais_fin', taux_tva: assujetti && recette ? 20 : null,
-    }))
-  }
-  // Les mouvements libres : d'abord ceux d'une pièce que rien ne paie encore (son montant, quelques jours après), comme sur
-  // un vrai relevé, puis des mouvements sans pièce.
-  const payeesIds = new Set([...payees.map((p) => p.id), ...parCaisse])
-  for (const p of pieces.filter((x) => !payeesIds.has(x.id))) {
-    const jour = Math.min(364, entre(0, 6) + (Date.parse(`${p.date_piece}T00:00:00Z`) - Date.UTC(ANNEE, 0, 1)) / 86_400_000)
-    lignes.push(mouvement({ id: uuid(2, n++), date: jourDeLAnnee(jour), montant: (p.type_piece === 'vente' ? 1 : -1) * (p.montant_ttc ?? 0), libelle: `CB ${p.tiers?.toUpperCase()}` }))
-  }
-  while (lignes.length < 1200 * k) {
-    const credit = hasard() < 0.3
-    lignes.push(mouvement({
-      id: uuid(2, n++), date: jourDeLAnnee(entre(0, 364)), montant: credit ? montant(10, 800) : -montant(5, 1500),
-      libelle: credit ? `VIR RECU ${entre(1, 500)}` : `CB MAGASIN ${entre(1, 500)}`,
-    }))
-  }
-
-  // La caisse : une recette par jour tenu (250), 40 sorties dont 20 paiements de pièces.
-  const operations: OperationCaisse[] = []
-  let o = 0
-  const operation = (x: Partial<OperationCaisse> & Pick<OperationCaisse, 'genre' | 'date' | 'montant'>): OperationCaisse => ({
-    id: uuid(6, o++), dossier_id: D, categorie_id: null, taux_tva: null, encaissements_du_jour: null, piece_id: null,
-    origine: 'cabinet', remplace_id: null, cree_le: `${x.date}T18:00:00Z`, cree_par: null, retire_le: null, retire_par: null, ...x,
-  })
-  for (let r = 0; r < 250 * k; r++) {
-    operations.push(operation({ genre: 'recette', date: jourDeLAnnee(Math.floor(r * 364 / (250 * k))), montant: montant(30, 200), categorie_id: RECETTES.id, taux_tva: assujetti ? 20 : null, encaissements_du_jour: [] }))
-  }
-  for (const id of parCaisse) {
-    const p = pieces.find((x) => x.id === id)!
-    operations.push(operation({ genre: 'paiement', date: p.date_piece ?? `${ANNEE}-06-01`, montant: p.montant_ttc ?? 0, piece_id: id }))
-  }
-  for (let s = 0; s < 20 * k; s++) operations.push(operation({ genre: 'prelevement', date: jourDeLAnnee(10 + s * Math.floor(17 / k)), montant: montant(20, 80) }))
-
-  const immobilisations: Immobilisation[] = []
-  for (let i = 0; i < 10 * k; i++) {
-    const p = pieces[30 + i]
-    immobilisations.push({
-      id: uuid(7, i), dossier_id: D, piece_id: p.id, nature_id: null, libelle: `Bien ${i + 1}`, valeur: p.montant_ttc ?? 0,
-      date_acquisition: p.date_piece ?? `${ANNEE}-01-01`, date_mise_en_service: p.date_piece, duree_annees: 5, created_at: `${ANNEE}-01-01T10:00:00Z`,
-    })
-  }
-  return { pieces, lignes, cotisations, immobilisations, operations, factures, lignesDeFacture, encaissements, parts }
-}
+import { rupturesDesReleves } from '../../src/lib/suiteDesReleves'
+import type { OperationCaisse } from '../../src/lib/types'
+import { SANS_ACOMPTE, ventesFacturees } from '../../src/lib/ventesFacturees'
+import { ventesDeLaChecklist } from '../../src/lib/ventesDeLaChecklist'
+import { virementsInternes, virementsInternesHorsDesLots } from '../../src/lib/virementsInternes'
+import { ANNEE, BANQUES, CATEGORIES, D, genererAnnee, LECTURE_DES_COMPTES, MODELE, PLAN } from '../../src/test/anneeDeCharge'
 
 // ── La mesure ────────────────────────────────────────────────────────────────────────────────────────────────────────
 function mediane<R>(passes: number, f: () => R): { ms: number; rendu: R } {
@@ -276,129 +84,189 @@ function resumer(r: unknown): string {
 function mesurer(k: number): Map<string, number | string> {
   const resultats = new Map<string, number | string>()
   const t = <R,>(nom: string, f: () => R, resume: (r: R) => string = resumer) => {
-    const { ms, rendu } = mediane(5, f)
+    if (SEUL !== null && !nom.includes(SEUL)) return
+    const { ms, rendu } = mediane(SEUL === null ? 5 : 30, f)
     resultats.set(nom, Math.round(ms * 10) / 10)
     resultats.set(`  rendu — ${nom}`, resume(rendu))
   }
 
   for (const assujetti of [false, true]) {
     const a = genererAnnee(k, assujetti)
+    resultats.set(`volumes (${assujetti ? 'assujetti' : 'exonéré'})`, `${a.pieces.length} pièces, ${a.lignes.length} mouvements, ${a.brouillon.length} lignes au brouillon, `
+      + `${a.factures.length} factures, ${a.paiementsAm.length} paiements AM`)
+    const brouillon = a.brouillon
     // La chaîne de l'onglet Clôture (pages/dossier/ClotureTab.tsx), dans son ordre, sur des lectures faites en entier.
-    const caisseLue: CaisseLue = { dossierId: D, enBase: true, lignes: a.operations, complete: true, motif: null }
-    const recettesDeCaisse = recettesPourLesMoteurs(recettesDeCaisseDuDossier(caisseLue, D, CATEGORIES, assujetti))
-    const operationsDeCaisse = operationsPourLesControles(operationsDeCaisseDuDossier(caisseLue, D))
-    const paiementsDeLaCaisse = paiementsParLaCaisseDuDossier(caisseLue, D)
+    const recettesDeCaisse = recettesPourLesMoteurs(recettesDeCaisseDuDossier(a.caisseLue, D, CATEGORIES, assujetti))
+    const etatDeLaCaisse = operationsDeCaisseDuDossier(a.caisseLue, D)
+    const operationsDeCaisse = operationsPourLesControles(etatDeLaCaisse)
+    const paiementsDeLaCaisse = paiementsParLaCaisseDuDossier(a.caisseLue, D)
     if (recettesDeCaisse === null || operationsDeCaisse === null || paiementsDeLaCaisse === null) throw new Error('La caisse fictive ne se lit pas.')
     const paiements = paiementsDesPieces(a.lignes, [], [], paiementsDeLaCaisse)
     const parts = partsDuReleve(a.lignes, CATEGORIES, [], assujetti)
     const comptees = cotisationsComptees(a.cotisations, a.lignes, MODELE.mode)
     const sourcesVentes = { dossierId: D, factures: a.factures, lignes: a.lignesDeFacture, encaissements: a.encaissements, parts: a.parts, acomptes: SANS_ACOMPTE, piecesCitees: AUCUNE_PIECE_CITEE }
     const ventes = ventesFacturees(sourcesVentes)
-    const mouvementsDesEncaissements = a.lignes.filter((l) => l.encaissements_de_factures)
-    const sourcesEcritures: SourcesDesEcrituresDeVente = {
-      dossierId: D, factures: a.factures, lignes: a.lignesDeFacture, encaissements: a.encaissements, parts: a.parts,
-      mouvements: mouvementsDesEncaissements, exemplaires: [], reprises: [], piecesCitees: AUCUNE_PIECE_CITEE,
-    }
+    const sourcesEcritures = a.sourcesEcritures
     const pourLa2035 = ecrituresDesVentesPourLa2035({
       dossierId: D, ventesParLesFactures: true, facturesSources: ventes.sources, lecture: { dossierId: D, etat: 'lue', sources: sourcesEcritures },
       mode: MODELE.mode, plan: PLAN, banques: BANQUES,
     })
     if (pourLa2035.etat !== 'pret') throw new Error(`Les écritures des ventes ne sont pas prêtes : ${pourLa2035.etat}`)
 
-    // Le brouillon, composé par les moteurs : les pièces (leur paiement par le relevé ou la caisse compris), les recettes,
-    // apports et prélèvements de la caisse, les ventes facturées.
-    const aComptabiliser = piecesAComptabiliser(a.pieces, CATEGORIES, new Map(), ventes.sources)
-    const generation = ecrituresAGenerer(D, aComptabiliser, [], assujetti, paiements, MODELE, null, BANQUES)
-    let e = 0
-    const ecriture = (x: Pick<EcritureBrouillon, 'dossier_id' | 'date' | 'compte' | 'libelle' | 'montant' | 'sens'> & Partial<EcritureBrouillon>): EcritureBrouillon => ({
-      ...NON_VALIDEE, id: uuid(8, e++), statut: 'proposee', created_at: `${ANNEE}-12-31T10:00:00Z`, piece_id: null, ligne_bancaire_id: null,
-      immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, cotisation_id: null, encaissement_id: null, facture_id: null,
-      operation_caisse_id: null, ...x,
-    })
-    const brouillon: EcritureBrouillon[] = generation.lignes.map((l) => ecriture(l))
-    for (const op of a.operations) {
-      if (op.genre === 'paiement') continue
-      const aEcrire = { genre: op.genre, date: op.date, montant: op.montant, taux_tva: op.taux_tva, categorie: op.genre === 'recette' ? RECETTES : null }
-      for (const l of ecritureDeLOperation(aEcrire, MODELE)) brouillon.push(ecriture({ dossier_id: D, date: op.date, ...l, operation_caisse_id: op.id }))
-    }
-    const composition = ecrituresDesVentesFacturees({
-      sources: { dossierId: D, factures: a.factures, lignes: a.lignesDeFacture, encaissements: a.encaissements, parts: a.parts },
-      mouvements: mouvementsDesEncaissements, comptesDeContrepartie: new Map(), exemplaires: [], mode: MODELE.mode, plan: PLAN, banques: BANQUES,
-    })
-    for (const v of composition.ecritures) for (const l of lignesAuBrouillon(D, v)) brouillon.push(ecriture(l))
-    resultats.set(`brouillon (${assujetti ? 'assujetti' : 'exonéré'})`, `${brouillon.length} lignes`)
-
-    if (!assujetti) {
-      const d2035 = () => calculerDeclaration2035(ANNEE, a.pieces, CATEGORIES, a.immobilisations, comptees, [], assujetti, paiements, parts, [], PLAN, ventes, pourLa2035.ecritures, recettesDeCaisse, ECRITURES_LIBRES_ABSENTES)
-      t('2035 complète', d2035, (r) => `recettes ${r.totalRecettes}, dépenses ${r.totalDepenses}, exclusions ${JSON.stringify(r.exclusions).length} octets`)
-      // La concordance que l'onglet Clôture calcule et que les préalables reçoivent (ClotureTab, `concordances`).
-      const declaration = d2035()
-      const contexteConcordance = {
-        piecesValidees: new Set(a.pieces.map((p) => p.id)), piecesImmobilisees: new Set(a.immobilisations.map((i) => i.piece_id ?? '')),
-        mouvementsDesVentesFacturees: mouvementsClassesParEncaissements(a.lignes),
-      }
-      t('concordance 2035 ↔ écritures', () => concordance2035(declaration, brouillon, contexteConcordance, null))
-      const concordance = concordance2035(declaration, brouillon, contexteConcordance, null)
-      t('paiementsDesPieces', () => paiementsDesPieces(a.lignes, [], [], paiementsDeLaCaisse))
-      const libres = a.lignes.filter((l) => l.statut === 'non_rapprochee')
-      const validees = a.pieces.filter((p) => p.statut === 'validee')
-      const rapprochees = new Set(paiements.keys())
-      t('candidats de chaque mouvement (candidatsPieces)', () => libres.map((l) => candidatsPieces(l, validees, rapprochees, ventes.sources)[0] ?? null), (r) => `${r.filter(Boolean).length} proposées sur ${r.length}`)
-      t('analyserAppariements (le lot)', () => analyserAppariements(validees.filter((p) => !rapprochees.has(p.id)), a.lignes, ventes.sources))
-      t('FEC (numérotation et format)', () => formaterFec(numeroterFec(brouillon, a.pieces, CATEGORIES, [], MODELE, a.lignes, composition.ecritures, operationsDeCaisse, CHAMPS_BNC_NON_EXPORTES), new Map(), MODELE.mode))
-      t('piste d\'audit', () => pisteAudit(brouillon, a.pieces, a.lignes, [], {
-        immobilisations: a.immobilisations, factures: a.pieces, vehicules: [], caisse: operationsDeCaisse, plan: PLAN, banques: BANQUES,
-        ventes: { ecritures: composition.ecritures, factures: a.factures, encaissements: a.encaissements, exemplaires: [], transmissions: [], piecesCitees: AUCUNE_PIECE_CITEE },
-      }))
-      t('balance', () => calculerBalance(brouillon, CATEGORIES, []))
-      t('bilan', () => bilanDeLExercice({ exercice: ANNEE, ecritures: brouillon, categories: CATEGORIES, reprise: [], reportes: [], anneesValidees: [], pieces: a.pieces, modele: MODELE, aujourdHui: `${ANNEE}-11-07`, inventaire: INVENTAIRE_DES_CONTROLES_SANS_OBJET }))
-      t('lettrage', () => lettrages(brouillon, a.pieces, [], MODELE, { factures: a.factures, encaissements: a.encaissements, ecritures: composition.ecritures }))
-      t('doublons probables', () => doublonsProbables(a.pieces, assujetti, piecesRegleesPourLesDoublons(paiements)))
-      t('ventes facturées', () => ventesFacturees(sourcesVentes), (r) => `${r.parts.length} parts, ${r.ecartees.length} écartées`)
-      t('situation intermédiaire', () => calculerSituationIntermediaire(a.pieces, CATEGORIES, a.immobilisations, comptees, `${ANNEE}-01-01`, `${ANNEE}-10-31`, assujetti, paiements, MODELE.mode, parts, ventes, PLAN, pourLa2035.ecritures, recettesDeCaisse, ECRITURES_LIBRES_ABSENTES))
-      // La Vue d'ensemble (pages/dossier/ChecklistTab.tsx, par lib/checklistLecture.ts) et les préalables de la validation
-      // (ClotureTab) : les lectures du dossier fictif en entier ; ce que le dossier n'a pas (emprunts, véhicules, reprise,
-      // déclarations de TVA, factures transmises) est une liste vide, lue, jamais un « partiel ».
-      const lectureDesSources = { dossierId: D, etat: 'lue' as const, sources: sourcesEcritures }
-      const lectureDuReleve = { dossierId: D, etat: 'lue' as const, sources: sourcesEcritures }
-      const facturesEmises = a.factures.map((f) => ({ ...f, emetteur_siret: null, superpdp_invoice_id: null }))
-      t('points de la Checklist', () => pointsDeLaChecklist({
-      notesDeFrais: { etat: 'sans_objet' as const },
-        piecesValidees: a.pieces, piecesAValider: [], cotisations: a.cotisations, lignes: a.lignes, relevesIncoherents: [], controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [],
-        immobilisations: a.immobilisations, natures: [], categories: CATEGORIES, ecritures: brouillon, emprunts: [], ventilations: [],
-        ventilationsPartielles: false, reglements: [], reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [],
-        declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,
-        facturesSources: ventes.sources, info: null, infoInconnue: null, anneesCloturees: [], ouverture: null, ouvertureIncomplete: null,
-        aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null, ventesFacturees: lectureDuReleve, caisse: caisseLue,
-        entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' }, assuranceMaladie: null,
-      }, {
-        assujettiTva: assujetti, periodiciteTva: 'mensuelle', statutTva: null, modele: MODELE, frontiere: null, anneesValidees: [],
-        aujourdHui: `${ANNEE}-11-07`, anneeCourante: ANNEE, moisEcoules: 10, premierJourDuMois: `${ANNEE}-11-01`, offreAssuranceMaladie: { codeNaf: null, moduleOuvert: false },
-      }), (r) => `${r.tousLesPointsATraiter.length} points : ${r.tousLesPointsATraiter.map((x) => x.id).join(', ')}`)
-      t('préalables de la validation', () => prealablesDeValidation({
-      notesDeFrais: { etat: 'sans_objet' as const },
-        annee: ANNEE, anneeCourante: ANNEE + 1, aujourdHui: `${ANNEE + 1}-01-15`, modele: MODELE, assujettiTva: assujetti, anneesValidees: [],
-        lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: a.pieces, piecesAValider: [], categories: CATEGORIES, immobilisations: a.immobilisations,
-        natures: [], ecritures: brouillon, lignes: a.lignes, ventilations: [], reglements: [], encaissees: [], cotisations: a.cotisations,
-        vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'mensuelle',
-        controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
-        etatsDesVentes: etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, banques: BANQUES, anneesValidees: [], ventesParLesFactures: true }),
-        ventesDeLaChecklist: ventesDeLaChecklist(lectureDesSources, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
-        declaration, saisies2035: AUCUNE_SAISIE_2035, inventaire: INVENTAIRE_SANS_OBJET, concordance,
-      }), (r) => JSON.stringify(r).slice(0, 200))
-      const etat: EtatDeLaCaisse = {
-        compteCaisse: PLAN.caisse, ouvertures: [{ date: `${ANNEE}-01-01`, compte: PLAN.caisse, sens: 'debit', montant: 200 }],
-        operations: a.operations, mouvements: [], encaissements: [], factures: [],
-      }
-      t('caisse (soldes et premier jour négatif)', () => [soldesDeLaCaisse(etat), premierJourNegatif(etat)])
-      const jours = joursDuClient(a.operations)
-      t('caisse rejouée (« Ma caisse »)', () => caisseRejouee(jours, a.operations, ANNEE), (r) => r.motif ?? 'rejouée')
-    } else {
+    if (assujetti) {
       t('CA3 (année, assujetti)', () => calculerCa3({
         pieces: a.pieces, paiements, pieceIdsImmobilisees: new Set(a.immobilisations.map((i) => i.piece_id ?? '')), releve: parts,
         ventesFacturees: ventes, caisse: recettesDeCaisse,
       }, { debut: `${ANNEE}-01-01`, fin: `${ANNEE}-12-31` }, false, 0, 0), (r) => `${r.retenues.length} pièces retenues, ${r.ecartees.length} écartées`)
+      continue
     }
+
+    // ── L'onglet Banque (pages/dossier/BanqueTab.tsx), dans l'ordre de ses `useMemo` ─────────────────────────────────
+    const lectureDuReleve = { dossierId: D, etat: 'lue' as const, sources: sourcesEcritures }
+    t('Banque — ventes du relevé', () => ventesDuReleve(true, D, lectureDuReleve, ACCES_SANS_OBJET))
+    const ventesReleve = ventesDuReleve(true, D, lectureDuReleve, ACCES_SANS_OBJET)
+    const anneesValidees: number[] = []
+    t('Banque — virements internes', () => virementsInternes(a.lignes, LECTURE_DES_COMPTES, PLAN.virements_internes, mouvementsHorsDesLots(ventesReleve), anneesValidees),
+      (r) => `${r.candidats.size} candidats`)
+    const virements = virementsInternes(a.lignes, LECTURE_DES_COMPTES, PLAN.virements_internes, mouvementsHorsDesLots(ventesReleve), anneesValidees)
+    const especes = { etat: 'lues' as const, encaissements: sourcesEcritures.encaissements, factures: sourcesEcritures.factures }
+    const repriseEtReleve = repriseEtReleveDeBanque({ dossierId: D, ouvertures: null, releve: a.lignes, releveIncomplet: null, modele: MODELE })
+    const horsDesLots = virementsInternesHorsDesLots(
+      versementsDEspecesHorsDesLots(mouvementsHorsDesLots(ventesReleve), etatDeLaCaisse, especes, repriseEtReleve, a.lignes), virements)
+    t('Banque — ruptures de la suite des soldes, par compte', () => {
+      const releve = releveParCompte(LECTURE_DES_COMPTES, a.lignes, a.controles)
+      return releve.etat === 'parts' ? rupturesDesReleves(jonctionsParCompte(releve.parts)) : []
+    })
+    const luAm = {
+      etat: 'lus' as const,
+      paiements: { lignes: a.paiementsAm, complete: true, motif: null },
+      associations: { lignes: a.associationsAm, complete: true, motif: null },
+    }
+    t('Banque — rapprochement de l\'assurance maladie', () => rapprochementDeLOnglet(true, luAm, { lignes: a.lignes, complet: true }, ventesReleve, anneesValidees, `${ANNEE}-12-15`),
+      (r) => (r?.etat === 'calcule' ? `${r.concordances.length} concordances, ${r.controles.length} contrôles` : String(r?.etat)))
+    const associes = associesPourLesVentes(true, luAm)
+    t('Banque — candidats des ventes', () => candidatsDeLaVente(ventesReleve, lectureDuReleve, anneesValidees, associes))
+    const candidats = candidatsDeLaVente(ventesReleve, lectureDuReleve, anneesValidees, associes)
+    t('Banque — hors des lots avec les candidats', () => horsDesLotsAvecLesCandidats(horsDesLots, candidats, a.lignes))
+    const horsDesLotsEtCandidats = horsDesLotsAvecLesCandidats(horsDesLots, candidats, a.lignes)
+    t('paiementsDesPieces', () => paiementsDesPieces(a.lignes, [], [], paiementsDeLaCaisse))
+    const piecesValidees = a.pieces.filter((p) => p.statut === 'validee')
+    const justificatifs = horsDesNotesDeLExploitant(piecesValidees, MODELE.mode)
+    const piecesRapprochees = piecesPayees(paiements)
+    const libres = a.lignes.filter((l) => l.statut === 'non_rapprochee')
+    t('Banque — la pièce proposée de chaque mouvement (candidatsPieces)', () => libres.map((l) => candidatsPieces(l, justificatifs, piecesRapprochees, ventes.sources)[0] ?? null),
+      (r) => `${r.filter(Boolean).length} proposées sur ${r.length}`)
+    const cotisationsRapprochees = new Set(a.lignes.map((l) => l.cotisation_id).filter((id): id is string => id != null))
+    t('Banque — lot du rapprochement automatique', () => planRapprochementAutomatique(libres, justificatifs, a.cotisations, {
+      pieces: piecesRapprochees, cotisations: cotisationsRapprochees,
+    }, horsDesLotsEtCandidats, ventes.sources), (r) => `${r.retenus.length} retenus`)
+    t('Banque — lot « Valider et rapprocher » (analyserAppariements)', () => analyserAppariements(
+      horsDesNotesDeLExploitant(a.pieces, MODELE.mode).filter((p) => !piecesRapprochees.has(p.id)), a.lignes, ventes.sources),
+    (r) => `${r.certains.length} certains, ${r.aArbitrer.length} à arbitrer`)
+    const sansMouvement = piecesValidees.filter((p) => !piecesRapprochees.has(p.id))
+    t('Banque — montants introuvables en banque', () => piecesMontantIntrouvableEnBanque(sansMouvement, a.lignes))
+    t('Banque — lot des règles d\'affectation', () => {
+      const j = {
+        pieces: justificatifs, piecesRapprochees, restesARegler: new Map<string, number>(), paiements, cotisations: a.cotisations,
+        cotisationsRapprochees, ventes: candidats, facturesSources: ventes.sources,
+      }
+      return planAffectationParRegles(a.lignes, a.regles, CATEGORIES, assujetti, (l) => {
+        const justificatif = justificatifPossible(l, j)
+        if (justificatif) return justificatif
+        if (notesRembourseesPeutEtre(l, a.pieces, piecesRapprochees, ventes.sources, MODELE.mode).length > 0) return RAISON_REMBOURSEMENT_D_UNE_NOTE
+        return null
+      }, horsDesLots)
+    }, (r) => `${r.propositions.length} propositions, ${r.aRapprocher.length} à rapprocher`)
+
+    // ── La 2035, sa concordance, les exports ──────────────────────────────────────────────────────────────────────────
+    const d2035 = () => calculerDeclaration2035(ANNEE, a.pieces, CATEGORIES, a.immobilisations, comptees, [], assujetti, paiements, parts, [], PLAN, ventes, pourLa2035.ecritures, recettesDeCaisse, a.libres)
+    t('2035 complète', d2035, (r) => `recettes ${r.totalRecettes}, dépenses ${r.totalDepenses}`)
+    const declaration = d2035()
+    const contexteConcordance = {
+      piecesValidees: new Set(a.pieces.map((p) => p.id)), piecesImmobilisees: new Set(a.immobilisations.map((i) => i.piece_id ?? '')),
+      mouvementsDesVentesFacturees: mouvementsClassesParEncaissements(a.lignes),
+    }
+    t('concordance 2035 ↔ écritures', () => concordance2035(declaration, brouillon, contexteConcordance, null))
+    const concordance = concordance2035(declaration, brouillon, contexteConcordance, null)
+    t('situation intermédiaire', () => calculerSituationIntermediaire(a.pieces, CATEGORIES, a.immobilisations, comptees, `${ANNEE}-01-01`, `${ANNEE}-10-31`, assujetti, paiements, MODELE.mode, parts, ventes, PLAN, pourLa2035.ecritures, recettesDeCaisse, a.libres))
+    t('ventes facturées', () => ventesFacturees(sourcesVentes), (r) => `${r.parts.length} parts, ${r.ecartees.length} écartées`)
+    const etatsDesVentes = () => etatsDesVentesFacturees({ sources: sourcesEcritures, brouillon, mode: MODELE.mode, plan: PLAN, banques: BANQUES, anneesValidees: [], ventesParLesFactures: true })
+    t('états des ventes facturées (onglet Écritures)', etatsDesVentes)
+    const etatsCalcules = etatsDesVentes()
+    t('FEC (numérotation et format)', () => formaterFec(numeroterFec(brouillon, a.pieces, CATEGORIES, [], MODELE, a.lignes, a.compositionDesVentes, operationsDeCaisse, CHAMPS_BNC_NON_EXPORTES, a.libres), new Map(), MODELE.mode))
+    t('piste d\'audit', () => pisteAudit(brouillon, a.pieces, a.lignes, [], {
+      immobilisations: a.immobilisations, factures: a.pieces, vehicules: [], caisse: operationsDeCaisse, plan: PLAN, banques: BANQUES,
+      ventes: { ecritures: a.compositionDesVentes, factures: a.factures, encaissements: a.encaissements, exemplaires: [], transmissions: [], piecesCitees: AUCUNE_PIECE_CITEE },
+      ecrituresLibres: a.libres,
+    }))
+    t('balance', () => calculerBalance(brouillon, CATEGORIES, []))
+    t('bilan', () => bilanDeLExercice({ exercice: ANNEE, ecritures: brouillon, categories: CATEGORIES, reprise: [], reportes: [], anneesValidees: [], pieces: a.pieces, modele: MODELE, aujourdHui: `${ANNEE}-11-07`, inventaire: INVENTAIRE_DES_CONTROLES_SANS_OBJET }))
+    t('lettrage', () => lettrages(brouillon, a.pieces, [], MODELE, { factures: a.factures, encaissements: a.encaissements, ecritures: a.compositionDesVentes }))
+    t('doublons probables', () => doublonsProbables(a.pieces, assujetti, piecesRegleesPourLesDoublons(paiements)))
+
+    // ── L'assurance maladie : les contrôles, le dû contre le payé ──────────────────────────────────────────────────────
+    const luControles: LectureDesControles = {
+      etat: 'lus', imports: { lignes: a.importsAm, complete: true, motif: null },
+      paiements: { lignes: a.paiementsAm, complete: true, motif: null }, associations: { lignes: a.associationsAm, complete: true, motif: null },
+    }
+    const offre = { codeNaf: '86.22C', moduleOuvert: true }
+    t('contrôles de l\'assurance maladie', () => controlesDeLAssuranceMaladie({
+      drapeau: true, offre, lu: luControles, releve: { lignes: a.lignes, complete: true }, retenusParLesVentes: retenusDeLaChecklist(lectureDuReleve),
+      categories: CATEGORIES, ventilations: { lignes: [], complete: true }, anneesValidees: [], jour: `${ANNEE}-12-15`,
+    }))
+    t('dû contre payé', () => duContrePaye({
+      facture: { imports: { lignes: a.importsFactureAm, complete: true }, totaux: { lignes: a.facturesAm, complete: true } },
+      paye: { imports: { lignes: a.importsAm, complete: true }, paiements: { lignes: a.paiementsAm, complete: true } },
+      fenetre: { du: `${ANNEE}-01-01`, au: `${ANNEE}-12-31` }, aujourdHui: `${ANNEE + 1}-01-15`,
+    }))
+
+    // ── « Ma banque » : l'analyse de l'année, compte par compte ────────────────────────────────────────────────────────
+    const comptesDuClient = { etat: 'lus' as const, comptes: LECTURE_DES_COMPTES.etat === 'lus' ? LECTURE_DES_COMPTES.comptes : [] }
+    t('« Ma banque » — analyse de l\'année', () => {
+      const analyse = analyseDeMaBanque({
+        mouvements: { lignes: a.lignes, complete: true, motif: null }, controles: { lignes: a.controles, complete: true, motif: null },
+        comptes: comptesDuClient, aujourdHui: `${ANNEE}-12-15`,
+      })
+      return analyse.etat === 'comptes' ? analyse.comptes.map((c) => (c.source.etat === 'lue' ? anneeDeMaBanque(c.source, ANNEE, `${ANNEE}-12-15`) : null)) : analyse
+    })
+
+    // ── La Vue d'ensemble et les préalables de la validation ───────────────────────────────────────────────────────────
+    const facturesEmises = a.factures.map((f) => ({ ...f, emetteur_siret: null, superpdp_invoice_id: null }))
+    t('points de la Checklist (Vue d\'ensemble)', () => pointsDeLaChecklist({
+      notesDeFrais: { etat: 'sans_objet' as const },
+      piecesValidees: a.pieces, piecesAValider: [], cotisations: a.cotisations, lignes: a.lignes, relevesIncoherents: [], controlesReleves: a.controles,
+      comptesBancaires: LECTURE_DES_COMPTES, doublonsTexte: [],
+      immobilisations: a.immobilisations, natures: [], categories: CATEGORIES, ecritures: brouillon, emprunts: [], ventilations: [],
+      ventilationsPartielles: false, reglements: [], reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [],
+      declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,
+      facturesSources: ventes.sources, info: null, infoInconnue: null, anneesCloturees: [], ouverture: null, ouvertureIncomplete: null,
+      aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null, ventesFacturees: lectureDuReleve, caisse: a.caisseLue,
+      entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' },
+      assuranceMaladie: { lu: luControles, releveComplet: true },
+    }, {
+      assujettiTva: assujetti, periodiciteTva: 'mensuelle', statutTva: null, modele: MODELE, frontiere: null, anneesValidees: [],
+      aujourdHui: `${ANNEE}-12-31`, anneeCourante: ANNEE, moisEcoules: 11, premierJourDuMois: `${ANNEE}-12-01`, offreAssuranceMaladie: offre,
+    }), (r) => `${r.tousLesPointsATraiter.filter((x) => (x.nb ?? 0) > 0).map((x) => x.id).join(', ')}`)
+    t('préalables de la validation', () => prealablesDeValidation({
+      notesDeFrais: { etat: 'sans_objet' as const },
+      annee: ANNEE, anneeCourante: ANNEE + 1, aujourdHui: `${ANNEE + 1}-01-15`, modele: MODELE, assujettiTva: assujetti, anneesValidees: [],
+      lectureIncomplete: null, ecrituresLibres: a.libres, piecesValidees: a.pieces, piecesAValider: [], categories: CATEGORIES, immobilisations: a.immobilisations,
+      natures: [], ecritures: brouillon, lignes: a.lignes, ventilations: [], reglements: [], encaissees: [], cotisations: a.cotisations,
+      vehicules: [], emprunts: [], aNouveaux: [], soldesReportes: [], declarationsTva: [], periodiciteTva: 'mensuelle',
+      controlesReleves: a.controles, comptesBancaires: LECTURE_DES_COMPTES, doublonsTexte: [], facturesEmises, transmissions: [], facturesSources: ventes.sources, piecesCitees: ventes.piecesCitees,
+      etatsDesVentes: etatsCalcules, // un calcul à part de l’écran (mesuré plus haut)
+      ventesDeLaChecklist: ventesDeLaChecklist(lectureDuReleve, null), operationsDeCaisse, champsBnc: CHAMPS_BNC_NON_EXPORTES,
+      declaration, saisies2035: AUCUNE_SAISIE_2035, inventaire: INVENTAIRE_SANS_OBJET, concordance,
+    }), (r) => r.prealables.map((x) => x.id).join(', '))
+
+    // ── La caisse ──────────────────────────────────────────────────────────────────────────────────────────────────────
+    const etat: EtatDeLaCaisse = {
+      compteCaisse: PLAN.caisse, ouvertures: [{ date: `${ANNEE}-01-01`, compte: PLAN.caisse, sens: 'debit', montant: 200 }],
+      operations: a.operations, mouvements: [], encaissements: [], factures: [],
+    }
+    t('caisse (soldes et premier jour négatif)', () => [soldesDeLaCaisse(etat), premierJourNegatif(etat)])
+    const jours = joursDuClient(a.operations)
+    t('caisse rejouée (« Ma caisse »)', () => caisseRejouee(jours, a.operations, ANNEE), (r) => r.motif ?? 'rejouée')
   }
   return resultats
 }
@@ -421,6 +289,8 @@ function joursDuClient(operations: readonly OperationCaisse[]): JourDeLaCaisseDu
 // Le banc ne tire pas les types de Node (tsconfig.app.json, celui de src/) : ce qu'il en lit, et rien d'autre.
 declare const process: { argv: string[]; version: string; platform: string; arch: string }
 
+// `--seul=<motif>` : les seules mesures dont le nom le contient, trente passes chacune — pour un profil (`node --cpu-prof`).
+const SEUL = process.argv.find((x) => x.startsWith('--seul='))?.slice('--seul='.length) ?? null
 const facteurs = process.argv.slice(2).map(Number).filter((x) => x > 0)
 const liste = facteurs.length > 0 ? facteurs : [1, 2]
 const colonnes = liste.map((k) => ({ k, r: mesurer(k) }))

@@ -519,11 +519,18 @@ export function ecrituresSansObjet(
     // contrepartie d'une note de frais au 108000 (`ligneContrepartieDirigeant`) la solde de même, et s'écarte
     // pour la même raison ; celle d'un virement personnel, sans pièce, est écartée plus haut.
     if (tiers.has(e.compte)) continue
-    parPiece.set(e.piece_id, [...(parPiece.get(e.piece_id) ?? []), e])
+    const groupe = parPiece.get(e.piece_id)
+    if (groupe) groupe.push(e)
+    else parPiece.set(e.piece_id, [e])
   }
+  // Les pièces par identifiant, la première de chaque identifiant comme le `find` d'hier : chercher chaque pièce dans la
+  // liste refaisait un parcours par groupe — un produit pièces × groupes, un tiers de la Vue d'ensemble sur une année de
+  // 3 000 pièces (le banc de charge, 27/11/2026 ; chargeEmpreintes.test.ts garde le rendu à l'octet).
+  const pieceParId = new Map<string, Piece>()
+  for (const p of piecesValidees) if (!pieceParId.has(p.id)) pieceParId.set(p.id, p)
   const sansObjet: EcritureSansObjet[] = []
   for (const [pieceId, lignes] of parPiece) {
-    const piece = piecesValidees.find((p) => p.id === pieceId)
+    const piece = pieceParId.get(pieceId)
     // Absente du jeu fourni : artefact de FILTRAGE, pas rupture — l'appelant ne charge que les
     // pièces validées, donc une pièce repassée « à valider » tomberait ici. La signaler ferait
     // crier au loup sur un choix de chargement, et un avertissement qui se trompe emporte dans son
@@ -584,7 +591,10 @@ export function analyserEcritures(
   const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
     if (!e.piece_id || exemplaires.has(e.piece_id)) continue
-    piecesParGroupe.set(e.piece_id, [...(piecesParGroupe.get(e.piece_id) ?? []), e])
+    // Ajoutée en place : recopier le groupe à chaque ligne coûtait un tableau par ligne du brouillon (le banc de charge).
+    const groupe = piecesParGroupe.get(e.piece_id)
+    if (groupe) groupe.push(e)
+    else piecesParGroupe.set(e.piece_id, [e])
   }
   // Une pièce dont aucune ligne ne touche la banque ET qu'aucun paiement ne règle : en trésorerie, la
   // charge sans sa contrepartie ; en engagement, la facture sans règlement. Un paiement que le

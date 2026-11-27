@@ -449,20 +449,38 @@ export function etatsDesVentesFacturees(entrees: EntreesEcrituresDeVente): Etats
 
   const etats: SourceDeVenteEtat[] = []
   const lignesDe = lignesDesSources(brouillon, dossierId)
+  // Les écritures composées et les sources non écrites par clé, les ventes écartées par facture, dans leur ordre : chercher
+  // chacune dans la composition entière pour chaque source était un produit sources × écritures (le banc de charge,
+  // 27/11/2026 ; chargeEmpreintes.test.ts garde le rendu à l'octet). Un `find` d'hier rend la PREMIÈRE : l'index la garde.
+  const ecrituresParCle = new Map<string, EcritureVenteFacturee[]>()
+  for (const e of composition.ecritures) {
+    const k = cleDeLaSource(e.source)
+    const groupe = ecrituresParCle.get(k)
+    if (groupe) groupe.push(e)
+    else ecrituresParCle.set(k, [e])
+  }
+  const nonEcriteParCle = new Map<string, (typeof composition.nonEcrites)[number]>()
+  for (const n of composition.nonEcrites) {
+    const k = cleDeLaSource(n.source)
+    if (!nonEcriteParCle.has(k)) nonEcriteParCle.set(k, n)
+  }
+  const ecarteeParFacture = new Map<string, (typeof composition.ventes.ecartees)[number]>()
+  for (const x of composition.ventes.ecartees) if (!ecarteeParFacture.has(x.factureId)) ecarteeParFacture.set(x.factureId, x)
   for (const [cle, source] of candidates) {
     // Une source dont la lecture n'a pas rendu la ligne : la composition ne la cite que depuis ce qu'elle a lu, et le
     // brouillon a été confronté plus haut ; un mouvement cité qui manque se dit par la composition (`mouvement_inconnu`).
     if (source.genre === 'mouvement' && !mouvements.has(source.ligneBancaireId)) continue
-    const toutes = composition.ecritures.filter((e) => cleDeLaSource(e.source) === cle)
-    const aEcrire = ecrituresDeLaSource(composition, source, anneesValidees)
+    const toutes = ecrituresParCle.get(cle) ?? []
+    // Sur les seules écritures de la source : `ecrituresDeLaSource` n'en garde pas d'autres.
+    const aEcrire = ecrituresDeLaSource({ ecritures: toutes }, source, anneesValidees)
     const siennes = lignesDe(source)
     const proposees = siennes.filter((l) => l.statut === 'proposee')
     const validees = siennes.filter((l) => l.statut === 'validee').length
-    const nonEcrite = composition.nonEcrites.find((n) => cleDeLaSource(n.source) === cle)
+    const nonEcrite = nonEcriteParCle.get(cle)
     const factureId = source.genre === 'facture' ? source.factureId
       : source.genre === 'encaissement' ? source.factureId
         : source.genre === 'avoir' ? factures.get(source.factureId)?.facture_origine_id ?? null : null
-    const ecartee = factureId == null ? undefined : composition.ventes.ecartees.find((x) => x.factureId === factureId)
+    const ecartee = factureId == null ? undefined : ecarteeParFacture.get(factureId)
     const motif: MotifSansEcriture | null = nonEcrite?.motif ?? (ecartee ? 'vente_ecartee' : null)
     const detailDuMotif = nonEcrite?.detail
       ?? (ecartee ? `la facture ${numeroDe(factures.get(ecartee.factureId), ecartee.factureId)} ne se compte pas sans deviner : ${LIBELLE_MOTIF_VENTE[ecartee.motif]}` : null)

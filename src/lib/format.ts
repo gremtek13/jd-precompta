@@ -112,9 +112,13 @@ export function cleFournisseur(tiers: string | null): string | null {
   return mots.find((m) => m.length >= 4 && !MOTS_SANS_IDENTITE.has(m)) ?? null
 }
 
+// Le formateur se construit une fois (le banc de charge, 27/11/2026) : `toLocaleString` en construit un à chaque appel, et les
+// préalables de la validation disent des milliers de montants. Même locale, mêmes options : la même chaîne, au caractère près.
+let formateurDesEuros: Intl.NumberFormat | null = null
 export function formatMoney(value: number | null): string {
   if (value === null || Number.isNaN(value)) return '—'
-  return value.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
+  formateurDesEuros ??= new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })
+  return formateurDesEuros.format(value)
 }
 
 // UN PRIX UNITAIRE, JAMAIS ARRONDI EN SILENCE (espace client, étape A2b ; né à l'étape A2a pour la liste des articles). Un prix
@@ -202,10 +206,16 @@ export function dateLocaleDe(horodatage: string): string {
 // la lit à Paris), et la date de validation qu'un FEC porte en ValidDate — deux exports d'un exercice validé
 // doivent rendre le même fichier, où que soit le poste qui les fait. Ailleurs, la date de l'utilisateur
 // reste la bonne (`dateLocaleDe`).
+//
+// LE FORMATEUR SE CONSTRUIT UNE FOIS (le banc de charge, 27/11/2026) : construire un `Intl.DateTimeFormat` coûte cent fois
+// plus que s'en servir, et la piste d'audit date chaque pièce à Paris — 60 % de son temps sur une année de 1 500 pièces. Il
+// ne lit aucun « maintenant » : seulement le fuseau et la forme, les mêmes à chaque appel.
+let formateurAParis: Intl.DateTimeFormat | null = null
 export function dateAParis(instant: string | Date): string {
-  const parties = new Intl.DateTimeFormat('en-CA', {
+  formateurAParis ??= new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date(instant))
+  })
+  const parties = formateurAParis.formatToParts(new Date(instant))
   const partie = (type: string) => parties.find((p) => p.type === type)?.value ?? ''
   return `${partie('year')}-${partie('month')}-${partie('day')}`
 }
