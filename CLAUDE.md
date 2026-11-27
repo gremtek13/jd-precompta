@@ -1605,7 +1605,9 @@ Vitest, posés à côté de leur module ; `tsc -b` les type-vérifie avec le res
 - **Le fuseau est porté par les scripts npm** (`fuseau.test.ts`) ; `test:fuseaux` rejoue Paris, UTC, New York et
   Auckland ; `tests.yml` tourne sur toutes les branches.
 - **Une mutation qui ne mord pas accuse d'abord la mutation, puis le jeu d'essai** ; une suite rouge AVANT la mutation
-  fait passer toute mutation pour tuée.
+  fait passer toute mutation pour tuée. Une dérive plantée DANS la fermeture d'un « doit lever » a un contrôle d'ancre
+  souple (`expect.soft`) ou une `echoue` qui exige l'assertion de la comparaison : sinon une ancre disparue passe pour la
+  dérive attrapée (`derivesPlanteesDansLesFermetures.test.ts`) → « LA RELECTURE ADVERSE DE PLUSIEURS COMPTES BANCAIRES ».
 - **Une fonction testée qui a une valeur par défaut mérite son propre test** : le chemin par défaut est l'angle mort.
 - **Une modification non commitée se copie HORS du dépôt avant tout harnais qui manipule git** (`git checkout` la
   réécrit, et la suite reste verte, plus courte).

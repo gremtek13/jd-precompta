@@ -55089,3 +55089,23 @@ enregistrement « G » après la dernière ligne de son écriture, l'archive par
 la description ne fixe pas reste « à saisir » : encodage, fin d'enregistrement, longueur (6 à 17), produit, origine, SO_NEWANALYTIQUE,
 numéro de pièce, et par journal son code, son libellé, sa nature (sa contrepartie pour BQE/CAI) et la nature du mouvement ; le chemin des
 justificatifs. Un montant négatif se refuse (signe non décrit). Quatre mutations mordent. Non éprouvé : tout import réel ; EXP4-Q1 à Q5.
+### 27/11/2026 — LA RELECTURE ADVERSE DE PLUSIEURS COMPTES BANCAIRES (MCB1 À MCB7, MCB5G)
+
+(Agent architecte, le lendemain de la levée de `COMPTES_BANCAIRES_PREVUS` ; aucune migration, rien en production.) Une copie de
+`replique_227` portée à 259 par l'export : `ouvertureEclatee.sql` 41/41, `comptesBancaires.sql` 38/38 ; la base redit le module
+(les soldes au 31 décembre, l'éclatement et ses refus, le filet de la validation) — aucun défaut de base trouvé. **Établi, corrigé** :
+à l'import, le compte choisi pour un relevé restait choisi pour le fichier suivant (`compteChoisi` jamais remis à nul) ; le relevé
+d'après, souvent celui de l'autre compte, entrait sous lui sans qu'on le choisisse, dédoublonné contre le mauvais relevé — et un
+mouvement importé sous le mauvais compte ne se retire pas. Le choix s'efface quand son relevé s'importe (CSV, OFX, QIF, PDF) et
+quand un autre fichier prend sa place ; choisi avant tout fichier, il vaut pour le premier (deux tests, rouges avant). **Plausibles,
+non corrigés** : les écrans lisent les comptes une fois au montage (`useBanquesDuDossier`, la lecture du parent de l'onglet
+Banque) et relisent le relevé à chaque relecture ; un compte créé ailleurs entre-temps tombe, sous la banque du rôle
+(`banquesDuDossier` rend `role` quand aucun compte lu ne tient son 512), au 512 du rôle pour la contrepartie d'une pièce, que
+la base ne vérifie pas (deux sessions seulement ; les détecteurs relus la disent « à régénérer ») ; la connexion bancaire
+n'écrit aucun compte, et la base refuse son import dès deux comptes (23502, dit) ; un compte tenu en 2025 dont les relevés de
+2025 manquent laisse valider 2025 (`banque-au-releve`, un avertissement) puis retient 2026 sans remède (MCBR-Q2). **Les gardes
+des dérives plantées** : dans agentComptableBanques, agentComptablePlan et agentComptableBalance, la dérive se plantait dans la
+fermeture de `echoue`, que son contrôle d'ancre (une assertion) faisait lever — une ancre disparue passait pour une dérive
+attrapée (la sonde, toutes les ancres rendues absentes : 6 dérives sur 8 restaient vertes dans Banques). Contrôles d'ancre
+souples (`expect.soft`), `echoue` stricte (une assertion de la comparaison, jamais l'ancre) ; la sonde sur les seize gardes de
+l'assistant : chaque dérive rougit. Le scanner `derivesPlanteesDansLesFermetures.test.ts` le tient (plancher, défauts plantés).

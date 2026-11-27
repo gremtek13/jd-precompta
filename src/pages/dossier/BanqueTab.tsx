@@ -3034,6 +3034,11 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   // gardée avec le dossier qu'elle lit, et se refait après chaque import (le principal créé, la fin d'identifiant posée).
   const [comptesLus, setComptesLus] = useState<{ dossierId: string; lecture: LectureDesComptes } | null>(null)
   const [relectureDesComptes, setRelectureDesComptes] = useState(0)
+  // LE COMPTE CHOISI VAUT POUR UN RELEVÉ (relecture adverse du 27/11/2026) : il restait choisi pour le fichier suivant, et le
+  // relevé d'après — souvent celui de l'autre compte — entrait sous lui sans qu'on le choisisse, dédoublonné contre le
+  // mauvais relevé, alors qu'un mouvement importé sous le mauvais compte ne se retire pas. Il s'efface donc quand son relevé
+  // s'importe, et quand un autre fichier prend la place de celui pour lequel il a été fait ; choisi avant tout fichier, il
+  // vaut pour le premier déposé (choisir le compte, puis le fichier).
   const [compteChoisi, setCompteChoisi] = useState<string | null>(null)
   useEffect(() => {
     let annule = false
@@ -3064,6 +3069,8 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   // déjà classé dans l'archive Documents (Blob téléchargé du storage) suivent le même traitement.
   async function handleFile(blob: Blob, nom: string) {
     setError(null)
+    // Un fichier à la place d'un autre : le compte choisi l'était pour l'autre (MCB2, le choix vaut pour un relevé).
+    if (rows !== null || pdfRows !== null) setCompteChoisi(null)
     setSourceFileName(nom)
     // Les OCTETS, décodés en UTF-8 strict, sinon en windows-1252 (`lib/decodageTexte.ts`) : `blob.text()` lisait en UTF-8
     // indulgent, et le « € » d'un export windows-1252 (octet 0x80) devenait U+FFFD — montant illisible, ligne écartée,
@@ -3196,6 +3203,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   // relevé déjà classé dans l'archive Documents (Blob téléchargé du storage) — même traitement.
   async function handlePdfBlob(blob: Blob, nom: string) {
     setError(null)
+    if (rows !== null || pdfRows !== null) setCompteChoisi(null)
     setSourceFileName(nom)
     setPdfRows(null)
     setPdfLignes(null)
@@ -3326,6 +3334,8 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       setPdfRows(null)
       setPdfLignes(null)
       setSourceFileName(null)
+      // Le relevé est importé : le compte choisi l'était pour lui seul, le suivant se choisit de nouveau.
+      setCompteChoisi(null)
       setRelectureDesComptes((n) => n + 1)
       onImported()
       const ignoresDites = phraseDesIgnores(aInserer, regles)
@@ -3402,6 +3412,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       setRows(null)
       setOfxQif(null)
       setSourceFileName(null)
+      setCompteChoisi(null)
       setRelectureDesComptes((n) => n + 1)
       onImported()
       const messages = [`${aInserer.length} ligne(s) importée(s)`]
