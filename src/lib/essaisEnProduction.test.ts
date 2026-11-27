@@ -352,11 +352,15 @@ describe('les essais de la base, rejoués en production', () => {
     // Le quarante et unième, fichierCiteParUneEcritureLibre, le 25/11/2026 (la relecture adverse de 251 à 253, migration
     // `fichier_cite_par_une_ecriture_libre`, en production depuis le 26/11/2026, 254) : il retire des lignes de `storage.objects` comme l'API du stockage, et mute
     // `fichier_fige` ; le catalogue de la fonction se rejoue partout : le bloc PF de rls.sql.
+    // Le quarante-deuxième, ouvertureSuivanteALaValidation, le 27/11/2026 (MCBR-Q2, migration `ouverture_suivante_a_la_validation`,
+    // préparée) : il crée des dossiers, des comptes, des relevés et des exercices validés fictifs, rend les contraintes immédiates
+    // pour simuler la fin de la transaction, et mute la fonction et le déclencheur du filet. Son catalogue se relit partout
+    // (signature.sql, familles des fonctions et des déclencheurs) ; il ne touche à aucune policy.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'associationPaiementsAssuranceMaladieSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'contrePassationDesEcrituresLibres (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'ecrituresLibres (son en-tête)', 'exercicesDuDossier (son en-tête)', 'facturesAssuranceMaladieSuppression (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)', 'fichierCiteParUneEcritureLibre (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'hausseDuChiffreDAffairesSuppression (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
-      'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'optionsDesCabinetsEnCours (son en-tête)', 'originalDUnImport (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
+      'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'optionsDesCabinetsEnCours (son en-tête)', 'originalDUnImport (son en-tête)', 'ouvertureSuivanteALaValidation (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'provisions (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'reglagesDExport (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
       'situationsPublieesMutations (une méta-commande de psql)', 'stocks (son en-tête)', 'traceDesDroitsSuppression (son en-tête)',

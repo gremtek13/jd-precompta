@@ -5,10 +5,11 @@ import { COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
 import type { CompteDuReleve } from './importParCompte'
 import {
   REFUS_DE_LA_VALIDATION, REFUS_DE_L_ECLATEMENT, REFUS_DU_CLIC, eclatementsAFaire, etatDeLEclatement, eurosDeLaBase, libelleDeLEclatement,
-  ouvertureEclateeAttendue, phraseDeLEclatement, refusALaValidation, type EntreesDeLEclatement,
+  ouvertureEclateeAttendue, phraseDeLEclatement, refusALaValidation, refusDeLOuvertureSuivante, type EntreesDeLEclatement,
 } from './ouvertureEclatee'
 import { releveParCompte } from './releveParCompte'
 import type { ControleReleveBancaire } from './types'
+import { definitionsSql } from '../test/schema'
 
 // Le module confronté au texte de la migration `ouverture_eclatee_par_compte` (en production depuis le 27/11/2026, 258, collée ;
 // rangée dans l'export sous sa version d'historique, texte inchangé), et rejoué sur les cas de son essai
@@ -241,5 +242,88 @@ describe('les exercices dont l’éclatement appelle un clic', () => {
   it('une ouverture retenue ne se dit pas : rien ne s’y écrit d’un clic', () => {
     const { annee: _a, ...retenue } = entrees({ reportes: report(1300) })
     expect(eclatementsAFaire(retenue, [])).toEqual([])
+  })
+})
+
+// ── L'ouverture de l'exercice SUIVANT, à la validation (MCBR-Q2 (A)) ─────────────────────────────────────────────────────
+// `refusDeLOuvertureSuivante` sur les cas de l'essai de la migration préparée `ouverture_suivante_a_la_validation`
+// (supabase/essais/ouvertureSuivanteALaValidation.sql) : 2025 se valide, 2024 validé, les relevés de décembre 2025 du principal
+// (1 000 €) et du second compte (250 €), le report de 2025 portant 1 250 € au 512000 ; et la migration confrontée à son texte.
+describe('le refus de l’ouverture suivante, à la validation (MCBR-Q2)', () => {
+  const PREPAREE = readFileSync('supabase/preparees/20261127190000_ouverture_suivante_a_la_validation.sql', 'utf8')
+  const RETOUR = readFileSync('supabase/preparees/retour/20261127190100_retour_ouverture_suivante_a_la_validation.sql', 'utf8')
+  const RETOUR_OUVERTURE = readFileSync('supabase/preparees/retour/20261111235100_retour_ouverture_eclatee_par_compte.sql', 'utf8')
+  const ESSAI = readFileSync('supabase/essais/ouvertureSuivanteALaValidation.sql', 'utf8')
+  const S25: CompteDuReleve = { ...S, libelle: 'ESSAI MCBR2 SECOND' }
+  const decembre = (compte: string, fichier: string, solde: number) =>
+    ({ lignes: [], controles: [controle(compte, fichier, '2025-12-01', '2025-12-31', solde, solde, 0)] })
+  const REPORT = { date: '2026-01-01', soldes: [{ compte: '101000', sens: 'credit' as const, montant: 1250 }, { compte: '512000', sens: 'debit' as const, montant: 1250 }] }
+  const deVingtCinq = (o: Parameters<typeof entrees>[0] = {}) =>
+    ({ ...entrees({ comptes: [P, S25], releves: [decembre('p', 'p.csv', 1000), decembre('s', 's.csv', 250)], reportes: [], validees: [2024], ...o }), annee: 2025 })
+  const dit = (o: Parameters<typeof entrees>[0] = {}) => refusDeLOuvertureSuivante(deVingtCinq(o), REPORT)?.message ?? null
+
+  it('les relevés font le 512000 reporté : rien ; l’éclatement de 2026 se fera', () => {
+    expect(dit()).toBeNull()
+  })
+
+  it('les refus, aux mots de l’éclatement de 2026, sur les cas de l’essai — et l’essai les attend de la base', () => {
+    const refus = [
+      dit({ releves: [decembre('p', 'p.csv', 1000)] }),
+      dit({ releves: [decembre('p', 'p.csv', 1000), decembre('s', 's.csv', 250), decembre('s', 's_bis.csv', 260)] }),
+      dit({ releves: [decembre('p', 'p.csv', 1000), decembre('s', 's.csv', 300)] }),
+      dit({ releves: [decembre('s', 's.csv', 250)] }),
+    ]
+    expect(refus).toEqual([
+      'Le solde au 31/12/2025 du compte bancaire « ESSAI MCBR2 SECOND » ne se lit sur aucun de ses relevés contrôlés : importer le relevé qui finit ce jour-là, ou celui qui le couvre, avant d\'éclater l\'ouverture de la banque.',
+      'Les relevés du compte bancaire « ESSAI MCBR2 SECOND » disent des soldes différents au 31/12/2025 : l\'un d\'eux ne dit pas le bon, et l\'ouverture de la banque ne s\'éclate pas.',
+      'Les soldes des relevés au 31/12/2025 (1300,00 €) ne font pas l\'ouverture du compte 512000 (1250,00 €) : l\'ouverture de la banque ne s\'éclate pas entre ses comptes.',
+      'Le solde au 31/12/2025 du compte bancaire « Compte principal » ne se lit sur aucun de ses relevés contrôlés : importer le relevé qui finit ce jour-là, ou celui qui le couvre, avant d\'éclater l\'ouverture de la banque.',
+    ])
+    for (const m of refus) expect(ESSAI).toContain(`'la fin de la transaction : 23514 ${enSql(m as string)}'`)
+  })
+
+  it('hors de ce seul cas, rien : un compte clos, un 512 propre en 2027, un seul compte, un exercice qui ouvre déjà le sien', () => {
+    expect(dit({ comptes: [P, { ...S25, clos_le: '2025-11-30' }], releves: [decembre('p', 'p.csv', 1000)] })).toBeNull()
+    expect(dit({ comptes: [P, { ...S25, compte_propre_depuis: '2027-01-01' }], releves: [decembre('p', 'p.csv', 1000)] })).toBeNull()
+    expect(dit({ comptes: [P], releves: [decembre('p', 'p.csv', 900)] })).toBeNull()
+    // Le second compte tient son 512 depuis le 01/01/2025 : il n'est plus au 512 du rôle, l'ouverture de 2026 ne l'éclate pas.
+    expect(dit({ comptes: [P, { ...S25, compte_propre_depuis: '2025-01-01' }], releves: [decembre('p', 'p.csv', 1000)] })).toBeNull()
+  })
+
+  it('le report de la validation, jamais une lecture : un solde reporté du 01/01/2026 déjà lu ne compte pas', () => {
+    const lu = [{ date: '2026-01-01', compte: '512000', sens: 'debit' as const, montant: 9999 }]
+    expect(refusDeLOuvertureSuivante({ ...deVingtCinq(), reportes: lu }, REPORT)).toBeNull()
+  })
+
+  it('la migration : un déclencheur de contrainte différé, sa condition sur le rôle, la recomposition de l’exercice suivant', () => {
+    const definitions = definitionsSql('garder_ouverture_suivante_a_la_validation', [{ chemin: 'la préparée', texte: PREPAREE }])
+    expect(definitions).toHaveLength(1)
+    const corps = definitions[0].definition
+    expect(corps).toContain('security definer\nset search_path = public')
+    expect(corps).toContain('perform 1 from public.ouverture_eclatee_attendue(new.dossier_id, new.annee + 1);')
+    expect(corps).not.toMatch(/is_super_admin/i)
+    expect(PREPAREE).toContain('create constraint trigger exercices_valides_ouverture_suivante\n  after insert on public.exercices_valides\n'
+      + "  deferrable initially deferred\n  for each row when (current_user <> 'authenticated')\n"
+      + '  execute function public.garder_ouverture_suivante_a_la_validation();')
+    expect(PREPAREE).toContain('revoke all on function public.garder_ouverture_suivante_a_la_validation() from public, anon, authenticated;')
+    // Ni retrait ni vidage : par l'outil.
+    expect(PREPAREE).not.toMatch(/\b(drop|delete|truncate)\b/i)
+    expect(PREPAREE).not.toContain('\\')
+  })
+
+  it('sa garde de tête attend le corps de `ouverture_eclatee_attendue` que porte l’export (258)', () => {
+    // Le corps tel que la base le garde (`prosrc`) : entre les deux délimiteurs, sans eux.
+    const [{ definition }] = definitionsSql('ouverture_eclatee_attendue', [{ chemin: '258', texte: MIGRATION }])
+    const ouverture = /\$(\w*)\$/.exec(definition) as RegExpExecArray
+    const corps = definition.slice(ouverture.index + ouverture[0].length)
+    const empreinte = createHash('md5').update(corps).digest('hex')
+    expect(PREPAREE).toContain(`is distinct from '${empreinte}' then`)
+  })
+
+  it('les retours : le sien retire le déclencheur et la fonction ; celui de l’ouverture éclatée l’attend', () => {
+    expect(RETOUR).toMatch(/drop trigger exercices_valides_ouverture_suivante on public\.exercices_valides;/i)
+    expect(RETOUR).toMatch(/drop function public\.garder_ouverture_suivante_a_la_validation\(\);/i)
+    expect(RETOUR_OUVERTURE).toContain("if to_regprocedure('public.garder_ouverture_suivante_a_la_validation()') is not null then")
+    expect(RETOUR_OUVERTURE.indexOf('garder_ouverture_suivante_a_la_validation')).toBeLessThan(RETOUR_OUVERTURE.search(/^drop /im))
   })
 })
