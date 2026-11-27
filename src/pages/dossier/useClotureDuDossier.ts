@@ -238,7 +238,7 @@ export function useClotureDuDossier({ dossierId, assujettiTva, periodiciteTva, m
   const [lectureChampsBnc, setLectureChampsBnc] = useState<LectureDesChampsBnc | null>(null)
   // LES NOTES DE FRAIS DU CLIENT (L3-Q3 (A)) : gardées AVEC le dossier qui les a demandées ; un avertissement de la validation
   // seulement, muet tant qu'elles ne sont pas revenues pour ce dossier.
-  const [notesDeFrais, setNotesDeFrais] = useState<{ dossierId: string; notes: NotesDeFraisDesControles } | null>(null)
+  const [notesDeFrais, setNotesDeFrais] = useState<{ dossierId: string; lues: NotesDeFraisDesControles } | null>(null)
   const [validationIncomplete, setValidationIncomplete] = useState<string | null>(null)
   const [ecrituresIncompletes, setEcrituresIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -411,7 +411,7 @@ export function useClotureDuDossier({ dossierId, assujettiTva, periodiciteTva, m
     // Et les comptes bancaires du dossier (MCB4), qui partagent le relevé : ne rejette jamais ; le drapeau
     // `COMPTES_BANCAIRES_PREVUS` baissé, ne touche pas au réseau (`sans_objet`).
     // Et les notes de frais du client (L3-Q3 (A)) : ne rejette jamais ; le drapeau baissé, sans un appel (sans objet).
-    const [releves, doublons, comptes, notes] = await Promise.all([
+    const [releves, doublons, comptes, notesLues] = await Promise.all([
       chargerControlesReleves(dossierId).catch((err) => { console.error(err); return null }),
       chargerDoublonsDeTexte(dossierId).catch((err) => { console.error(err); return null }),
       lireLesComptesDuDossier(dossierId),
@@ -423,7 +423,7 @@ export function useClotureDuDossier({ dossierId, assujettiTva, periodiciteTva, m
     setLectureCaisse(lectureDeLaCaisse)
     setLectureLibres(lectureDesLibres)
     setLectureChampsBnc(lectureDesChampsBnc)
-    setNotesDeFrais({ dossierId, notes })
+    setNotesDeFrais({ dossierId, lues: notesLues })
     setControlesReleves(releves)
     setLectureDesComptes(comptes)
     setDoublonsTexte(doublons)
@@ -806,7 +806,7 @@ export function useClotureDuDossier({ dossierId, assujettiTva, periodiciteTva, m
       // Nulles (pas encore revenues, ou illisibles), la validation se suspend déjà par `motifValidation` : l'absence n'est
       // passée qu'alors, et ne numérote rien de plus.
       ecrituresLibres: ecrituresLibres ?? ECRITURES_LIBRES_ABSENTES,
-      notesDeFrais: notesDeFrais !== null && notesDeFrais.dossierId === dossierId ? notesDeFrais.notes : NOTES_DE_FRAIS_SANS_OBJET })
+      notesDeFrais: notesDeFrais !== null && notesDeFrais.dossierId === dossierId ? notesDeFrais.lues : NOTES_DE_FRAIS_SANS_OBJET })
     const demande = etat.validable && etat.numerotation
       ? demandeDeValidation(etat.numerotation, formulaire
         ? instantane2035(formulaire.declaration, formulaire.valeurs, arrondirPourFormulaire(formulaire.valeurs, annee), entete)
