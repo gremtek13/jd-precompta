@@ -1,4 +1,4 @@
--- RETOUR DE `sous_dossier_dans_son_dossier` (DOCF-Q1-B, supabase/preparees/20261117150000_sous_dossier_dans_son_dossier.sql) —
+-- RETOUR DE `sous_dossier_dans_son_dossier` (DOCF-Q1-B, supabase/schema/20261127055603_sous_dossier_dans_son_dossier.sql) —
 -- À COLLER par le cabinet dans l'éditeur SQL de Supabase, dans une transaction : il retire des déclencheurs et des fonctions,
 -- ce que l'outil d'application retient. Il rend la base d'avant : la clé étrangère simple de chaque colonne juge seule,
 -- comme hier ; aucune donnée ne bouge. Le module (`SOUS_DOSSIER_DANS_SON_DOSSIER_PREVU`) se baisse AVANT lui.

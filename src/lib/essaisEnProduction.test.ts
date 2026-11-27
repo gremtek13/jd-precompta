@@ -320,7 +320,7 @@ describe('les essais de la base, rejoués en production', () => {
     // crée des dossiers, des régularisations, des déclarations et des exercices validés, falsifie des écritures et mute des
     // fonctions. Son catalogue et ses profils se rejouent partout : le bloc ID de rls.sql.
     // Le trente-troisième, comptePropreHorsDesExercicesValides, le 15/11/2026 (ligne 26.6, MCB6Q2-Q1, migration
-    // `compte_propre_hors_des_exercices_valides`) : il crée des dossiers et des exercices validés fictifs, suspend un déclencheur
+    // `compte_propre_hors_des_exercices_valides`, en production depuis le 27/11/2026, 256) : il crée des dossiers et des exercices validés fictifs, suspend un déclencheur
     // de `dossiers` le temps d'une sous-transaction et mute la fonction du filet. Son catalogue se relit partout (signature.sql,
     // familles des fonctions et des déclencheurs) ; il ne touche à aucune policy.
     // Le trente-quatrième, hausseDuChiffreDAffairesSuppression, le 15/11/2026 (l'alerte de hausse du chiffre d'affaires,
@@ -535,7 +535,9 @@ describe('les essais de la base, rejoués en production', () => {
     // dans l'export — `hausseDuChiffreDAffaires` (230), `pieceDUnPaiementDansSonDossier`, `plancherALEcartDAlignement`,
     // `especesDuClientHorsDesReprises` et `auteurDesOuvertures` (231 à 234), `modeDeReglementDesMouvements` (240) ; aucun
     // ne cherche un semis ni le super-utilisateur, ils se jouent comme des essais de la production.
-    expect(cas.length).toBe(25)
+    // Vingt-quatre le 27/11/2026 : `sousDossierDansSonDossier` sorti (DOCF-Q1-B en production, 20261127055603, par l'outil ; il
+    // ne cherche aucun semis, il se joue comme un essai de la production).
+    expect(cas.length).toBe(24)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

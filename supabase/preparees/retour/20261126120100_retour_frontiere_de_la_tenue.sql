@@ -1,4 +1,4 @@
--- RETOUR D'OPT6 — la frontière de la tenue retirée de la base (supabase/preparees/20261126120000_frontiere_de_la_tenue.sql).
+-- RETOUR D'OPT6 — la frontière de la tenue retirée de la base (supabase/schema/20261127053521_frontiere_de_la_tenue.sql).
 -- Il retire quatre déclencheurs et une fonction, n'écrit ni ne supprime aucune donnée : la base revient à OPT1, où seul
 -- l'écran et les Edge Functions tiennent la tenue fermée. À coller par le cabinet (le mot `drop` retient l'outil), dans une
 -- transaction, avec sa ligne d'historique ; `FRONTIERE_DE_LA_TENUE_PREVUE` se rebaisse dans le même commit.

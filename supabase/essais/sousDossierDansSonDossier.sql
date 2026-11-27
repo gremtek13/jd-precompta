@@ -1,6 +1,7 @@
--- LE SOUS-DOSSIER D'UN DOCUMENT OU D'UNE PIÈCE, TENU DANS SON DOSSIER (DOCF-Q1-B ; la migration préparée
--- `sous_dossier_dans_son_dossier`, supabase/preparees/20261117150000_sous_dossier_dans_son_dossier.sql). Le récit :
--- HISTORIQUE.md, « 17/11/2026 — DOCF-Q1-B : LE SOUS-DOSSIER TENU DANS SON DOSSIER, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ». À
+-- LE SOUS-DOSSIER D'UN DOCUMENT OU D'UNE PIÈCE, TENU DANS SON DOSSIER (DOCF-Q1-B ; la migration
+-- `sous_dossier_dans_son_dossier`, en production depuis le 27/11/2026, 257,
+-- supabase/schema/20261127055603_sous_dossier_dans_son_dossier.sql). Le récit : HISTORIQUE.md, « 17/11/2026 — DOCF-Q1-B : LE
+-- SOUS-DOSSIER TENU DANS SON DOSSIER, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) », « 27/11/2026 — OPT6 EN PRODUCTION (255) ». À
 -- rejouer après toute migration qui touche `garder_sous_dossier_dans_son_dossier`, `garder_sous_dossier_occupe`, les gardes
 -- BEFORE de `documents_divers`, `pieces` ou `sous_dossiers`, ou leurs policies. SANS LA MIGRATION (la garde absente du
 -- catalogue), il se dit EN ATTENTE.

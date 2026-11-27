@@ -1,5 +1,6 @@
 -- ESSAI DU COMPTE PROPRE HORS D'UN EXERCICE VALIDÉ (ligne 26.6, MCB6Q2-Q1 ; migration `compte_propre_hors_des_exercices_valides`,
--- PRÉPARÉE le 15/11/2026). SUR UNE RÉPLIQUE SEULEMENT : il crée des dossiers, des comptes bancaires et des exercices validés
+-- préparée le 15/11/2026, en production depuis le 27/11/2026, 256,
+-- supabase/schema/20261127055505_compte_propre_hors_des_exercices_valides.sql). SUR UNE RÉPLIQUE SEULEMENT : il crée des dossiers, des comptes bancaires et des exercices validés
 -- fictifs (posés par le propriétaire, sans la validation : seul compte ici le filet), et en falsifie la fonction. Joué ENTIER,
 -- en une transaction qui s'annule (`begin` … `rollback`), par psql, sans `-1` :
 --   psql -v ON_ERROR_STOP=1 -f supabase/essais/comptePropreHorsDesExercicesValides.sql

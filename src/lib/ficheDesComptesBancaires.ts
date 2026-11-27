@@ -26,9 +26,9 @@ import { ROLES_COMPTABLES, type PlanComptable } from './planComptable'
 //     qui le nomme (`retraitDuCompte`) ;
 //   - MCB6-Q2 : la date depuis laquelle un compte tient son propre 512 ne se pose ni sur un exercice validé ni avant lui —
 //     l'ouverture par compte suppose que l'année de départ ne l'est pas, et un exercice validé est figé. Les exercices validés
-//     lus en partie retiennent ce geste, du côté fermé. La base de la production ne le refuse pas elle-même (aucune garde des
-//     comptes de l'export ne lit `exercices_valides`) ; le filet que le cabinet a choisi (MCB6Q2-Q1 (A), 15/11/2026) est
-//     PRÉPARÉ — `compte_propre_hors_des_exercices_valides`, à coller avec l'ouverture éclatée — et refuse aux mêmes mots :
+//     lus en partie retiennent ce geste, du côté fermé. La base de la production le refuse aussi depuis le 27/11/2026 (256) :
+//     le filet que le cabinet a choisi (MCB6Q2-Q1 (A), 15/11/2026), `compte_propre_hors_des_exercices_valides`, appliqué
+//     avant l'ouverture éclatée (REPET2-Q1 (A)), refuse aux mêmes mots :
 //     `REFUS_ANNEE_VALIDEE` les tire de `REFUS_DES_EXERCICES_VALIDES` (lib/comptesBancaires.ts, confronté au texte de la
 //     migration), et ficheDesComptesBancaires.test.ts éprouve que l'écran et le filet refusent les mêmes saisies.
 // Le retrait ne passe par aucune fonction : une suppression directe sous la policy du cabinet, que jugent la garde, les clés

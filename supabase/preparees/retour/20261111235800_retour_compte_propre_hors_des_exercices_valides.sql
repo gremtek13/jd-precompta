@@ -1,5 +1,5 @@
--- LE RETOUR DE `compte_propre_hors_des_exercices_valides` (MCB6Q2-Q1, ligne 26.6 ; supabase/preparees/
--- 20261111235700_compte_propre_hors_des_exercices_valides.sql) — À COLLER (ses deux retraits retiennent l'outil), dans une
+-- LE RETOUR DE `compte_propre_hors_des_exercices_valides` (MCB6Q2-Q1, ligne 26.6 ; supabase/schema/
+-- 20261127055505_compte_propre_hors_des_exercices_valides.sql) — À COLLER (ses deux retraits retiennent l'outil), dans une
 -- transaction, sur l'accord du cabinet. Il retire le filet et sa fonction, rien d'autre ; aucune donnée. C'est un
 -- RELÂCHEMENT : la base n'oppose plus rien à un compte bancaire qui tiendrait son propre 512 depuis un exercice validé —
 -- l'écran seul le refuse de nouveau (MCB6-Q2), comme avant la migration. Il se refuse si la fonction n'est plus celle que la

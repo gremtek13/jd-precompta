@@ -97,8 +97,8 @@ export const REFUS_DE_LA_GARDE: readonly RefusDeLaBase[] = [
 ]
 
 /** Le refus du filet des exercices validés (`garder_compte_propre_hors_des_exercices_valides`, MCB6Q2-Q1 ; la migration
- *  `compte_propre_hors_des_exercices_valides`, PRÉPARÉE le 15/11/2026, pas appliquée, à coller avec l'ouverture éclatée,
- *  MCB5g) : un compte autre que le principal ne tient pas son propre 512 depuis un exercice validé du dossier, ni depuis une
+ *  `compte_propre_hors_des_exercices_valides`, préparée le 15/11/2026, en production depuis le 27/11/2026 (256, par l'outil),
+ *  avant l'ouverture éclatée, MCB5g, qui reste à coller) : un compte autre que le principal ne tient pas son propre 512 depuis un exercice validé du dossier, ni depuis une
  *  année antérieure. Le premier `%` : le plus petit exercice validé qui la retient ; le second : l'année qui suit le dernier
  *  exercice validé. Ce sont aussi les mots que la fiche dit avant le clic (`REFUS_ANNEE_VALIDEE`, lib/ficheDesComptesBancaires.ts). */
 export const REFUS_DES_EXERCICES_VALIDES: RefusDeLaBase = {

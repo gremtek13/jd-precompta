@@ -5,7 +5,7 @@ import type { RefusDeLaBase } from './pieceDUneFactureReprise'
 // DANS SON DOSSIER, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) »).
 //
 // La base vérifiait seulement que le sous-dossier d'un document (`documents_divers`) ou d'une pièce (`pieces`) existe : la
-// migration préparée `sous_dossier_dans_son_dossier` (supabase/preparees/20261117150000_sous_dossier_dans_son_dossier.sql)
+// migration `sous_dossier_dans_son_dossier` (supabase/schema/20261127055603_sous_dossier_dans_son_dossier.sql, en production depuis le 27/11/2026, 257)
 // pose `garder_sous_dossier_dans_son_dossier`, qui tire juste après la porte d'accès et avant la clé étrangère — le
 // sous-dossier est un sous-dossier du dossier de la ligne, lu verrouillé en partage —, et `garder_sous_dossier_occupe` : un
 // sous-dossier qui range un document ou une pièce ne change pas de dossier.
@@ -16,12 +16,12 @@ import type { RefusDeLaBase } from './pieceDUneFactureReprise'
 // (DOCF-Q1) ; aucun écran ne change le dossier d'un sous-dossier. Un refus ne dit rien du sous-dossier, et ne distingue pas
 // celui d'un autre dossier d'un identifiant inconnu.
 
-// LE DRAPEAU, BAISSÉ tant que la migration n'est pas appliquée ; il se lève le jour où son fichier entre dans
+// LE DRAPEAU, LEVÉ le 27/11/2026 (la migration appliquée, 257) ; baissé tant qu'elle ne l'était pas, il se lève le jour où son fichier entre dans
 // supabase/schema/, texte inchangé, et se baisse AVANT tout retour. Il se lit À CHAQUE APPEL : les tests jouent ses deux états
 // sur l'objet ci-dessous.
 export const DRAPEAU_DU_SOUS_DOSSIER = {
   /** Vrai le jour de l'application de `sous_dossier_dans_son_dossier`. */
-  SOUS_DOSSIER_DANS_SON_DOSSIER_PREVU: false as boolean,
+  SOUS_DOSSIER_DANS_SON_DOSSIER_PREVU: true as boolean,
 }
 
 /** Le drapeau, lu à l'appel. */
