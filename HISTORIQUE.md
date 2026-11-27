@@ -55060,3 +55060,19 @@ rendent les mêmes verdicts sur 259 et sur 257 refait par les deux retours, sauf
 avec `validationExercice`) ; `rls.sql` 0 en faute sur 1 357, 178 mutations. Les 16 préparées restantes s'appliquent seules et en chaîne
 sur 259 (275 ; `rls.sql` 346/1 692/0/220). Le banc des captures (`debordements.mjs`, le drapeau levé) : 0 débordement à 1 440, 1 280, 1 024, 390 et 720 px, à la
 passe du client « Banque » et aux volets extrêmes. Non fait : `compte_bancaire_id` reste facultatif dans `types.ts` (138 erreurs).
+
+### 27/11/2026 — LE RANGEMENT DE L'ÉTAT DES PAIEMENTS DE L'ASSURANCE MALADIE ; NOE7 ET NOE8 RELUS
+
+(Agent architecte ; aucune migration, aucun outil de la base, rien en production.) Mission : NOE7, NOE8 et « le lecteur du PDF
+des paiements ». **Fait** : `lib/etatDesPaiementsAssuranceMaladie.ts`, pur, sans appelant — la première partie du lecteur, ce qui
+ne dépend pas de la mise en page : un état (une journée comptable, un organisme : une caisse sous un régime de la liste fermée, ou une
+complémentaire sous son numéro ou « non dit »), ses lignes (part, facture ou non, montant signé), le total imprimé s'il existe, rangés
+comme la base l'admet (conception 53, § 12 ; essai étapes 60 à 72) : le total d'une facture paie sa part, une somme négative est une
+régularisation de sa part, une aide un `forfait` ; un versement sans facture d'une complémentaire, que la base ne range pas, écarte
+l'état. Tout doute écarte l'état ENTIER (journée, organisme, montant, part, total qui ne se referme pas, état vide, même journée et
+même organisme deux fois), sous son rang et sa raison ; les autres se rangent ; les rejets « non dits ». Tests : les règles, chaque
+raison, une batterie de 3 000 envois tirés (sortie admise par `refusDeLImport`, sommes et factures conservées), un canari ; le
+scanner « sans sortie » couvre le module (trois défauts plantés) ; cinq mutations sur cinq mordent. **Non fait, et pourquoi** : le
+gabarit de la page (ancres, colonnes, forme de l'organisme) attend une page rendue anonyme (BOR6-Q2 (A)) ; NOE7 attend la forme de
+l'export CSV (NOE1) et de l'état — les reconnaître sans elle serait deviner (NOE-Q6), d'où NOE7-Q1 ; NOE8 n'a plus que les essais
+des trois migrations et `rls.sql` rejoués en production (déjà justes sur une réplique à 259, ce même jour), le geste de la session.

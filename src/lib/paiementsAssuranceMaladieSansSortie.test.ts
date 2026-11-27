@@ -16,6 +16,10 @@ import { describe, expect, it } from 'vitest'
 
 const MODULE = 'src/lib/paiementsAssuranceMaladie.ts'
 const IMPORTS_PERMIS = new Set(['./csv'])
+// Le rangement de l'état des paiements (le lecteur du PDF, première partie) : il reçoit ce qu'un gabarit lira d'une page, et
+// n'importe que le module de lecture et la liste des régimes.
+const MODULE_DE_L_ETAT = 'src/lib/etatDesPaiementsAssuranceMaladie.ts'
+const IMPORTS_PERMIS_DE_L_ETAT = new Set(['./paiementsAssuranceMaladie', './regimesAssuranceMaladie'])
 
 const sansCommentaires = (texte: string) => texte.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
 
@@ -31,11 +35,11 @@ const SORTIES: readonly [string, RegExp][] = [
 ]
 
 /** Les fautes d'un texte de module : une sortie, ou un import hors de la liste (les imports de type exceptés). */
-export function fautesDeSortie(texte: string): string[] {
+export function fautesDeSortie(texte: string, permis: ReadonlySet<string> = IMPORTS_PERMIS): string[] {
   const code = sansCommentaires(texte)
   const fautes = SORTIES.filter(([, motif]) => motif.test(code)).map(([nom]) => nom)
   for (const m of code.matchAll(/^\s*import\s+(type\s+)?[\s\S]*?\sfrom\s+'([^']+)'/gm)) {
-    if (!m[1] && !IMPORTS_PERMIS.has(m[2])) fautes.push(`l’import de ${m[2]}`)
+    if (!m[1] && !permis.has(m[2])) fautes.push(`l’import de ${m[2]}`)
   }
   return fautes
 }
@@ -54,6 +58,25 @@ describe('le module de lecture n’a aucune sortie', () => {
     expect(fautesDeSortie(journal)).toEqual(['un journal'])
     expect(fautesDeSortie(`import { supabase } from './supabase'\n${texte}`)).toEqual(['le client de la base', 'l’import de ./supabase'])
     expect(fautesDeSortie(texte.replace('const bissextile =', 'const aujourdHui = new Date()\n  const bissextile ='))).toEqual(['l’horloge'])
+  })
+})
+
+describe('le rangement de l’état des paiements n’a aucune sortie', () => {
+  const texte = readFileSync(resolve(process.cwd(), MODULE_DE_L_ETAT), 'utf8')
+
+  it('aucune sortie, et les deux modules permis seuls importés', () => {
+    expect(fautesDeSortie(texte, IMPORTS_PERMIS_DE_L_ETAT)).toEqual([])
+    expect(texte).toContain('from \'./paiementsAssuranceMaladie\'')
+  })
+
+  it('trois défauts plantés se voient : un journal d’une ligne, le client de la base, l’horloge', () => {
+    const ancre = 'for (const l of e.lignes) {\n    const m = l.montant_centimes'
+    expect(texte).toContain(ancre)
+    expect(fautesDeSortie(texte.replace(ancre, `${ancre}\n    console.log(l)`), IMPORTS_PERMIS_DE_L_ETAT)).toEqual(['un journal'])
+    expect(fautesDeSortie(`import { supabase } from './supabase'\n${texte}`, IMPORTS_PERMIS_DE_L_ETAT))
+      .toEqual(['le client de la base', 'l’import de ./supabase'])
+    expect(fautesDeSortie(texte.replace('let sansMontant = 0', 'let sansMontant = Date.now()'), IMPORTS_PERMIS_DE_L_ETAT))
+      .toEqual(['l’horloge'])
   })
 })
 
