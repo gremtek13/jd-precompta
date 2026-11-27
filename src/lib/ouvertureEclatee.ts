@@ -1,4 +1,4 @@
-import { dateDite, formuler, type RefusDeLaBase, type RefusDit } from './comptesBancaires'
+import { compteDeBanqueDuMouvement, dateDite, formuler, type RefusDeLaBase, type RefusDit } from './comptesBancaires'
 import type { CompteDuReleve, LectureDesComptes } from './importParCompte'
 import { relevesAuTrenteEtUn, type SoldeDuReleve } from './releveAuTrenteEtUn'
 import { releveParCompte, tenuDansLExercice, type PartDuReleve } from './releveParCompte'
@@ -134,8 +134,19 @@ export type EclatementAttendu =
   | { etat: 'refus'; refus: RefusDit }
   | { etat: 'lignes'; lignes: LigneDeLEclatement[] }
 
-const refus = (cle: string, ...valeurs: string[]): EclatementAttendu =>
-  ({ etat: 'refus', refus: formuler(REFUS_DE_L_ECLATEMENT.find((r) => r.cle === cle) as RefusDeLaBase, ...valeurs) })
+const refusDit = (cle: string, ...valeurs: string[]): RefusDit =>
+  formuler(REFUS_DE_L_ECLATEMENT.find((r) => r.cle === cle) as RefusDeLaBase, ...valeurs)
+const refus = (cle: string, ...valeurs: string[]): EclatementAttendu => ({ etat: 'refus', refus: refusDit(cle, ...valeurs) })
+
+/** L'ouverture du 512 du rôle au 1er janvier `debut`, en centimes, débit moins crédit : la balance reprise ce jour-là et les soldes
+ *  reportés (celle de `ouverture_eclatee_attendue`, que le filet de la banque partagée relit de même). */
+function ouvertureDuRole(
+  reprise: EntreesDeLEclatement['reprise'], reportes: EntreesDeLEclatement['reportes'], debut: string, role: string,
+): number {
+  return [...reprise, ...reportes]
+    .filter((a) => a.date === debut && a.compte === role)
+    .reduce((t, a) => t + (a.sens === 'debit' ? 1 : -1) * Math.round(a.montant * 100), 0)
+}
 
 /** L'éclatement que l'ouverture de l'exercice commande, ou le refus que la base opposerait, dans son ordre. */
 export function ouvertureEclateeAttendue(e: EntreesDeLEclatement): EclatementAttendu {
@@ -168,9 +179,7 @@ export function ouvertureEclateeAttendue(e: EntreesDeLEclatement): EclatementAtt
     nonNul = nonNul || s.centimes !== 0
   }
   if (!nonNul) return { etat: 'rien' }
-  const ouverture = [...e.reprise, ...e.reportes]
-    .filter((a) => a.date === debut && a.compte === e.role)
-    .reduce((t, a) => t + (a.sens === 'debit' ? 1 : -1) * Math.round(a.montant * 100), 0)
+  const ouverture = ouvertureDuRole(e.reprise, e.reportes, debut, e.role)
   if (somme !== ouverture) return refus('somme', dateDite(veille), eurosDeLaBase(somme), e.role, eurosDeLaBase(ouverture))
   const lignes = comptes.filter((s) => sort(s) && s.centimes !== 0).flatMap((s): LigneDeLEclatement[] => {
     const centimes = s.centimes as number
@@ -293,13 +302,18 @@ export function refusDeLOuvertureSuivante(e: EntreesDeLEclatement, report: Repor
   const suivante = ouvertureEclateeAttendue({
     ...e,
     annee: e.annee + 1,
-    reportes: [
-      ...e.reportes.filter((s) => s.date !== report.date),
-      ...report.soldes.map((s) => ({ date: report.date, compte: s.compte, sens: s.sens, montant: s.montant })),
-    ],
+    reportes: reportesApresLaValidation(e.reportes, report),
     anneesValidees: [...e.anneesValidees, e.annee],
   })
   return suivante.etat === 'refus' ? suivante.refus : null
+}
+
+/** Les soldes reportés tels que la validation les laissera : ceux du 1er janvier suivant remplacés par le report. */
+function reportesApresLaValidation(reportes: EntreesDeLEclatement['reportes'], report: ReportDeLaValidation): EntreesDeLEclatement['reportes'] {
+  return [
+    ...reportes.filter((s) => s.date !== report.date),
+    ...report.soldes.map((s) => ({ date: report.date, compte: s.compte, sens: s.sens, montant: s.montant })),
+  ]
 }
 
 /** Pourquoi le refus de l'éclatement de l'exercice suivant retient la validation de celui-ci : la phrase du détail du préalable. */
@@ -308,6 +322,50 @@ export function detailDeLOuvertureSuivante(annee: number, role: string): string 
     + `relevé du 31/12/${annee}, face au ${role} que cette validation reportera. Validé ainsi, l’exercice ${annee} figerait ce ${role}, `
     + `que rien ne répare ensuite — une écriture libre ne touche pas la banque —, et l’exercice ${annee + 1} ne se validerait plus. `
     + `Dans Banque, importer le relevé qui manque, ou trouver ce qui fait l’écart — la preuve du ${role}, dans Révision, en compte les causes.`
+}
+
+// ── LA BANQUE PARTAGÉE AU 31 DÉCEMBRE, À LA VALIDATION (MCBR2-Q2 (A), décision du cabinet du 27/11/2026) ─────────────────────
+// Un compte bancaire autre que le principal s'écrit au 512 du rôle jusqu'au 1er janvier de son 512 propre — plus tard, ou jamais
+// s'il se clôt avant. Au 31 décembre de l'exercice, ce 512 porte l'argent de ces comptes, et la validation le reporte : un écart
+// que leurs relevés ne font pas s'y figerait sans remède (une écriture libre ne touche pas la banque), chaque exercice suivant le
+// porterait, et l'éclatement que ce compte prendra un jour se refuserait. Dès qu'un second compte s'écrit au 512 du rôle au
+// 31 décembre, la validation se refuse donc quand un compte de ce 512 ne dit pas son solde sur ses relevés, ou que leur somme ne
+// fait pas le 512 reporté — aux mots du refus de l'éclatement, sur les soldes que l'éclatement lit (`soldesDesComptesAuTrenteEtUn`),
+// le groupe étant celui où la base écrit la banque d'un mouvement ce jour-là (`compteDeBanqueDuMouvement`). À la différence de
+// l'éclatement, un compte au solde nul ne dispense de rien ; un compte clos au plus tard le 31 décembre ne s'y écrit plus et ne
+// partage rien. Le préalable `banque-partagee-retenue` (lib/prealablesValidation.ts) le dit avant le clic, hors du cas de
+// `ouverture-suivante-retenue`, que la base dit d'abord ; la base le refuse au même calcul, une fois sa migration en base
+// (supabase/preparees/20261127231000_banque_partagee_a_la_validation.sql, le filet `garder_banque_partagee_a_la_validation`).
+
+/**
+ * Le refus que la validation de l'exercice `e.annee` opposerait au 512 du rôle partagé au 31 décembre — un solde qui ne se lit pas,
+ * deux relevés qui se contredisent, la somme des soldes qui ne fait pas le 512 reporté (`report`) —, ou rien : aucun second compte
+ * ne s'y écrit ce jour-là, ou ses relevés le font. Sans défaut.
+ */
+export function refusDeLaBanquePartagee(
+  e: Pick<EntreesDeLEclatement, 'annee' | 'role' | 'parts' | 'reprise' | 'reportes'>, report: ReportDeLaValidation,
+): RefusDit | null {
+  const fin = `${e.annee}-12-31`
+  const groupe = soldesDesComptesAuTrenteEtUn(e.parts, e.annee)
+    .filter((s) => compteDeBanqueDuMouvement(s.compte, fin, e.role) === e.role)
+  if (!groupe.some((s) => !s.compte.principal && s.etat !== 'clos')) return null
+  let somme = 0
+  for (const s of groupe) {
+    if (s.etat === 'inconnu') return refusDit('inconnu', dateDite(fin), s.compte.libelle)
+    if (s.etat === 'plusieurs') return refusDit('plusieurs', s.compte.libelle, dateDite(fin))
+    somme += s.centimes as number
+  }
+  const ouverture = ouvertureDuRole(e.reprise, reportesApresLaValidation(e.reportes, report), `${e.annee + 1}-01-01`, e.role)
+  return somme === ouverture ? null : refusDit('somme', dateDite(fin), eurosDeLaBase(somme), e.role, eurosDeLaBase(ouverture))
+}
+
+/** Pourquoi le 512 partagé retient la validation : la phrase du détail du préalable. */
+export function detailDeLaBanquePartagee(annee: number, role: string): string {
+  return `Un second compte bancaire s’écrit au ${role} au 31/12/${annee}, avec le principal : la somme de leurs soldes aux relevés de `
+    + `ce jour doit faire ce ${role}, que cette validation reportera sur ${annee + 1}. Validé ainsi, l’exercice ${annee} figerait l’écart, `
+    + `que rien ne répare ensuite — une écriture libre ne touche pas la banque —, et l’exercice ${annee + 1} ne se validerait plus tant `
+    + `que ce compte s’y écrit. Dans Banque, importer le relevé qui manque, ou trouver ce qui fait l’écart — la preuve du ${role}, dans `
+    + 'Révision, en compte les causes.'
 }
 
 // ── Ce que la Vue d'ensemble en dit (MCB5g ; lib/pointsDeLaChecklist.ts, le point `ouverture-a-eclater`) ──────────────────

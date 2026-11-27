@@ -275,6 +275,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   LECTEUR DU CABINET », « CFCS-Q1 : LE CHEMIN D'UN FICHIER DANS SON DOSSIER, EN BASE ».
 - **Une table que le CLIENT écrit** liste ses droits un par un (`piece_commentaires`) ; une parole datée ne se réécrit
   pas (aucune policy `UPDATE`).
+- **Ni une pièce ni un document ne change de dossier, pour tout auteur** (SECU4-Q2 (B), préparée le 27/11/2026, par l'outil) : une garde
+  qui ne lit rien, la DERNIÈRE des BEFORE de sa table, après celles qui disent ce qui cite la pièce → « SECU4-Q2 ET MCBR2-Q2 ».
 - **Edge Functions auto-porteuses** : aucun import de `src/` ; une logique partagée est COPIÉE entre des bornes
   `── DÉBUT/FIN …`, gardée par un test qui l'extrait, la transpile et l'exécute contre `src/lib`, jamais l'une contre
   l'autre → « Une Edge Function auto-portée duplique du code ».
@@ -1360,6 +1362,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`compteQueLApplicationEcrit`) → « UNE BALANCE REPRISE DEVIENT LES À-NOUVEAUX ».
 - **Un contrôle qui part d'un côté d'une relation ne voit pas l'autre** → « Un contrôle qui part d'un côté d'une
   relation ».
+- **Le 512 du principal partagé au 31 décembre retient la validation** (MCBR2-Q2 (A)) : un second compte non clos s'y écrit ? Chaque
+  solde se lit au relevé et leur somme fait le 512 reporté (`banque-partagee-retenue` ; filet différé préparé) → « SECU4-Q2 ET MCBR2-Q2 ».
 - **Le bilan se lit depuis les soldes** (`lib/bilan.ts`, rubriques du 2033-A-SD) : aucune compensation (le sens jugé
   compte par compte et tiers par tiers), un compte non nommé est « à classer » ; la colonne N−1 est le MÊME bilan
   calculé sur N−1, jamais l'ouverture relue ; l'ouverture se confronte à la clôture précédente

@@ -1786,8 +1786,14 @@ begin
       update pieces set type_piece = 'note_frais' where id = '{QV}'$q$,
       'OK', ''],
     -- Son chemin la suit : depuis CFCS-Q1 (`chemin_dans_son_dossier`, préparée), le premier segment du chemin d'une pièce est
-    -- son dossier (`pieces_storage_path_dans_son_dossier`) ; le pas passe dans les deux états.
-    array['controle4', '214g. MUTATION : une pièce qu''aucun paiement ne cite change de dossier', 'chef', $q$update pieces set dossier_id = '{W8}', storage_path = '{W8}/essai-qo.pdf' where id = '{QO}'$q$,
+    -- son dossier (`pieces_storage_path_dans_son_dossier`) ; le pas passe dans les deux états. Depuis SECU4-Q2
+    -- (`ni_piece_ni_document_ne_change_de_dossier`, préparée), aucune pièce ne change plus de dossier : la garde de la caisse la
+    -- laisse passer, puis celle du dossier, qui tire en DERNIER, la refuse sous ses mots — que le pas admet, et seulement eux ;
+    -- un refus de la garde de la caisse, qui tire avant, le ferait virer au rouge dans les deux états.
+    array['controle4', '214g. MUTATION : une pièce qu''aucun paiement ne cite change de dossier (SECU4-Q2 en base : la garde de la caisse la laisse passer, la règle du dossier la refuse)', 'chef', $q$do $x$ begin update pieces set dossier_id = '{W8}', storage_path = '{W8}/essai-qo.pdf' where id = '{QO}';
+      exception when check_violation then
+        if sqlerrm <> 'Une pièce reste dans le dossier où elle a été déposée : elle ne change pas de dossier.' then raise; end if;
+      end $x$$q$,
       'OK', ''],
     array['fait4', '214h. un paiement de 15 € de la pièce de vente QB1 de B8, le 12/03', 'chef', $q$select regler_piece_par_la_caisse('{B8}', '{QB1}', '2026-03-12', 15)$q$,
       'OK', ''],

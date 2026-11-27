@@ -11,7 +11,9 @@
 --      déclencheurs BEFORE, et leur rang — sur `ecritures_libres`, après la porte d'accès et les deux gardes de la table ;
 --   2. LE CÔTÉ PIÈCE : une pièce qu'une écriture libre cite ne change pas de dossier, sous la session d'un membre de l'équipe
 --      assigné aux deux dossiers (il n'est pas super-administrateur) comme pour le propriétaire hors de la RLS ; le refus nomme
---      l'écriture de son dossier ; une pièce que rien ne cite change de dossier, avec son chemin (le contrôle positif) ;
+--      l'écriture de son dossier ; une pièce que rien ne cite change de dossier, avec son chemin (le contrôle positif) — SECU4-Q2
+--      en base (`ni_piece_ni_document_ne_change_de_dossier`, préparée), la garde la laisse passer, puis la règle du dossier, qui
+--      tire en dernier, la refuse sous ses mots (2c le dit dans les deux états) ;
 --   3. LE CÔTÉ ÉCRITURE : `enregistrer_ecriture_libre` refusait déjà la pièce d'un autre dossier (ses mots) ; la restauration du
 --      super-administrateur, qui écrit en direct, ne cite plus la pièce d'un autre dossier ni un identifiant inconnu (les mêmes
 --      mots, avant la clé étrangère), et cite celle de son dossier ; une réécriture de la pièce citée sous le réglage de la
@@ -56,6 +58,9 @@ declare
   citee_par_l_ecriture constant text := 'Cette pièce est citée par l''écriture libre EL' || extract(year from (now() at time zone 'Europe/Paris'))::integer
     || '-0001 de son dossier : elle ne change pas de dossier.';
   de_son_dossier constant text := 'La pièce qu''une écriture libre cite est une pièce de son dossier.';
+  -- SECU4-Q2 (`ni_piece_ni_document_ne_change_de_dossier`, préparée) : la règle du dossier, en base ou non, et ses mots.
+  depot constant boolean := to_regprocedure('public.garder_dossier_de_depot()') is not null;
+  piece_reste constant text := 'Une pièce reste dans le dossier où elle a été déposée : elle ne change pas de dossier.';
   e record; v_code text; v_msg text; v_obs text; v_textes text[];
   verdicts jsonb := '[]'::jsonb;
 begin
@@ -101,11 +106,14 @@ begin
         replace(ecrire, '{CITEE}', '{PA}'), 'proprio',
         $q$update pieces set dossier_id = '{DB}', storage_path = '{DB}/essai-secu4-pa.pdf' where id = '{PA}';$q$,
         null, '23514', citee_par_l_ecriture),
-      (5, '2c. une pièce que rien ne cite change de dossier, avec son chemin (le contrôle positif)',
+      -- SECU4-Q2 en base (`ni_piece_ni_document_ne_change_de_dossier`, préparée) : aucune pièce ne change plus de dossier. La
+      -- garde de l'écriture libre, qui tire avant, la laisse passer, puis la règle du dossier la refuse sous ses mots : le pas les
+      -- attend, et un refus de la garde de l'écriture libre le ferait virer au rouge dans les deux états.
+      (5, '2c. une pièce que rien ne cite change de dossier, avec son chemin (le contrôle positif ; SECU4-Q2 en base : la garde la laisse passer, la règle du dossier la refuse)',
         replace(ecrire, '{CITEE}', '{PA}'), 'membre',
         $q$update pieces set dossier_id = '{DB}', storage_path = '{DB}/essai-secu4-pa2.pdf' where id = '{PA2}';$q$,
-        $q$(select dossier_id::text || ' ' || storage_path from pieces where id = '{PA2}')$q$, 'OK',
-        '5ec40000-0000-4000-8000-0000000000d2 5ec40000-0000-4000-8000-0000000000d2/essai-secu4-pa2.pdf'),
+        $q$(select dossier_id::text || ' ' || storage_path from pieces where id = '{PA2}')$q$, case when depot then '23514' else 'OK' end,
+        case when depot then piece_reste else '5ec40000-0000-4000-8000-0000000000d2 5ec40000-0000-4000-8000-0000000000d2/essai-secu4-pa2.pdf' end),
       (6, '2d. l''écriture de DA citée par son numéro : elle cite toujours PA, de DA (le contrôle positif de la pose)',
         replace(ecrire, '{CITEE}', '{PA}'), 'proprio', null,
         $q$(select e.exercice || '-' || e.numero || ' ' || p.dossier_id::text from ecritures_libres e join pieces p on p.id = e.piece_citee_id where e.dossier_id = '{DA}')$q$,

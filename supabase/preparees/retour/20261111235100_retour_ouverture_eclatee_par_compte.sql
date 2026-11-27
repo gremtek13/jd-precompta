@@ -20,6 +20,11 @@ begin
   if to_regprocedure('public.garder_ouverture_suivante_a_la_validation()') is not null then
     raise exception 'Le filet de l''ouverture suivante (ouverture_suivante_a_la_validation, MCBR-Q2) est en base : son retour se colle d''abord.';
   end if;
+  -- Et celui de la banque partagée (MCBR2-Q2), préparé le 27/11/2026, qui lit `soldes_des_comptes_au_trente_et_un` à la fin de
+  -- chaque validation.
+  if to_regprocedure('public.garder_banque_partagee_a_la_validation()') is not null then
+    raise exception 'Le filet de la banque partagée (banque_partagee_a_la_validation, MCBR2-Q2) est en base : son retour se colle d''abord.';
+  end if;
   if exists (select 1 from public.ecritures_brouillon where ouverture_compte_bancaire_id is not null) then
     raise exception 'Des écritures éclatent l''ouverture de la banque : le retour se refuse tant qu''elles existent (une validation les aurait figées, ou les recomposer à vide les retire).';
   end if;

@@ -296,6 +296,8 @@ describe('le rangement des contrôles existants', () => {
       'banque-au-releve', 'ouverture-sans-reprise', 'ouverture-a-eclater',
       // MCBR-Q2 (A) : l'ouverture de l'exercice suivant, que la validation figerait sans remède.
       'ouverture-suivante-retenue',
+      // MCBR2-Q2 (A) : le 512 du principal partagé au 31 décembre avec un second compte.
+      'banque-partagee-retenue',
     ],
     // Étape VF5f : l'encaissement d'une facture qui attend son mouvement du relevé, au registre des ventes.
     recettes: [

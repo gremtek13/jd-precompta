@@ -10,6 +10,7 @@ import type { ANouveau, EcritureBrouillon, RevisionJustification, SoldeReporte }
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../test/ecritures'
 import { PLAN_PAR_DEFAUT } from './planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
+import { sansLaRegleDuDossier } from '../test/essaiSql'
 
 // L'ESSAI DE L'ÉTAPE R1, REJOUÉ SUR LE MODULE. supabase/essais/revisionSoldes.sql a joué `justifier_solde` en production
 // le 09/10/2026 — 165 verdicts sur 165, le texte transmis identique au fichier — : chacun de ses appels attend un refus,
@@ -174,7 +175,7 @@ function etapes(texte: string, ids: Map<string, string>): Etape[] {
   const remplacer = (s: string) => [...ids].reduce((acc, [cle, valeur]) => acc.split(`{${cle}}`).join(valeur), s)
   const sql = (s: string) => s.replace(/''/g, "'")
   return [...texte.matchAll(/array\['(jeu|controle|fait|valeur)', '((?:[^']|'')*)', '(\w+)', \$q\$([\s\S]*?)\$q\$, '((?:[^']|'')*)',\s*'((?:[^']|'')*)'\]/g)]
-    .map((m) => ({ genre: m[1], nom: sql(m[2]), qui: m[3], requete: remplacer(m[4]), code: sql(m[5]), attendu: remplacer(sql(m[6])) }))
+    .map((m) => ({ genre: m[1], nom: sql(m[2]), qui: m[3], requete: remplacer(sansLaRegleDuDossier(m[4])), code: sql(m[5]), attendu: remplacer(sql(m[6])) }))
 }
 
 // ── Le monde de l'essai ───────────────────────────────────────────────────────────────────────────────────────────

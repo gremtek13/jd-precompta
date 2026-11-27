@@ -13,7 +13,9 @@ import {
 import { refusDesChampsBnc, type LigneAJuger } from './champsBncFiges'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { confronterLOuverture, ouvertureEnEcart } from './ouvertureConfrontee'
-import { detailDeLOuvertureSuivante, eclatementDeLExercice, refusALaValidation, refusDeLOuvertureSuivante } from './ouvertureEclatee'
+import {
+  detailDeLaBanquePartagee, detailDeLOuvertureSuivante, eclatementDeLExercice, refusALaValidation, refusDeLaBanquePartagee, refusDeLOuvertureSuivante,
+} from './ouvertureEclatee'
 import { MODELES_DE_LA_VALIDATION, prealablesDeLInventaire, type InventaireDeLaValidation } from './inventaireDeLaValidation'
 import { cibleDesPrealablesDeLInventaire } from './inventaireDesControles'
 import { INVENTAIRE_EXPORTE } from './inventaire'
@@ -911,6 +913,26 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     }, report)
     if (refus !== null) {
       bloque({ id: 'ouverture-suivante-retenue', nb: null, cible: 'banque', message: refus.message, detail: detailDeLOuvertureSuivante(d.annee, d.modele.plan.banque) })
+    }
+  }
+
+  // ── Le 512 du principal partagé au 31 décembre (MCBR2-Q2 (A), le 27/11/2026). ──────────────────────────────────────────────
+  // Dès qu'un second compte bancaire s'écrit au 512 du principal au 31 décembre de l'exercice — même s'il ne prend son 512 propre
+  // que plus tard, ou jamais —, chaque compte de ce 512 dit son solde sur ses relevés, et leur somme fait le 512 que la validation
+  // reporte ; sinon la validation se refuse, aux mots du refus de l'éclatement (`refusDeLaBanquePartagee`, lib/ouvertureEclatee.ts).
+  // Hors du cas de `ouverture-suivante-retenue` : la base dit ce refus-là d'abord (son filet tire avant celui-ci), et tout ce qu'il
+  // refuse, celui-ci le refuserait aussi — rien ne se dit deux fois. Un dossier à un seul compte, ou dont aucun second compte ne
+  // s'écrit au 512 du principal ce jour-là : `banque-au-releve`, un avertissement (MVPD7-Q2), qui chiffre aussi l'écart ici. Comme
+  // `ouverture-suivante-retenue` : rien drapeau baissé, rien sur des contrôles illisibles (`releves-inconnus` retient la validation),
+  // une lecture partielle s'est arrêtée plus haut, rien pour un exercice que la reprise précède. La base le refuse aussi, aux mêmes
+  // mots, une fois sa migration en base : supabase/preparees/20261127231000_banque_partagee_a_la_validation.sql.
+  if (d.comptesBancaires.etat === 'lus' && d.controlesReleves !== null && !(anneeOuverture !== null && d.annee < anneeOuverture)
+    && !prealables.some((p) => p.id === 'ouverture-suivante-retenue')) {
+    const refus = refusDeLaBanquePartagee({
+      annee: d.annee, role: d.modele.plan.banque, parts: partsDuReleve, reprise: d.aNouveaux, reportes: d.soldesReportes,
+    }, report)
+    if (refus !== null) {
+      bloque({ id: 'banque-partagee-retenue', nb: null, cible: 'banque', message: refus.message, detail: detailDeLaBanquePartagee(d.annee, d.modele.plan.banque) })
     }
   }
 

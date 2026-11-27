@@ -360,8 +360,14 @@ begin
     array['controle', '139. un document cité non plus', 'chef', $q$update documents_divers set dossier_id = '{B}' where id = '{DA1}'$q$, '23514', 'Ce document est cité par la révision du solde du compte 512000 (exercice 2025) : il ne change plus de dossier, sauf avec son dossier.'],
     array['controle', '140. ni pour le propriétaire de la base', 'postgres', $q$update documents_divers set dossier_id = '{B}' where id = '{DA2}'$q$, '23514', 'Ce document est cité par la révision du solde du compte 580000 (exercice 2025) : il ne change plus de dossier, sauf avec son dossier.'],
     -- Son chemin la suit : depuis CFCS-Q1 (`chemin_dans_son_dossier`, préparée), le premier segment du chemin d'une pièce est
-    -- son dossier ; le pas passe dans les deux états.
-    array['controle', '141. une pièce qui n''est pas citée, si', 'chef', $q$update pieces set dossier_id = '{B}', storage_path = '{B}/essai-px.pdf' where id = '{PX}'$q$, 'OK', ''],
+    -- son dossier ; le pas passe dans les deux états. Depuis SECU4-Q2 (`ni_piece_ni_document_ne_change_de_dossier`, préparée),
+    -- aucune pièce ne change plus de dossier : la garde de la source citée la laisse passer, puis celle du dossier, qui tire en DERNIER, la
+    -- refuse sous ses mots — que le pas admet, et seulement eux ; un refus de la garde d'avant le ferait virer au rouge dans
+    -- les deux états.
+    array['controle', '141. une pièce qui n''est pas citée, si (SECU4-Q2 en base : la garde de la source citée la laisse passer, la règle du dossier la refuse)', 'chef', $q$do $x$ begin update pieces set dossier_id = '{B}', storage_path = '{B}/essai-px.pdf' where id = '{PX}';
+      exception when check_violation then
+        if sqlerrm <> 'Une pièce reste dans le dossier où elle a été déposée : elle ne change pas de dossier.' then raise; end if;
+      end $x$$q$, 'OK', ''],
     array['controle', '142. et le contenu d''une source citée reste libre', 'chef', $q$update pieces set tiers = 'ESSAI', dossier_id = '{A}' where id = '{PA1}'$q$, 'OK', ''],
 
     -- ══ Ce que le catalogue dit ══════════
