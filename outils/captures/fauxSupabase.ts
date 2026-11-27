@@ -2326,6 +2326,23 @@ function previsionPubliee(id: string, dossier: string, solde: number): Ligne {
   }
 }
 
+// DEUX COMPTES BANCAIRES (MCB1 à MCB7), joués par le levier `banc-comptes` (localStorage, lu à chaque appel) : sans lui, `comptes_bancaires`
+// est vide et chaque visite d'avant reste celle d'un seul compte, à l'octet près. Avec lui, le cabinet infirmier (d1) et l'atelier (d7)
+// portent un compte principal et un compte d'épargne, les mouvements et les relevés se partageant entre eux (un sur deux).
+const COMPTES_DU_BANC: Ligne[] = ['d1', 'd7'].flatMap((dossier) => [
+  { id: `cb-${dossier}-1`, dossier_id: dossier, libelle: 'Compte courant professionnel', principal: true, compte: null, compte_propre_depuis: null, ouvert_le: '2025-01-01', clos_le: null, fin_d_identifiant: '4412', created_by: 'u1', created_at: MAINTENANT },
+  { id: `cb-${dossier}-2`, dossier_id: dossier, libelle: 'Compte épargne professionnelle (livret de trésorerie)', principal: false, compte: '512100', compte_propre_depuis: '2026-01-01', ouvert_le: '2026-01-01', clos_le: null, fin_d_identifiant: '9087', created_by: 'u1', created_at: MAINTENANT },
+])
+function lignesDuBanc(table: string): Ligne[] {
+  const base = TABLES[table] ?? []
+  if (typeof localStorage === 'undefined' || localStorage.getItem('banc-comptes') !== '1') return base
+  if (table === 'comptes_bancaires') return COMPTES_DU_BANC
+  if (table === 'lignes_bancaires' || table === 'controles_releves_bancaires') {
+    return base.map((l, i) => ({ ...l, compte_bancaire_id: `cb-${String(l.dossier_id)}-${i % 2 === 0 ? 1 : 2}` }))
+  }
+  return base
+}
+
 const TABLES: Record<string, Ligne[]> = {
   // LES PAIEMENTS DE L'ASSURANCE MALADIE DU CABINET INFIRMIER (conception 53, NOE4 à NOE6) : un import fictif d'août et de
   // septembre 2026, des agrégats seuls (une journée, un régime, une caisse, une part, des centimes, un nombre de factures) —
@@ -2340,6 +2357,21 @@ const TABLES: Record<string, Ligne[]> = {
   ].map(([id, journee, centimes, factures]) => ({
     id, dossier_id: 'd1', import_id: 'iam1', date_journee_comptable: journee, regime: 1, caisse: 751, organisme_complementaire: null,
     part: 'obligatoire', montant_centimes: centimes, regularisations_centimes: 0, nombre_de_factures: factures,
+  })),
+  // LE FACTURÉ À L'ASSURANCE MALADIE (BOR3 à BOR5) : deux bordereaux de télétransmission lus en août et en septembre, des agrégats seuls
+  // (jour de création du lot, régime, caisse, part, centimes, nombres) — aucun numéro de lot, aucun nom. Le facturé d'août (part
+  // obligatoire de la caisse 751) dépasse ce que NOEMIE en a payé (`pam1`) : « Ce que l'assurance maladie doit » a de quoi montrer.
+  imports_factures_assurance_maladie: [
+    { id: 'ifam1', dossier_id: 'd1', premier_lot_le: '2026-08-10', dernier_lot_le: '2026-09-14', nombre_de_lots: 4, nombre_de_factures: 40, importe_par: 'u-banc', importe_le: '2026-10-02T09:10:00Z' },
+  ],
+  factures_assurance_maladie: [
+    ['fam1', '2026-08-10', 'obligatoire', 1, 751, null, 185040, 2, 12],
+    ['fam2', '2026-08-24', 'obligatoire', 1, 751, null, 241860, 1, 20],
+    ['fam3', '2026-09-14', 'obligatoire', 1, 751, null, 112500, 1, 8],
+    ['fam4', '2026-09-14', 'complementaire', null, null, 4001, 18240, 1, 6],
+  ].map(([id, jour, part, regime, caisse, organisme, centimes, lots, factures]) => ({
+    id, dossier_id: 'd1', import_id: 'ifam1', date_creation_lot: jour, part, regime, caisse, organisme_complementaire: organisme,
+    montant_centimes: centimes, nombre_de_lots: lots, nombre_de_factures: factures,
   })),
   paiements_assurance_maladie_mouvements: [
     { id: 'aam1', dossier_id: 'd1', paiement_id: 'pam1', ligne_bancaire_id: 'l8', associe_par: 'u-banc', associe_le: '2026-10-02T09:05:00Z' },
@@ -2916,7 +2948,7 @@ function requete(table: string) {
     maybeSingle: () => { unique = 'maybe'; return chaine },
     then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
       if (table === 'ecritures_libres' || table === 'ecritures_brouillon') ecrituresFigeesDuBanc()
-      const lignes = (TABLES[table] ?? []).filter((l) => filtres.every((f) => f(l)))
+      const lignes = lignesDuBanc(table).filter((l) => filtres.every((f) => f(l)))
       let reponse: unknown
       if (unique) reponse = { data: lignes[0] ?? null, error: null }
       else if (tete) reponse = { data: null, error: null, count: lignes.length }
@@ -3231,6 +3263,9 @@ export const supabase = {
     ? caisseDuClientDuBanc(args)
     : nom === 'plafonds_de_l_assistant'
       ? plafondsDuBanc()
+      // Le levier `banc-super` : le compte du banc est super-administrateur (la page des cabinets et de leurs modules, /comptes-master).
+      : nom === 'is_super_admin' && levierDuBanc('banc-super') === '1'
+        ? Promise.resolve({ data: true, error: null })
       : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDesEcrituresLibres(nom, args) ?? rpcDesReglagesDExport(nom, args)
         ?? rpcDuBanc(nom, args?.p_dossier_id))),
   from: (table: string) => requete(table),

@@ -249,6 +249,101 @@ const VISITES_DE_L_EXPORT = [
   },
 ]
 
+// LES ÉCRANS OUVERTS DEPUIS LE 13/11/2026 (27/11/2026) : deux comptes bancaires (MCB1 à MCB7), les paiements de l'assurance maladie et
+// le facturé (NOE4, NOE5b, BOR4, BOR5), la page des modules des cabinets (OPT4), « Avant de valider l'exercice » (Révision). Deux leviers
+// du faux Supabase (fauxSupabase.ts, lus à chaque appel) donnent ce que le dossier d'avant n'a pas : `banc-comptes` (un compte principal et
+// un compte d'épargne, les mouvements et les relevés partagés entre eux) et `banc-super` (le compte du banc est super-administrateur).
+// Un levier se pose, la page se recharge pour le lire, puis il se RETIRE : la visite suivante est celle d'un seul compte, comme hier.
+const avecLevier = async (page, cle, valeur) => {
+  await page.evaluate(([c, v]) => localStorage.setItem(c, v), [cle, valeur])
+  await page.reload()
+  await page.waitForTimeout(900)
+}
+const sansLevier = (page, cle) => page.evaluate((c) => localStorage.removeItem(c), cle)
+const sansPanneau = async (page) => {
+  const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+  if (await fermer.count()) await fermer.first().click()
+}
+const VISITES_DES_ECRANS_RECENTS = [
+  {
+    dossier: 'd1', onglet: 'informations', nom: 'comptes/informations',
+    apres: async (page) => {
+      await avecLevier(page, 'banc-comptes', '1')
+      await page.getByText(/^Compte épargne professionnelle \(livret de trésorerie\)$/).first().waitFor({ timeout: 10000 })
+      await page.getByRole('heading', { name: 'Comptes bancaires' }).scrollIntoViewIfNeeded()
+      await sansLevier(page, 'banc-comptes')
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'comptes/import-choix',
+    apres: async (page) => {
+      await avecLevier(page, 'banc-comptes', '1')
+      await page.getByLabel('Compte bancaire dont ce relevé est l’extrait').waitFor({ timeout: 10000 })
+      await page.getByLabel('Compte bancaire dont ce relevé est l’extrait').scrollIntoViewIfNeeded()
+      await sansLevier(page, 'banc-comptes')
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'noemie/paiements',
+    apres: async (page) => {
+      await page.getByRole('heading', { name: 'Paiements de l’assurance maladie' }).scrollIntoViewIfNeeded()
+      await page.getByText('Les paiements importés').waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'noemie/facture',
+    apres: async (page) => {
+      await page.getByRole('heading', { name: 'Facturé à l’assurance maladie' }).scrollIntoViewIfNeeded()
+      await page.getByText('Le facturé importé').waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'noemie/du-contre-paye',
+    apres: async (page) => {
+      const titre = page.getByRole('heading', { name: /assurance maladie doit/ })
+      await titre.waitFor({ timeout: 10000 })
+      await titre.scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'noemie/fiche-credit-associe', fenetre: '.fiche-mouvement-corps',
+    apres: async (page) => {
+      await sansPanneau(page)
+      await page.getByRole('button', { name: 'Tous', exact: true }).click()
+      await page.locator('tr.clickable', { hasText: 'VIR CPAM REMBOURSEMENTS AOUT' }).first().click()
+      await page.getByText(/Paiement de l’assurance maladie/).first().waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'noemie/fiche-credit-propose', fenetre: '.fiche-mouvement-corps',
+    apres: async (page) => {
+      await sansPanneau(page)
+      await page.locator('tr.clickable', { hasText: 'VIR CPAM TIERS PAYANT SEPT' }).first().click()
+      await page.locator('.fiche-mouvement-corps').waitFor({ timeout: 10000 })
+    },
+  },
+  {
+    dossier: 'd1', onglet: 'revision', nom: 'revision/avant-de-valider',
+    apres: async (page) => {
+      const section = page.getByRole('region', { name: 'Avant de valider l’exercice' })
+      await section.waitFor({ timeout: 10000 })
+      await section.scrollIntoViewIfNeeded()
+    },
+  },
+  {
+    chemin: '#/comptes-master', nom: 'modules/page-des-cabinets', sansAssistant: true,
+    apres: async (page) => {
+      await avecLevier(page, 'banc-super', '1')
+      // Sans le levier, la route n'existait pas à l'arrivée : la page s'est redirigée, on y revient une fois super-administrateur.
+      await page.goto(`${BASE}#/comptes-master`)
+      const titre = page.getByRole('heading', { name: 'Modules des cabinets' })
+      await titre.waitFor({ timeout: 10000 })
+      await titre.scrollIntoViewIfNeeded()
+      await sansLevier(page, 'banc-super')
+    },
+  },
+]
+
 const VISITES = [
   // L'onglet TVA sur le seul dossier assujetti tenu en trésorerie : sur le cabinet infirmier, exonéré,
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
@@ -1767,6 +1862,7 @@ const VISITES = [
   },
   ...VISITES_DES_ECRITURES_LIBRES,
   ...VISITES_DE_L_EXPORT,
+  ...VISITES_DES_ECRANS_RECENTS,
   // L'E-REPORTING (ligne 28.5, étape e5c), sur l'atelier (d7, redevable) : la fenêtre « Régime, périodes et déclarations » de
   // la carte de l'onglet TVA — le régime et son histoire, les trois objets, leurs périodes —, puis le détail d'un achat
   // DÉCLARÉ dont la fiche a changé (« À rectifier » et ses causes, la rectificative à déclarer), celui d'une vente déclarée à
@@ -2366,6 +2462,21 @@ const VISITES_CAISSE_CLIENT = [
       await page.getByText(/^Paiement de la pièce déposée le 21\/08\/2026/).waitFor({ timeout: 10000 })
     },
   },
+  // « MA BANQUE » DU CABINET INFIRMIER (NOE4, BOR4, BOR5), avec « Banque » : les paiements de l'assurance maladie, le facturé et ce que
+  // l'assurance maladie doit, aux mots du client — une section par visite, ramenée à l'écran.
+  ...[
+    { nom: 'client/ma-banque-paiements-assurance-maladie', titre: 'Paiements de l’assurance maladie', attendu: 'Les paiements importés' },
+    { nom: 'client/ma-banque-facture-assurance-maladie', titre: 'Facturé à l’assurance maladie', attendu: 'Le facturé importé' },
+    { nom: 'client/ma-banque-du-contre-paye', titre: /assurance maladie te doit|assurance maladie doit/, attendu: null },
+  ].map(({ nom, titre, attendu }) => ({
+    chemin: '#/ma-banque', nom, nav: true,
+    apres: async (page) => {
+      const entete = page.getByRole('heading', { name: titre }).first()
+      await entete.waitFor({ timeout: 10000 })
+      await entete.scrollIntoViewIfNeeded()
+      if (attendu) await page.getByText(attendu).first().waitFor({ timeout: 10000 })
+    },
+  })),
 ]
 
 const VISITES_BANQUE_CLIENT = [
@@ -2389,6 +2500,26 @@ const VISITES_BANQUE_CLIENT = [
       await page.getByRole('button', { name: 'Envoyer la précision', exact: true }).waitFor({ timeout: 10000 })
     },
   })),
+  // « MA BANQUE » COMPTE PAR COMPTE (MCB7), sur l'atelier avec « Banque » : le levier `banc-comptes` donne deux comptes — « Tes comptes »,
+  // « Mon année » et « Comparer les années » compte par compte, la liste des mouvements avec sa colonne et son choix de compte.
+  {
+    chemin: '#/ma-banque', nom: 'client/ma-banque-comptes', nav: true,
+    apres: async (page) => {
+      await avecLevier(page, 'banc-comptes', '1')
+      await page.getByRole('heading', { name: 'Tes comptes' }).waitFor({ timeout: 10000 })
+      await sansLevier(page, 'banc-comptes')
+    },
+  },
+  {
+    chemin: '#/ma-banque', nom: 'client/ma-banque-comptes-mouvements', nav: true,
+    apres: async (page) => {
+      await avecLevier(page, 'banc-comptes', '1')
+      const titre = page.getByRole('heading', { name: 'Tes mouvements' })
+      await titre.waitFor({ timeout: 10000 })
+      await titre.scrollIntoViewIfNeeded()
+      await sansLevier(page, 'banc-comptes')
+    },
+  },
   // LA FENÊTRE DES ENCAISSEMENTS D'UNE FACTURE SOURCE, CHEZ LE CLIENT (ligne 28.65, étape VF5b), sur le dossier basculé (d12),
   // que la clé `banc-client-basculee` donne au compte du banc avec « Ventes » et « Banque » — EN DERNIER : la page se recharge
   // pour la lire, et le compte n'a plus que cette société. Les exercices validés, qu'il ne lit pas, se disent jugés par la base ;
