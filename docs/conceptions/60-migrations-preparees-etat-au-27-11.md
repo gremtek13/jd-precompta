@@ -104,3 +104,26 @@ bout de la chaîne ne les ont rejouées : aucune préparée ne remplace une des 
 ligne 5, récrit `client_du_dossier` en gardant la ligne « banque » qu'elle lit) ; sa restrictive `deux_facteurs` se pose sous
 condition, avant comme après 20 (`deuxFacteursDesTablesNeuves.test.ts`) ; le retour de NOE3 exige désormais celui de 19 ter
 d'abord.
+
+**Préparées depuis, le même soir** (27/11/2026, SECU4-Q2 (B) et MCBR2-Q2 (A), réponses du cabinet de 21 h 40 UTC ; HISTORIQUE.md,
+« 27/11/2026 — SECU4-Q2 ET MCBR2-Q2 ») : deux de plus, indépendantes des autres préparées, éprouvées sur une copie de `replique_227`
+portée à 261 par l'export et les deux fichiers du soir (260 et 261, en production ; dérive `84978ecb…`, inventaire 3 548
+`c69af6cf…`, socle 85 `585debf7…`), seules et ensemble (dérive 263 `b8c7e851…`, inventaire 3 554 `0ef6c24b…`, égaux aux fichiers
+simulés rangés ; socle inchangé). Les 179 essais rejoués dans les quatre états (261, chacune, les deux) : aucune faute neuve, `rls.sql`
+296 lignes, 1 358 vérifications, 0 en faute, 178 mutations sur 178, `validationExercice` et `restauration.sql` identiques ; chaque
+retour rend la signature de 261 (commentaires compris) ; une seconde application se refuse ; le banc du leurre SÛR sur les dix
+essais joués en production qui changent, dans les deux états.
+
+| Ordre | Préparée | Chantier | Drapeau(x) | Mode | Après | Ce qu'elle attend | Sur 261 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 21 bis | `20261127230000_ni_piece_ni_document_ne_change_de_dossier` | SECU4-Q2 (B), ni une pièce ni un document ne change de dossier, pour tout auteur | aucun (l'application ne change jamais le dossier d'une ligne) | par l'outil | — ; avant ou après les autres (B4, B7, INAL5, INV3 nomment leur déclencheur avant le sien) | l'accord | 16/16, 8 mutations sur 8 ; neuf essais repris, justes dans les deux états |
+| 21 ter | `20261127231000_banque_partagee_a_la_validation` | MCBR2-Q2 (A), le 512 du principal partagé au 31/12 retient la validation | aucun (le préalable `banque-partagee-retenue` part seul) | par l'outil | 258 et 261 (en production) ; avant ou après les autres | l'accord | 17/17, 8 mutations sur 8 ; `ouvertureSuivanteALaValidation` 13/13, 5 sur 5, repris (OS-C2) |
+
+**21 bis.** Une garde qui ne lit rien, aux droits de l'appelant, et deux déclencheurs BEFORE UPDATE sans liste de colonnes, sous la
+condition que le dossier change, nommés pour tirer en dernier de leur table : les gardes relation par relation tirent avant et gardent
+leurs mots. Treize contrôles positifs de neuf essais (« une pièce que rien ne cite change de dossier ») admettent, la règle en base,
+son refus et lui seul. Le retour se colle. **21 ter.** Un déclencheur de contrainte différé sur `exercices_valides`, sur le modèle de
+261, sans réécrire `valider_exercice` ; il lit `soldes_des_comptes_au_trente_et_un` (sa garde de tête en exige le corps de 258,
+`6682875d…`) et tire après le filet de 261, dont le refus se dit d'abord ; les retours de 258 et de 261 se refusent tant qu'il est en
+base. Ni la répétition ni le bout de la chaîne ne les ont rejouées : aucune préparée ne remplace `garder_dossier_de_depot`,
+`soldes_des_comptes_au_trente_et_un` ni le déclencheur de 261 ; INV3, qui remplace `valider_exercice`, garde ses deux insertions.

@@ -22,9 +22,30 @@ const GENRES = 'jeu|controle|fait|valeur|retenir|lecture'
 export function etapesDe(essai: string): Etape[] {
   return [...essai.matchAll(new RegExp(`array\\['(${GENRES})', '((?:[^']|'')*)', '(\\w+)', \\$q\\$([\\s\\S]*?)\\$q\\$,\\s*'(\\w*)',\\s*'((?:[^']|'')*)'`, 'g'))]
     .map(([, genre, titre, profil, appel, code, attendu]) => ({
-      genre, titre: titre.replace(/''/g, "'"), numero: /^(\w+)\./.exec(titre)?.[1] ?? '', profil, appel, code,
+      genre, titre: titre.replace(/''/g, "'"), numero: /^(\w+)\./.exec(titre)?.[1] ?? '', profil, appel: sansLaRegleDuDossier(appel), code,
       attendu: attendu.replace(/''/g, "'"),
     }))
+}
+
+// LA RÈGLE DU DOSSIER D'UNE PIÈCE OU D'UN DOCUMENT (SECU4-Q2, migration `ni_piece_ni_document_ne_change_de_dossier`, préparée
+// le 27/11/2026). Un contrôle positif qui change le dossier d'une pièce ou d'un document s'écrit pour les deux états de la règle :
+// son instruction dans un bloc qui n'admet que le refus de la règle, sous ses mots, et seulement eux. La garde de sa relation tirant
+// avant la règle, ce que la base a répondu est celui de l'instruction seule, telle qu'on l'écrivait avant : le rejeu la lit ainsi.
+// Un bloc de cette forme qui admettrait d'autres mots lève — il pourrait taire un refus de la garde jugée.
+export const MOTS_DE_LA_REGLE_DU_DOSSIER: readonly string[] = [
+  'Une pièce reste dans le dossier où elle a été déposée : elle ne change pas de dossier.',
+  'Un document reste dans le dossier où il a été déposé : il ne change pas de dossier.',
+]
+// L'instruction : une mise à jour, sans franchir un autre délimiteur `$x$` (un autre bloc de l'essai ne s'y confond pas).
+const SOUS_LA_REGLE_DU_DOSSIER =
+  /do \$x\$ begin (update (?:(?!\$x\$)[\s\S])*?);\n\s*exception when check_violation then\n\s*if sqlerrm <> '([^']*)' then raise; end if;\n\s*end \$x\$/g
+
+/** L'instruction d'un contrôle positif écrit sous la règle du dossier, rendue telle quelle ; tout autre texte, inchangé. */
+export function sansLaRegleDuDossier(sql: string): string {
+  return sql.replace(SOUS_LA_REGLE_DU_DOSSIER, (_bloc, instruction: string, mots: string) => {
+    if (!MOTS_DE_LA_REGLE_DU_DOSSIER.includes(mots)) throw new Error(`Bloc de la règle du dossier qui admet d'autres mots : ${mots}`)
+    return instruction
+  })
 }
 
 /** Un texte SQL coupé sur ses virgules de premier niveau, hors chaînes (une apostrophe doublée ouvre et referme). */

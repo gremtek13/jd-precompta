@@ -55448,3 +55448,19 @@ sous le verrou des liens ; un échec se dit sans rien défaire (`echecDuLienApre
 BT-27 d'une facture figée venait d'`emetteur_nom` ; `donneesDeLaFacture` prend `nomDeLEmetteur`, dont le bloc est copié dans les deux
 fonctions qui transmettent (`denomination_imprimee` lue) ; une facture d'avant et une figée sans dénomination à l'octet près comme hier,
 les exemples validés inchangés (leurs empreintes) ; quatre gardes de copie suivent le cinquième bloc.
+### 27/11/2026 — SECU4-Q2 ET MCBR2-Q2 : NI UNE PIÈCE NI UN DOCUMENT NE CHANGE DE DOSSIER ; LE 512 DU PRINCIPAL PARTAGÉ RETIENT LA VALIDATION
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 261 par l'export et les deux fichiers du soir, dérive
+`84978ecb…`, supprimée.) **SECU4-Q2 (B)** : relu ce qui change le dossier d'une pièce ou d'un document — la fiche renvoie son propre
+dossier, les Edge Functions insèrent, aucune fonction SQL (`prosrc`), la restauration réinsère, la suppression d'un dossier retire :
+rien de légitime. Préparée `ni_piece_ni_document_ne_change_de_dossier` (par l'outil, retour à coller) : `garder_dossier_de_depot`, qui
+ne lit rien (aux droits de l'appelant, chemin vide), et deux BEFORE UPDATE sans liste de colonnes, sous `old.dossier_id is distinct
+from new.dossier_id`, nommés pour tirer en DERNIER : les gardes relation par relation, laissées, disent d'abord ce qui cite la pièce,
+et la condition juge la ligne telle qu'elle s'écrira. `documents_divers` a la même règle (révision, lettre de mission, cotisation ;
+ses commentaires, notes et texte lu gardent leur dossier). Treize contrôles positifs de neuf essais se retournaient : huit
+admettent le refus neuf et lui seul, cinq l’attendent selon l’état ; une garde relation par relation trop large les fait encore
+virer au rouge. Essai neuf 16/16, huit mutations sur huit. **MCBR2-Q2 (A)** : `refusDeLaBanquePartagee` (le groupe du 512 du rôle au
+31/12 par `compteDeBanqueDuMouvement`, partagé dès qu'un second compte non clos s'y écrit ; les soldes de l'éclatement, sans sa sortie
+à zéro), le préalable `banque-partagee-retenue` hors du cas de 261 ; le filet `banque_partagee_a_la_validation` (par l'outil), différé,
+à part, tirant après 261, que les retours de 258 et 261 attendent. Essai 17/17, huit sur huit ; celui de 261 repris (OS-C2). 179 essais
+dans les quatre états, aucune faute neuve ; `rls.sql` 296/1 358/0/178 ; retours → signature ; inventaire 3 554 `0ef6c24b…` égal ; banc SÛR.

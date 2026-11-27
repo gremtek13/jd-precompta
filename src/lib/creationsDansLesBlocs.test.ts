@@ -336,9 +336,12 @@ describe('aucun objet ne se crée dans un bloc do, que l’inventaire de l’exp
     // 27/11/2026, 260), relus par sa garde de fin, et celui du déclencheur différé de MCBR-Q2 (`ouverture_suivante_a_la_validation`,
     // en production depuis le 27/11/2026, 261), sa condition sur le rôle comprise ; et quarante-sept restrictives : celle de
     // `remplacements_assurance_maladie` (NOE4R-Q2, préparée), sous sa condition, sur la table qu'elle crée.
+    // Le même soir, vingt-sept rendus comparés : les deux déclencheurs de
+    // `ni_piece_ni_document_ne_change_de_dossier` (SECU4-Q2, préparée) et celui du filet différé de MCBR2-Q2
+    // (`banque_partagee_a_la_validation`, préparée), relus par leurs gardes de fin.
     const tout = releve([...SCHEMA, ...PREPAREES])
     expect(tout.cas).toEqual({ restrictive: 47, paire: 20, balayage: 1, porteDesPreparees: 10 })
-    expect(tout.verifications).toBe(24)
+    expect(tout.verifications).toBe(27)
     expect(tout.blocs).toBeGreaterThanOrEqual(220)
     // 37 blocs dans les préparées le 27/11/2026, trois préparées rangées dans l'export (255 à 257) : le plancher à 35 ; puis
     // 32, les cinq blocs de MCB5g (258 : sa garde, la paire de ses sœurs, sa garde de fin ; 259 : sa garde et sa garde de fin)

@@ -47,7 +47,7 @@ import type { OperationsDeCaisse } from './controlesDeLaCaisse'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../test/modeles'
 import { banquesDuDossier } from './banqueDuMouvement'
 import { INVENTAIRE_SANS_OBJET } from './inventaireDeLaValidation'
-import { detailDeLOuvertureSuivante } from './ouvertureEclatee'
+import { detailDeLaBanquePartagee, detailDeLOuvertureSuivante } from './ouvertureEclatee'
 
 // Un petit dossier fictif tenu en trésorerie, exercice 2025 : une facture d'achat payée et écrite comme la
 // génération l'écrit. La 2035 et sa concordance avec les écritures sont calculées par les vrais moteurs —
@@ -2690,10 +2690,12 @@ describe('prealablesDeValidation — l’ouverture de l’exercice suivant, fig�
   })
 
   it('hors de ce seul cas, le 512 confronté au relevé reste un avertissement', () => {
-    // Le second compte ne tient son 512 qu'au 01/01/2027 : l'ouverture de 2026 n'a rien à éclater.
+    // Le second compte ne tient son 512 qu'au 01/01/2027 : l'ouverture de 2026 n'a rien à éclater. Mais il s'écrit au 512000 au
+    // 31/12/2025 : depuis MCBR2-Q2 (A), le 512 partagé retient la validation, sous l'autre préalable (le bloc qui suit).
     const plusTard = base({ controlesReleves: [auTrenteEtUn('cp', 830)] }, { compte_propre_depuis: '2027-01-01' })
     expect(retenue(plusTard)).toBeUndefined()
     expect(prealable(plusTard, 'banque-au-releve')?.bloquant).toBe(false)
+    expect(prealable(plusTard, 'banque-partagee-retenue')?.bloquant).toBe(true)
     // Clos en 2025 : son solde est nul, rien ne sort du 512000, rien ne retient.
     expect(retenue(base({ controlesReleves: [auTrenteEtUn('cp', 830)] }, { clos_le: '2025-11-30' }))).toBeUndefined()
     // Un seul compte : l'écart se dit, en avertissement seulement.
@@ -2706,6 +2708,91 @@ describe('prealablesDeValidation — l’ouverture de l’exercice suivant, fig�
     expect(retenue(base({ comptesBancaires: { etat: 'sans_objet' }, controlesReleves: [controle({ solde_initial: 880, solde_final: 880 })] }))).toBeUndefined()
     const illisibles = prealablesDeValidation(base({ controlesReleves: null }))
     expect(illisibles.prealables.map((p) => p.id)).not.toContain('ouverture-suivante-retenue')
+    expect(illisibles.prealables.find((p) => p.id === 'releves-inconnus')?.bloquant).toBe(true)
+    const partielle = prealablesDeValidation(base({ controlesReleves: [auTrenteEtUn('cp', 830)], lectureIncomplete: 'les relevés : 1 000 lus sur 1 200' }))
+    expect(partielle.prealables.map((p) => p.id)).toEqual(['lecture-partielle'])
+    expect(partielle.validable).toBe(false)
+  })
+})
+
+// LE 512 DU PRINCIPAL PARTAGÉ AU 31 DÉCEMBRE (MCBR2-Q2 (A), décision du cabinet du 27/11/2026 ; lib/ouvertureEclatee.ts,
+// `refusDeLaBanquePartagee`). Le jeu de MCBR-Q2, le second compte ne tenant son 512200 qu'au 01/01/2027 : il s'écrit au 512000 au
+// 31/12/2025. Le dossier repris au 01/01/2025 (le 512000 à 1 000 €), le fournisseur payé 120 € en mars : le 512000 finit 2025 à
+// 880 €, ce que la validation reportera. Les relevés de décembre : le principal à 830 €, le second à 50 €. Données FICTIVES.
+describe('prealablesDeValidation — le 512 du principal partagé au 31 décembre (MCBR2-Q2)', () => {
+  const PRINCIPAL: CompteDuReleve = { id: 'cp', libelle: 'Compte principal', principal: true, fin_d_identifiant: null, compte: null,
+    compte_propre_depuis: null, ouvert_le: null, clos_le: null }
+  const SECOND: CompteDuReleve = { id: 'cs', libelle: 'Compte second fictif', principal: false, fin_d_identifiant: null, compte: '512200',
+    compte_propre_depuis: '2027-01-01', ouvert_le: '2024-06-01', clos_le: null }
+  const auTrenteEtUn = (compte: string, solde: number, id = `r-${compte}`) =>
+    controle({ id, compte_bancaire_id: compte, solde_initial: solde, solde_final: solde, somme_mouvements: 0 })
+  const base = (o: Partial<DonneesDeValidation> = {}, second: Partial<CompteDuReleve> = {}) => donnees({
+    aNouveaux: ouvertureReprise('2025-01-01'), lignes: [ligne('l1', { piece_id: 'p1', compte_bancaire_id: 'cp' })],
+    comptesBancaires: { etat: 'lus', comptes: [PRINCIPAL, { ...SECOND, ...second }] },
+    controlesReleves: [auTrenteEtUn('cp', 830), auTrenteEtUn('cs', 50)], ...o,
+  })
+  const retenue = (d: DonneesDeValidation) => prealable(d, 'banque-partagee-retenue')
+  const INCONNU_SECOND = 'Le solde au 31/12/2025 du compte bancaire « Compte second fictif » ne se lit sur aucun de ses relevés contrôlés : '
+    + 'importer le relevé qui finit ce jour-là, ou celui qui le couvre, avant d\'éclater l\'ouverture de la banque.'
+
+  it('les relevés font le 512000 reporté : rien ne retient, rien ne s’avertit', () => {
+    const etat = prealablesDeValidation(base())
+    expect(etat.prealables.map((p) => p.id)).not.toContain('banque-partagee-retenue')
+    expect(etat.prealables.map((p) => p.id)).not.toContain('banque-au-releve')
+    expect(etat.report?.soldes.find((s) => s.compte === '512000')).toMatchObject({ sens: 'debit', montant: 880 })
+  })
+
+  it('le second compte sans relevé, ou ses relevés qui se contredisent : bloquant, vers Banque, le compte nommé, aux mots de l’éclatement', () => {
+    const p = retenue(base({ controlesReleves: [auTrenteEtUn('cp', 830)] }))
+    expect(p).toMatchObject({ bloquant: true, cible: 'banque', nb: null, message: INCONNU_SECOND })
+    expect(p?.detail).toBe(detailDeLaBanquePartagee(2025, '512000'))
+    expect(p?.detail).toMatch(/^Un second compte bancaire s’écrit au 512000 au 31\/12\/2025, .* l’exercice 2026 ne se validerait plus tant que ce compte s’y écrit\./)
+    expect(retenue(base({ controlesReleves: [auTrenteEtUn('cp', 830), auTrenteEtUn('cs', 50), auTrenteEtUn('cs', 70, 'r-cs-bis')] }))?.message).toBe(
+      'Les relevés du compte bancaire « Compte second fictif » disent des soldes différents au 31/12/2025 : l\'un d\'eux ne dit pas le '
+        + 'bon, et l\'ouverture de la banque ne s\'éclate pas.')
+    expect(prealablesDeValidation(base({ controlesReleves: [auTrenteEtUn('cp', 830)] })).validable).toBe(false)
+  })
+
+  it('la somme ne fait pas le 512000 reporté, même le second compte à zéro : bloquant, les deux montants dits ; l’avertissement chiffre l’écart', () => {
+    expect(retenue(base({ controlesReleves: [auTrenteEtUn('cp', 830), auTrenteEtUn('cs', 60)] }))?.message).toBe(
+      'Les soldes des relevés au 31/12/2025 (890,00 €) ne font pas l\'ouverture du compte 512000 (880,00 €) : '
+        + 'l\'ouverture de la banque ne s\'éclate pas entre ses comptes.')
+    // À la différence de l'éclatement, un second compte au solde nul ne dispense de rien.
+    const zero = base({ controlesReleves: [auTrenteEtUn('cp', 830), auTrenteEtUn('cs', 0)] })
+    expect(retenue(zero)?.message).toBe('Les soldes des relevés au 31/12/2025 (830,00 €) ne font pas l\'ouverture du compte 512000 '
+      + '(880,00 €) : l\'ouverture de la banque ne s\'éclate pas entre ses comptes.')
+    expect(prealable(zero, 'banque-au-releve')?.bloquant).toBe(false)
+  })
+
+  it('le principal sans relevé : bloquant, le principal nommé ; le second compte « jamais » son 512 propre aussi', () => {
+    expect(retenue(base({ controlesReleves: [auTrenteEtUn('cs', 50)] }))?.message).toMatch(/« Compte principal » ne se lit sur aucun de ses relevés/)
+    expect(retenue(base({ controlesReleves: [auTrenteEtUn('cp', 830)] }, { compte_propre_depuis: '2099-01-01' }))?.message).toBe(INCONNU_SECOND)
+  })
+
+  it('hors de ce cas, le 512 confronté au relevé reste un avertissement : clos en 2025, un seul compte, un 512 propre déjà tenu', () => {
+    // Clos le 30/11/2025 : il ne s'écrit plus au 512000 le 31/12, l'écart du principal se dit, sans retenir.
+    const clos = base({ controlesReleves: [auTrenteEtUn('cp', 830)] }, { clos_le: '2025-11-30' })
+    expect(retenue(clos)).toBeUndefined()
+    expect(prealable(clos, 'banque-au-releve')?.bloquant).toBe(false)
+    const seul = base({ comptesBancaires: { etat: 'lus', comptes: [PRINCIPAL] }, controlesReleves: [auTrenteEtUn('cp', 830)] })
+    expect(retenue(seul)).toBeUndefined()
+    expect(prealable(seul, 'banque-au-releve')?.bloquant).toBe(false)
+    // Ouvert en 2025, il tient son 512200 depuis le 01/01/2025 : il ne partage pas le 512000.
+    const propre = base({ controlesReleves: [auTrenteEtUn('cp', 830)] }, { ouvert_le: '2025-02-01', compte_propre_depuis: '2025-01-01' })
+    expect(retenue(propre)).toBeUndefined()
+    expect(prealable(propre, 'banque-au-releve')?.bloquant).toBe(false)
+  })
+
+  it('le cas de MCBR-Q2 (le 512 propre au 01/01/2026) : son refus seul, celui que la base dit d’abord', () => {
+    const d = base({ controlesReleves: [auTrenteEtUn('cp', 830)] }, { compte_propre_depuis: '2026-01-01' })
+    expect(prealable(d, 'ouverture-suivante-retenue')?.message).toBe(INCONNU_SECOND)
+    expect(retenue(d)).toBeUndefined()
+  })
+
+  it('muet drapeau baissé, sur des contrôles illisibles, et sur une lecture partielle, la validation fermée', () => {
+    expect(retenue(base({ comptesBancaires: { etat: 'sans_objet' }, controlesReleves: [controle({ solde_initial: 880, solde_final: 880 })] }))).toBeUndefined()
+    const illisibles = prealablesDeValidation(base({ controlesReleves: null }))
+    expect(illisibles.prealables.map((p) => p.id)).not.toContain('banque-partagee-retenue')
     expect(illisibles.prealables.find((p) => p.id === 'releves-inconnus')?.bloquant).toBe(true)
     const partielle = prealablesDeValidation(base({ controlesReleves: [auTrenteEtUn('cp', 830)], lectureIncomplete: 'les relevés : 1 000 lus sur 1 200' }))
     expect(partielle.prealables.map((p) => p.id)).toEqual(['lecture-partielle'])

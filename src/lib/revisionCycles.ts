@@ -186,6 +186,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'ouverture-a-eclater': 'tresorerie',
   // Et celle de l'exercice suivant, que la validation figerait sans remède (MCBR-Q2 (A)) : le relevé du 31 décembre de chaque compte.
   'ouverture-suivante-retenue': 'tresorerie',
+  // Et le 512 du principal partagé au 31 décembre avec un second compte (MCBR2-Q2 (A)) : les relevés de ce jour, face à ce 512.
+  'banque-partagee-retenue': 'tresorerie',
   'mouvements-a-traiter': 'tresorerie',
   'lignes-non-rapprochees': 'tresorerie',
   // La note de frais de l'exploitant rapprochée de son remboursement, en trésorerie (conception 58, § 2.1) : un mouvement à reclasser.

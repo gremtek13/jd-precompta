@@ -13,6 +13,7 @@ import {
 import { PLAN_PAR_DEFAUT, type CleRoleComptable, type PlanComptable } from '../lib/planComptable'
 import type { OrigineOperationCaisse, StatutTva } from '../lib/types'
 import { planLuDe } from './modeles'
+import { sansLaRegleDuDossier } from './essaiSql'
 
 // L'ESSAI DE LA CAISSE REJOUÉ PAR LE MODULE (ligne 26.6, étape C2). `supabase/essais/caisse.sql` joue, étape après étape,
 // les fonctions de la caisse sur des dossiers jetables ; ce banc rejoue les MÊMES étapes, dans le même ordre, sur un état
@@ -58,7 +59,7 @@ export function etapesDeLEssai(essai: string): EtapeDeLEssai[] {
     const tete = litteraux(morceau.slice(0, ouverture))
     const queue = morceau.slice(fermeture + 3, morceau.lastIndexOf(']'))
     const [code, ...reste] = litteraux(queue)
-    return { genre, titre: tete[1], profil: tete[2], sql: morceau.slice(ouverture + 3, fermeture), code, attendu: reste.join('') }
+    return { genre, titre: tete[1], profil: tete[2], sql: sansLaRegleDuDossier(morceau.slice(ouverture + 3, fermeture)), code, attendu: reste.join('') }
   })
 }
 

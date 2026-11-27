@@ -10,6 +10,11 @@ begin
   if to_regprocedure('public.garder_ouverture_suivante_a_la_validation()') is null then
     raise exception 'La migration ouverture_suivante_a_la_validation n''est pas en base : rien à retirer.';
   end if;
+  -- Le filet de la banque partagée (MCBR2-Q2), préparé le 27/11/2026, tire après celui-ci : retiré sous lui, la base dirait son
+  -- refus là où l'application dit celui de l'éclatement (`ouverture-suivante-retenue`). Les retours se collent à rebours.
+  if to_regprocedure('public.garder_banque_partagee_a_la_validation()') is not null then
+    raise exception 'Le filet de la banque partagée (banque_partagee_a_la_validation, MCBR2-Q2) est en base : son retour se colle d''abord.';
+  end if;
 end
 $garde$;
 

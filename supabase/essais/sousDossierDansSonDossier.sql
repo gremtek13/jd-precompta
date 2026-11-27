@@ -16,7 +16,10 @@
 --      sous-dossier ; le client d'essai range ce qu'il dépose dans un sous-dossier de son dossier, jamais d'un autre ;
 --   3. LA PIÈCE, de même ; et le nul que la clé étrangère écrit à la suppression d'un sous-dossier passe ; une ligne qui change
 --      de dossier change aussi de chemin (2g, 2h, 3g) : le chemin d'une ligne commence par son dossier depuis CFCS-Q1
---      (`chemin_dans_son_dossier`, 238, en production le 17/11/2026, après l'écriture de cet essai ; reprise le 27/11/2026) ;
+--      (`chemin_dans_son_dossier`, 238, en production le 17/11/2026, après l'écriture de cet essai ; reprise le 27/11/2026) —
+--      SECU4-Q2 en base (`ni_piece_ni_document_ne_change_de_dossier`, préparée), aucune ligne ne change plus de dossier : la
+--      garde la laisse passer, puis la règle du dossier, qui tire en dernier, la refuse sous ses mots (2g, 2h, 3g le disent
+--      dans les deux états) ;
 --   4. LE SOUS-DOSSIER : qui range un document ou une pièce ne change pas de dossier, au chef comme au propriétaire ; vide, il
 --      en change, comme hier ; occupé, il se renomme.
 --
@@ -51,6 +54,10 @@ declare
   document_hors constant text := 'Le sous-dossier d''un document est un sous-dossier de son dossier.';
   piece_hors constant text := 'Le sous-dossier d''une pièce est un sous-dossier de son dossier.';
   occupe constant text := 'Ce sous-dossier range des documents ou des pièces de son dossier : il ne change pas de dossier.';
+  -- SECU4-Q2 (`ni_piece_ni_document_ne_change_de_dossier`, préparée) : la règle du dossier, en base ou non, et ses mots.
+  depot constant boolean := to_regprocedure('public.garder_dossier_de_depot()') is not null;
+  piece_reste constant text := 'Une pièce reste dans le dossier où elle a été déposée : elle ne change pas de dossier.';
+  document_reste constant text := 'Un document reste dans le dossier où il a été déposé : il ne change pas de dossier.';
   e record; v_code text; v_msg text; v_obs text; v_textes text[];
   verdicts jsonb := '[]'::jsonb;
 begin
@@ -118,16 +125,21 @@ begin
         $q$update documents_divers set sous_dossier_id = '{SA}' where id = '{DOA}';$q$, 'chef',
         $q$update documents_divers set dossier_id = '{DB}' where id = '{DOA}';$q$,
         null, '23514', document_hors),
-      (9, '2g. … il y passe avec un sous-dossier de DB, dans la même mise à jour : accepté',
+      -- 2g, 2h et 3g, SECU4-Q2 en base (`ni_piece_ni_document_ne_change_de_dossier`, préparée) : aucune ligne ne change plus de
+      -- dossier. La garde du sous-dossier, qui tire avant, la laisse passer, puis la règle du dossier la refuse sous ses mots :
+      -- les pas les attendent, et un refus de la garde du sous-dossier les ferait virer au rouge dans les deux états.
+      (9, '2g. … il y passe avec un sous-dossier de DB, dans la même mise à jour : accepté (SECU4-Q2 en base : la garde le laisse passer, la règle du dossier le refuse)',
         $q$update documents_divers set sous_dossier_id = '{SA}' where id = '{DOA}';$q$, 'chef',
         $q$update documents_divers set dossier_id = '{DB}', sous_dossier_id = '{SB}', storage_path = '{DB}/essai-docf-doa.pdf' where id = '{DOA}';$q$,
         $q$(select dossier_id::text || ' ' || sous_dossier_id::text from documents_divers where id = '{DOA}')$q$,
-        'OK', 'd0cf0000-0000-4000-8000-0000000000d2 d0cf0000-0000-4000-8000-0000000000a3'),
-      (10, '2h. … ou sans sous-dossier : accepté',
+        case when depot then '23514' else 'OK' end,
+        case when depot then document_reste else 'd0cf0000-0000-4000-8000-0000000000d2 d0cf0000-0000-4000-8000-0000000000a3' end),
+      (10, '2h. … ou sans sous-dossier : accepté (SECU4-Q2 en base : refusé de même)',
         $q$update documents_divers set sous_dossier_id = '{SA}' where id = '{DOA}';$q$, 'chef',
         $q$update documents_divers set dossier_id = '{DB}', sous_dossier_id = null, storage_path = '{DB}/essai-docf-doa.pdf' where id = '{DOA}';$q$,
         $q$(select dossier_id::text || ' ' || coalesce(sous_dossier_id::text, 'nul') from documents_divers where id = '{DOA}')$q$,
-        'OK', 'd0cf0000-0000-4000-8000-0000000000d2 nul'),
+        case when depot then '23514' else 'OK' end,
+        case when depot then document_reste else 'd0cf0000-0000-4000-8000-0000000000d2 nul' end),
       (11, '2i. le client d''essai dépose un document dans son dossier, rangé dans un sous-dossier de son dossier : accepté',
         null, 'client', $q$insert into documents_divers (id, dossier_id, storage_path, nom_fichier, categorie, sous_dossier_id) values ('{DON}', '{DC}', '{DC}/essai-docf-don.pdf', 'essai-docf-don.pdf', 'autre', '{SC}');$q$,
         $q$(select sous_dossier_id::text from documents_divers where id = '{DON}')$q$, 'OK', 'd0cf0000-0000-4000-8000-0000000000a4'),
@@ -156,11 +168,12 @@ begin
         $q$update pieces set sous_dossier_id = '{SA}' where id = '{PIA}';$q$, 'chef',
         $q$update pieces set dossier_id = '{DB}' where id = '{PIA}';$q$,
         null, '23514', piece_hors),
-      (20, '3g. … elle y passe avec un sous-dossier de DB, dans la même mise à jour : accepté',
+      (20, '3g. … elle y passe avec un sous-dossier de DB, dans la même mise à jour : accepté (SECU4-Q2 en base : la garde la laisse passer, la règle du dossier la refuse)',
         $q$update pieces set sous_dossier_id = '{SA}' where id = '{PIA}';$q$, 'chef',
         $q$update pieces set dossier_id = '{DB}', sous_dossier_id = '{SB}', storage_path = '{DB}/essai-docf-pia.pdf' where id = '{PIA}';$q$,
         $q$(select dossier_id::text || ' ' || sous_dossier_id::text from pieces where id = '{PIA}')$q$,
-        'OK', 'd0cf0000-0000-4000-8000-0000000000d2 d0cf0000-0000-4000-8000-0000000000a3'),
+        case when depot then '23514' else 'OK' end,
+        case when depot then piece_reste else 'd0cf0000-0000-4000-8000-0000000000d2 d0cf0000-0000-4000-8000-0000000000a3' end),
       (21, '3h. le nul que la clé étrangère écrit à la suppression d''un sous-dossier : la garde ne le juge pas',
         $q$update pieces set sous_dossier_id = '{SA}' where id = '{PIA}';$q$, 'chef',
         $q$update pieces set sous_dossier_id = null where id = '{PIA}';$q$,

@@ -19,7 +19,9 @@
 --         fait pas le 512000, le principal sans relevé — l'appel rend, la fin de la transaction refuse, aux mots de
 --         `ouverture_eclatee_attendue` ;
 --   OS-C. hors de ce seul cas, 2025 se valide comme hier : le second compte clos en 2025, ou qui ne tient son 512 qu'en 2027 ;
---         un dossier à un seul compte, son relevé en écart ;
+--         un dossier à un seul compte, son relevé en écart — MCBR2-Q2 en base (`banque_partagee_a_la_validation`, préparée), le
+--         second compte de 2027, qui partage le 512000 au 31/12/2025 sans relevé, se refuse par le filet de la banque partagée
+--         (OS-C2 le dit dans les deux états), et le jeu porte les relevés de décembre 2024, qui font le 512000 que 2024 reporte ;
 --   OS-D. qui est jugé : la ligne qu'insère le propriétaire (comme `valider_exercice`, en definer) ; jamais celle que la
 --         restauration réinsère sous le rôle de l'API (le super-administrateur) ;
 --   OS-E. l'exercice suivant : 2026, l'éclatement de son ouverture écrit, se valide (rien ne sort au 01/01/2027).
@@ -89,6 +91,9 @@ declare
   valider_2025 text;
   verif_2025 text;
   base text;
+  releves_2024 text;
+  -- MCBR2-Q2 (`banque_partagee_a_la_validation`, préparée) : le filet de la banque partagée, en base ou non.
+  partagee constant boolean := to_regprocedure('public.garder_banque_partagee_a_la_validation()') is not null;
   bonne jsonb;
   attendu text;
   issue text;
@@ -140,6 +145,11 @@ begin
       somme_mouvements, ecart, coherent, periode_debut, periode_fin)
       values ('{D}', '{COMPTE}', '{FICHIER}', {SOLDE}, {SOLDE}, 0, 0, true, '2025-12-01', '2025-12-31');$q$;
   releve := replace(releve, '{D}', d);
+  -- Les relevés de décembre 2024, qui font les 1 250 € que 2024 reporte au 512000. Depuis MCBR2-Q2 (`banque_partagee_a_la_validation`,
+  -- préparée), la ligne de 2024 que le jeu insère sous le propriétaire se juge aussi à la fin de la transaction : le second compte
+  -- partage le 512000 au 31/12/2024. Sans ce filet, ces relevés ne disent rien de 2025 (ils ne couvrent pas son 31 décembre).
+  releves_2024 := replace(replace(replace(replace(releve, '{COMPTE}', p), '{FICHIER}', 'essai_mcbr2_p_2024.csv'), '{SOLDE}', '1000'), '2025-12-', '2024-12-')
+    || replace(replace(replace(replace(releve, '{COMPTE}', s), '{FICHIER}', 'essai_mcbr2_s_2024.csv'), '{SOLDE}', '250'), '2025-12-', '2024-12-');
   -- L'ouverture de 2026 telle que la validation de 2025 l'écrit, posée à la main (OS-D, OS-E).
   report_2026 := format($q$select set_config('jd.validation_exercice', %1$L, true);
     insert into soldes_reportes (dossier_id, date, compte, libelle, sens, montant, source_nom, source_empreinte) values
@@ -157,7 +167,7 @@ begin
            where dossier_id = %1$L and date = '2026-01-01') || ':'
       || coalesce((select string_agg(compte || '/' || sens || '/' || centimes, ',' order by compte desc)
                      from public.ouverture_eclatee_attendue(%1$L, 2026)), 'rien')$q$, d);
-  base := dossier || principal || replace(replace(second, '{DEPUIS}', '2026-01-01'), '{CLOS}', 'null') || vingt_quatre;
+  base := dossier || principal || replace(replace(second, '{DEPUIS}', '2026-01-01'), '{CLOS}', 'null') || vingt_quatre || releves_2024;
   bonne := jsonb_build_array(
     jsonb_build_object('compte_bancaire_id', s, 'compte', '512200', 'sens', 'debit', 'montant', 250, 'libelle', 'Ouverture du 512200 au relevé du 31/12/2025'),
     jsonb_build_object('compte_bancaire_id', s, 'compte', '512000', 'sens', 'credit', 'montant', 250, 'libelle', 'Ouverture du 512200 au relevé du 31/12/2025'));
@@ -192,15 +202,17 @@ begin
 
   -- ══ OS-C. Hors de ce seul cas ══
   issue := pg_temp.joue(dossier || principal || replace(replace(second, '{DEPUIS}', '2026-01-01'), '{CLOS}', '''2025-11-30''') || vingt_quatre
-      || replace(replace(replace(releve, '{COMPTE}', p), '{FICHIER}', 'essai_mcbr2_p.csv'), '{SOLDE}', '1000'),
+      || releves_2024 || replace(replace(replace(releve, '{COMPTE}', p), '{FICHIER}', 'essai_mcbr2_p.csv'), '{SOLDE}', '1000'),
     valider_2025, 'chef', verif_2025);
   perform pg_temp.verdict('OS-C1. le second compte clos le 30/11/2025, sans relevé : rien ne sort du 512000, 2025 se valide',
     issue, issue = 'OK 1:101000/credit/1250.00,512000/debit/1250.00:rien');
+  -- OS-C2 : 2026 n'a rien à éclater, et ce filet laisse passer 2025 ; mais le second compte s'écrit au 512000 au 31/12/2025.
+  -- MCBR2-Q2 en base, le filet de la banque partagée, qui tire après celui-ci, refuse alors 2025 : le second compte nommé.
   issue := pg_temp.joue(dossier || principal || replace(replace(second, '{DEPUIS}', '2027-01-01'), '{CLOS}', 'null') || vingt_quatre
-      || replace(replace(replace(releve, '{COMPTE}', p), '{FICHIER}', 'essai_mcbr2_p.csv'), '{SOLDE}', '1000'),
+      || releves_2024 || replace(replace(replace(releve, '{COMPTE}', p), '{FICHIER}', 'essai_mcbr2_p.csv'), '{SOLDE}', '1000'),
     valider_2025, 'chef', verif_2025);
-  perform pg_temp.verdict('OS-C2. le second compte ne tient son 512 qu''au 01/01/2027, sans relevé : 2026 n''a rien à éclater, 2025 se valide',
-    issue, issue = 'OK 1:101000/credit/1250.00,512000/debit/1250.00:rien');
+  perform pg_temp.verdict('OS-C2. le second compte ne tient son 512 qu''au 01/01/2027, sans relevé : 2026 n''a rien à éclater, 2025 se valide (MCBR2-Q2 en base : le filet de la banque partagée la refuse, le second compte nommé)',
+    issue, issue = case when partagee then inconnu_s else 'OK 1:101000/credit/1250.00,512000/debit/1250.00:rien' end);
   issue := pg_temp.joue(dossier || principal || vingt_quatre
       || replace(replace(replace(releve, '{COMPTE}', p), '{FICHIER}', 'essai_mcbr2_p.csv'), '{SOLDE}', '900'),
     valider_2025, 'chef', verif_2025);
@@ -229,8 +241,12 @@ begin
     issue, issue = 'OK 2');
 
   -- ══ Les mutations ══
-  -- M1 : le filet ne recompose rien.
+  -- M1 : le filet ne recompose rien. MCBR2-Q2 en base, le filet de la banque partagée refuserait aussi le cas jugé (le second
+  -- compte s'écrit au 512000 au 31/12/2025) : M1 et M2 l'éteignent le temps de leur sous-transaction, pour juger celui-ci seul.
   begin
+    if partagee then
+      execute 'alter table public.exercices_valides disable trigger exercices_valides_releves_de_la_banque_partagee';
+    end if;
     execute 'create or replace function public.garder_ouverture_suivante_a_la_validation() returns trigger language plpgsql security definer set search_path = public as $f$ begin return null; end $f$';
     issue := pg_temp.joue(replace(base || replace(replace(releve, '{COMPTE}', p), '{FICHIER}', 'essai_mcbr2_p.csv'), '{SOLDE}', '1000'),
       valider_2025, 'chef', null);
@@ -240,6 +256,9 @@ begin
   insert into os_mutation (mutation, observe, mord) values ('M1 — le filet ne recompose rien : le second compte sans relevé passe (OS-B2)', issue, issue like 'OK%');
   -- M2 : le filet recompose l'ouverture de l'exercice validé lui-même, et non celle du suivant.
   begin
+    if partagee then
+      execute 'alter table public.exercices_valides disable trigger exercices_valides_releves_de_la_banque_partagee';
+    end if;
     execute replace(pg_get_functiondef('public.garder_ouverture_suivante_a_la_validation()'::regprocedure), 'new.annee + 1', 'new.annee');
     issue := pg_temp.joue(replace(base || replace(replace(releve, '{COMPTE}', p), '{FICHIER}', 'essai_mcbr2_p.csv'), '{SOLDE}', '1000'),
       valider_2025, 'chef', null);

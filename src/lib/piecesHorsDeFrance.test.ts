@@ -11,6 +11,7 @@ import {
 import type { EcritureBrouillon, Immobilisation, PieceHorsDeFrance, TypePiece } from './types'
 import { piecesFigees } from './validationExercice'
 import { contientSql, derniereDefinitionSql, fichiersDuSchema } from '../test/schema'
+import { sansLaRegleDuDossier } from '../test/essaiSql'
 
 // LA FICHE « FOURNISSEUR ÉTABLI HORS DE FRANCE » D'UNE PIÈCE (ligne 28.5, étape e2), confrontée à ce qui fait foi : la
 // migration `pieces_hors_de_france` — le texte de `enregistrer_fiche_hors_de_france` et de `retirer_fiche_hors_de_france`
@@ -120,7 +121,8 @@ const GENRES = 'jeu|controle|fait|valeur|retenir|lecture'
 function etapesDe(essai: string): Etape[] {
   return [...essai.matchAll(new RegExp(`array\\['(${GENRES})', '((?:[^']|'')*)', '(\\w+)', \\$q\\$([\\s\\S]*?)\\$q\\$,\\s*'(\\w*)',\\s*'((?:[^']|'')*)'`, 'g'))]
     .map(([, genre, titre, profil, appel, code, attendu]) => ({
-      genre, titre, numero: /^(\w+)\./.exec(titre)?.[1] ?? '', profil, appel, code, attendu: attendu.replace(/''/g, "'"),
+      genre, titre, numero: /^(\w+)\./.exec(titre)?.[1] ?? '', profil, appel: sansLaRegleDuDossier(appel), code,
+      attendu: attendu.replace(/''/g, "'"),
     }))
 }
 

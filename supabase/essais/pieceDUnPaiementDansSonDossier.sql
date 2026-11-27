@@ -15,7 +15,9 @@
 --   3. LA PART d'un virement groupé : la fonction du virement groupé la tenait déjà ; hors d'elle, la pièce d'un autre dossier,
 --      ou d'un dossier qui n'est pas celui du mouvement, se refuse ; le chef sous la RLS est refusé par la porte d'abord ;
 --   4. LE CÔTÉ PIÈCE : une pièce qu'un mouvement ou une part cite, un mouvement dont des parts citent une pièce, ne changent
---      pas de dossier ; une pièce que rien ne cite en change. Une pièce change de dossier AVEC son chemin depuis le 17/11/2026
+--      pas de dossier ; une pièce que rien ne cite en change — SECU4-Q2 en base (`ni_piece_ni_document_ne_change_de_dossier`,
+--      préparée), la garde la laisse passer, puis la règle du dossier, qui tire en dernier, la refuse sous ses mots (4c le
+--      dit dans les deux états). Une pièce change de dossier AVEC son chemin depuis le 17/11/2026
 --      (`pieces_storage_path_dans_son_dossier`, CFCS-Q1, 238 : le premier segment du chemin est le dossier) : chaque geste
 --      déplace les deux — le contrôle positif 4c passait la garde puis butait sur la contrainte (relevé le 22/11/2026), et la
 --      garde seule refuse 4 et 4b ;
@@ -63,6 +65,9 @@ declare
   part_dans_son_dossier constant text := 'La pièce d''une part d''un virement groupé est une pièce du dossier de ce virement.';
   piece_citee constant text := 'Cette pièce est citée par un mouvement du relevé, ou par la part d''un virement groupé, de son dossier : elle ne change pas de dossier.';
   mouvement_groupe constant text := 'Ce mouvement règle en groupe des pièces de son dossier : il ne change pas de dossier.';
+  -- SECU4-Q2 (`ni_piece_ni_document_ne_change_de_dossier`, préparée) : la règle du dossier, en base ou non, et ses mots.
+  depot constant boolean := to_regprocedure('public.garder_dossier_de_depot()') is not null;
+  piece_reste constant text := 'Une pièce reste dans le dossier où elle a été déposée : elle ne change pas de dossier.';
   e record; v_code text; v_msg text; v_obs text; v_textes text[];
   verdicts jsonb := '[]'::jsonb;
 begin
@@ -168,10 +173,13 @@ begin
         $q$insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant) values ('{DA}', '{LG}', '{PA2}', 120);
            update pieces set dossier_id = '{DB}', storage_path = '{DB}/essai-q4-pa2.pdf' where id = '{PA2}';$q$,
         null, '23514', piece_citee),
-      (18, '4c. une pièce que rien ne cite change de dossier, avec son chemin (le contrôle positif)',
+      -- SECU4-Q2 en base (`ni_piece_ni_document_ne_change_de_dossier`, préparée) : aucune pièce ne change plus de dossier. La
+      -- garde des paiements, qui tire avant, la laisse passer, puis la règle du dossier la refuse sous ses mots : le pas les
+      -- attend, et un refus de la garde des paiements le ferait virer au rouge dans les deux états.
+      (18, '4c. une pièce que rien ne cite change de dossier, avec son chemin (le contrôle positif ; SECU4-Q2 en base : la garde la laisse passer, la règle du dossier la refuse)',
         null, 'chef', $q$update pieces set dossier_id = '{DB}', storage_path = '{DB}/essai-q4-pa2.pdf' where id = '{PA2}';$q$,
-        $q$(select dossier_id::text || ' ' || storage_path from pieces where id = '{PA2}')$q$, 'OK',
-        'a8560000-0000-4000-8000-0000000000d2 a8560000-0000-4000-8000-0000000000d2/essai-q4-pa2.pdf'),
+        $q$(select dossier_id::text || ' ' || storage_path from pieces where id = '{PA2}')$q$, case when depot then '23514' else 'OK' end,
+        case when depot then piece_reste else 'a8560000-0000-4000-8000-0000000000d2 a8560000-0000-4000-8000-0000000000d2/essai-q4-pa2.pdf' end),
       (19, '4d. un mouvement dont des parts citent une pièce ne change pas de dossier',
         null, 'proprio',
         $q$insert into reglements_groupes (dossier_id, ligne_bancaire_id, piece_id, montant) values ('{DA}', '{LG}', '{PA}', 120);
