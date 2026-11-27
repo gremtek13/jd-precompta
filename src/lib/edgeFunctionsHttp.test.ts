@@ -201,11 +201,36 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
   {
     slug: 'extract-piece', quoi: 'le corps lu avant le contrôle',
     remplacements: [
-      ['    const fileBytes = new Uint8Array(await req.arrayBuffer())\n', ''],
+      ['    const fileBytes = await corpsSousSaBorne(req, TAILLE_MAX_LECTURE)\n', ''],
       ['    const cleSecrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))\n',
-        '    const fileBytes = new Uint8Array(await req.arrayBuffer())\n    const cleSecrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))\n'],
+        '    const fileBytes = await corpsSousSaBorne(req, TAILLE_MAX_LECTURE)\n    const cleSecrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))\n'],
     ],
     scenario: 'sans en-tête ni clé : 401, corps non lu, le service d’authentification pas même interrogé',
+  },
+  // LE CORPS LU SOUS SA BORNE (relecture adverse de sécurité des Edge Functions, 27/11/2026) : l'en-tête qui annonce un corps trop
+  // gros ignoré ; le flux lu sans borne ; le corps lu en entier avant la borne, comme hier ; le refus rendu en 400.
+  {
+    slug: 'extract-piece', quoi: 'le Content-Length qui annonce plus que la borne ignoré',
+    remplacements: [['  if (/^\\d+$/.test(annonce) && Number(annonce) > borne) return null\n', '']],
+    scenario: 'un Content-Length qui annonce plus de 10 Mo : 413, corps non lu, avant AWS',
+  },
+  {
+    slug: 'extract-piece', quoi: 'le flux lu sans borne',
+    remplacements: [['    if (total > borne) {', '    if (total < 0) {']],
+    scenario: 'un flux de 64 Mo sans Content-Length : abandonné à la borne, 413, avant AWS',
+  },
+  {
+    slug: 'extract-piece', quoi: 'le corps lu en entier avant la borne, comme hier',
+    remplacements: [[
+      '    const fileBytes = await corpsSousSaBorne(req, TAILLE_MAX_LECTURE)\n',
+      '    const lu = new Uint8Array(await req.arrayBuffer())\n    const fileBytes = lu.byteLength > TAILLE_MAX_LECTURE ? null : lu\n',
+    ]],
+    scenario: 'un Content-Length qui ment (1 octet annoncé, 64 Mo envoyés) : abandonné à la borne, 413, avant AWS',
+  },
+  {
+    slug: 'extract-piece', quoi: 'le corps trop gros refusé en 400',
+    remplacements: [['      return json({ error: REFUS_TROP_VOLUMINEUX }, 413)', '      return json({ error: REFUS_TROP_VOLUMINEUX }, 400)']],
+    scenario: 'plus de 10 Mo : refusé avant AWS (413)',
   },
   {
     slug: 'extract-piece', quoi: 'le JSON illisible du modèle à nouveau cité au journal',
@@ -927,6 +952,60 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     slug: 'send-email', quoi: 'l’objet qui garde ses retours à la ligne',
     remplacements: [['  objet = objetDeLEmail(objet)\n', '']],
     scenario: 'le cabinet : un nom de dossier fait de blancs et de retours à la ligne signe « Votre cabinet comptable », entre guillemets',
+  },
+  // LE NOM QUE LA FACTURE IMPRIME (FACT-Q2) ET LA FACTURE QU'UN AVOIR CORRIGE (FACT-Q3), réponses du cabinet du 27/11/2026 :
+  // l'expéditeur, puis la signature et l'objet, revenus au nom interne recopié ; le drapeau illisible pris pour « d'avant » ;
+  // l'avoir ordinaire qui ne cite plus sa facture ; la facture corrigée lue hors du dossier de la requête.
+  {
+    slug: 'send-email', quoi: 'l’expéditeur d’une facture figée sous le nom interne recopié',
+    remplacements: [['    nomExpediteur = nomDeLEmetteur(factureData as FactureRow) ?? dossierRow.nom', '    nomExpediteur = factureData.emetteur_nom ?? dossierRow.nom']],
+    scenario: 'le cabinet : l’e-mail d’une facture figée part sous sa dénomination figée — objet, signature, expéditeur (FACT-Q2)',
+  },
+  {
+    slug: 'send-email', quoi: 'l’objet et la signature d’une facture figée sous le nom interne recopié',
+    remplacements: [['  const emetteur = nomDeLEmetteur(facture) ?? "Le cabinet"', '  const emetteur = facture.emetteur_nom ?? "Le cabinet"']],
+    scenario: 'client « Ventes » : l’e-mail d’une facture figée part sous sa dénomination figée — objet, signature, expéditeur (FACT-Q2)',
+  },
+  {
+    slug: 'send-email', quoi: 'la dénomination imprimée d’une facture d’avant',
+    remplacements: [['  if (f.mentions_figees === true && typeof denomination', '  if (typeof denomination']],
+    scenario: 'une facture d’avant : son emetteur_nom, même si une dénomination traîne dans sa ligne (FACT-Q2)',
+  },
+  {
+    slug: 'send-email', quoi: 'le drapeau des mentions figées illisible pris pour « d’avant »',
+    remplacements: [['  return typeof f.mentions_figees === "boolean"\n    ? null', '  return f.mentions_figees !== "jamais"\n    ? null']],
+    scenario: 'le drapeau des mentions figées non rendu : 503 qui le dit, rien d’envoyé (FACT-Q2)',
+  },
+  {
+    slug: 'send-email', quoi: 'l’avoir d’une facture ordinaire qui ne la cite pas',
+    remplacements: [['  const corrigee = typeLabel === "Avoir" && origine ?', '  const corrigee = typeLabel === "Avoir" && origine?.acompte ?']],
+    scenario: 'un avoir : il cite la facture qu’il corrige, dans l’objet et le corps (FACT-Q3)',
+  },
+  {
+    slug: 'send-email', quoi: 'la facture corrigée lue hors du dossier de la requête',
+    // Les deux lectures de la facture corrigée — la marque d'acompte, gardée, et le numéro — ensemble : l'une retient l'autre.
+    remplacements: [
+      ['.eq("id", facture.facture_origine_id).eq("dossier_id", dossierId).maybeSingle()', '.eq("id", facture.facture_origine_id).maybeSingle()'],
+      ['.eq("id", marque.facture_origine_id).eq("dossier_id", dossierId).maybeSingle()', '.eq("id", marque.facture_origine_id).maybeSingle()'],
+    ],
+    scenario: 'un avoir dont la facture corrigée est d’un autre dossier : 503, jamais le numéro d’une facture d’ailleurs (FACT-Q3)',
+  },
+  {
+    slug: 'send-email', quoi: 'la facture corrigée illisible qui laisse partir l’avoir',
+    remplacements: [['    if ("erreur" in corrigee) {\n      return json({ error: corrigee.erreur }, 503)\n    }\n', '    if (false) {\n      return json({ error: "jamais" }, 503)\n    }\n']],
+    scenario: 'un avoir dont la facture corrigée ne se lit pas (erreur de la base) : 503 qui le dit, rien d’envoyé (FACT-Q3)',
+  },
+  // L'IDENTIFIANT RENDU PAR SUPER PDP (relecture adverse de sécurité des Edge Functions, 27/11/2026) : un élément sans
+  // identifiant lisible gardé ; la pagination qui suit un dernier identifiant illisible.
+  {
+    slug: 'superpdp-sync', quoi: 'un identifiant illisible gardé dans la liste',
+    remplacements: [['    const factures = bornees.filter((i) => i !== null && typeof i === "object" && identifiantLisible(i.id))', '    const factures = bornees.filter((i) => i !== null && typeof i === "object")']],
+    scenario: 'des identifiants illisibles dans la liste : écartés et comptés, ni adresse ni chemin, la facture 7 seule importée',
+  },
+  {
+    slug: 'superpdp-sync', quoi: 'la page suivante demandée après un identifiant illisible',
+    remplacements: [['      if (!identifiantLisible(dernier)) break\n', '']],
+    scenario: 'un dernier identifiant illisible : la page suivante ne se demande pas',
   },
   {
     slug: 'send-email', quoi: 'le plafond relâché à trente et un',

@@ -63,6 +63,16 @@ interface EnInvoice {
   lines?: { item_information?: { name?: string }; net_amount?: string }[]
 }
 interface InvoiceListItem { id: number; direction: "in" | "out" }
+
+// L'IDENTIFIANT D'UNE FACTURE RENDU PAR SUPER PDP (relecture adverse de sécurité des Edge Functions, 27/11/2026). La liste le
+// rend dans un JSON que rien ne vérifiait : il partait tel quel dans l'adresse du détail (`/v1.beta/invoices/${id}`), dans
+// celle de la page suivante (`starting_after_id`), dans le chemin du stockage (`<dossier>/superpdp-${id}.txt`) et dans la
+// colonne `superpdp_invoice_id` (un bigint). Une valeur qui n'est pas un entier exact — « ../ », « 1?x= », un nombre décimal
+// ou trop grand pour se relire à l'identique — pouvait viser une autre adresse de la plateforme ou un autre chemin du seau
+// (le premier segment, le dossier, ne change pas, mais `superpdp-` suivi d'autre chose, si). Un élément ne part donc
+// nulle part sans `Number.isSafeInteger` : sinon il s'écarte et se COMPTE, sa valeur jamais recopiée au journal ni dans la
+// réponse ; et la pagination s'arrête sur un dernier identifiant qui ne se lit pas.
+const identifiantLisible = (id: unknown): id is number => Number.isSafeInteger(id)
 interface InvoiceDetail { id: number; direction: "in" | "out"; en_invoice?: EnInvoice }
 
 // ── DÉBUT PAGINATION ─────────────────────────────────────────────────────────────────────────────
@@ -346,14 +356,19 @@ Deno.serve(async (req: Request) => {
       const resp = await fetch(url, { headers })
       const body = await resp.json().catch(() => null)
       if (!resp.ok) throw new Error(`Liste des factures Super PDP échouée (${resp.status}) : ${body?.error ?? "réponse invalide"}.`)
-      const data = (body?.data ?? []) as InvoiceListItem[]
+      const data = (Array.isArray(body?.data) ? body.data : []) as InvoiceListItem[]
       invoices.push(...data)
       if (!body?.has_after || data.length === 0) break
-      apres = data[data.length - 1].id
+      const dernier = (data[data.length - 1] as { id?: unknown } | null)?.id
+      if (!identifiantLisible(dernier)) break
+      apres = dernier
     }
 
     // Les deux sens : "in" (reçue → achat) et "out" (émise → vente) — voir note en tête de fichier.
-    const factures = invoices.slice(0, MAX_FACTURES_PAR_SYNC)
+    const bornees = invoices.slice(0, MAX_FACTURES_PAR_SYNC)
+    // Un élément sans identifiant lisible s'écarte ici, avant toute adresse et tout chemin, et se compte.
+    const factures = bornees.filter((i) => i !== null && typeof i === "object" && identifiantLisible(i.id))
+    const ecartees = bornees.length - factures.length
 
     // LA MÊME LECTURE QUE LE DÉDOUBLONNAGE, ET C'EST LA PLUS COÛTEUSE DES TROIS COPIES.
     // Son erreur était jetée : une lecture refusée rendait `idsConnus` VIDE, donc `aTraiter` =
@@ -386,6 +401,11 @@ Deno.serve(async (req: Request) => {
     let importees = 0
     let enAttenteTraitement = 0
     const erreurs: string[] = []
+    if (ecartees > 0) {
+      // Le compte seul, au journal comme dans la réponse : jamais la valeur rendue.
+      console.warn(`[superpdp-sync] ${ecartees} élément(s) de la liste sans identifiant lisible, écarté(s)`)
+      erreurs.push(`${ecartees} facture(s) rendue(s) par Super PDP sans identifiant lisible : écartée(s), rien d'importé pour elle(s).`)
+    }
 
     for (const item of aTraiter) {
       try {
@@ -445,6 +465,7 @@ Deno.serve(async (req: Request) => {
       importees,
       deja_connues: factures.length - aTraiter.length,
       en_attente_traitement: enAttenteTraitement,
+      ecartees,
       erreurs,
     })
   } catch (err) {

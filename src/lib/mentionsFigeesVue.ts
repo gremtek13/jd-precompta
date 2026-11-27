@@ -5,6 +5,7 @@ import { conditionsFigees, INDEMNITE_DE_RECOUVREMENT, mentionsImprimees, sirenDe
 import { estUneFactureReprise } from './facturesReprises'
 import { formatMoney } from './format'
 import type { LogoLu } from './logoDesFactures'
+import { nomDeLEmetteur } from './nomDeLEmetteur'
 import {
   denominationAbsente, mentionsAFiger, refusDeLaProvenance, refusDeLaValidationFigee, refusDesTextesDeLaFacture,
   type MentionsDeLOrigine, type MentionsFigees,
@@ -187,18 +188,22 @@ function penalitesEnVigueur(lecture: LectureDeLaValidation | null, dossierId: st
 }
 
 /**
- * LA PHRASE DE RETARD EST-ELLE INUTILE DANS LA MENTION PROPOSÉE ? (A7B-Q2, relue le 31/10/2026 après une relecture.) Les
- * paramètres en vigueur ne disent les conditions de retard que d'un client PROFESSIONNEL, et de leur texte des pénalités
- * (`ceQueLaFactureImprime` : un assujetti ou un organisme public, `penalites` figées) : sans ce texte, une facture à une
- * entreprise n'imprimerait aucun taux (C. com., art. L441-9, I). Vrai : des paramètres en vigueur, et un particulier
- * (`non_assujetti`, à qui l'article ne s'applique pas), ou un professionnel avec leur texte des pénalités. Faux sinon — un
- * client « à préciser » ou établi hors de France : on ne sait pas, la phrase d'hier reste.
+ * LA PHRASE DE RETARD EST-ELLE INUTILE DANS LA MENTION PROPOSÉE ? (A7B-Q2, relue le 31/10/2026 après une relecture ;
+ * FACT-Q1 (B), réponse du cabinet du 27/11/2026.) Un particulier (`non_assujetti`) : toujours — les pénalités de trois fois
+ * le taux d'intérêt légal et l'indemnité forfaitaire de 40 € sont celles des professionnels entre eux (C. com., art. L441-10,
+ * II, et D441-5), et la lui proposer, quand le dossier n'a pas encore de paramètres, lui écrivait une dette qu'il ne doit
+ * pas ; qu'importe donc la lecture des paramètres, revenue ou non. Pour un professionnel, les paramètres en vigueur ne
+ * disent les conditions de retard que de leur texte des pénalités (`ceQueLaFactureImprime` : un assujetti ou un organisme
+ * public, `penalites` figées) : sans ce texte, une facture à une entreprise n'imprimerait aucun taux (C. com., art. L441-9,
+ * I). Vrai alors : des paramètres en vigueur avec leur texte des pénalités. Faux sinon — et pour un client « à préciser »
+ * ou établi hors de France : on ne sait pas, la phrase d'hier reste. La mention reste modifiable, et la garde de la base
+ * n'exige que la mention de TVA.
  */
 export function sansPhraseDeRetard(
   lecture: LectureDeLaValidation | null, dossierId: string, typeClient: SaisieMentions['typeClient'],
 ): boolean {
-  if (!parametresEnVigueur(lecture, dossierId)) return false
   if (typeClient === 'non_assujetti') return true
+  if (!parametresEnVigueur(lecture, dossierId)) return false
   return versEntreprise(typeClient) && penalitesEnVigueur(lecture, dossierId) !== null
 }
 
@@ -483,7 +488,8 @@ export function ceQueLaFactureImprime(f: FactureEmise): ImpressionFigee | null {
   if (f.type_client !== 'organisme_public' && f.numero_engagement) {
     mentions.push({ libelle: 'Bon de commande', texte: f.numero_engagement })
   }
-  const nom = nomLegal(f.denomination_imprimee, f.emetteur_nom)
+  // Le nom légal, par la règle que l'e-mail de la facture suit aussi (lib/nomDeLEmetteur.ts, FACT-Q2).
+  const nom = nomDeLEmetteur(f)
   return {
     nom,
     mandat: mentionDuMandat(f.mandataire_nom, nom, f.type === 'avoir'),

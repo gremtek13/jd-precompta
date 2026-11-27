@@ -339,7 +339,7 @@ describe('les blocs de facturation recopiés dans les Edge Functions', () => {
     },
     'send-email': {
       lecture: 'acompteDeLEmail', sans: 'SANS_ACOMPTE_EMAIL',
-      cablage: ['const acompte = await acompteDeLEmail(admin, dossierId, factureId)', 'return json({ error: acompte.erreur }, 503)', ', messagePerso, acompte)'],
+      cablage: ['const acompte = await acompteDeLEmail(admin, dossierId, factureId)', 'return json({ error: acompte.erreur }, 503)', ', messagePerso, acompte, corrigee.origine)'],
     },
   }
 
