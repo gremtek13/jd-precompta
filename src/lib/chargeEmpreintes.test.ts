@@ -55,7 +55,9 @@ const ATTENDUES = {
   etatsDesVentesAEcrire: 'a4a35fab5ea391d739d7d48aeb9f7d25b82e3419f9fb19e97bb435f92f8766d2',
   etatsDesVentesAReecrire: '7b9840c13e4e5ca4bfd04feb893a9438d5a7b6754cacf411e0d424aa3168fc5b',
   pisteAudit: '629321b5415bedec0a78effe734048514430fe6b6fe347deddc433ed6fc197a5',
-  checklist: '393a216b30f6989e4652bbb91d5eef7b605a0dc263007fc1dad68926fa7f2ff5',
+  // Relevée de nouveau le 27/11/2026 : la Vue d'ensemble porte un point de plus, « bordereaux-deposes » (BOR6T-Q2), à zéro ici
+  // (la recherche n'est pas faite) ; aucun autre point ne change.
+  checklist: '1539672b1221f59460edf2dc33cfa497592c659fb2b1e6564d1a19f7f881dd4a',
   prealables: '75e5e77afe295b80eb4fac969d6d4efe07bce7ae5b0112bc1cedc48250984c16',
   candidatsPieces: 'd17f190725fcb77be61dafac808fca9fc272f2b5194e1b20c1a401603b3de081',
   planAutomatique: '7848021bda2a831f466150029dd79a722cf5a34507448199ffbdf3de56bd0227',
