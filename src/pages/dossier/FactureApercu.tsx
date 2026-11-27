@@ -48,7 +48,9 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
   // Numéro de la facture corrigée, affiché uniquement pour un avoir (voir facture_origine_id) — une
   // requête à part plutôt qu'une jointure : FacturesTab connaît déjà cette info pour ses propres
   // lignes de tableau (elle a toute la liste en mémoire), mais l'aperçu peut aussi être ouvert seul.
-  const [numeroOrigine, setNumeroOrigine] = useState<string | null>(null)
+  // Gardé AVEC la facture corrigée lue : une réponse arrivée pour une autre ne s'inscrit pas ; introuvable ou sans numéro, elle
+  // est « non lue » comme une lecture refusée.
+  const [origineLue, setOrigineLue] = useState<{ id: string; numero: string | null } | null>(null)
   const [lignesIllisibles, setLignesIllisibles] = useState<string | null>(null)
   // Les mentions de la facture électronique (ligne 28.5, étape c4) : celles qu'elle porte, et seulement elles — une
   // facture d'avant les a nulles, et rien ne s'y imprime à leur place.
@@ -118,17 +120,29 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
   // Le numéro de la facture corrigée : sur un avoir, c'est une référence qui part au client. Une
   // lecture refusée le faisait simplement disparaître de l'aperçu, donc de l'impression.
   useEffect(() => {
-    if (!facture.facture_origine_id) { setNumeroOrigine(null); return }
-    supabase.from('factures_emises').select('numero').eq('id', facture.facture_origine_id).maybeSingle()
-      .then(({ data, error }) => setNumeroOrigine(error ? '— non lu' : (data?.numero ?? null)))
+    const id = facture.facture_origine_id
+    if (!id) return
+    let annule = false
+    supabase.from('factures_emises').select('numero').eq('id', id).maybeSingle()
+      .then(({ data, error }) => { if (!annule) setOrigineLue({ id, numero: error ? null : (data?.numero ?? null) }) })
+    return () => { annule = true }
   }, [facture.facture_origine_id])
+  const origineCourante = origineLue !== null && origineLue.id === facture.facture_origine_id ? origineLue : null
+  const numeroOrigine = origineCourante === null ? null : (origineCourante.numero ?? '— non lu')
+  const referenceDOrigine = facture.type === 'avoir' && (acompteImprime.etat !== 'imprime' || acompteImprime.referenceDOrigine)
+
+  // L'IMPRESSION ATTEND CE QU'ELLE IMPRIME (relecture adverse du 27/11/2026) : les lignes revenues et lues — sinon le tableau
+  // dit « Chargement… » ou l'erreur sous des totaux bien présents —, et, sur un avoir, le numéro de la facture qu'il corrige,
+  // la référence que le client reçoit. Elle attendait déjà l'acompte ; un PDF enregistré avant ces lectures partait faux.
+  const impressionRetenue = avisAcompte !== null || lignes === null || lignesIllisibles !== null
+    || (referenceDOrigine && (origineCourante === null || origineCourante.numero === null))
 
   return (
     <div className="facture-apercu-voile">
       <div className="card facture-imprimable">
         <div className="facture-imprimable-actions">
           <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>Fermer</button>
-          <button type="button" className="btn btn-primary btn-sm" disabled={avisAcompte !== null} onClick={() => window.print()}>Imprimer / Enregistrer en PDF</button>
+          <button type="button" className="btn btn-primary btn-sm" disabled={impressionRetenue} onClick={() => window.print()}>Imprimer / Enregistrer en PDF</button>
         </div>
         {(dAvant || avisLogo || avisAcompte) && (
           <div className="facture-imprimable-avis" role="note">
@@ -152,7 +166,7 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
           </div>
           <div style={{ textAlign: 'right' }}>
             <h2 style={{ margin: 0 }}>{acompteImprime.etat === 'imprime' ? acompteImprime.titre : facture.type === 'avoir' ? 'AVOIR' : 'FACTURE'} {facture.numero}</h2>
-            {facture.type === 'avoir' && (acompteImprime.etat !== 'imprime' || acompteImprime.referenceDOrigine) && (
+            {referenceDOrigine && (
               <div className="muted">En référence à la facture {numeroOrigine ?? '…'}</div>
             )}
             {acompteImprime.etat === 'imprime' && acompteImprime.references.map((r) => <div key={r} className="muted">{r}</div>)}

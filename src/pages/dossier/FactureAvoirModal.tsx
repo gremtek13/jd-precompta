@@ -15,7 +15,9 @@ import {
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import { lireLesContacts } from '../../lib/contactsLecture'
 import { ACOMPTES_PREVUS } from '../../lib/devis'
-import { refusDeLaDateDEmission, type FactureDeLaSerie, type ModeleDeLaSerie } from '../../lib/validationDeLaFacture'
+import {
+  refusDeLaDateDEmission, refusDeLaMentionTvaDeLAvoir, statutQueLAvoirFige, type FactureDeLaSerie, type ModeleDeLaSerie,
+} from '../../lib/validationDeLaFacture'
 import { avisDeLAvoir, refusDeLAvoir as refusDeLAvoirAvecAcompte, type AcompteDeLaFacture } from '../../lib/acomptesDesFactures'
 import { estUneFactureReprise } from '../../lib/facturesReprises'
 import {
@@ -248,6 +250,11 @@ export default function FactureAvoirModal(props: Props) {
     // Le dossier du cabinet (LM2) numérote dans la série du dossier, même quand le cabinet valide (`serieDeQuiValide`).
     espace: serieDeQuiValide(espace, props.espace === 'cabinet' ? props.mandataire : null), modeles: modelesDeNumerotation,
   })?.message ?? null
+  // LA MENTION DE TVA (rang 16 de la garde, qui précède la date) : celle du statut que l'avoir figera — de sa facture figée, du
+  // dossier lu sinon —, sur les mentions telles qu'elles partent. Le dossier pas encore lu, la base la juge (la retenue le dit).
+  const refusDeLaMention = refusDeLaMentionTvaDeLAvoir(
+    statutQueLAvoirFige(factureOrigine, lectureCourante?.etat === 'lu' ? lectureCourante.identite : null), mentionsLegales,
+  )?.message ?? null
   const retenue = refusDeLAvoir == null && jugementMentions?.refusDeLEnregistrement == null
     ? retenueReprise ?? jugementMentions?.retenue ?? null : null
   // Ce que la fenêtre dit d'une facture reprise avant le clic : un document de l'application, sa série, ce qu'il fige.
@@ -256,7 +263,7 @@ export default function FactureAvoirModal(props: Props) {
     factureOrigine, espace, serieDeLaValidation(serieDeQuiValide(espace, props.espace === 'cabinet' ? props.mandataire : null), 'avoir', anneeDeLAvoir, modelesDeNumerotation), anneeDeLAvoir, lectureReprise,
   )
   const refus = refusDeLAvoir ?? jugementMentions?.refusDeLEnregistrement
-    ?? (retenue != null ? null : jugementMentions?.refusDeLaValidation ?? refusDeLaDate ?? jugementSource.refus)
+    ?? (retenue != null ? null : jugementMentions?.refusDeLaValidation ?? refusDeLaMention ?? refusDeLaDate ?? jugementSource.refus)
 
   // Verrou en `useRef`, et POSÉ AVANT LE `try` : dans le `try`, le `return` du deuxième clic
   // sortirait par le `finally`, qui relâcherait le verrou du PREMIER, encore en cours — il faut

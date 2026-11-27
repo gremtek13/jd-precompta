@@ -666,3 +666,30 @@ describe('l’adresse du client (JJ-Q4) et la ligne à 0 % (A7C-Q1) : le module 
     expect(essai).toContain(`'22023', '${REFUS_LIGNE_A_ZERO.modele.replace(/'/g, "''")}'`)
   })
 })
+
+// LA MENTION DE TVA D'UN AVOIR (rang 16) : le statut de sa facture figée, sinon celui du dossier ; celui que
+// `enregistrer_facture` fige pour un avoir, confronté à son dernier texte exporté.
+describe('la mention de TVA d’un avoir', () => {
+  it('le statut figé de sa facture, sinon celui du dossier, sinon rien (la base juge)', async () => {
+    const { statutQueLAvoirFige } = await import('./validationDeLaFacture')
+    const dossier = { statut_tva: 'exonere' as const, article_exoneration: 'cgi_261_4_1' as const }
+    expect(statutQueLAvoirFige({ mentions_figees: true, statut_tva: 'franchise', article_exoneration: null }, dossier))
+      .toEqual({ statutTva: 'franchise', articleExoneration: null })
+    expect(statutQueLAvoirFige({ mentions_figees: false, statut_tva: null, article_exoneration: null }, dossier))
+      .toEqual({ statutTva: 'exonere', articleExoneration: 'cgi_261_4_1' })
+    expect(statutQueLAvoirFige({ mentions_figees: false, statut_tva: null, article_exoneration: null }, null)).toBeNull()
+    const corps = derniereDefinitionSql('enregistrer_facture')
+    expect(corps).toMatch(/if v_type = 'avoir' and v_origine\.mentions_figees then\s+v_statut_tva := v_origine\.statut_tva;\s+v_article_exoneration := v_origine\.article_exoneration;/)
+    expect(corps).toMatch(/else\s+v_statut_tva := v_dossier\.statut_tva;\s+v_article_exoneration := v_dossier\.article_exoneration;/)
+  })
+
+  it('le refus sous les mots de la base, sur les mentions telles qu’elles partent', async () => {
+    const { refusDeLaMentionTvaDeLAvoir } = await import('./validationDeLaFacture')
+    const exonere = { statutTva: 'exonere' as const, articleExoneration: 'cgi_261_4_1' as const }
+    expect(refusDeLaMentionTvaDeLAvoir(exonere, '')?.message).toContain('« Exonération de TVA, art. 261, 4, 1° du CGI. »')
+    expect(refusDeLaMentionTvaDeLAvoir(exonere, '  Exonération de TVA, art. 261, 4, 1° du CGI.  ')).toBeNull()
+    expect(refusDeLaMentionTvaDeLAvoir({ statutTva: 'franchise', articleExoneration: null }, 'rien')?.cle).toBe('mention_tva_absente')
+    expect(refusDeLaMentionTvaDeLAvoir({ statutTva: 'redevable', articleExoneration: null }, '')).toBeNull()
+    expect(refusDeLaMentionTvaDeLAvoir(null, '')).toBeNull()
+  })
+})
