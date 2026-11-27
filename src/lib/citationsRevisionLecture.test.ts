@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  citantDe, lireCitationsDeLaRevision, quiCite, quiCiteLaPiece, refusDeSuppression, refusDeSuppressionDUnePiece,
+  citantDe, lireCitationsDeLaRevision, quiCite, quiCiteLaPiece, quiCitentLaPiece, refusDeSuppression, refusDeSuppressionDUnePiece,
 } from './citationsRevisionLecture'
 
 // La lecture de ce que la révision cite : les décisions et les preuves du dossier, et les entrées du dossier permanent
@@ -147,14 +147,31 @@ describe('une pièce citée par une écriture libre (ELQ8Q1-Q1)', () => {
     citations: [{ exercice: 2026, numero: 3, piece_citee_id: 'p-1', figee: false }, { exercice: 2026, numero: 4, piece_citee_id: 'p-7', figee: false }],
   }
 
-  it('la révision et le dossier permanent parlent d’abord, puis l’écriture libre', async () => {
+  it('la révision et le dossier permanent parlent d’abord, puis l’écriture libre — toutes, à la suite (ELQ8Q1-Q2 (A))', async () => {
     const lues = await lireCitationsDeLaRevision('d1')
-    expect(refusDeSuppressionDUnePiece('p-1', lues, libres)).toBe(refusDeSuppression({ pieceId: 'p-1' }, lues))
+    expect(refusDeSuppressionDUnePiece('p-1', lues, libres)).toBe(`${refusDeSuppression({ pieceId: 'p-1' }, lues)} `
+      + 'Cette pièce est citée par l’écriture libre EL2026-0003 : elle ne se supprime plus, sauf avec son dossier. '
+      + 'Pour la supprimer, retire d’abord la citation de l’écriture, dans l’onglet Écritures.')
     expect(quiCiteLaPiece('p-1', lues, libres)).toBe('dossier-permanent')
+    expect(quiCitentLaPiece('p-1', lues, libres)).toEqual(['dossier-permanent', 'ecriture-libre'])
+    expect(quiCitentLaPiece('p-9', lues, libres)).toEqual([])
     expect(refusDeSuppressionDUnePiece('p-7', lues, libres)).toMatch(/^Cette pièce est citée par l’écriture libre EL2026-0004 :/)
     expect(quiCiteLaPiece('p-7', lues, libres)).toBe('ecriture-libre')
     expect(refusDeSuppressionDUnePiece('p-9', lues, libres)).toBeNull()
     expect(quiCiteLaPiece('p-9', lues, libres)).toBeNull()
+  })
+
+  it('une pièce citée trois fois dit les trois citations, dans l’ordre, et le remède seulement là où il existe', async () => {
+    faux.tables.revision_preuves.push({ id: 'rp2', dossier_id: 'd1', justification_id: 'j1', piece_id: 'p-1', document_id: null })
+    const lues = await lireCitationsDeLaRevision('d1')
+    const figee = { dossierId: 'd1', etat: 'lues' as const, citations: [{ exercice: 2025, numero: 1, piece_citee_id: 'p-1', figee: true }] }
+    expect(refusDeSuppressionDUnePiece('p-1', lues, figee)).toBe(
+      'Cette pièce est citée par la révision du solde du compte 512000 (exercice 2025) : elle ne se supprime plus, sauf avec son dossier. '
+      + 'Cette pièce est citée par le dossier permanent (lettre de mission) : elle ne se supprime plus, sauf avec son dossier. '
+      + 'Cette pièce est citée par l’écriture libre EL2025-0001 : elle ne se supprime plus, sauf avec son dossier. '
+      + 'L’écriture EL2025-0001 est d’un exercice validé : sa citation ne se retire plus, et la pièce reste au dossier.')
+    expect(quiCitentLaPiece('p-1', lues, figee)).toEqual(['revision', 'dossier-permanent', 'ecriture-libre'])
+    expect(citantDe(quiCitentLaPiece('p-1', lues, figee))).toBe('la révision des soldes, le dossier permanent et une écriture libre')
   })
 
   it('les écritures libres parlent même avant la lecture de la révision, et rien quand elles ne sont pas lues', () => {
