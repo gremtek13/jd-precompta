@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { lireLesNotesDeFraisDuDossier, lireMesNotesDeFrais } from './notesDeFraisLecture'
+import {
+  lireLesNotesDeFraisDesControles, lireLesNotesDeFraisDuDossier, lireMesNotesDeFrais, notesDeFraisDesControles,
+} from './notesDeFraisLecture'
 
 // Ce que « Mes notes de frais » lit (étape B8) : RIEN, drapeau baissé (la table n'existe pas avant B7) ; levé, les cases
 // « Notes de frais » et « Achats » relues à la base, seul `true` accorde. B8-Q1 (12/11/2026) : « Achats » SEUL ouvre la
@@ -62,6 +64,22 @@ describe('les notes de frais du dossier, côté cabinet : les accès et leur cas
     faux.lever = 'memberships'
     const rompue = await lireLesNotesDeFraisDuDossier('d1')
     expect([rompue.lesNotes.complete, rompue.acces.complete, rompue.acces.motif]).toEqual([true, false, 'requête rompue'])
+  })
+})
+
+// L3-Q3 (A) : ce que les contrôles reçoivent, les deux états du drapeau.
+describe('les notes de frais des contrôles', () => {
+  it('drapeau baissé : sans objet, sans un appel ; levé : les trois lectures de la section, gardées avec leur dossier', async () => {
+    faux.drapeau = false
+    expect(await lireLesNotesDeFraisDesControles('d1')).toEqual({ etat: 'sans_objet' })
+    expect(faux.lues).toEqual([])
+    faux.drapeau = true
+    const lues = await lireLesNotesDeFraisDesControles('d1')
+    expect(lues.etat).toBe('lues')
+    expect(faux.lues).toContain('notes_de_frais')
+    const section = await lireLesNotesDeFraisDuDossier('d1')
+    expect(notesDeFraisDesControles(section, 'd2')).toEqual({ etat: 'sans_objet' })
+    expect(notesDeFraisDesControles(null, 'd1')).toEqual({ etat: 'sans_objet' })
   })
 })
 

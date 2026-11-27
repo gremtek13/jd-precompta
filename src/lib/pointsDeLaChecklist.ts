@@ -2,6 +2,9 @@ import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './e
 import { estOuvert, MODULE_DE_L_ONGLET, type Module, type ModuleOptionnel } from './modulesDuCabinet'
 import { banquesDuDossier } from './banqueDuMouvement'
 import { detailDesNotesRapprochees, LIBELLE_NOTES_RAPPROCHEES, notesDeFraisRapprochees } from './noteDeFraisEnTresorerie'
+import {
+  detailDesJustificatifsARanger, justificatifsARanger, LIBELLE_JUSTIFICATIFS_A_RANGER, type NotesDeFraisDesControles,
+} from './notesDeFraisEnComptabilite'
 import { comptesSurPlusieursPostes, detailDesComptesSurPlusieursPostes, LIBELLE_COMPTES_SUR_PLUSIEURS_POSTES } from './unCompteUnPoste'
 import type { ModeleComptable } from './engagement'
 import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
@@ -195,6 +198,9 @@ export interface DonneesDeLaChecklist {
   // tels que lus, et si le relevé l'est en entier : NULS le drapeau `CONTROLES_ASSURANCE_MALADIE_PREVUS` baissé (aucun point de
   // plus, la liste est celle d'hier). Sans valeur par défaut.
   assuranceMaladie: { lu: LectureDesControles; releveComplet: boolean } | null
+  // LES NOTES DE FRAIS DU CLIENT (lot L3, L3-Q3 (A) ; lib/notesDeFraisEnComptabilite.ts) : sans objet le drapeau
+  // `NOTES_DE_FRAIS_PREVUES` baissé (aucun point de plus), ou les lectures de la section. Sans valeur par défaut.
+  notesDeFrais: NotesDeFraisDesControles
 }
 
 /** Ce que l'écran sait du dossier et du moment, lu au rendu. */
@@ -455,6 +461,8 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
   // est figé, son FEC remis : il ne se dit plus.
   // Les notes de frais de l'exploitant qu'un ancien rapprochement fait payer par le relevé, en trésorerie (conception 58, § 2.1).
   const notesRapprochees = notesDeFraisRapprochees(piecesValidees, paiements, modele.mode, anneesValidees)
+  // L3-Q3 (A) : le justificatif d'une note de frais rangé sous un autre type que celui de la note, par le calcul de la section.
+  const justificatifsDeNotesARanger = justificatifsARanger(d.notesDeFrais, modele.mode)
   const comptesMultiPostes = comptesSurPlusieursPostes({
     ecritures, categories, pieces: toutesPieces, mouvements: lignes, ventilations,
     operationsDeCaisse: caisseLue === null ? [] : caisseLue.operations, plan: modele.plan,
@@ -995,6 +1003,13 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
     {
       id: 'notes-de-frais-rapprochees', label: LIBELLE_NOTES_RAPPROCHEES, action: 'Voir ces mouvements',
       nb: notesRapprochees.length, cible: 'banque', severite: 'attention', detail: detailDesNotesRapprochees(notesRapprochees),
+    },
+    // Le justificatif d'une note de frais approuvée ou remboursée rangé sous un autre type (L3-Q3 (A)) : à reprendre dans la
+    // fiche de la pièce, jamais changé d'ici.
+    {
+      id: 'justificatifs-de-notes-a-ranger', label: LIBELLE_JUSTIFICATIFS_A_RANGER, action: 'Voir les justificatifs',
+      nb: justificatifsDeNotesARanger.length, cible: 'pieces', severite: 'attention',
+      detail: detailDesJustificatifsARanger(justificatifsDeNotesARanger),
     },
     // LES VENTES FACTURÉES D'UN DOSSIER QUI A BASCULÉ (ligne 28.65, étape VF5f ; lib/ventesDeLaChecklist.ts). « Attention »
     // jusqu'à VF7, qui les rendra préalables à la validation (conception d'EC-Q3, § 11) ; prealablesValidation.test.ts les

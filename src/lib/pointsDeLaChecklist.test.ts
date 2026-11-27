@@ -32,6 +32,7 @@ afterEach(() => { drapeau.leve = null })
 
 function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
   return {
+      notesDeFrais: { etat: 'sans_objet' as const },
     piecesValidees: [], piecesAValider: [], cotisations: [], lignes: [], relevesIncoherents: [], controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [], immobilisations: [],
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
@@ -1214,5 +1215,24 @@ describe('pointsDeLaChecklist : une note de frais de l’exploitant rapprochée 
 
   it('se tait en engagement', () => {
     expect(point({ ...CONTEXTE, modele: { ...CONTEXTE.modele, mode: 'engagement', compteNotesDeFrais: '455000' } })?.nb).toBe(0)
+  })
+})
+
+// L3-Q3 (A) : le justificatif d'une note de frais rangé sous un autre type, en attention, mène à l'onglet Justificatifs.
+describe('pointsDeLaChecklist — le justificatif d’une note de frais à ranger (L3-Q3)', () => {
+  const notesDeFrais = (complete: boolean) => ({
+    etat: 'lues' as const,
+    lesNotes: { complete, lignes: [{ id: 'n1', auteur: 'u1', beneficiaire_salarie: null, etat: 'approuvee' as const, piece_id: 'p1' }] },
+    justificatifs: { complete: true, lignes: [{ id: 'p1', nom_fichier: 'repas.pdf', type_piece: 'achat' as const }] },
+    acces: { complete: true, lignes: [{ user_id: 'u1', droit_achats: true }] },
+  })
+  const point = (d: DonneesDeLaChecklist) =>
+    pointsDeLaChecklist(d, CONTEXTE).tousLesPointsATraiter.find((p) => p.id === 'justificatifs-de-notes-a-ranger')
+
+  it('se dit en attention, mène aux Justificatifs et nomme le fichier ; muet sur une lecture partielle et le drapeau baissé', () => {
+    expect(point(donnees({ notesDeFrais: notesDeFrais(true) }))).toMatchObject({ nb: 1, severite: 'attention', cible: 'pieces' })
+    expect(point(donnees({ notesDeFrais: notesDeFrais(true) }))?.detail).toContain('repas.pdf')
+    expect(point(donnees({ notesDeFrais: notesDeFrais(false) }))?.nb).toBe(0)
+    expect(point(donnees({}))?.nb).toBe(0)
   })
 })

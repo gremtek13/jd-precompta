@@ -313,6 +313,8 @@ describe('le rangement des contrôles existants', () => {
       'reglee-par-sa-facture-reprise',
     ],
     depenses: [
+      // L3-Q3 (A) : le justificatif d'une note de frais rangé sous un autre type que celui de la note.
+      'justificatifs-de-notes-a-ranger',
       'pieces-a-valider', 'pieces-sans-date', 'date-impossible', 'sans-categorie', 'comptes-manquants', 'postes-manquants',
       'sans-tva', 'tva-impossible', 'devise-non-convertie', 'confiance-basse', 'mois-en-double', 'doublon-texte',
       'doublons-inconnus', 'ecritures-a-generer', 'desynchronisees', 'ecritures-sans-objet', 'pieces-payees-en-partie',

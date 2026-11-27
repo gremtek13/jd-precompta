@@ -145,3 +145,58 @@ export function suiteDuRemboursement(pourQui: PourQuiDeLaNote | null, mode: Mode
     ? 'Le virement qui rembourse l’exploitant se classera en virement personnel : la dépense a compté à sa date.'
     : 'Le mouvement qui rembourse le salarié se rapprochera du justificatif : la dépense comptera à sa date.'
 }
+
+// LE JUSTIFICATIF À RANGER, DIT HORS DE LA SECTION (L3-Q3 (A), réponse du cabinet du 27/11/2026) : une ATTENTION dans la Vue
+// d'ensemble et avant la validation, jamais bloquante, qui mène à l'onglet Justificatifs ; la correction se fait dans la fiche de
+// la pièce, en validant son type — aucun bouton ne le change. Le MÊME calcul que la section (`rangementDuJustificatif`, sur les
+// mêmes lectures : `lireLesNotesDeFraisDuDossier`). Les notes ou leurs justificatifs lus en partie : rien ne se dit (le point se
+// tait, la section dit sa lecture partielle). Les accès lus en partie : la section ne propose rien pour une note saisie pour soi,
+// et le point non plus — seul un salarié nommé se juge alors. Le drapeau `NOTES_DE_FRAIS_PREVUES` baissé : `sans_objet`.
+
+/** Ce que les contrôles reçoivent des notes de frais : rien (le drapeau baissé), ou les trois lectures de la section. */
+export type NotesDeFraisDesControles =
+  | { etat: 'sans_objet' }
+  | {
+    etat: 'lues'
+    lesNotes: { complete: boolean; lignes: readonly Pick<NoteDeFrais, 'id' | 'auteur' | 'beneficiaire_salarie' | 'etat' | 'piece_id'>[] }
+    justificatifs: { complete: boolean; lignes: readonly { id: string; nom_fichier: string; type_piece: TypePiece }[] }
+    acces: { complete: boolean; lignes: readonly { user_id: string; droit_achats: boolean | null }[] }
+  }
+
+export const NOTES_DE_FRAIS_SANS_OBJET: NotesDeFraisDesControles = { etat: 'sans_objet' }
+
+/** Un justificatif de note rangé sous un autre type que celui qu'on attend. */
+export interface JustificatifARanger {
+  noteId: string
+  pieceId: string
+  nomFichier: string
+  range: TypePiece
+  attendu: TypePiece | null
+}
+
+/** Les justificatifs à ranger, dans l'ordre des noms de fichier ; aucun sur une lecture partielle des notes ou des pièces. */
+export function justificatifsARanger(lu: NotesDeFraisDesControles, mode: ModeComptable): JustificatifARanger[] {
+  if (lu.etat !== 'lues' || !lu.lesNotes.complete || !lu.justificatifs.complete) return []
+  const achats = achatsDesAccesLus(lu.acces)
+  const pieces = new Map(lu.justificatifs.lignes.map((p) => [p.id, p]))
+  return lu.lesNotes.lignes.flatMap((n) => {
+    const piece = n.piece_id === null ? undefined : pieces.get(n.piece_id)
+    const rangement = rangementDuJustificatif(n, piece ?? null, achats, mode)
+    return rangement !== null && rangement.aRanger && piece !== undefined
+      ? [{ noteId: n.id, pieceId: piece.id, nomFichier: piece.nom_fichier, range: piece.type_piece, attendu: rangement.attendu }]
+      : []
+  }).sort((a, b) => a.nomFichier.localeCompare(b.nomFichier, 'fr') || a.noteId.localeCompare(b.noteId))
+}
+
+export const LIBELLE_JUSTIFICATIFS_A_RANGER = 'justificatif(s) de note de frais rangé(s) sous un autre type que celui de la note — '
+  + 'à reprendre dans la fiche de la pièce'
+
+export const AVERTISSEMENT_JUSTIFICATIFS_A_RANGER = 'justificatif(s) de note de frais approuvée ou remboursée rangé(s) sous un autre '
+  + 'type que celui de la note : la dépense compterait à une autre date ou face à un autre compte — à reprendre dans la fiche de la pièce'
+
+/** Le détail : chaque fichier, son type et celui qu'on attend. */
+export function detailDesJustificatifsARanger(liste: readonly JustificatifARanger[]): string | undefined {
+  if (liste.length === 0) return undefined
+  return liste.map((j) => `${j.nomFichier} : rangé en ${type(j.range)}${j.attendu === null ? '' : `, attendu en ${type(j.attendu)}`}`)
+    .join(' ; ')
+}

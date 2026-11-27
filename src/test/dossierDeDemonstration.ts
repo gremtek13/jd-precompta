@@ -496,6 +496,7 @@ export function controlesDuDossier(contenu: Record<string, Ligne[]>, categories:
 
   const banque = banqueDesLecteurs(PLAN, banques)
   const checklist = pointsDeLaChecklist({
+      notesDeFrais: { etat: 'sans_objet' as const },
     piecesValidees, piecesAValider, cotisations, lignes, relevesIncoherents: relevesIncoherentsDe(controles), controlesReleves: controles,
     comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [], immobilisations, natures: [...natures], categories: cats, ecritures,
     emprunts: [], ventilations: [], ventilationsPartielles: false, reglements, reglementsPartiels: false, paiementsPartiels: false,
@@ -516,6 +517,7 @@ export function controlesDuDossier(contenu: Record<string, Ligne[]>, categories:
 
   // Les préalables de la validation de 2025, comme la carte de la Clôture les dit avant le clic (la répétition les appelle ainsi).
   const validation = prealablesDeValidation({
+      notesDeFrais: { etat: 'sans_objet' as const },
     annee: 2025, anneeCourante: 2026, aujourdHui: AUJOURD_HUI, modele: MODELE, assujettiTva: ASSUJETTI, anneesValidees: [],
     lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees, piecesAValider, categories: cats, immobilisations, natures: [...natures], ecritures, lignes,
     ventilations: [], reglements, encaissees: [], cotisations, vehicules, emprunts: [], aNouveaux, soldesReportes: [], declarationsTva: [],

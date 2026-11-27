@@ -55,6 +55,9 @@ import { MESSAGE_PIECES_SANS_EMPREINTE, sansEmpreinteDeDepot } from './empreinte
 import {
   AVERTISSEMENT_COMPTES_SUR_PLUSIEURS_POSTES, comptesSurPlusieursPostesDeLExercice, detailDesComptesSurPlusieursPostes,
 } from './unCompteUnPoste'
+import {
+  AVERTISSEMENT_JUSTIFICATIFS_A_RANGER, detailDesJustificatifsARanger, justificatifsARanger, type NotesDeFraisDesControles,
+} from './notesDeFraisEnComptabilite'
 import type { RelevesAuTrenteEtUn, SoldeDuReleve } from './releveAuTrenteEtUn'
 import type { LectureDesComptes } from './importParCompte'
 import { banquesAuTrenteEtUn, duCompte, premiersRelevesParCompte, releveParCompte, type BanqueDUnCompteDuPlan, type PartDuReleve } from './releveParCompte'
@@ -218,6 +221,9 @@ export interface DonneesDeValidation {
   // drapeau baissé) : la numérotation que la validation enverra les porte au journal OD. SANS VALEUR PAR DÉFAUT : oubliées, leurs
   // lignes tomberaient hors du FEC et la validation se refuserait sous « écritures que rien ne rattache ».
   ecrituresLibres: EcrituresLibresDesExports
+  // LES NOTES DE FRAIS DU CLIENT (L3-Q3 (A) ; lib/notesDeFraisEnComptabilite.ts) : sans objet le drapeau `NOTES_DE_FRAIS_PREVUES`
+  // baissé, ou les lectures de la section. Un justificatif rangé sous un autre type se dit en avertissement. Sans valeur par défaut.
+  notesDeFrais: NotesDeFraisDesControles
   // En trésorerie, la 2035 de l'exercice et sa concordance avec les écritures ; RIEN en engagement, où la 2035 ne se
   // produit pas — l'appelant ne la calcule pas, et la base refuserait de la recevoir.
   declaration: Declaration2035 | null
@@ -1067,6 +1073,16 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     prealables.push({
       id: 'comptes-sur-plusieurs-postes', nb: comptesMultiPostes.length, cible: 'cloture', bloquant: false,
       message: AVERTISSEMENT_COMPTES_SUR_PLUSIEURS_POSTES, detail: detailDesComptesSurPlusieursPostes(comptesMultiPostes),
+    })
+  }
+  // LE JUSTIFICATIF D'UNE NOTE DE FRAIS À RANGER (L3-Q3 (A)) : le point de la Vue d'ensemble, par le même calcul que la section
+  // des notes de frais. Un avertissement, jamais un refus ; muet sur une lecture partielle des notes ou de leurs justificatifs. Le
+  // dossier entier, comme la Vue d'ensemble : la pièce se reprend dans sa fiche, et une pièce d'un autre exercice se dit aussi.
+  const justificatifsDeNotesARanger = justificatifsARanger(d.notesDeFrais, d.modele.mode)
+  if (justificatifsDeNotesARanger.length > 0) {
+    prealables.push({
+      id: 'justificatifs-de-notes-a-ranger', nb: justificatifsDeNotesARanger.length, cible: 'pieces', bloquant: false,
+      message: AVERTISSEMENT_JUSTIFICATIFS_A_RANGER, detail: detailDesJustificatifsARanger(justificatifsDeNotesARanger),
     })
   }
   if (d.doublonsTexte === null) {
