@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
+import { COMPTE_BANCAIRE_D_ESSAI, compteBancaireDEssai } from '../../test/compteBancaireDEssai'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type { LigneBancaire, Piece } from '../../lib/types'
@@ -103,7 +104,7 @@ vi.mock('../../lib/supabase', async () => {
 
 function mouvement(o: Partial<LigneBancaire> & Pick<LigneBancaire, 'id'>): LigneBancaire {
   return {
-    dossier_id: D, compte_bancaire_id: 'cb-essai', date: '2026-06-02', montant: -100, libelle: 'PRLV SEPA FICTIF', libelle_brut: null,
+    dossier_id: D, compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, date: '2026-06-02', montant: -100, libelle: 'PRLV SEPA FICTIF', libelle_brut: null,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-06-02T09:00:00Z',
@@ -159,6 +160,7 @@ function poser() {
   faux.rpcs = []
   const factures = [facture('f1', 'F2026-0021', 'Librairie Rocher', 600), facture('f3', 'F2026-0023', 'Beta Conseil', 250)]
   faux.parTable = {
+    comptes_bancaires: [{ ...compteBancaireDEssai(D) }],
     lignes_bancaires: [CLASSE_1, CLASSE_3, CREDIT_EX, CREDIT_CERT, CREDIT_G3, CREDIT_R, LIBRE_AUTO, LIBRE_CERT] as unknown as Record<string, unknown>[],
     pieces: [
       piece({ id: 'p-auto' }),

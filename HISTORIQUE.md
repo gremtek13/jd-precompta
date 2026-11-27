@@ -55270,3 +55270,8 @@ migration (ASSIST-Q1). **Plausibles, au cabinet** : la lecture sans plafond des 
 compte rattaché sur confirmation dont un autre cabinet connaît le mot de passe (ACCES-Q1). **Écartés** (relus, sains) : l'ordre
 appelant puis dépense (aucune lecture sous la clé secrète avant un refus, hors du contrôle de l'appelant lui-même), la signature
 Svix, les identifiants du corps liés au dossier, le SSRF de `plateforme-agreee`, le HTML des e-mails, `historiqueDuClient`.
+
+### 27/11/2026 — LES JEUX D'ESSAI PORTENT LE COMPTE DE LEURS MOUVEMENTS
+
+(Agent dev ; aucune migration, aucun code de l'application.) Réunis, `compte_bancaire_id` obligatoire (`'cb-essai'` dans les fabriques) et le refus d'un compte que la lecture ne rend pas (`REFUS_COMPTE_INCONNU`, sous la banque du rôle) rendaient 14 fichiers d'écran rouges (53 tests) : leurs faux clients rendaient des mouvements au compte d'essai devant une table `comptes_bancaires` vide, un dossier que la base ne peut pas porter.
+La réparation est dans les jeux d'essai : `src/test/compteBancaireDEssai.ts` (`COMPTE_BANCAIRE_D_ESSAI` et sa ligne, le principal sans 512 propre), servie par les faux clients de `cotisationsGestes.ts`, `cotisationsPaiementPersonnel.ts` et des dix fichiers d’écran qui ont le leur ; les fabriques de `src/test/` citent la constante. La règle de `banqueDuMouvement.ts` est intacte, et aucun écran ne bâtissait ses banques sans les comptes lus : chaque échec venait d'un faux client, aucun d'un défaut de l'application.

@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
+import { COMPTE_BANCAIRE_D_ESSAI, compteBancaireDEssai } from '../../test/compteBancaireDEssai'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type { JustificatifPropose, LigneBancaire, Piece, PrecisionMouvement } from '../../lib/types'
@@ -18,6 +19,8 @@ import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 const faux = vi.hoisted(() => ({
   lignes: [] as LigneBancaire[],
+  // Le compte des mouvements, présent dans le dossier comme en base (posé par le beforeEach).
+  comptes: [] as Record<string, unknown>[],
   pieces: [] as Piece[],
   propositions: [] as JustificatifPropose[],
   precisions: [] as PrecisionMouvement[],
@@ -46,6 +49,7 @@ vi.mock('../../lib/supabase', async () => {
   const servies = (table: string): Record<string, unknown>[] | null => {
     switch (table) {
       case 'lignes_bancaires': return faux.lignes as unknown as Record<string, unknown>[]
+      case 'comptes_bancaires': return faux.comptes
       case 'pieces': return faux.pieces as unknown as Record<string, unknown>[]
       case 'justificatifs_proposes': return faux.propositions as unknown as Record<string, unknown>[]
       case 'precisions_mouvements': return faux.precisions as unknown as Record<string, unknown>[]
@@ -140,7 +144,7 @@ vi.mock('../../lib/supabase', async () => {
 
 function ligneDeTest(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
-    id: 'ligne-1', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date: '2026-06-02', montant: -100, libelle: 'PRLV SEPA FICTIF', libelle_brut: null,
+    id: 'ligne-1', dossier_id: 'dossier-de-test', compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, date: '2026-06-02', montant: -100, libelle: 'PRLV SEPA FICTIF', libelle_brut: null,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-06-02T09:00:00Z', encaissements_de_factures: false, ...o,
@@ -176,6 +180,7 @@ const ACCES_CLIENT = { id: 'm-1', dossier_id: 'dossier-de-test', user_id: 'clien
 
 beforeEach(() => {
   faux.lignes = [ligneDeTest()]
+  faux.comptes = [{ ...compteBancaireDEssai('dossier-de-test') }]
   faux.pieces = [pieceDeTest()]
   faux.propositions = [propositionDeTest()]
   faux.precisions = []

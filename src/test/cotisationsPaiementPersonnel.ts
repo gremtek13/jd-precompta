@@ -1,6 +1,8 @@
+import { COMPTE_BANCAIRE_D_ESSAI, compteBancaireDEssai } from './compteBancaireDEssai'
 import { filtrer, predicatEq, predicatIs, predicatNot, type Predicat } from './filtresPostgrest'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from './ecritures'
 import type { ANouveau, CotisationDeclaree, EcritureBrouillon, LigneBancaire } from '../lib/types'
+import type { CompteBancaire } from '../lib/comptesBancaires'
 
 // LE FAUX CLIENT DE L'ONGLET COTISATIONS POUR LE PAIEMENT DEPUIS LE COMPTE PERSONNEL (ligne 26.6, phase C), partagé par
 // les deux fichiers qui le montent : CotisationsTabPaiementPersonnel.test.tsx (le paiement) et
@@ -12,6 +14,8 @@ import type { ANouveau, CotisationDeclaree, EcritureBrouillon, LigneBancaire } f
 export const faux = {
   cotisations: [] as CotisationDeclaree[],
   lignes: [] as LigneBancaire[],
+  // Le compte que portent les mouvements des fabriques, présent dans son dossier comme en base.
+  comptes: [compteBancaireDEssai('dossier-de-test')] as CompteBancaire[],
   ecritures: [] as EcritureBrouillon[],
   aNouveaux: [] as ANouveau[],
   muetApres: {} as Record<string, number>,
@@ -35,6 +39,7 @@ export const faux = {
 export function reinitialiser() {
   faux.cotisations = []
   faux.lignes = []
+  faux.comptes = [compteBancaireDEssai('dossier-de-test')]
   faux.ecritures = []
   faux.aNouveaux = []
   faux.muetApres = {}
@@ -127,6 +132,7 @@ export function supabaseFaux() {
               : table === 'lignes_bancaires' ? faux.lignes
                 : table === 'ecritures_brouillon' ? faux.ecritures
                   : table === 'a_nouveaux' ? faux.aNouveaux
+                    : table === 'comptes_bancaires' ? faux.comptes
                     : []
           const valeur = (ligne: object, colonne: string) => String((ligne as Record<string, unknown>)[colonne] ?? '')
           const toutes = [...filtrer(source, predicats)].sort((a, b) => {
@@ -168,7 +174,7 @@ export function cotisation(o: Partial<CotisationDeclaree> = {}): CotisationDecla
 }
 
 export const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-  id: 'l-1', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date: '2026-03-06', montant: -1000,
+  id: 'l-1', dossier_id: 'dossier-de-test', compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, date: '2026-03-06', montant: -1000,
   libelle: 'PRLV', libelle_brut: null, statut: 'rapprochee',
   piece_id: null, cotisation_id: 'cot-1', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,

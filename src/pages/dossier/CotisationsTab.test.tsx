@@ -7,6 +7,7 @@ import { SECONDES_CASES } from '../../lib/cases2035'
 import type { CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable } from '../../lib/types'
 import { NON_VALIDEE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { COMPTE_BANCAIRE_D_ESSAI, compteBancaireDEssai } from '../../test/compteBancaireDEssai'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 // RETIRER UNE ÉCHÉANCE, ET ÉCRIRE CELLES QUE LE RELEVÉ PAIE (ligne 26.6, étape b).
@@ -21,6 +22,8 @@ const faux = vi.hoisted(() => ({
   typesEnvoyes: [] as string[],
   cotisations: [] as CotisationDeclaree[],
   lignes: [] as LigneBancaire[],
+  // Le compte que portent les mouvements, présent dans le dossier comme en base (posé par le beforeEach).
+  comptes: [] as object[],
   ecritures: [] as EcritureBrouillon[],
   // Lecture partielle d'une table : le serveur cesse de rendre des lignes au-delà de ce rang, en
   // annonçant le vrai total (voir lib/lectureComplete.ts).
@@ -125,7 +128,8 @@ vi.mock('../../lib/supabase', async () => {
               table === 'cotisations_declarees' ? faux.cotisations
                 : table === 'lignes_bancaires' ? faux.lignes
                   : table === 'ecritures_brouillon' ? faux.ecritures
-                    : []
+                    : table === 'comptes_bancaires' ? faux.comptes
+                      : []
             const toutes = filtrer(source, predicats)
             const rendu = toutes.slice(debut, Math.min(fin + 1, toutes.length, faux.muetApres[table] ?? Infinity))
             return (faux.retenue ?? Promise.resolve())
@@ -169,7 +173,7 @@ function cotisation(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
 
 // Le prélèvement de l'Urssaf qui paie l'échéance `cot-1`.
 const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-  id: 'l-1', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date: '2026-03-06', montant: -420,
+  id: 'l-1', dossier_id: 'dossier-de-test', compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, date: '2026-03-06', montant: -420,
   libelle: 'PRLV URSSAF', libelle_brut: null, statut: 'rapprochee',
   piece_id: null, cotisation_id: 'cot-1', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
@@ -196,6 +200,7 @@ const monter = (mode: ModeComptable = 'tresorerie', valides: readonly number[] =
 beforeEach(() => {
   faux.cotisations = []
   faux.lignes = []
+  faux.comptes = [compteBancaireDEssai('dossier-de-test')]
   faux.ecritures = []
   faux.muetApres = {}
   faux.insertions = []
