@@ -696,8 +696,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   leurs versions figées (`lettres_de_mission`, `LETTRES_DE_MISSION_PREVUES` ; l'acceptation en ligne prévue et fermée par la
   base jusqu'à LM-Q10) ; LM7, « À facturer » (`honoraires_factures`, `HONORAIRES_FACTURES_PREVUS`) ; LM8, le dépôt de la
   facture validée chez le client (`depot_des_honoraires`, `DEPOT_DES_HONORAIRES_PREVU`) ; LM3, la fiche d'un client liée à
-  son dossier, sans identité à elle (`fiche_liee_au_dossier_du_client`, `FICHES_LIEES_PREVUES` ; reste `types.ts`, où
-  `contacts.nom` est encore non nul) ; LM5-Q2, les missions d'un client lues sans ses honoraires par qui suit son dossier
+  son dossier, sans identité à elle (`fiche_liee_au_dossier_du_client`, `FICHES_LIEES_PREVUES`) ; LM5-Q2, les missions d'un client lues sans ses honoraires par qui suit son dossier
   (`missions_du_client`, `MISSIONS_DU_CLIENT_PREVUES`) → « LA SÉANCE DE COLLAGE DU 12/11/2026 » ; LM6, les lettres au client et R7 déduite, préparée le 12/11/2026 APRÈS B1 et LM4 (`lettres_du_client`, son drapeau baissé) → « LM6 : LES LETTRES DE MISSION DANS L'ESPACE CLIENT (LIGNE 47) », « LM1 : LE DOSSIER DU CABINET, EN BASE », « LM4 : LES LETTRES
   DE MISSION ET LEURS VERSIONS FIGÉES, EN BASE », « LM8 : LA FACTURE D'HONORAIRES DÉPOSÉE CHEZ LE CLIENT, EN BASE », « LM3 : LA
   FICHE DE FACTURATION D'UN CLIENT DU CABINET, LIÉE À SON DOSSIER ».

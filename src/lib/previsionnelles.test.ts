@@ -12,7 +12,7 @@ const echeance = (o: Partial<CotisationDeclaree>): CotisationDeclaree => ({
   created_at: '2025-12-01T09:00:00Z', previsionnel: true, paiement_personnel_le: null, ...o,
 })
 const mouvement = (o: Partial<LigneBancaire>): LigneBancaire => ({
-  id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'VIR', montant: -10, statut: 'non_rapprochee',
+  id: 'l', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-01-05', libelle: 'VIR', montant: -10, statut: 'non_rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
   libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
   reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-01-06T09:00:00Z',

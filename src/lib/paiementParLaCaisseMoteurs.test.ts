@@ -78,7 +78,7 @@ const piece = (o: Partial<Piece> = {}): Piece => ({
   vente_hors_des_factures: false, created_at: '2025-12-21T09:00:00Z', updated_at: '2025-12-21T09:00:00Z', ...o,
 })
 const mouvement = (o: Partial<LigneBancaire>): LigneBancaire => ({
-  id: 'm-1', dossier_id: D, date: '2025-12-28', libelle: 'MOUVEMENT FICTIF', montant: -70, statut: 'rapprochee', piece_id: null,
+  id: 'm-1', dossier_id: D, compte_bancaire_id: 'cb-essai', date: '2025-12-28', libelle: 'MOUVEMENT FICTIF', montant: -70, statut: 'rapprochee', piece_id: null,
   cotisation_id: null, categorie_id: null, taux_tva: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
   emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null, id_externe: null, created_at: '2025-12-29T08:00:00Z',
@@ -169,7 +169,7 @@ describe('les paiements par la caisse que les moteurs reçoivent, et le drapeau'
     const lignes = [mouvement({ id: 'm-b', date: '2026-01-05', montant: -100, piece_id: 'p-achat' })]
     const liste = paiements(lignes, [operation({ id: 'oc-a', date: '2026-01-05', montant: -200 })]).get('p-achat')!
     expect(liste).toEqual([
-      { id: 'm-b', date: '2026-01-05', montant: -100, origine: 'rapprochement' },
+      { compte_bancaire_id: 'cb-essai', id: 'm-b', date: '2026-01-05', montant: -100, origine: 'rapprochement' },
       { operation_caisse_id: 'oc-a', date: '2026-01-05', montant: -200, origine: 'caisse' },
     ])
     expect(liste.map(cleDuPaiement)).toEqual(['m-b', 'caisse:oc-a'])

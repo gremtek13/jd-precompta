@@ -56,7 +56,7 @@ const piece = (o: Partial<Piece> & Pick<Piece, 'id'>): Piece => pieceDeVente({
   montant_ht: 100, montant_tva: 20, montant_ttc: 120, categorie_id: 'c-achats', created_at: '2025-03-20T09:00:00Z', ...o,
 })
 const mouvement = (o: Partial<LigneBancaire> & Pick<LigneBancaire, 'id' | 'date' | 'montant'>): LigneBancaire => ({
-  dossier_id: D, libelle: 'PRLV FICTIF', libelle_brut: null, source_fichier: null, statut: 'rapprochee', piece_id: null, cotisation_id: null,
+  dossier_id: D, compte_bancaire_id: 'cb-essai', libelle: 'PRLV FICTIF', libelle_brut: null, source_fichier: null, statut: 'rapprochee', piece_id: null, cotisation_id: null,
   categorie_id: null, taux_tva: null, prelevement_personnel: false, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
   emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   created_at: `${o.date}T08:00:00Z`, encaissements_de_factures: false, ...o,

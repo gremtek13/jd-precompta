@@ -1,6 +1,6 @@
 import { paiementNet, seuilAlignement } from './alignementBanque'
 import { dateLocaleDe } from './format'
-import type { LigneBancaire, ModeComptable, Piece, ReglementGroupe } from './types'
+import type { CompteBancaireSiDemande, LigneBancaire, ModeComptable, Piece, ReglementGroupe } from './types'
 
 // LA DATE À LAQUELLE UNE PIÈCE COMPTE, DANS UNE COMPTABILITÉ DE TRÉSORERIE (BNC, déclaration 2035).
 //
@@ -86,9 +86,10 @@ export interface PaiementParLeReleve {
  *  qui exige les parts des règlements groupés, celles des virements mixtes et les paiements par la caisse. */
 export type PaiementsDesPieces = ReadonlyMap<string, readonly PaiementDePiece[]>
 
-/** Ce que `paiementsDesPieces` lit d'une ligne du relevé. */
+/** Ce que `paiementsDesPieces` lit d'une ligne du relevé. Son compte bancaire s'il est lu : les badges des justificatifs et la
+ *  fenêtre des encaissements ne le demandent pas, et leurs paiements sont ceux d'avant MCB (`compteDuMouvement`). */
 export type LignePayante = Pick<LigneBancaire,
-  'id' | 'piece_id' | 'date' | 'montant' | 'statut' | 'reglement_groupe' | 'encaissements_de_factures' | 'compte_bancaire_id'>
+  'id' | 'piece_id' | 'date' | 'montant' | 'statut' | 'reglement_groupe' | 'encaissements_de_factures'> & CompteBancaireSiDemande
 
 /** Ce qu'il lit d'une part de règlement groupé. */
 export type PartReglee = Pick<ReglementGroupe, 'ligne_bancaire_id' | 'piece_id' | 'montant'>

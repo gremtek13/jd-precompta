@@ -6,7 +6,7 @@ import type { ControleReleveBancaire, LigneBancaire } from './types'
 // confrontation de la validation lisent toutes deux. La preuve est éprouvée par revisionPreuves.test.ts, la validation par
 // prealablesValidation.test.ts ; ici, la règle seule, cas par cas. Des jeux FICTIFS.
 const controle = (o: Partial<ControleReleveBancaire>): ControleReleveBancaire => ({
-  id: 'r1', dossier_id: 'd1', source_fichier: null, solde_initial: 0, solde_final: 0, somme_mouvements: 0, ecart: 0,
+  id: 'r1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', source_fichier: null, solde_initial: 0, solde_final: 0, somme_mouvements: 0, ecart: 0,
   coherent: true, periode_debut: '2025-12-01', periode_fin: '2025-12-31', created_at: '2026-01-05T00:00:00Z', ...o,
 })
 type Mouvement = Pick<LigneBancaire, 'source_fichier' | 'montant' | 'date'>

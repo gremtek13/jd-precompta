@@ -60,7 +60,7 @@ function extraire(source: string, plan: PlanComptable): Copie {
 const FRONTIERES = [null, '2026-03-04', '2026-03-05', '2026-12-31'] as const
 
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
-  id: 'l', dossier_id: 'd', date: '2026-03-05', libelle: 'VIR VERS LIVRET A', montant: -1000, statut: 'rapprochee',
+  id: 'l', dossier_id: 'd', compte_bancaire_id: 'cb-essai', date: '2026-03-05', libelle: 'VIR VERS LIVRET A', montant: -1000, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
   compte_bilan: COMPTE_VIREMENTS_INTERNES, declaration_tva_id: null, id_externe: null, source_fichier: null, libelle_brut: null, created_at: '2026-03-06T09:00:00Z', encaissements_de_factures: false, ...o,

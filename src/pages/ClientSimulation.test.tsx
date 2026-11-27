@@ -255,7 +255,7 @@ describe('ClientSimulation — la projection de l’année', () => {
 // rapprochement la connaît (lib/rattachement.ts), comme dans l'Estimation du cabinet.
 describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
   const encaissement = (date: string): LigneBancaire => ({
-    id: 'l1', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 600, statut: 'rapprochee',
+    id: 'l1', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date, libelle: 'VIR CPAM', montant: 600, statut: 'rapprochee',
     piece_id: 'r1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`, encaissements_de_factures: false,
@@ -303,7 +303,7 @@ describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
 // sa part. Le virement ne porte aucune pièce — elles sont dans ses parts, que l'écran du client lit aussi.
 describe('ClientSimulation — des recettes encaissées par un virement groupé', () => {
   const virement = (date: string): LigneBancaire => ({
-    id: 'g', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
+    id: 'g', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: true, compte_bilan: null, declaration_tva_id: null,
     id_externe: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, encaissements_de_factures: false,
@@ -419,7 +419,7 @@ describe('ClientSimulation — les encaissements affectés sans justificatif', (
     compte_comptable: '706000', poste_2035: 'Recettes',
   }
   const affecte = (date: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-    id: 'l-cpam', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
+    id: 'l-cpam', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, encaissements_de_factures: false, ...o,
@@ -477,7 +477,7 @@ describe('ClientSimulation — les encaissements ventilés sur plusieurs comptes
   }
   const FRAIS: Categorie = { ...RECETTES, id: 'cat-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 70, compte_comptable: '627000', poste_2035: 'Frais financiers' }
   const remise = (date: string): LigneBancaire => ({
-    id: 'l-v', dossier_id: 'dossier-de-test', date, libelle: 'REMISE CB', montant: 870, statut: 'rapprochee',
+    id: 'l-v', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date, libelle: 'REMISE CB', montant: 870, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, encaissements_de_factures: false,
@@ -517,7 +517,7 @@ describe('ClientSimulation — les encaissements ventilés sur plusieurs comptes
 // ne doit pas dire au client autre chose que ce que son cabinet déclare.
 describe('ClientSimulation — les cotisations prélevées', () => {
   const prelevement = (o: Partial<LigneBancaire>): LigneBancaire => ({
-    id: 'l-urssaf', dossier_id: 'dossier-de-test', date: '2026-03-06', libelle: 'PRLV URSSAF', montant: -130, statut: 'rapprochee',
+    id: 'l-urssaf', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date: '2026-03-06', libelle: 'PRLV URSSAF', montant: -130, statut: 'rapprochee',
     piece_id: null, cotisation_id: 'e2', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     libelle_brut: null, created_at: '2026-03-07T09:00:00Z', encaissements_de_factures: false, ...o,

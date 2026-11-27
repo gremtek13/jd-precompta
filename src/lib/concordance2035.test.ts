@@ -57,7 +57,7 @@ const piece = (o: Partial<Piece>): Piece => ({
 }) as Piece
 
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
-  id: 'l', dossier_id: 'd1', date: '2025-03-15', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
+  id: 'l', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2025-03-15', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: 'releve.csv',
   libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
   ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2025-03-16T09:00:00Z', encaissements_de_factures: false, ...o,

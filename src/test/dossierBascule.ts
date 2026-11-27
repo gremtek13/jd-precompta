@@ -101,10 +101,11 @@ export function exportsDesVentes(sources: SourcesDesEcrituresDeVente, c: Ecritur
   return { ecritures: c.ecritures, factures: sources.factures, encaissements: sources.encaissements }
 }
 
-/** Un mouvement du relevé tel que la piste d'audit le relit en entier. */
+/** Un mouvement du relevé tel que la piste d'audit le relit en entier : la ligne entière porte son compte bancaire (NOT NULL en
+ *  base), celui du mouvement quand sa lecture l'a demandé, sinon le compte d'essai. */
 export function ligneBancaire(m: MouvementDesEcritures): LigneBancaire {
   return {
-    ...m, taux_tva: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, libelle_brut: null,
+    compte_bancaire_id: 'cb-essai', ...m, taux_tva: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, libelle_brut: null,
     id_externe: null, created_at: `${m.date}T08:00:00Z`,
   }
 }

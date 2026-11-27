@@ -58,7 +58,7 @@ function informations(o: Partial<InformationsDossier>): InformationsDossier {
 
 function ligne(o: Partial<LigneBancaire>): LigneBancaire {
   return {
-    id: 'l', dossier_id: 'd1', date: '2026-01-15', libelle: 'MOUVEMENT FICTIF', montant: 10, statut: 'ignoree', piece_id: null,
+    id: 'l', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-01-15', libelle: 'MOUVEMENT FICTIF', montant: 10, statut: 'ignoree', piece_id: null,
     cotisation_id: null, categorie_id: null, taux_tva: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
     emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
     prelevement_personnel: false, source_fichier: 'releve.pdf', libelle_brut: 'MOUVEMENT FICTIF', id_externe: null,
@@ -978,7 +978,7 @@ describe('pointsDeLaChecklist — la pièce validée sans empreinte de fichier (
 // relevé n'ont pas été lus en entier (`controlesReleves` nul).
 describe('le point « releves-en-rupture »', () => {
   const controle = (id: string, debut: string, fin: string, initial: number, final: number): ControleReleveBancaire => ({
-    id, dossier_id: 'd1', source_fichier: `${id}.csv`, solde_initial: initial, solde_final: final, somme_mouvements: final - initial,
+    id, dossier_id: 'd1', compte_bancaire_id: 'cb-essai', source_fichier: `${id}.csv`, solde_initial: initial, solde_final: final, somme_mouvements: final - initial,
     ecart: 0, coherent: true, periode_debut: debut, periode_fin: fin, created_at: '2025-10-01T10:00:00Z',
   })
   const AOUT = controle('aout', '2025-08-01', '2025-08-15', 1200, 1000)

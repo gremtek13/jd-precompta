@@ -159,7 +159,7 @@ describe('le relevé : chaque emploi du brouillon dans l’onglet Écritures, et
 
 const D = 'd1'
 const mouvement = (o: Partial<LigneBancaire>): LigneBancaire => ({
-  id: 'm1', dossier_id: D, date: '2025-11-20', libelle: 'VIR CLIENT FICTIF', montant: 120, statut: 'rapprochee',
+  id: 'm1', dossier_id: D, compte_bancaire_id: 'cb-essai', date: '2025-11-20', libelle: 'VIR CLIENT FICTIF', montant: 120, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
   compte_bilan: null, declaration_tva_id: null, id_externe: null, source_fichier: 'releve.csv', libelle_brut: null,

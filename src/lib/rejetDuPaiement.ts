@@ -4,7 +4,7 @@ import { formatDate, formatMoney } from './format'
 import { montantRetenu } from './montantRetenu'
 import { centimesParDate, cleDuPaiement, rattachementsTresorerie, type PaiementDePiece, type PaiementParLeReleve, type PaiementsDesPieces } from './rattachement'
 import { rejetAccepte, resteARegler } from './reglementGroupe'
-import type { LigneBancaire, ModeComptable, Piece } from './types'
+import type { CompteBancaireSiDemande, LigneBancaire, ModeComptable, Piece } from './types'
 
 // LE PAIEMENT REJETÉ, PUIS REPRIS (REJET-Q1, tranchée par le cabinet le 01/11/2026 : « l'ouvrir », sur la recommandation).
 //
@@ -83,9 +83,12 @@ function piecesParId(pieces: readonly Piece[]): ReadonlyMap<string, Piece> {
   return parId
 }
 
+/** Ce que le rejet lit d'un mouvement : son compte bancaire s'il est lu — sans lui, la règle d'avant MCB3. */
+type MouvementDuRejet = Pick<LigneBancaire, 'id' | 'date' | 'montant'> & CompteBancaireSiDemande
+
 /** Les candidates, sans tri : pour chaque pièce, le plus récent de ses paiements que ce mouvement peut défaire. */
 function candidatesDuRejet(
-  ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'compte_bancaire_id'>,
+  ligne: MouvementDuRejet,
   pieces: readonly Piece[],
   paiements: PaiementsDesPieces,
   exclues: ReadonlySet<string>,
@@ -120,7 +123,7 @@ function candidatesDuRejet(
  * figées) et les exemplaires des factures sources, que l'appelant connaît.
  */
 export function piecesDuRejet(
-  ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'compte_bancaire_id'>,
+  ligne: MouvementDuRejet,
   pieces: readonly Piece[],
   paiements: PaiementsDesPieces,
   exclues: ReadonlySet<string>,
@@ -140,7 +143,7 @@ export function rejetPropose(candidates: readonly PieceDuRejet[]): PieceDuRejet 
 
 /** Ce mouvement défait-il peut-être un paiement déjà rapproché d'une pièce, dans la fenêtre ? Ce qui retient un mouvement
  *  hors du lot des règles : l'index seul, sans tri, appelé pour chaque mouvement du lot. */
-export function rejetPossible(ligne: Pick<LigneBancaire, 'id' | 'date' | 'montant' | 'compte_bancaire_id'>, pieces: readonly Piece[], paiements: PaiementsDesPieces): boolean {
+export function rejetPossible(ligne: MouvementDuRejet, pieces: readonly Piece[], paiements: PaiementsDesPieces): boolean {
   return candidatesDuRejet(ligne, pieces, paiements, new Set()).some((c) => c.signal)
 }
 

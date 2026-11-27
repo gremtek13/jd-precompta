@@ -48,7 +48,9 @@ import {
 } from './encaissementsFactures'
 import { dateAParis } from './format'
 import type { LectureComplete } from './lectureComplete'
-import type { ControleReleveBancaire, JustificatifPropose, LigneBancaire, Piece, PrecisionMouvement, ReglementGroupe } from './types'
+import type {
+  CompteBancaireSiDemande, ControleReleveBancaire, JustificatifPropose, LigneBancaire, Piece, PrecisionMouvement, ReglementGroupe,
+} from './types'
 
 // ── Qui voit « Ma banque » ────────────────────────────────────────────────────────────────────────────────────────
 /**
@@ -71,7 +73,7 @@ export const COLONNES_DU_MOUVEMENT =
 export type MouvementDuClient = Pick<LigneBancaire,
   'id' | 'dossier_id' | 'date' | 'libelle' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
   | 'emprunt_id' | 'ventilee' | 'reglement_groupe' | 'compte_bilan' | 'declaration_tva_id' | 'prelevement_personnel'
-  | 'encaissements_de_factures' | 'created_at' | 'compte_bancaire_id'>
+  | 'encaissements_de_factures' | 'created_at'> & CompteBancaireSiDemande
 
 // Les mêmes, et le compte bancaire de chaque mouvement (MCB7) : demandées seulement le drapeau `COMPTES_BANCAIRES_PREVUS`
 // levé — avant la migration `comptes_bancaires`, la colonne n'existe pas, et la nommer ferait échouer toute la lecture.

@@ -202,7 +202,7 @@ class Banque {
   /** Les contrôles tels que la base les garde (`controles_releves_bancaires`). */
   controlesEnBase(): ControleReleveBancaire[] {
     return [...this.controles].map(([source, k], i) => ({
-      id: `00000000-0000-4000-8012-${String(i).padStart(12, '0')}`, dossier_id: D, source_fichier: source, solde_initial: k.soldeInitial,
+      id: `00000000-0000-4000-8012-${String(i).padStart(12, '0')}`, dossier_id: D, compte_bancaire_id: 'cb-essai', source_fichier: source, solde_initial: k.soldeInitial,
       solde_final: k.soldeFinal, somme_mouvements: k.sommeMouvements, ecart: k.ecart, coherent: k.coherent, periode_debut: k.dateInitiale,
       periode_fin: k.dateFinale, created_at: '2026-11-20T10:00:00Z',
     }))
@@ -243,7 +243,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
   const lignes: LigneBancaire[] = rangs.map(({ l, i }) => {
     const k = MOUVEMENTS[i].classement
     return {
-      id: `00000000-0000-4000-8002-${String(i).padStart(12, '0')}`, dossier_id: D, date: l.date, libelle: l.libelle, montant: l.montant,
+      id: `00000000-0000-4000-8002-${String(i).padStart(12, '0')}`, dossier_id: D, compte_bancaire_id: 'cb-essai', date: l.date, libelle: l.libelle, montant: l.montant,
       statut: k.type === 'personnel' ? 'ignoree' : 'rapprochee',
       piece_id: k.type === 'piece' ? k.pieceId : null, cotisation_id: k.type === 'cotisation' ? k.cotisationId : null,
       categorie_id: k.type === 'categorie' ? k.categorie.id : null, taux_tva: null, prelevement_personnel: k.type === 'personnel',

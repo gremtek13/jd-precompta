@@ -88,7 +88,7 @@ const ligne = (o: Partial<EcritureBrouillon> & Pick<EcritureBrouillon, 'id' | 'c
   operation_caisse_id: null, ...NON_VALIDEE, ...o,
 })
 const mouvement = (o: Partial<LigneBancaire> & Pick<LigneBancaire, 'id' | 'date' | 'montant'>): LigneBancaire => ({
-  dossier_id: D, libelle: NOMS[5], libelle_brut: NOMS[6], source_fichier: NOMS[7], statut: 'rapprochee', piece_id: null, cotisation_id: null,
+  dossier_id: D, compte_bancaire_id: 'cb-essai', libelle: NOMS[5], libelle_brut: NOMS[6], source_fichier: NOMS[7], statut: 'rapprochee', piece_id: null, cotisation_id: null,
   categorie_id: null, taux_tva: null, prelevement_personnel: false, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
   emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   created_at: `${o.date}T08:00:00Z`, encaissements_de_factures: false, ...o,

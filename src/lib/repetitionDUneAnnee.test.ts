@@ -123,7 +123,7 @@ beforeAll(() => {
     if (o.date !== x.date || o.montant !== x.montant) throw new Error(`Opération ${i} importée ${o.date} ${o.montant}, attendue ${x.date} ${x.montant}.`)
     const k = x.classement
     return {
-      id: `00000000-0000-4000-8002-${String(i).padStart(12, '0')}`, dossier_id: D, date: o.date, libelle: o.libelle, montant: o.montant,
+      id: `00000000-0000-4000-8002-${String(i).padStart(12, '0')}`, dossier_id: D, compte_bancaire_id: 'cb-essai', date: o.date, libelle: o.libelle, montant: o.montant,
       statut: k.type === 'personnel' ? 'ignoree' : 'rapprochee',
       piece_id: k.type === 'piece' ? k.pieceId : null, cotisation_id: k.type === 'cotisation' ? k.cotisationId : null,
       categorie_id: k.type === 'categorie' ? k.categorie.id : null, taux_tva: null, prelevement_personnel: k.type === 'personnel',
@@ -208,7 +208,7 @@ beforeAll(() => {
   const lectureDesSources = { dossierId: D, etat: 'lue' as const, sources: sourcesEcritures }
   const facturesEmises = factures.map((f) => ({ ...f, emetteur_siret: null, superpdp_invoice_id: null }))
   const controlesReleves: ControleReleveBancaire[] = controle ? [{
-    id: '00000000-0000-4000-8012-000000000001', dossier_id: D, source_fichier: 'releve-2025.csv', solde_initial: controle.soldeInitial,
+    id: '00000000-0000-4000-8012-000000000001', dossier_id: D, compte_bancaire_id: 'cb-essai', source_fichier: 'releve-2025.csv', solde_initial: controle.soldeInitial,
     solde_final: controle.soldeFinal, somme_mouvements: controle.sommeMouvements, ecart: controle.ecart, coherent: controle.coherent,
     periode_debut: controle.dateInitiale, periode_fin: controle.dateFinale, created_at: `${ANNEE + 1}-01-05T10:00:00Z`,
   }] : []
