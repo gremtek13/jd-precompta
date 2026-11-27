@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { candidatsPieces, planRapprochementAutomatique } from './appariementBanque'
+import { candidatsPieces, candidatsPiecesDesMouvements, planRapprochementAutomatique } from './appariementBanque'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { recettesDeCaisseDuDossier, recettesPourLesMoteurs } from './recettesDeCaisse'
 import { concordance2035 } from './concordance2035'
@@ -55,8 +55,8 @@ const ATTENDUES = {
   etatsDesVentesAEcrire: 'a4a35fab5ea391d739d7d48aeb9f7d25b82e3419f9fb19e97bb435f92f8766d2',
   etatsDesVentesAReecrire: '7b9840c13e4e5ca4bfd04feb893a9438d5a7b6754cacf411e0d424aa3168fc5b',
   pisteAudit: '629321b5415bedec0a78effe734048514430fe6b6fe347deddc433ed6fc197a5',
-  // Relevée de nouveau le 27/11/2026 : la Vue d'ensemble porte un point de plus, « bordereaux-deposes » (BOR6T-Q2), à zéro ici
-  // (la recherche n'est pas faite) ; aucun autre point ne change.
+  // Relevée de nouveau le 27/11/2026 : BOR6T-Q2 (309aae1f) a ajouté le point `bordereaux-deposes`, à zéro sans recherche, à la
+  // liste de tous les points. Ce point retiré du rendu, l'empreinte d'avant revient à l'octet (393a216b…) : rien d'autre n'a changé.
   checklist: '1539672b1221f59460edf2dc33cfa497592c659fb2b1e6564d1a19f7f881dd4a',
   prealables: '75e5e77afe295b80eb4fac969d6d4efe07bce7ae5b0112bc1cedc48250984c16',
   candidatsPieces: 'd17f190725fcb77be61dafac808fca9fc272f2b5194e1b20c1a401603b3de081',
@@ -79,6 +79,23 @@ describe('les optimisations du banc de charge rendent le rendu d\'avant', () => 
   it('relève les empreintes', () => {
     // Comparées une à une : l'écart nomme le calcul qui a changé.
     expect(releve()).toEqual(ATTENDUES)
+  })
+  // La table de la liste de l'onglet Banque (lib/propositionsDuReleve.ts) : les candidates de chaque mouvement, bâties une fois
+  // sur l'index, rendent l'empreinte du parcours ligne à ligne — sur l'année, et aux bornes de la tolérance du montant.
+  it('la table des candidates de chaque mouvement rend celle du parcours ligne à ligne', () => {
+    const libres = a.lignes.filter((l) => l.statut === 'non_rapprochee')
+    const paiements = paiementsDesPieces(a.lignes, [], [], paiementsParLaCaisseDuDossier(a.caisseLue, D)!)
+    const ventes = ventesFacturees({ dossierId: D, factures: a.factures, lignes: a.lignesDeFacture, encaissements: a.encaissements, parts: a.parts, acomptes: SANS_ACOMPTE, piecesCitees: AUCUNE_PIECE_CITEE })
+    const table = candidatsPiecesDesMouvements(libres, a.pieces, piecesPayees(paiements), ventes.sources)
+    expect(empreinte(libres.map((l) => table.get(l.id)!.map((p) => p.id)))).toBe(ATTENDUES.candidatsPieces)
+    const ECARTS = [-0.03, -0.021, -0.02, -0.011, -0.01, -0.005, 0, 0.004, 0.01, 0.0101, 0.015, 0.02, 0.025]
+    const piecesAuxBornes: Piece[] = libres.slice(0, 200).flatMap((l, i) => ECARTS.map((d, j) => ({
+      ...a.pieces[(i * 13 + j) % a.pieces.length], id: `borne-${i}-${j}`, date_piece: l.date, facture_id: null,
+      montant_ttc: j === 6 && i % 7 === 0 ? null : (j % 2 === 0 ? 1 : -1) * Math.round((Math.abs(l.montant) + d) * 1000) / 1000,
+    })))
+    const auxBornes = candidatsPiecesDesMouvements(libres.slice(0, 200), piecesAuxBornes, new Set(), new Set())
+    expect(libres.slice(0, 200).map((l) => auxBornes.get(l.id)!.map((p) => p.id)))
+      .toEqual(libres.slice(0, 200).map((l) => candidatsPieces(l, piecesAuxBornes, new Set(), new Set()).map((p) => p.id)))
   })
 })
 

@@ -17,7 +17,7 @@
 // passes, en millisecondes, après une passe de chauffe. Le récit : HISTORIQUE.md, « LE BANC DE CHARGE D'UNE ANNÉE ».
 
 import { analyseDeMaBanque, anneeDeMaBanque } from '../../src/lib/analyseDeMaBanque'
-import { analyserAppariements, candidatsPieces, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique } from '../../src/lib/appariementBanque'
+import { analyserAppariements, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique } from '../../src/lib/appariementBanque'
 import { rapprochementDeLOnglet, associesPourLesVentes } from '../../src/lib/associationsAssuranceMaladieVue'
 import { ACCES_SANS_OBJET } from '../../src/lib/auteursVentes'
 import { bilanDeLExercice } from '../../src/lib/bilan'
@@ -44,6 +44,7 @@ import { horsDesNotesDeLExploitant, notesRembourseesPeutEtre, RAISON_REMBOURSEME
 import { paiementsParLaCaisseDuDossier } from '../../src/lib/paiementParLaCaisse'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { pisteAudit } from '../../src/lib/pisteAudit'
+import { propositionsDuReleve } from '../../src/lib/propositionsDuReleve'
 import { pointsDeLaChecklist } from '../../src/lib/pointsDeLaChecklist'
 import { prealablesDeValidation } from '../../src/lib/prealablesValidation'
 import { paiementsDesPieces, piecesPayees } from '../../src/lib/rattachement'
@@ -154,9 +155,13 @@ function mesurer(k: number): Map<string, number | string> {
     const justificatifs = horsDesNotesDeLExploitant(piecesValidees, MODELE.mode)
     const piecesRapprochees = piecesPayees(paiements)
     const libres = a.lignes.filter((l) => l.statut === 'non_rapprochee')
-    t('Banque — la pièce proposée de chaque mouvement (candidatsPieces)', () => libres.map((l) => candidatsPieces(l, justificatifs, piecesRapprochees, ventes.sources)[0] ?? null),
-      (r) => `${r.filter(Boolean).length} proposées sur ${r.length}`)
     const cotisationsRapprochees = new Set(a.lignes.map((l) => l.cotisation_id).filter((id): id is string => id != null))
+    // La table de la liste (lib/propositionsDuReleve.ts), bâtie une fois par changement des données : la liste posait ces trois
+    // questions ligne à ligne, à chaque rendu (HISTORIQUE.md, « LES TROIS ÉCRANS QUI REFAISAIENT LEUR CALCUL À CHAQUE RENDU »).
+    t('Banque — les propositions de chaque mouvement (la table de la liste)', () => propositionsDuReleve({
+      lignes: a.lignes, justificatifs, piecesHorsRapprochement: piecesRapprochees, facturesSources: ventes.sources, cotisations: a.cotisations,
+      cotisationsRapprochees,
+    }), (r) => `${[...r.values()].filter((p) => p.piece).length} pièces proposées sur ${r.size}`)
     t('Banque — lot du rapprochement automatique', () => planRapprochementAutomatique(libres, justificatifs, a.cotisations, {
       pieces: piecesRapprochees, cotisations: cotisationsRapprochees,
     }, horsDesLotsEtCandidats, ventes.sources), (r) => `${r.retenus.length} retenus`)
