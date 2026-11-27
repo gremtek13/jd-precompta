@@ -55340,4 +55340,5 @@ associé, la trace `remplacements_assurance_maladie` (aucun texte, deux imports 
 elle-même ; le module, la lecture, l'écran et le plan de sauvegarde derrière `REMPLACEMENT_DES_JOURNEES_PREVU` baissé. **Éprouvé** sur
 une copie de `replique_227` portée à 259 : 11/11, 35/35 et cinq mutations sur cinq, la suppression 7/7 ; `rls.sql` 0 en faute (1 372,
 180 mutations) ; restauration IDENTIQUE ; retours à rebours rendant la signature ; inventaire, dérive et socle simulés égaux ; banc SÛR.
-Questions : NOE4RQ2-Q1 à Q4.
+Versions 20261127215000 et 20261127215500 (retours 215100, 215600) : la première était née sous celle de MCBR-Q2, préparée le même
+soir (`versionsDesPreparees.test.ts`). Questions : NOE4RQ2-Q1 à Q4.

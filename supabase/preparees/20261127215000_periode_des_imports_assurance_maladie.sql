@@ -3,7 +3,7 @@
 -- « 27/11/2026 — NOE4R-Q1 ET NOE4R-Q2 : LA PÉRIODE D'UN IMPORT ET LE REMPLACEMENT D'UNE JOURNÉE (PRÉPARÉES, PAS
 -- APPLIQUÉES) » ; l'essai : supabase/essais/periodeDesImportsAssuranceMaladie.sql (et les étapes 24 et 72 de
 -- paiementsAssuranceMaladie.sql, qui suivent la règle de la base) ; le retour :
--- supabase/preparees/retour/20261127190100_retour_periode_des_imports_assurance_maladie.sql ; le module qui redit la règle :
+-- supabase/preparees/retour/20261127215100_retour_periode_des_imports_assurance_maladie.sql ; le module qui redit la règle :
 -- src/lib/paiementsAssuranceMaladie.ts (`periodeDeLImport`).
 --
 -- LA RÈGLE. `importer_paiements_assurance_maladie` (NOE3, en production depuis le 20/11/2026, 246) écrivait la période d'un

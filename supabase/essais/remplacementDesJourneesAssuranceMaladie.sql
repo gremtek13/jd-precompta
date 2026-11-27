@@ -1,6 +1,6 @@
 -- LE REMPLACEMENT D'UNE JOURNÉE COMPTABLE NON ASSOCIÉE PAR UN NOUVEL EXPORT DES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53,
 -- § 14.2 ; NOE4R-Q2 (B) ; la migration `remplacement_des_journees_assurance_maladie`, préparée le 27/11/2026, PAS APPLIQUÉE, après
--- `periode_des_imports_assurance_maladie` : supabase/preparees/20261127191000_remplacement_des_journees_assurance_maladie.sql).
+-- `periode_des_imports_assurance_maladie` : supabase/preparees/20261127215500_remplacement_des_journees_assurance_maladie.sql).
 -- Le récit : HISTORIQUE.md, « 27/11/2026 — NOE4R-Q1 ET NOE4R-Q2 ». À rejouer par `execute_sql` après toute migration qui touche
 -- la fonction du remplacement, sa trace, la fonction d'import, l'association ou les tables des paiements. Le retrait d'une trace
 -- en direct ne se joue pas ici (l'outil d'exécution de la production retient une suppression) :

@@ -4,7 +4,7 @@
 -- d'import, à l'empreinte). Le récit : HISTORIQUE.md, « 27/11/2026 — NOE4R-Q1 ET NOE4R-Q2 : LA PÉRIODE D'UN IMPORT ET LE
 -- REMPLACEMENT D'UNE JOURNÉE (PRÉPARÉES, PAS APPLIQUÉES) » ; l'essai : supabase/essais/remplacementDesJourneesAssuranceMaladie.sql
 -- (et, sur une réplique seulement, remplacementDesJourneesAssuranceMaladieSuppression.sql) ; le retour :
--- supabase/preparees/retour/20261127191100_retour_remplacement_des_journees_assurance_maladie.sql ; le module qui redit ses
+-- supabase/preparees/retour/20261127215600_retour_remplacement_des_journees_assurance_maladie.sql ; le module qui redit ses
 -- refus et calcule ce que l'écran nomme avant le clic : src/lib/remplacementDesJourneesAssuranceMaladie.ts
 -- (`REMPLACEMENT_DES_JOURNEES_PREVU`, baissé).
 --

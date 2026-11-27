@@ -1,6 +1,6 @@
 -- LA PÉRIODE D'UN IMPORT DES PAIEMENTS DE L'ASSURANCE MALADIE, SUR SES SEULS PAIEMENTS INSÉRÉS (conception 53, § 14.1 ;
 -- NOE4R-Q1 (A) ; la migration `periode_des_imports_assurance_maladie`, préparée le 27/11/2026, PAS APPLIQUÉE :
--- supabase/preparees/20261127190000_periode_des_imports_assurance_maladie.sql). Le récit : HISTORIQUE.md, « 27/11/2026 —
+-- supabase/preparees/20261127215000_periode_des_imports_assurance_maladie.sql). Le récit : HISTORIQUE.md, « 27/11/2026 —
 -- NOE4R-Q1 ET NOE4R-Q2 ». À rejouer par `execute_sql` après toute migration qui touche `importer_paiements_assurance_maladie`
 -- ou les deux tables des paiements ; le reste de la fonction (ses refus, ses droits, la lecture du client) :
 -- paiementsAssuranceMaladie.sql, dont les étapes 24 et 72 suivent la même règle.
