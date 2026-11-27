@@ -251,6 +251,7 @@ const EXCEPTIONS: Readonly<Record<string, { nombre: number; raison: string }>> =
   'src/lib/ecritureVenteFacturee.ts': { nombre: 1, raison: `${AUTRE_SOURCE} : l’écriture d’une vente facturée déjà composée, sous le libellé de lib/libellesDesVentes.ts` },
   'src/lib/ecrituresVentesFacturees.ts': { nombre: 1, raison: `${AUTRE_SOURCE} : l’écriture d’une vente facturée déjà composée, sous le libellé de lib/libellesDesVentes.ts` },
   'src/lib/profilQuadra.ts': { nombre: 1, raison: `${AUTRE_SOURCE} : l’EcritureLib du FEC réglementaire, déjà sous la règle, recopiée coupée à trente caractères dans l’enregistrement M de Quadra (EXP3)` },
+  'src/lib/profilTra.ts': { nombre: 1, raison: `${AUTRE_SOURCE} : l’EcritureLib du FEC réglementaire, déjà sous la règle, recopiée coupée à trente-cinq caractères dans l’écriture du fichier TRA (EXP4)` },
   'src/lib/stocks.ts': { nombre: 1, raison: `${AUTRE_SOURCE} : l’écriture d’un stock de clôture déjà composée (« Stock final au 31/12/AAAA (compte) »), relayée à \`enregistrer_stock_de_cloture\`` },
 }
 

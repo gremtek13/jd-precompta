@@ -626,7 +626,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   levé) → « EXP-Q4 : LES RÉGLAGES DE L'EXPORT GARDÉS PAR DOSSIER », « TROIS MIGRATIONS EN PRODUCTION (251 À 253) ». EXP3 (26/11/2026) :
   l'ASCII de Cegid Quadra (`lib/profilQuadra.ts`, chaque zone de l'enregistrement `M` citant la fiche publique KB0014530), derrière
   `PROFIL_QUADRA_OFFERT` BAISSÉ jusqu'à un essai réel ; l'encodage, la fin d'enregistrement, la longueur et les journaux à saisir, aucun
-  préchoisi ; réglages non gardés (la base ne connaît qu'`acd`, EXP3-Q4) → « EXP3 : LE PROFIL CEGID QUADRA ».
+  préchoisi ; réglages non gardés (la base ne connaît qu'`acd`, EXP3-Q4) → « EXP3 : LE PROFIL CEGID QUADRA ». EXP4 (27/11/2026) : le TRA
+  (`lib/profilTra.ts`, la description Cegid v11 publiée par MyUnisoft), même règle, derrière `PROFIL_TRA_OFFERT` BAISSÉ → « EXP4 : LE PROFIL TRA ».
 - **L'écriture libre de l'expert-comptable** (16/11/2026), conçue (`docs/conceptions/54-ecriture-libre-de-l-expert-comptable.md`) :
   une OD source du brouillon ; en trésorerie, chaque ligne de résultat sous un poste de la 2035 ou « hors de la 2035 », une charge
   ou un produit rattaché hors de la 2035 seulement (`rattacheeComptee`, EXP58-Q3 (A) : la désignation « contre la règle »
