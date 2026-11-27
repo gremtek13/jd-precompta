@@ -50,6 +50,7 @@ import {
   fichierDeLaPiece, fichierDuDocument, LIBELLE_VOIR, nomAccessibleDuGeste, type FichierDUnEnvoi,
 } from '../lib/ouvertureDeMesPieces'
 import { useOuvertureDeMesPieces } from '../lib/ouvertureDeMesPiecesGeste'
+import { useLigneDuBordereau } from '../lib/consigneDuBordereauLecture'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const LABEL_CATEGORIE: Record<DocumentDivers['categorie'], string> = {
@@ -94,6 +95,9 @@ export default function ClientUpload() {
   const droits = useDroitsAffiches()
   const dossierId = dossierActifId
   const moi = session?.user.id ?? null
+  // BOR6TQ1-Q1 (A) : la consigne du bordereau, une ligne permanente sous la zone de dépôt, sur les seuls dossiers de santé de la
+  // société affichée (lib/consigneDuBordereau.ts) ; nulle tant que ce qui la décide n'est pas lu.
+  const ligneDuBordereau = useLigneDuBordereau(dossierId)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
   // Les mois où le relevé porte un mouvement : l'accueil les lit de la même façon (voir ClientHome) — par
@@ -563,6 +567,11 @@ export default function ClientUpload() {
           Factures, reçus, notes de frais, relevés bancaires (CSV), appels de cotisation — plusieurs fichiers à la fois,
           {' '}{poids(TAILLE_MAX_PIECE)} au plus chacun.
         </p>
+        {ligneDuBordereau !== null && (
+          <p className="muted" role="note" data-testid="consigne-du-bordereau" style={{ margin: '0 0 14px', fontSize: '0.85rem' }}>
+            {ligneDuBordereau}
+          </p>
+        )}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
           <label className="btn btn-primary" style={{ cursor: 'pointer' }} onClick={(e) => e.stopPropagation()}>
             Choisir des fichiers

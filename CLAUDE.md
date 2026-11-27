@@ -618,6 +618,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `receive-email` lisant AVANT le stockage (`lib/lectureAuDepot.ts`) ; à redéployer → « BOR6, TROISIÈME PARTIE » (conception 59, § 17).
   Le 27/11/2026 (BOR6T-Q1, Q2 (A)) : la fiche d'une pièce et Cotisations lisent aussi avant le stockage (`lireAvantLeStockage`) ; la consigne
   « ne se photographie pas » dite au client ; les bordereaux déjà déposés cherchés d'un clic dans la Vue d'ensemble (`lib/bordereauxDeposes.ts`, une attention, par la date de dépôt, la fiche ouverte par `lib/ficheDemandee.ts`) → « BOR6T-Q1 ET BOR6T-Q2 ».
+  BOR6TQ1-Q1 (A) : « Mes pièces » porte la consigne en une ligne permanente sous la zone de dépôt, sur les seuls dossiers de santé de la société affichée (la règle de la section ; `lib/consigneDuBordereau.ts`), muette tant que rien ne la décide → « BOR6TQ1-Q1, FACT-Q4 ET MCBR2-Q1 ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)
@@ -999,7 +1000,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     cabinet, puis `iban_hors_des_parametres` par l'outil —, A7b l'écran (le formulaire et l'avoir disent ses refus avant
     le clic et nomment ce qui se fige, l'aperçu n'imprime que ce qui est figé ; `lib/mentionsFigeesVue.ts`), en ligne le
     30/10/2026 ; A7B-Q1 et Q2 le même jour (rien sous le nom d'un entrepreneur individuel ; la mention légale proposée
-    ne garde que la TVA quand le dossier a ses paramètres, et toujours pour un particulier, FACT-Q1) ; A7B-Q3, le bon de commande d'une entreprise, offert sur la
+    ne garde que la TVA quand le dossier a ses paramètres, et toujours pour un particulier, FACT-Q1 ; l'avoir d'un particulier, la mention de sa facture sans la phrase des pénalités, `mentionDeLAvoirProposee`, FACT-Q4) ; A7B-Q3, le bon de commande d'une entreprise, offert sur la
     facture seule le 06/11/2026 (`DocumentDeVente`, sans défaut) → « LE BON DE COMMANDE D'UNE ENTREPRISE, OFFERT DANS LA
     FACTURE », « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B
     (LIGNE 51.5) », « LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES », « DEUX
@@ -1349,6 +1350,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   SUIVANT, LE MOIS EN DOUBLE EN AVERTISSEMENT (MVPD7-Q2 À Q5) ». Sauf MCBR-Q2 (A) : un compte au 512 propre dès le 1er janvier suivant,
   ce que son éclatement refuserait retient (`ouverture-suivante-retenue`, `refusDeLOuvertureSuivante` ; le filet différé en base,
   `ouverture_suivante_a_la_validation`, en production depuis le 27/11/2026, 261) → « MCBR-Q2 », « SECU4-Q1 ET MCBR-Q2 EN PRODUCTION (260, 261) ».
+  La fiche des comptes avertit avant le clic, jamais ne refuse, d'un compte ouvert dans le dernier exercice validé et au 512 propre au lendemain : son solde de ce 31/12 n'est dans aucun compte (`avertissementDuSoldeHorsDesComptes`, MCBR2-Q1 (A)).
 - **Le modèle comptable** se règle tant que le brouillon est vide → « LA COMPTABILITÉ D'ENGAGEMENT » ; le lettrage se
   DÉDUIT du rapprochement → « LE LETTRAGE SE DÉDUIT DU RAPPROCHEMENT ». **Ouverture** : une balance reprise contrôlée
   devient les à-nouveaux, une fois ; ensuite seulement après validation du précédent (`soldes_reportes`) → « LA

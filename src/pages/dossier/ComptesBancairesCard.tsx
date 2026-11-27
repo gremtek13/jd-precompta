@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { COMPTES_BANCAIRES_PREVUS, dateDite } from '../../lib/comptesBancaires'
 import {
   ceQuiResteModifiable, changements, compteDuPlanDit, comptesDesRolesDuPlan, confirmationDeLaCreation, confirmationDeLaModification,
-  jugerLaCreation, jugerLaModification, retraitDuCompte, saisieDuCompte, saisieNeuve, usageDe, type SaisieDeLaFiche,
+  avertissementDuSoldeHorsDesComptes, jugerLaCreation, jugerLaModification, retraitDuCompte, saisieDuCompte, saisieNeuve, usageDe, type SaisieDeLaFiche,
 } from '../../lib/ficheDesComptesBancaires'
 import {
   corrigerLeCompte, creerLeCompte, lireLaFiche, retirerLeCompte, type Issue, type LectureDeLaFiche,
@@ -64,6 +64,9 @@ function CarteDesComptes({ dossierId, plan }: { dossierId: string; plan: PlanCom
     : edition.mode === 'creation' ? jugerLaCreation(saisie, comptes, roles, exercices)
       : avant && usageAvant ? jugerLaModification(avant, saisie, comptes, roles, usageAvant, exercices) : null
   const rienNeChange = jugement?.ligne != null && avant !== null && changements(avant, jugement.ligne).length === 0
+  // MCBR2-Q1 : le solde du 31 décembre du dernier exercice validé, dans aucun compte — dit avant le clic, sur la saisie telle
+  // qu'elle part, et repris par la confirmation ; un avertissement, le bouton reste offert.
+  const avertissement = jugement?.ligne != null && exercices !== null ? avertissementDuSoldeHorsDesComptes(jugement.ligne, exercices) : null
   const principalAEcrire = edition?.mode === 'creation' ? comptes?.length === 0 : avant?.principal === true
   const fige = avant !== null && usageAvant !== null && !avant.principal && (usageAvant.mouvements > 0 || usageAvant.releves > 0)
 
@@ -90,8 +93,8 @@ function CarteDesComptes({ dossierId, plan }: { dossierId: string; plan: PlanCom
     const dossierEcrit = dossierId
     const ligne = jugement.ligne
     try {
-      const confirmation = corrige === null ? confirmationDeLaCreation(ligne, plan.banque)
-        : confirmationDeLaModification(corrige.avant, ligne, corrige.usage)
+      const confirmation = (corrige === null ? confirmationDeLaCreation(ligne, plan.banque)
+        : confirmationDeLaModification(corrige.avant, ligne, corrige.usage)) + (avertissement === null ? '' : ` ${avertissement}`)
       if (!window.confirm(confirmation)) return
       setEnCours(true)
       setAvis(null)
@@ -242,6 +245,7 @@ function CarteDesComptes({ dossierId, plan }: { dossierId: string; plan: PlanCom
               </div>
               {jugement?.refus != null && <p className="muted" role="status">{jugement.refus}</p>}
               {rienNeChange && <p className="muted" role="status">Rien n’est changé.</p>}
+              {avertissement !== null && !rienNeChange && <p className="note-info" role="note">{avertissement}</p>}
               <div className="field-row" style={{ flexWrap: 'wrap', gap: 8 }}>
                 <button type="button" className="btn btn-primary btn-sm" disabled={enCours || jugement === null || jugement.refus !== null || rienNeChange}
                   onClick={() => { void enregistrer() }}>

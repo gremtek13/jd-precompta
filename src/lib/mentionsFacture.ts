@@ -14,6 +14,12 @@ import type { ArticleExoneration, FactureEmise, MentionsFacture, NatureOperation
 // (`apercuDeTransmission`) — le jugement même que portent les fonctions qui la transmettent, puisqu'une facture validée
 // ne se corrige plus que par un avoir.
 
+/** La phrase des conditions de retard que la mention légale PROPOSÉE porte (C. com., art. L441-10, II, et D441-5, des
+ *  professionnels entre eux) : `mentionsLegalesParDefaut` (lib/factures.ts) l'ajoute, la mention proposée à l'avoir d'un
+ *  particulier la retire (`mentionDeLAvoirProposee`, lib/mentionsFigeesVue.ts, FACT-Q4). Écrite une fois. */
+export const PHRASE_DE_RETARD = "En cas de retard de paiement, une pénalité égale à trois fois le taux d'intérêt légal sera exigible, "
+  + 'ainsi qu\'une indemnité forfaitaire pour frais de recouvrement de 40 €.'
+
 // La date de l'opération (CGI, ann. II, art. 242 nonies A, I, 10°) : celle de la facture, un autre jour, ou une période.
 export type PrestationSaisie = 'facture' | 'date' | 'periode'
 

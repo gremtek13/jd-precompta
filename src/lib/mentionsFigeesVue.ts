@@ -10,7 +10,7 @@ import {
   denominationAbsente, mentionsAFiger, refusDeLaProvenance, refusDeLaValidationFigee, refusDesTextesDeLaFacture,
   type MentionsDeLOrigine, type MentionsFigees,
 } from './mentionsFigees'
-import { versEntreprise, type SaisieMentions } from './mentionsFacture'
+import { PHRASE_DE_RETARD, versEntreprise, type SaisieMentions } from './mentionsFacture'
 import { versionCourante } from './parametresFacturation'
 import { ibanParQuatre, libelleDuMoyen } from './parametresFacturationVue'
 import type {
@@ -205,6 +205,29 @@ export function sansPhraseDeRetard(
   if (typeClient === 'non_assujetti') return true
   if (!parametresEnVigueur(lecture, dossierId)) return false
   return versEntreprise(typeClient) && penalitesEnVigueur(lecture, dossierId) !== null
+}
+
+/**
+ * LA MENTION PROPOSÉE À L'AVOIR (FACT-Q4 (A), réponse du cabinet du 27/11/2026). L'avoir recopie la mention légale de sa
+ * facture ; quand son client est un PARTICULIER, sans la phrase des pénalités et de l'indemnité de 40 € — la règle même de
+ * FACT-Q1 (`sansPhraseDeRetard`, ici sans les paramètres : pour un particulier elle ne les lit pas, et pour un professionnel
+ * l'avoir garde la mention de sa facture telle qu'elle est, comme hier). Seule la phrase telle que l'application la propose
+ * (`PHRASE_DE_RETARD`) se retire, avec la ligne qu'elle laisse vide : un texte écrit à la main reste, et la mention de TVA,
+ * que la base exige au caractère près, n'est pas touchée. La mention reste modifiable ; la garde de la base et son refus dit
+ * avant le clic ne changent pas.
+ */
+export function mentionDeLAvoirProposee(
+  mentionDeLaFacture: string | null, typeClient: SaisieMentions['typeClient'] | null, dossierId: string,
+): string {
+  const mention = mentionDeLaFacture ?? ''
+  if (typeClient === null || !sansPhraseDeRetard(null, dossierId, typeClient) || !mention.includes(PHRASE_DE_RETARD)) return mention
+  return mention.split('\n')
+    .flatMap((ligne) => {
+      if (!ligne.includes(PHRASE_DE_RETARD)) return [ligne]
+      const reste = ligne.split(PHRASE_DE_RETARD).join('').trim()
+      return reste === '' ? [] : [reste]
+    })
+    .join('\n')
 }
 
 /**

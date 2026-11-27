@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { lireLesPaiementsAssuranceMaladie } from './paiementsAssuranceMaladieLecture'
+import { lireLesPaiementsAssuranceMaladie, unImportDesPaiementsLu } from './paiementsAssuranceMaladieLecture'
 
 // Ce que l'écran des paiements de l'assurance maladie lit (NOE4) : RIEN, drapeau baissé (les deux tables n'existent pas avant
 // la migration) ; levé, côté client la case « Banque » relue à la base, seul `true` accorde ; côté cabinet, aucune case ; une
@@ -13,6 +13,7 @@ const faux = vi.hoisted(() => ({
   droits: { data: { banque: true } as unknown, error: null as unknown },
   lues: [] as string[],
   lever: false,
+  refusUne: false,
 }))
 
 vi.mock('./paiementsAssuranceMaladie', async (original) => ({
@@ -37,13 +38,43 @@ vi.mock('./supabase', () => {
         const lignes = faux.tables[table] ?? []
         return Promise.resolve({ data: lignes, error: null, count: lignes.length })
       },
+      limit: () => r,
+      maybeSingle: () => {
+        if (faux.lever) throw new Error('réseau coupé')
+        faux.lues.push(`une:${table}`)
+        if (faux.refusUne) return Promise.resolve({ data: null, error: { message: 'refus' } })
+        return Promise.resolve({ data: (faux.tables[table] ?? [])[0] ?? null, error: null })
+      },
     }
     return r
   }
   return { supabase: { from: requete, rpc: (nom: string) => { faux.lues.push(`rpc:${nom}`); return Promise.resolve(faux.droits) } } }
 })
 
-afterEach(() => { faux.drapeau = true; faux.associations = false; faux.remplacements = false; faux.tables = {}; faux.droits = { data: { banque: true }, error: null }; faux.lues = []; faux.lever = false })
+afterEach(() => { faux.drapeau = true; faux.associations = false; faux.remplacements = false; faux.tables = {}; faux.droits = { data: { banque: true }, error: null }; faux.lues = []; faux.lever = false; faux.refusUne = false })
+
+describe('un import des paiements existe-t-il (BOR6TQ1-Q1) ?', () => {
+  it('une ligne du dossier lue : vrai ; tout le reste, faux — jamais un « aucun » affirmé', async () => {
+    faux.tables.imports_assurance_maladie = [{ id: 'i1', dossier_id: 'd1' }]
+    expect(await unImportDesPaiementsLu('d1')).toBe(true)
+    expect(faux.lues).toEqual(['une:imports_assurance_maladie'])
+    expect(await unImportDesPaiementsLu('d2')).toBe(false)
+    faux.refusUne = true
+    expect(await unImportDesPaiementsLu('d1')).toBe(false)
+    faux.refusUne = false
+    faux.lever = true
+    expect(await unImportDesPaiementsLu('d1')).toBe(false)
+    faux.lever = false
+    faux.tables = {}
+    expect(await unImportDesPaiementsLu('d1')).toBe(false)
+  })
+
+  it('drapeau baissé : rien ne se lit', async () => {
+    faux.drapeau = false
+    expect(await unImportDesPaiementsLu('d1')).toBe(false)
+    expect(faux.lues).toEqual([])
+  })
+})
 
 describe('les paiements de l’assurance maladie, lus', () => {
   it('drapeau baissé : rien ne se lit, et l’échec se dit — jamais une liste vide', async () => {

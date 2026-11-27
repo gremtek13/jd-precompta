@@ -109,3 +109,20 @@ export async function lireLesPaiementsAssuranceMaladie(dossierId: string, espace
   }
 }
 
+
+/**
+ * UN IMPORT DES PAIEMENTS EXISTE-T-IL ? (BOR6TQ1-Q1 (A) : la ligne de « Mes pièces », lib/consigneDuBordereau.ts.) Une ligne de
+ * l'import, lue pour le dossier demandé, le prouve : vrai. Tout le reste est faux — pas « aucun » : une lecture refusée, en
+ * échec, ou que la RLS rend vide (un client sans « Banque » ne lit pas la table) ne dit pas qu'il n'y en a pas ; l'appelant ne
+ * s'en sert que pour OFFRIR une ligne, jamais pour affirmer l'absence. Une ligne seule, voulue (`limit(1)`). Ne rejette jamais.
+ */
+export async function unImportDesPaiementsLu(dossierId: string): Promise<boolean> {
+  if (!PAIEMENTS_ASSURANCE_MALADIE_PREVUS) return false
+  try {
+    const { data, error } = await supabase.from('imports_assurance_maladie').select('id, dossier_id')
+      .eq('dossier_id', dossierId).limit(1).maybeSingle()
+    return !error && data !== null && (data as { dossier_id?: unknown }).dossier_id === dossierId
+  } catch {
+    return false
+  }
+}

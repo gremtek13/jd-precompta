@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { lireLeFactureAssuranceMaladie } from './factureAssuranceMaladieLecture'
+import { lireLeFactureAssuranceMaladie, unImportDuFactureLu } from './factureAssuranceMaladieLecture'
 
 // Ce que l'écran du facturé lit (BOR4) : RIEN, drapeau baissé ; levé, les imports et leurs totaux, par pages, triés jusqu'à la
 // clé ; côté client la case « Banque » relue à la base, seul `true` accorde ; côté cabinet, aucune case ; une ligne d'un autre
@@ -13,6 +13,7 @@ const faux = vi.hoisted(() => ({
   lues: [] as string[],
   tris: {} as Record<string, string[]>,
   lever: false,
+  refusUne: false,
 }))
 
 vi.mock('./importDuFactureAssuranceMaladie', async (original) => ({
@@ -31,6 +32,13 @@ vi.mock('./supabase', () => {
         const lignes = faux.tables[table] ?? []
         return Promise.resolve({ data: lignes, error: null, count: faux.annonces[table] ?? lignes.length })
       },
+      limit: () => r,
+      maybeSingle: () => {
+        if (faux.lever) throw new Error('réseau coupé')
+        faux.lues.push(`une:${table}`)
+        if (faux.refusUne) return Promise.resolve({ data: null, error: { message: 'refus' } })
+        return Promise.resolve({ data: (faux.tables[table] ?? [])[0] ?? null, error: null })
+      },
     }
     return r
   }
@@ -39,7 +47,30 @@ vi.mock('./supabase', () => {
 
 afterEach(() => {
   faux.drapeau = true; faux.tables = {}; faux.annonces = {}; faux.droits = { data: { banque: true }, error: null }; faux.lues = []
-  faux.tris = {}; faux.lever = false
+  faux.tris = {}; faux.lever = false; faux.refusUne = false
+})
+
+describe('un import du facturé existe-t-il (BOR6TQ1-Q1) ?', () => {
+  it('une ligne du dossier lue : vrai ; tout le reste, faux — jamais un « aucun » affirmé', async () => {
+    faux.tables.imports_factures_assurance_maladie = [{ id: 'i1', dossier_id: 'd1' }]
+    expect(await unImportDuFactureLu('d1')).toBe(true)
+    expect(faux.lues).toEqual(['une:imports_factures_assurance_maladie'])
+    expect(await unImportDuFactureLu('d2')).toBe(false)
+    faux.tables = {}
+    expect(await unImportDuFactureLu('d1')).toBe(false)
+    faux.tables.imports_factures_assurance_maladie = [{ id: 'i1', dossier_id: 'd1' }]
+    faux.refusUne = true
+    expect(await unImportDuFactureLu('d1')).toBe(false)
+    faux.refusUne = false
+    faux.lever = true
+    expect(await unImportDuFactureLu('d1')).toBe(false)
+  })
+
+  it('drapeau baissé : rien ne se lit', async () => {
+    faux.drapeau = false
+    expect(await unImportDuFactureLu('d1')).toBe(false)
+    expect(faux.lues).toEqual([])
+  })
 })
 
 describe('le facturé à l’assurance maladie, lu', () => {

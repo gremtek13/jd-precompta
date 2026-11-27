@@ -29,6 +29,9 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/depot', () => ({ deposerFichier: vi.fn() }))
+// La ligne du bordereau (BOR6TQ1-Q1) lit aussi la ligne du dossier, son code NAF : hors du sujet de ce fichier, qui compte les
+// lectures de `dossiers` — elle se joue dans ClientUpload.bordereau.test.tsx.
+vi.mock('../lib/consigneDuBordereauLecture', () => ({ useLigneDuBordereau: () => null }))
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
