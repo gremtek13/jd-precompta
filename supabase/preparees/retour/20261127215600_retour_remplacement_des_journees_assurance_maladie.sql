@@ -1,6 +1,6 @@
 -- RETOUR ARRIÈRE DE `remplacement_des_journees_assurance_maladie` (conception 53, § 14.2 ; NOE4R-Q2) — DESTRUCTIF, À ACCORDER PAR
 -- LE CABINET, À COLLER dans l'éditeur SQL de Supabase, dans une transaction, avec sa ligne d'historique (le texte retire une
--- table, sa garde et deux fonctions). La migration : supabase/preparees/20261127191000_remplacement_des_journees_assurance_maladie.sql
+-- table, sa garde et deux fonctions). La migration : supabase/preparees/20261127215500_remplacement_des_journees_assurance_maladie.sql
 -- (préparée le 27/11/2026) ; le récit : HISTORIQUE.md, « 27/11/2026 — NOE4R-Q1 ET NOE4R-Q2 ».
 --
 -- L'ORDRE : D'ABORD l'application, son drapeau baissé (`REMPLACEMENT_DES_JOURNEES_PREVU`, le fichier de la migration sorti de

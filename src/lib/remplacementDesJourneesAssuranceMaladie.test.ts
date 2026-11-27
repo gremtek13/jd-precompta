@@ -54,7 +54,7 @@ describe('la migration, préparée ou rangée, et le drapeau', () => {
   it('elle est à un seul endroit ; préparée, le drapeau est baissé ; rangée, levé ; son retour et ses essais à côté', () => {
     expect([PREPAREE, RANGEE].filter((c) => c !== null)).toHaveLength(1)
     expect(REMPLACEMENT_DES_JOURNEES_PREVU).toBe(RANGEE !== null)
-    for (const f of ['supabase/preparees/retour/20261127191100_retour_remplacement_des_journees_assurance_maladie.sql',
+    for (const f of ['supabase/preparees/retour/20261127215600_retour_remplacement_des_journees_assurance_maladie.sql',
       'supabase/essais/remplacementDesJourneesAssuranceMaladie.sql', 'supabase/essais/remplacementDesJourneesAssuranceMaladieSuppression.sql']) {
       expect(existsSync(resolve(process.cwd(), f)), f).toBe(true)
     }

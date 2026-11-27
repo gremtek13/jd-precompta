@@ -1,5 +1,5 @@
 -- RETOUR ARRIÈRE DE `periode_des_imports_assurance_maladie` (conception 53, § 14.1 ; NOE4R-Q1 (A)) — PAR L'OUTIL : aucun mot
--- de retrait dans ce texte. La migration : supabase/preparees/20261127190000_periode_des_imports_assurance_maladie.sql
+-- de retrait dans ce texte. La migration : supabase/preparees/20261127215000_periode_des_imports_assurance_maladie.sql
 -- (préparée le 27/11/2026) ; le récit : HISTORIQUE.md, « 27/11/2026 — NOE4R-Q1 ET NOE4R-Q2 ».
 --
 -- L'ORDRE : D'ABORD le retour de `remplacement_des_journees_assurance_maladie` (NOE4R-Q2), s'il est en base — sa fonction appelle

@@ -4,7 +4,7 @@ import { cleDUnPaiement, refusDeLImport, type ImportAEnvoyer, type PaiementAgreg
 
 // LE REMPLACEMENT D'UNE JOURNÉE COMPTABLE NON ASSOCIÉE PAR UN NOUVEL EXPORT DES PAIEMENTS DE L'ASSURANCE MALADIE (conception 53,
 // § 14.2 ; NOE4R-Q2 (B), réponse du cabinet du 27/11/2026 ; la base : supabase/preparees/
-// 20261127191000_remplacement_des_journees_assurance_maladie.sql, préparée, à coller APRÈS celle de NOE4R-Q1). PUR : ni base,
+// 20261127215500_remplacement_des_journees_assurance_maladie.sql, préparée, à coller APRÈS celle de NOE4R-Q1). PUR : ni base,
 // ni horloge, ni fichier ; ce que l'écran d'import (`components/PaiementsAssuranceMaladie.tsx`) nomme avant le clic, et les mots
 // de la base, redits sous les mêmes mots et dans le même ordre (remplacementDesJourneesAssuranceMaladie.test.ts les relit dans
 // le texte de la migration).
