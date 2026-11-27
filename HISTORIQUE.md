@@ -55342,3 +55342,20 @@ une copie de `replique_227` portée à 259 : 11/11, 35/35 et cinq mutations sur 
 180 mutations) ; restauration IDENTIQUE ; retours à rebours rendant la signature ; inventaire, dérive et socle simulés égaux ; banc SÛR.
 Versions 20261127215000 et 20261127215500 (retours 215100, 215600) : la première était née sous celle de MCBR-Q2, préparée le même
 soir (`versionsDesPreparees.test.ts`). Questions : NOE4RQ2-Q1 à Q4.
+
+## 27/11/2026 — L'ESPACE CLIENT HORS DE LA FACTURATION : LA RELECTURE ADVERSE
+
+(Agent architecte ; aucune base, aucune Edge Function.) Relus avant le premier praticien réel : l'accueil et ses tuiles, « Mes pièces »
+et « Mes derniers envois », « Ma caisse » et le paiement d'une pièce, « Ma banque » (« Mon année », « Comparer les années », les sections
+de l'assurance maladie), « Ma trésorerie », « Mon échéancier », « Mon analyse », « Mes comptes », « Ma simulation », « Sécurité du compte »
+et l'écran de connexion. Trois défauts établis, chacun prouvé par un test qui échouait : **l'accueil affirmait le vide sur une lecture
+refusée** — le bandeau le disait, mais « En cours de vérification » rendait « 0 — tout est traité », « Envoyés » 0, « Cotisations »
+« aucun appel reçu », « Relevés » « 8 mois à envoyer » et « Mes derniers envois » « Rien d'envoyé pour l'instant » ; chaque tuile ne dit
+plus son nombre que de ses listes lues en entier (« — », « lecture incomplète »), comme « Mes pièces » le faisait déjà (`depotsIncomplets`).
+**La connexion disait « Email ou mot de passe incorrect. » de toute erreur** (réseau coupé, débit du service), poussant le praticien vers
+un lien de récupération ; l'erreur se lit à son code (`messageErreurDeConnexion`, `invalid_credentials` ou un 400 sans code), sous un
+verrou `useRef`, une exception libérant le bouton. **Le « + » d'une entrée de « Ma trésorerie »** vivait hors du montant insécable.
+Plausibles, non corrigés : « Ma caisse » qui ne se recompose pas montre encore le solde lu de la base (sans geste, comme la règle le dit) ;
+« Ma simulation » montre ses chiffres sous le bandeau d'une lecture partielle, en jumelle d'EstimationTab ; le journal de « Mon analyse »
+filtre au jour de Paris et affiche au jour local (hors de France seulement). Écartés : les courses entre sociétés (la coque remonte
+l'écran, chaque lecture est gardée avec sa société), les verrous des gestes, le tutoiement, « non couvert » jamais compté 0.

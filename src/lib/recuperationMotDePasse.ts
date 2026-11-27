@@ -276,6 +276,20 @@ export function messageErreurDuLien(erreur: unknown): string {
   return `Le lien n'a pas pu être demandé : ${messageErreur(erreur, 'raison inconnue')}`
 }
 
+/**
+ * L'erreur d'une connexion par adresse et mot de passe (relecture adverse du 27/11/2026). L'écran disait « Email ou mot de
+ * passe incorrect. » de TOUTE erreur : un réseau coupé ou le débit du service poussait le praticien à redemander un lien, et
+ * le débit des demandes de lien le bloquait ensuite. « Incorrect » se dit du seul refus des identifiants : le code
+ * `invalid_credentials` (auth-js, `ErrorCode`), ou un 400 sans code, la forme des versions du service qui n'en portaient pas.
+ */
+export function messageErreurDeConnexion(erreur: unknown): string {
+  const t = traits(erreur)
+  if (t.code === 'invalid_credentials' || (t.code === null && t.statut === 400)) return 'Email ou mot de passe incorrect.'
+  if (tropDeDemandes(t)) return 'Trop de tentatives en peu de temps : attends quelques minutes, puis réessaie.'
+  if (sansReponse(t)) return SANS_REPONSE
+  return `La connexion n'a pas pu se faire : ${messageErreur(erreur, 'raison inconnue')}`
+}
+
 /** L'erreur du changement de mot de passe. */
 export function messageErreurDuMotDePasse(erreur: unknown): string {
   const t = traits(erreur)

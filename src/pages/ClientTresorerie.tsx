@@ -152,7 +152,8 @@ function Projection({ tresorerie: t, clos, aujourdHui }: { tresorerie: Tresoreri
                   <tr key={m.id}>
                     <td data-libelle="Date">{enLettres(m.date)}</td>
                     <td data-libelle="Quoi">{m.libelle}{m.prevision && <span className="badge badge-warning" style={{ marginLeft: 6 }}>prévision</span>}</td>
-                    <td data-libelle="Montant">{m.centimes > 0 ? '+ ' : ''}{euros(m.centimes)}</td>
+                    {/* Le signe DANS le montant insécable : « + » seul en bout de ligne, le montant à la suivante, se lisait mal. */}
+                    <td data-libelle="Montant"><span style={{ whiteSpace: 'nowrap' }}>{m.centimes > 0 ? '+ ' : ''}{formatMoney(m.centimes / 100)}</span></td>
                     <td data-libelle="Solde après" className={m.soldeApresCentimes < 0 ? 'error-text' : undefined}>{euros(m.soldeApresCentimes)}</td>
                   </tr>
                 ))}

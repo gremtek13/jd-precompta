@@ -294,3 +294,53 @@ describe('ClientHome — « Mes derniers envois »', () => {
     expect(screen.getByRole('button', { name: 'Voir le fichier releve.pdf (Relevé bancaire)' })).toBeTruthy()
   })
 })
+
+// LES TUILES NE DISENT LEUR NOMBRE QUE D'UNE LISTE LUE EN ENTIER (relecture adverse du 27/11/2026) : le bandeau disait la
+// lecture partielle, mais « En cours de vérification » affirmait « 0 — tout est traité », « Envoyés » « 0 », « Cotisations »
+// « aucun appel reçu » et « Mes derniers envois » « Rien d'envoyé pour l'instant » sur une lecture des pièces refusée. Le vide
+// est une affirmation : il ne se dit que d'une liste lue en entier.
+describe('ClientHome — une liste lue en partie ne fait dire « 0 » à aucune tuile', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-09-25T09:00:00Z')) })
+  afterEach(() => { vi.useRealTimers() })
+
+  const tuile = (libelle: string) => screen.getByText(libelle).closest('.kpi')?.textContent ?? ''
+
+  it('les pièces refusées : ni « tout est traité », ni « 0 envoyé », ni « Rien d’envoyé »', async () => {
+    poser()
+    faux.refusees.add('pieces')
+    monter()
+    await screen.findByText('En cours de vérification')
+    expect(screen.queryByText('tout est traité')).toBeNull()
+    expect(screen.queryByText(/Rien d'envoyé pour l'instant/)).toBeNull()
+    expect(screen.getByText(/Tes envois n'ont pas pu être lus en entier/)).toBeTruthy()
+    expect(tuile('En cours de vérification')).toContain('—')
+    expect(tuile('Envoyés en 2026')).toContain('—')
+    expect(screen.queryByText('comme le mois dernier')).toBeNull()
+  })
+
+  it('les cotisations refusées : pas « aucun appel reçu »', async () => {
+    poser()
+    faux.refusees.add('cotisations_declarees')
+    monter()
+    await screen.findByText('Cotisations 2026')
+    expect(screen.queryByText('aucun appel reçu')).toBeNull()
+    expect(tuile('Cotisations 2026')).toContain('—')
+  })
+
+  it('la couverture refusée : aucun « mois à envoyer » compté', async () => {
+    poser()
+    faux.refusees.add('lignes_bancaires')
+    monter()
+    await screen.findByText('Relevés 2026')
+    expect(screen.queryByText(/\d+ mois à envoyer/)).toBeNull()
+    expect(tuile('Relevés 2026')).toContain('—')
+  })
+
+  it('tout lu en entier et vide : les mots d’hier', async () => {
+    poser()
+    monter()
+    await screen.findByText('tout est traité')
+    expect(screen.getByText(/Rien d'envoyé pour l'instant/)).toBeTruthy()
+    expect(screen.getByText('aucun appel reçu')).toBeTruthy()
+  })
+})

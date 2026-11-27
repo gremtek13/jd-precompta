@@ -98,6 +98,11 @@ export default function ClientHome() {
   // Non nul quand la liste des envois ou des relevés n'a pas pu être lue en entier. Dit au client,
   // dans sa langue : sans ça l'écran pourrait lui réclamer un document qu'il a déjà envoyé.
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // Chaque liste, lue en entier ou non : une tuile ne dit son nombre — ni « tout est traité », ni « aucun appel reçu », ni
+  // « rien d'envoyé » — que des listes qu'elle compte, TOUTES lues en entier (relecture adverse du 27/11/2026). Le bandeau
+  // ci-dessus disait la lecture partielle, mais la tuile « En cours de vérification » affirmait « 0 — tout est traité » et
+  // « Mes derniers envois » « Rien d'envoyé pour l'instant » sur une lecture des pièces refusée.
+  const [listesEntieres, setListesEntieres] = useState({ pieces: false, documents: false, couverture: false, cotisations: false })
   const [onboardingVu, setOnboardingVu] = useState(true)
   const [capturing, setCapturing] = useState(false)
   // Verrou d'exécution de la prise de photo, en `useRef` : `disabled={capturing}` ne prend effet qu'au rendu suivant, et
@@ -152,6 +157,10 @@ export default function ClientHome() {
         .find((l) => !l.complete)?.motif ?? null,
     )
     setCotisations(lectureCotisations.lignes)
+    setListesEntieres({
+      pieces: lecturePieces.complete, documents: lectureDocuments.complete,
+      couverture: lectureLignes.complete, cotisations: lectureCotisations.complete,
+    })
     setAnneesCloturees(clotures.annees)
     setClotureInconnue(clotures.erreur)
     setChargement(false)
@@ -289,6 +298,9 @@ export default function ClientHome() {
   }), ANNEE_COURANTE)
   const nbEnvoye = aEnvoyer.filter((i) => i.ok).length
   const nbManquant = aEnvoyer.length - nbEnvoye
+  // Ce que chaque tuile compte, lu en entier ou non (voir `listesEntieres`) : sinon « — » et « lecture incomplète ».
+  const depotsEntiers = listesEntieres.pieces && listesEntieres.documents
+  const LU_EN_PARTIE = 'lecture incomplète, recharge la page'
 
   return (
     <>
@@ -401,41 +413,44 @@ export default function ClientHome() {
           <div className="span-3">
             <KpiTile
               libelle={`Envoyés en ${ANNEE_COURANTE}`}
-              valeur={depotsAnnee.length}
-              detail="factures et documents"
+              valeur={depotsEntiers ? depotsAnnee.length : '—'}
+              detail={depotsEntiers ? 'factures et documents' : LU_EN_PARTIE}
               delta={
-                deltaMois === 0
-                  ? { texte: 'comme le mois dernier' }
-                  : { texte: `${deltaMois > 0 ? '+' : ''}${deltaMois} vs mois dernier`, positif: deltaMois > 0 }
+                !depotsEntiers
+                  ? undefined
+                  : deltaMois === 0
+                    ? { texte: 'comme le mois dernier' }
+                    : { texte: `${deltaMois > 0 ? '+' : ''}${deltaMois} vs mois dernier`, positif: deltaMois > 0 }
               }
-              tendance={tendanceDepots}
+              tendance={depotsEntiers ? tendanceDepots : undefined}
               onClick={() => navigate('/mes-pieces')}
             />
           </div>
           <div className="span-3">
             <KpiTile
               libelle="En cours de vérification"
-              valeur={enVerification}
+              valeur={listesEntieres.pieces ? enVerification : '—'}
               statut="neutral"
-              detail={enVerification > 0 ? 'ton comptable s\'en occupe' : 'tout est traité'}
+              detail={!listesEntieres.pieces ? LU_EN_PARTIE : enVerification > 0 ? 'ton comptable s\'en occupe' : 'tout est traité'}
               onClick={() => navigate('/mes-pieces')}
             />
           </div>
           <div className="span-3">
             <KpiTile
               libelle={`Relevés ${ANNEE_COURANTE}`}
-              valeur={moisEcoules === 0 ? '—' : <>{moisRecus}<small>/ {moisEcoules}</small></>}
-              statut={moisEcoules === 0 ? 'neutral' : moisManquants.length > 0 ? 'warning' : 'ok'}
-              detail={moisEcoules === 0 ? 'rien à envoyer encore' : moisManquants.length > 0 ? `${moisManquants.length} mois à envoyer` : 'tous reçus'}
+              valeur={moisEcoules === 0 || !listesEntieres.couverture ? '—' : <>{moisRecus}<small>/ {moisEcoules}</small></>}
+              statut={moisEcoules === 0 || !listesEntieres.couverture ? 'neutral' : moisManquants.length > 0 ? 'warning' : 'ok'}
+              detail={moisEcoules === 0 ? 'rien à envoyer encore' : !listesEntieres.couverture ? LU_EN_PARTIE
+                : moisManquants.length > 0 ? `${moisManquants.length} mois à envoyer` : 'tous reçus'}
               onClick={() => navigate('/mes-pieces')}
             />
           </div>
           <div className="span-3">
             <KpiTile
               libelle={`Cotisations ${ANNEE_COURANTE}`}
-              valeur={cotisationsAnnee.length}
-              statut={cotisationsAnnee.length > 0 ? 'ok' : 'warning'}
-              detail={cotisationsAnnee.length > 0 ? 'échéances reçues' : 'aucun appel reçu'}
+              valeur={listesEntieres.cotisations ? cotisationsAnnee.length : '—'}
+              statut={!listesEntieres.cotisations ? 'neutral' : cotisationsAnnee.length > 0 ? 'ok' : 'warning'}
+              detail={!listesEntieres.cotisations ? LU_EN_PARTIE : cotisationsAnnee.length > 0 ? 'échéances reçues' : 'aucun appel reçu'}
               onClick={() => navigate('/mes-pieces')}
             />
           </div>
@@ -485,7 +500,11 @@ export default function ClientHome() {
             action={<Link to="/mes-pieces" className="btn btn-outline btn-sm">Tout voir</Link>}
             plein
           >
-            {depots.length === 0 ? (
+            {depots.length === 0 && !depotsEntiers ? (
+              <p className="widget-vide" style={{ padding: '10px 20px 20px' }}>
+                Tes envois n'ont pas pu être lus en entier : recharge la page pour les voir.
+              </p>
+            ) : depots.length === 0 ? (
               <p className="widget-vide" style={{ padding: '10px 20px 20px' }}>
                 Rien d'envoyé pour l'instant — commence par une photo d'une facture.
               </p>

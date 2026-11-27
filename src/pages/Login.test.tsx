@@ -13,6 +13,9 @@ const faux = vi.hoisted(() => ({
   reponse: null as null | Promise<unknown>,
   resultat: { data: {}, error: null } as unknown,
   leve: null as unknown,
+  connexion: { data: { user: null, session: null }, error: null } as unknown,
+  connexionLeve: null as unknown,
+  porteConnexion: null as null | Promise<unknown>,
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -26,7 +29,9 @@ vi.mock('../lib/supabase', () => ({
       },
       signInWithPassword: async (identifiants: unknown) => {
         faux.connexions.push(identifiants)
-        return { data: { user: null, session: null }, error: null }
+        if (faux.porteConnexion) await faux.porteConnexion
+        if (faux.connexionLeve) throw faux.connexionLeve
+        return faux.connexion
       },
     },
   },
@@ -58,6 +63,9 @@ beforeEach(() => {
   faux.reponse = null
   faux.resultat = { data: {}, error: null }
   faux.leve = null
+  faux.connexion = { data: { user: null, session: null }, error: null }
+  faux.connexionLeve = null
+  faux.porteConnexion = null
 })
 
 describe('Login — « Mot de passe oublié ? »', () => {
@@ -160,5 +168,57 @@ describe('Login — un lien refusé', () => {
     render(<Login />)
     expect(screen.getByRole('button', { name: 'Se connecter' })).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+// LA CONNEXION (relecture adverse du 27/11/2026) : « Email ou mot de passe incorrect. » se disait de TOUTE erreur — un réseau
+// coupé ou le débit du service envoyait le praticien redemander un lien —, deux envois du même rendu partaient tous deux, et
+// une exception laissait « Connexion… » pour toujours.
+describe('Login — la connexion', () => {
+  const seConnecter = () => screen.getByRole('button', { name: /Se connecter|Connexion…/ }).closest('form')!
+  function remplir() {
+    render(<Login />)
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: ADRESSE } })
+    fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: 'mot-de-passe-fictif' } })
+  }
+
+  it('des identifiants refusés : « incorrect »', async () => {
+    faux.connexion = { data: { user: null, session: null }, error: new AuthApiError('Invalid login credentials', 400, 'invalid_credentials') }
+    remplir()
+    await act(async () => { fireEvent.submit(seConnecter()) })
+    expect(screen.getByText('Email ou mot de passe incorrect.')).toBeTruthy()
+  })
+
+  it('le service sans réponse : dit, jamais « incorrect »', async () => {
+    faux.connexion = { data: { user: null, session: null }, error: new AuthRetryableFetchError('Failed to fetch', 0) }
+    remplir()
+    await act(async () => { fireEvent.submit(seConnecter()) })
+    expect(screen.queryByText('Email ou mot de passe incorrect.')).toBeNull()
+    expect(screen.getByText(/n'a pas répondu/)).toBeTruthy()
+  })
+
+  it('le débit : dit, jamais « incorrect »', async () => {
+    faux.connexion = { data: { user: null, session: null }, error: new AuthApiError('Request rate limit reached', 429, 'over_request_rate_limit') }
+    remplir()
+    await act(async () => { fireEvent.submit(seConnecter()) })
+    expect(screen.queryByText('Email ou mot de passe incorrect.')).toBeNull()
+    expect(screen.getByText(/Trop de tentatives/)).toBeTruthy()
+  })
+
+  it('deux envois du même rendu ne font qu’une connexion', async () => {
+    remplir()
+    await act(async () => {
+      fireEvent.submit(seConnecter())
+      fireEvent.submit(seConnecter())
+    })
+    expect(faux.connexions).toHaveLength(1)
+  })
+
+  it('une exception se dit, et libère le bouton', async () => {
+    faux.connexionLeve = new Error('réseau coupé')
+    remplir()
+    await act(async () => { fireEvent.submit(seConnecter()) })
+    expect(screen.getByText(/La connexion n'a pas pu se faire/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Se connecter' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })

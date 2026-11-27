@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
-import { ADRESSE_DE_RETOUR, MESSAGE_LIEN_DEMANDE, messageErreurDuLien } from '../lib/recuperationMotDePasse'
+import { ADRESSE_DE_RETOUR, MESSAGE_LIEN_DEMANDE, messageErreurDeConnexion, messageErreurDuLien } from '../lib/recuperationMotDePasse'
 
 // `avis` : ce que le lien de l'adresse n'a pas pu faire (expiré, déjà servi…), voir AuthContext. Il ouvre d'emblée la
 // demande d'un nouveau lien, qui est le remède.
@@ -16,13 +16,26 @@ export default function Login({ avis = null }: { avis?: string | null }) {
   // Le verrou de la demande de lien : chaque demande part en e-mail et compte dans le débit du service.
   const verrouLien = useRef(false)
 
+  // Le verrou de la connexion : deux envois du même rendu partaient tous deux, et chacun compte dans le débit du service.
+  const verrouConnexion = useRef(false)
+
+  // L'erreur lue à son code (`messageErreurDeConnexion`) : « incorrect » ne se dit que du refus des identifiants. Une
+  // exception (réseau) libère le bouton et se dit, au lieu de laisser « Connexion… » pour toujours.
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (verrouConnexion.current) return
+    verrouConnexion.current = true
     setError(null)
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    setLoading(false)
-    if (error) setError("Email ou mot de passe incorrect.")
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) setError(messageErreurDeConnexion(error))
+    } catch (x) {
+      setError(messageErreurDeConnexion(x))
+    } finally {
+      verrouConnexion.current = false
+      setLoading(false)
+    }
   }
 
   async function demanderLien(e: FormEvent) {
