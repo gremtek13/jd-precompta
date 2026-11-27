@@ -20,8 +20,9 @@ Ce que le plan Pro apporte, et ce qu'il n'apporte pas :
   tableau de bord (Database, Backups). C'est la sauvegarde qui ne dépend de personne. La restauration
   à un instant donné (PITR) reste une option payante à part, non prise.
 - **Les fichiers du stockage n'y sont pas** : la sauvegarde de l'hébergeur porte les tables, pas les
-  pièces, les packs ni les logos rangés dans les seaux. Les fichiers se gardent par le pack de chaque
-  dossier et par la copie des fichiers sur un support du cabinet (INAL6).
+  pièces, les packs ni les logos rangés dans les seaux. Les fichiers se gardent par la copie des fichiers
+  sur un support du cabinet (INAL6), la seule qui les porte TOUS ; le pack d'un dossier n'en porte qu'une
+  partie (les pièces validées et datées de sa période).
 - **La sauvegarde produite par l'application garde son rôle** : elle restaure UN dossier, à un autre
   instant que la sauvegarde quotidienne, et elle porte les logos des factures. Tenir un rythme écrit :
   une par dossier après chaque séance de saisie, et au moins une par mois.
@@ -38,7 +39,7 @@ Trois choses différentes, trois mécanismes différents. Aucun ne couvre les au
 | Ce qu'il faut | Où c'est | Comment on le récupère |
 |---|---|---|
 | **Les lignes** (dossiers, pièces, mouvements, écritures, factures, catégories, rapprochements), **et le logo des factures** (depuis l'étape A5c2b) | Base Postgres ; le logo, dans le seau `ventes` | Onglet **Informations** d'un dossier → « Télécharger la sauvegarde ». Un fichier JSON par dossier, qui porte aussi, en base64, le fichier de chaque logo des factures qu'une version des paramètres désigne (format 2). |
-| **Les fichiers** (justificatifs, documents, packs, logos des factures) | Supabase Storage — 4 seaux : `pieces` (privé), `packs` (privé), `cabinet-logos` (public), `ventes` (privé, le logo des factures d'un dossier, depuis l'étape A5c1). 148 fichiers, 23 Mo au 18/09/2026 | Export de pack (onglet Informations, « Exporter avant suppression ») ou export global d'un cabinet (écran super-admin) ; le logo des factures, qu'aucun pack ne porte, par la sauvegarde du dossier (ligne au-dessus). |
+| **Les fichiers** (justificatifs, documents, packs, logos des factures) | Supabase Storage — 4 seaux : `pieces` (privé), `packs` (privé), `cabinet-logos` (public), `ventes` (privé, le logo des factures d'un dossier, depuis l'étape A5c1). 148 fichiers, 23 Mo au 18/09/2026 | La copie des fichiers sur un support du cabinet (tableau de bord, INAL6) : un ZIP de tous les dossiers, chaque pièce de tout statut et de tout exercice, sa version lisible, chaque document divers et chaque original repris, relus à leur SHA-256, et un manifeste qui dit les écarts et les manquants ; elle ne compte qu'au manifeste rechargé. Le pack (« Exporter avant suppression ») et l'export global d'un cabinet (écran super-admin) n'en portent qu'une partie : les pièces VALIDÉES et datées, ni celles à valider, ni les sans-date, ni les documents divers (relecture adverse du 27/11/2026). Le logo des factures, par la sauvegarde du dossier (ligne au-dessus). |
 | **Le code** (application, Edge Functions, schéma des migrations) | Dépôt Git GitHub | `git clone`. |
 
 **Une sauvegarde de lignes sans les fichiers rend un dossier où chaque pièce pointe un justificatif
@@ -327,13 +328,28 @@ incompréhensible trois étapes plus loin.
    droits par défaut vérifiés (ci-dessus). Les essais d'après (`rls.sql`, `restauration.sql`) demandent un semis, qui
    n'est pas dans le dépôt : la répétition a versé celui de la réplique mère.
 3. **Les comptes utilisateurs**, avec leurs UUID d'origine (§3.1).
-4. **Le cabinet** — la ligne `cabinets`, et sa charte graphique.
+4. **Le cabinet** — la ligne `cabinets`, et sa charte graphique. Ce qui est au cabinet et non à un
+   dossier n'est dans AUCUNE sauvegarde de l'application (relecture adverse du 27/11/2026), seulement
+   dans celle de l'hébergeur : les modules ouverts (`options_des_cabinets` — un cabinet recréé n'a que
+   le socle, et sans la tenue il ne valide aucun exercice : les rouvrir par l'écran « Modules des
+   cabinets » du super-administrateur AVANT de reprendre le travail ; la restauration d'un dossier, elle,
+   passe), l'équipe (`cabinet_admins`, recréée par l'écran de l'équipe), les règles apprises du cabinet
+   (`tiers_categories_cabinet`, perdues : elles se réapprennent), le modèle de plan (le CSV que porte
+   l'export d'un cabinet), et l'historique des copies des fichiers (`copies_des_fichiers`).
 5. **Les dossiers, un par un** — écran super-admin → « Restaurer une sauvegarde ». L'écran lit le
    fichier, vérifie son empreinte, montre ce qu'il contient, et refuse tout ce qu'il ne peut pas
    faire honnêtement : un fichier abîmé, un dossier déjà présent, un cabinet absent, un lien
    pointant une ligne manquante.
-6. **Les fichiers** — reverser le contenu des packs dans le seau `pieces`, aux chemins que portent
-   les lignes restaurées (`pieces.storage_path`). Depuis la migration `bornes_du_stockage` (ligne
+6. **Les fichiers** — reverser dans le seau `pieces`, aux chemins que portent les lignes restaurées
+   (`pieces.storage_path`, `pieces.lisible_path`, `documents_divers.storage_path`), le contenu de la
+   DERNIÈRE COPIE DES FICHIERS (INAL6) : elle seule porte toutes les pièces, de tout statut, et les
+   documents divers ; un pack ne porte que les pièces validées et datées de sa période. Le ZIP ne nomme
+   jamais un fichier par son chemin de stockage (il porterait le nom déposé) : un fichier « vérifié » du
+   manifeste a pour SHA-256 l'empreinte que sa ligne restaurée garde (`pieces.storage_hash`,
+   `documents_divers.storage_hash`, `fichier_sha256` d'un original repris), et c'est elle qui donne le
+   chemin où le reverser ; la version lisible d'une pièce, sans empreinte en base, porte le nom de sa
+   pièce suivi de `-lisible`. Une pièce déposée après la copie n'est dans aucun ZIP : elle se redemande
+   au client. Depuis la migration `bornes_du_stockage` (ligne
    22.6), rejouée à l'étape 2, le seau n'admet qu'une liste de types et une taille : un fichier
    redéposé par le tableau de bord y part sous le type que lui donne le système qui le dépose, et
    un CSV de Windows (`application/vnd.ms-excel`) ou l'original XML d'une facture reçue d'une
@@ -389,13 +405,19 @@ La restauration ne se croit pas sur parole : elle **relit** le dossier par le ch
 compare à la sauvegarde (`verifierRestauration`). L'écran affiche le verdict. Un compteur d'écriture
 ne mesurerait que ce que le code croit avoir fait.
 
-Quatre écarts sont signalés nommément :
+Cinq écarts sont signalés nommément :
 
 - `ligne_absente` — une ligne de la sauvegarde n'est pas arrivée ;
 - `ligne_en_trop` — la base en contient une que la sauvegarde n'avait pas (restauration rejouée, base
-  pas vide) ;
+  pas vide) ; une catégorie ou une nature COMMUNE à tous les cabinets créée depuis la sauvegarde ne l'est
+  pas (depuis le 27/11/2026) ;
 - `lien_non_repose` — le cas que le compte de lignes ne peut PAS voir : toutes les factures sont là,
   et l'avoir ne désigne plus la facture qu'il annule ;
+- `valeur_changee` (depuis le 27/11/2026) — la ligne est là, mais une de ses colonnes ne redit pas la
+  sauvegarde (`<identifiant> · <colonne>`) : la base l'a changée à la réinsertion (un déclencheur qui pose
+  l'auteur ou l'instant de l'appelant, une valeur par défaut). Ne se comparent pas : les colonnes que la base
+  calcule, le lien de la seconde passe, une ligne partagée du cabinet que la base d'arrivée portait déjà, et
+  une colonne née après la sauvegarde ;
 - `fichier_absent` (depuis l'étape A5c2b) — un logo des factures que la sauvegarde portait ne se relit
   pas dans le seau `ventes`, à son chemin et de son empreinte ; le bilan de la restauration dit pourquoi.
 

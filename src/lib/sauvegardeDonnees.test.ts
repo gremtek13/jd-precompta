@@ -512,6 +512,74 @@ describe('restauration', () => {
     ])
   })
 
+  it('voit une valeur que la base a changée à la réinsertion, la ligne étant là (relecture adverse du 27/11/2026)', async () => {
+    // Le piège que la présence d'une ligne ne peut pas voir : un déclencheur qui pose l'auteur ou l'instant de l'appelant
+    // — le super-administrateur qui restaure, « maintenant » — rend une ligne présente et fausse. Avant la comparaison des
+    // valeurs, le verdict disait « aucun écart ».
+    base.tables.categories = [{ id: 'c1', dossier_id: null, nom: 'Honoraires' }]
+    base.tables.pieces = [
+      { id: 'p1', dossier_id: DOSSIER, categorie_id: 'c1', montant_ttc: 120, valide_par: 'compte-du-cabinet' },
+      { id: 'p2', dossier_id: DOSSIER, categorie_id: null, montant_ttc: 45, valide_par: null },
+    ]
+    base.tables.piece_textes_ocr = [{ piece_id: 'p1', dossier_id: DOSSIER, texte: 'Facture', texte_md5: 'ancien-calcul' }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    const categoriesAvant = base.tables.categories
+    baseVide()
+    base.tables.categories = categoriesAvant
+    await restaurerSauvegarde(sauvegarde)
+
+    // La base d'arrivée a « réécrit » : l'auteur devenu le super-administrateur, un montant changé, une colonne née après la
+    // sauvegarde (sa valeur par défaut), l'empreinte recalculée, et la catégorie partagée renommée depuis.
+    const p1 = base.tables.pieces.find((p) => p.id === 'p1')!
+    p1.valide_par = 'super-administrateur'
+    p1.colonne_neuve = 'défaut'
+    base.tables.pieces.find((p) => p.id === 'p2')!.montant_ttc = 0
+    base.tables.piece_textes_ocr[0].texte_md5 = 'recalculée'
+    // Une ligne neuve, pas la même mutée : la catégorie conservée est l'objet même que la sauvegarde porte.
+    base.tables.categories = [{ ...base.tables.categories[0], nom: 'Honoraires (renommée)' }]
+
+    expect(await verifierRestauration(sauvegarde)).toEqual([
+      { table: 'pieces', motif: 'valeur_changee', identite: 'p1 · valide_par' },
+      { table: 'pieces', motif: 'valeur_changee', identite: 'p2 · montant_ttc' },
+    ])
+  })
+
+  it('ne dit pas « en trop » une catégorie commune que la base d’arrivée porte et que la sauvegarde n’avait pas', async () => {
+    // La relecture lit les catégories du dossier ET toutes les communes (`dossier_id` nul), celles de tous les cabinets :
+    // une commune créée depuis la sauvegarde (le catalogue de la plateforme grandit) faisait dire « Restauration terminée
+    // mais INCOMPLÈTE » d'un dossier restauré à l'identique. Une ligne du dossier en trop, elle, se dit toujours.
+    base.tables.categories = [{ id: 'c1', dossier_id: null, nom: 'Honoraires' }]
+    base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER, categorie_id: 'c1', montant_ttc: 120 }]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    const categoriesAvant = base.tables.categories
+    baseVide()
+    base.tables.categories = [...categoriesAvant, { id: 'c-neuve', dossier_id: null, nom: 'Téléphonie' }]
+    await restaurerSauvegarde(sauvegarde)
+    expect(await verifierRestauration(sauvegarde)).toEqual([])
+
+    base.tables.categories.push({ id: 'c-du-dossier', dossier_id: DOSSIER, nom: 'Locale' })
+    expect(await verifierRestauration(sauvegarde)).toEqual([
+      { table: 'categories', motif: 'ligne_en_trop', identite: 'c-du-dossier' },
+    ])
+  })
+
+  it('ne compare pas le lien de la seconde passe deux fois : `lien_non_repose` seul le dit', async () => {
+    base.tables.factures_emises = [
+      { id: 'f2', dossier_id: DOSSIER, numero: 2, facture_origine_id: 'f1' },
+      { id: 'f1', dossier_id: DOSSIER, numero: 1, facture_origine_id: null },
+    ]
+    const sauvegarde = await exporterDossier(DOSSIER)
+    baseVide()
+    base.tables.factures_emises = [
+      { id: 'f2', dossier_id: DOSSIER, numero: 2, facture_origine_id: null },
+      { id: 'f1', dossier_id: DOSSIER, numero: 1, facture_origine_id: null },
+    ]
+    base.tables.dossiers = [{ id: DOSSIER, nom: 'Cabinet Martin', cabinet_id: CABINET }]
+    expect(await verifierRestauration(sauvegarde)).toEqual([
+      { table: 'factures_emises', motif: 'lien_non_repose', identite: 'f2' },
+    ])
+  })
+
   it('refuse un lien perdu au lieu de l’effacer pour passer', async () => {
     // Le refus central. `lignes_bancaires.piece_id` accepte NULL : y écrire NULL ferait aboutir la
     // restauration en ayant défait le rapprochement bancaire, sans une alerte.

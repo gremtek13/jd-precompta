@@ -24,6 +24,7 @@ import {
   sansAnciennesNotes,
   tablesSansChemin,
   violationsOrdre,
+  COLONNES_GENEREES,
   ORDRE_RESTAURATION,
   PARENTS_HORS_PLAN_VOULUS,
   type CheminDossier,
@@ -340,8 +341,42 @@ export interface ResultatRestauration {
  */
 export interface EcartRestauration {
   table: string
-  motif: 'ligne_absente' | 'ligne_en_trop' | 'lien_non_repose' | 'fichier_absent'
+  motif: 'ligne_absente' | 'ligne_en_trop' | 'lien_non_repose' | 'valeur_changee' | 'fichier_absent'
   identite: string
+}
+
+// UNE LIGNE PRÉSENTE N'EST PAS UNE LIGNE RESTAURÉE (relecture adverse du 27/11/2026). Le verdict ne comparait que la
+// PRÉSENCE de chaque ligne, et le lien que la seconde passe repose : une valeur que la base aurait changée à la réinsertion —
+// un déclencheur qui pose l'auteur ou l'instant de l'appelant (le super-administrateur qui restaure, « maintenant »), une
+// colonne qu'une garde recalcule, une valeur par défaut prise à la place de la sauvegardée — passait au vert, la ligne
+// étant là. C'est précisément ce que les gardes des tables récentes évitent une à une (`is_super_admin()` : la ligne
+// « telle qu'elle a été écrite ») ; rien ne vérifiait qu'elles l'évitent toutes, ni que la prochaine le fera.
+//
+// D'où la comparaison, colonne par colonne, de chaque ligne attendue à la ligne relue, sur les colonnes que la SAUVEGARDE
+// porte (une colonne née après elle prend sa valeur par défaut : ce n'est pas un écart). Ne se comparent pas : les colonnes
+// que la base calcule (`COLONNES_GENEREES`, recalculées, et une sauvegarde d'avant un changement de leur calcul les porte
+// autrement) ; le lien de la seconde passe (`lien_non_repose` le dit déjà) ; une ligne PARTAGÉE du cabinet, que la
+// restauration laisse telle que la base d'arrivée la porte, par décision (voir `restaurerSauvegarde`). La valeur se compare
+// sous sa forme JSON : les deux lignes viennent de PostgREST, la sauvegarde et la relecture, par le même `select('*')`.
+export function valeursChangees(
+  table: string,
+  attendues: ReadonlyMap<string, Record<string, unknown>>,
+  trouvees: ReadonlyMap<string, Record<string, unknown>>,
+  horsComparaison: ReadonlySet<string> = new Set(),
+): EcartRestauration[] {
+  const generees = new Set(COLONNES_GENEREES[table] ?? [])
+  const ecarts: EcartRestauration[] = []
+  for (const [identite, attendue] of attendues) {
+    const trouvee = trouvees.get(identite)
+    if (!trouvee || estLignePartagee(table, attendue)) continue
+    for (const colonne of Object.keys(attendue)) {
+      if (generees.has(colonne) || horsComparaison.has(colonne) || attendue[colonne] === undefined) continue
+      if (JSON.stringify(attendue[colonne] ?? null) !== JSON.stringify(trouvee[colonne] ?? null)) {
+        ecarts.push({ table, motif: 'valeur_changee', identite: `${identite} · ${colonne}` })
+      }
+    }
+  }
+  return ecarts
 }
 
 // LES COLONNES QU'UNE LIGNE NOMME (défaut relevé le 11/10/2026). Pour un lot, postgrest-js passe à PostgREST l'UNION des
@@ -608,10 +643,14 @@ export async function verifierRestauration(
     for (const identite of attendues.keys()) {
       if (!trouvees.has(identite)) ecarts.push({ table, motif: 'ligne_absente', identite })
     }
-    for (const identite of trouvees.keys()) {
-      if (!attendues.has(identite)) ecarts.push({ table, motif: 'ligne_en_trop', identite })
+    // Une ligne PARTAGÉE (une catégorie, une nature commune à tous les cabinets, `dossier_id` nul) que la sauvegarde n'avait
+    // pas n'est pas « en trop » : la relecture lit toutes les communes de la base d'arrivée, et le catalogue a pu grandir
+    // depuis la sauvegarde ; la restauration n'en a écrit aucune (relecture adverse du 27/11/2026).
+    for (const [identite, ligne] of trouvees) {
+      if (!attendues.has(identite) && !estLignePartagee(table, ligne)) ecarts.push({ table, motif: 'ligne_en_trop', identite })
     }
-    for (const passe of auto.filter((p) => p.table === table)) {
+    const passes = auto.filter((p) => p.table === table)
+    for (const passe of passes) {
       for (const { id, valeur } of passe.valeurs) {
         const ligne = trouvees.get(identiteRestauree(table, { id }))
         if (ligne && ligne[passe.colonne] !== valeur) {
@@ -619,6 +658,7 @@ export async function verifierRestauration(
         }
       }
     }
+    ecarts.push(...valeursChangees(table, attendues, trouvees, new Set(passes.map((p) => p.colonne))))
   }
   // Les fichiers des logos (étape A5c2b) : chacun de ceux que la sauvegarde porte doit se relire dans le seau, à son chemin,
   // de la même empreinte — la relecture les vérifie comme la sauvegarde les a vérifiés (`lireLeLogo`).
