@@ -566,8 +566,11 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   `PAIEMENTS_ASSURANCE_MALADIE_PREVUS` et `ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES` levés (les écrans NOE4 et NOE5b ouverts), le
   facturé au plan de sauvegarde seul (`FACTURES_ASSURANCE_MALADIE_EN_BASE` levé, l'écran BOR4 ouvert le même jour, `FACTURES_ASSURANCE_MALADIE_PREVUES`
   levé) ; l'écran des modules dit avant le clic le refus de fermer « Paiements de l'assurance maladie » qu'un paiement associé retient ; restent
-  BOR6 et BOR7, NOE6 à NOE8, le lecteur du PDF des paiements, les essais et `rls.sql` rejoués en production, un premier import
-  réel** → « NOE3, NOE5 ET BOR3 EN PRODUCTION ». NOE3 (`paiements_assurance_maladie`) ; NOE4, l'écran (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
+  BOR7, NOE7 (attend la forme de l'export et de l'état, NOE7-Q1), de NOE8 les essais et `rls.sql` rejoués en production, le gabarit
+  du PDF des paiements (attend une page, BOR6-Q2), un premier import réel** → « NOE3, NOE5 ET BOR3 EN PRODUCTION ». Le rangement de
+  l'état des paiements (27/11/2026, `lib/etatDesPaiementsAssuranceMaladie.ts`, pur, sans appelant) : un état par journée et par
+  organisme, rangé ou écarté ENTIER (total imprimé confronté ; aide en `forfait`, indu en régularisation ; versement sans facture
+  d'une complémentaire écarté), sa sortie admise par `refusDeLImport` → « LE RANGEMENT DE L'ÉTAT DES PAIEMENTS ». NOE3 (`paiements_assurance_maladie`) ; NOE4, l'écran (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
   section de l'onglet Banque et de « Ma banque » : en-têtes et genres seuls, réglage vide, agrégats avant le clic, la phrase de
   NOE3-Q1 ; offerte, avec l'association de NOE5b, sur un code NAF de la division 86 ou de la liste fermée
   (47.73Z, 47.74Z, 47.78A, 49.32Z ; NOE4Q1-Q1 (B)), et, gestes compris, dès qu'un import du dossier est lu, quel que soit

@@ -319,3 +319,21 @@ retrait d'un import associé.
   `retirer_import_assurance_maladie`, que l'amendement ne touche pas ; ses deux essais passent tels quels. Son module ne forme plus
   de paire quand deux parts complémentaires nommées partagent une journée et une caisse (à égalité, rien de proposé). La section
   P7 de `rls.sql` prend désormais sa table (sans elle, NOE5 appliquée mettait 3bis+ en faute).
+
+## 13. Le 27/11/2026 : le rangement de l'état des paiements, NOE7 et NOE8
+
+- **Le lecteur du PDF des paiements, première partie** (`src/lib/etatDesPaiementsAssuranceMaladie.ts`, pur, sans appelant) : ce
+  qu'un gabarit lira d'un état « Paiement Noemie par journée comptable » — la journée, l'organisme payeur (une caisse sous un régime
+  de la liste fermée, ou une complémentaire sous son numéro ou « non dit »), le total imprimé, les lignes (part, facture ou non,
+  montant signé) — se range aux huit clés de l'import selon le § 12 : le total d'une facture paie sa part ; une somme négative est
+  une régularisation de sa part ; une aide, un `forfait`. Un versement sans facture d'une complémentaire, que la base ne range pas,
+  écarte son état. Tout doute écarte l'état ENTIER sous son rang et sa raison ; un total imprimé que les lignes ne font pas, aussi ;
+  sans total, l'état se compte à part pour que l'écran dise que rien ne confirme la lecture. Les rejets sont « non dits ».
+- **Reste du lecteur** : le gabarit de la page (ses ancres, ses colonnes, la forme imprimée de l'organisme et des montants), qui
+  attend une page rendue anonyme (BOR6-Q2 (A)), puis l'écran (un PDF à côté du CSV dans la section de NOE4) et le refus de l'état
+  au dépôt (NOE7).
+- **NOE7** reste en attente de la forme : ni les en-têtes de l'export CSV (NOE1) ni la page de l'état ne sont connus ; la question
+  NOE7-Q1 demande s'il faut attendre ou reconnaître, dès aujourd'hui, un fichier par les numéros d'assuré qu'il porte.
+- **NOE8** : la migration, les drapeaux et les trois contrôles sont faits (20/11/2026) ; restent les essais
+  `paiementsAssuranceMaladie.sql`, `associationPaiementsAssuranceMaladie.sql`, `facturesAssuranceMaladie.sql` et les blocs AM, FM et
+  P7 de `rls.sql` rejoués en production, et un premier import réel.
