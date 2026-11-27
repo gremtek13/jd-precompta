@@ -117,7 +117,7 @@ L'expert-comptable ne se sollicite plus : ce qui manque se cherche dans les sour
   toute migration : y ajouter son fichier et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle,
   inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock), v63 depuis le 24/11/2026, plafond de coût mensuel par cabinet ; aucun
+  - `agent-comptable` — assistant IA (Bedrock), v64 depuis le 27/11/2026, plafond de coût mensuel par cabinet ; aucun
     nom de cabinet (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant
     un dossier basculé, une garde provisoire (VF9a), que VF9c a levée — elle ne ferme plus qu'une source des ventes
     illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES OUTILS
@@ -792,7 +792,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   11/11/2026), huit lots ; MCB1, la base (`comptes_bancaires`, `compte_bancaire_id`), en production depuis le 12/11/2026 avec
   MCB2, MCB4 et MCB5 (les dix fonctions), la table au plan de sauvegarde (`COMPTES_BANCAIRES_EN_BASE`) ; MCB5g, l'ouverture
   éclatée (258, collée) et son filet à la validation (259, par l'outil), en production le 27/11/2026, `COMPTES_BANCAIRES_PREVUS`
-  levé (les écrans, la sauvegarde et la copie de l'assistant, à redéployer) → « MCB5G EN PRODUCTION (258, 259) », « LA SÉANCE DE
+  levé (les écrans, la sauvegarde et la copie de l'assistant, redéployé le 27/11/2026, v64, au commit `3081f222`) → « MCB5G EN PRODUCTION (258, 259) », « LA SÉANCE DE
   COLLAGE DU 12/11/2026 » ; MCB2, l'import par compte
   (`lib/importParCompte.ts` : aucun compte par défaut dès deux, dédoublonnage, recouvrement et suite des soldes par compte,
   un OFX confronté à la fin de son identifiant, une seconde migration), derrière le même drapeau ; MCB3, le rapprochement
