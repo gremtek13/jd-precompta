@@ -175,7 +175,9 @@ export function ceQueTuPeuxFaire(toutes: readonly Pick<PieceJointeEcarteeDuClien
       : (bordereaux === 1 ? 'Celle qui a la forme d’un bordereau de télétransmission' : 'Celles qui ont la forme d’un bordereau de télétransmission')
     const ne = bordereaux === 1 ? 'ne la renvoie pas par e-mail, elle porte' : 'ne les renvoie pas par e-mail, elles portent'
     phrases.push(`${debut} : ${ne} des noms de patients. Pour en importer les totaux, ouvre « Ma banque », section « Facturé à `
-      + 'l’assurance maladie » : le fichier y est lu sur ton appareil sans être envoyé ; ou remets-le à ton cabinet de la main à la main.')
+      + 'l’assurance maladie » : le fichier y est lu sur ton appareil sans être envoyé ; ou remets-le à ton cabinet de la main à la main. '
+      // La consigne aux clients (BOR6T-Q1 (A)) : une photo passerait par la lecture avant d'être refusée.
+      + 'Un bordereau ne se photographie pas : enregistre-le en PDF depuis ton logiciel de télétransmission.')
   }
   if (formats > 0) {
     phrases.push('Une pièce jointe qui n’était pas une pièce — une signature électronique, une invitation… — n’a pas à être renvoyée.')

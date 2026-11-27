@@ -327,7 +327,8 @@ describe('le bordereau de télétransmission (BOR6) : lu, dit, et jamais à renv
   const BORDEREAU = () => ligne({ raison: 'bordereau' })
   const PHRASE_UNE = 'Elle a la forme d’un bordereau de télétransmission : ne la renvoie pas par e-mail, elle porte des noms de patients. '
     + 'Pour en importer les totaux, ouvre « Ma banque », section « Facturé à l’assurance maladie » : le fichier y est lu sur ton appareil '
-    + 'sans être envoyé ; ou remets-le à ton cabinet de la main à la main.'
+    + 'sans être envoyé ; ou remets-le à ton cabinet de la main à la main. '
+    + 'Un bordereau ne se photographie pas : enregistre-le en PDF depuis ton logiciel de télétransmission.'
 
   it('une ligne de cette raison se lit — elle faisait rejeter toute la lecture avant BOR6', () => {
     expect(lignesDuClient([{ jour: '2026-11-20', raison: 'bordereau', octets: 4120 }, { jour: '2026-11-19', raison: 'format', octets: 1 }]))

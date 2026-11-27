@@ -4,7 +4,9 @@ import { planDuMouvement } from '../../lib/banqueDuMouvement'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, aujourdHuiAParis, formatDate, formatMoney, slugify } from '../../lib/format'
-import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
+import { fichierDejaPresent, hashFichier } from '../../lib/extraction'
+import { lireAvantLeStockage } from '../../lib/lectureAuDepot'
+import { REFUS_D_UN_BORDEREAU_LU } from '../../lib/refusDesBordereaux'
 import type { ANouveau, CotisationDeclaree, DocumentDivers, EcritureBrouillon, LigneBancaire } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -490,9 +492,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
 
   // Upload direct depuis cet onglet, sans passer par Documents — pratique pour les vieux appels de
   // cotisation (années précédentes) qu'on n'a pas forcément fait passer par un import en masse.
-  // Catégorie forcée à "cotisation" (contexte de l'onglet). Le document est créé tout de suite ;
-  // l'extraction (jusqu'à 50s sur un multi-pages) tourne ensuite en arrière-plan sans bloquer la suite
-  // (un autre dépôt, changer d'onglet...) — un avis d'appel réel a un échéancier de plusieurs
+  // Catégorie forcée à "cotisation" (contexte de l'onglet). L'extraction (jusqu'à 50s sur un multi-pages) se fait AVANT
+  // l'envoi depuis le 27/11/2026 (BOR6 : un bordereau reconnu à sa lecture ne se dépose pas) — un avis d'appel réel a un échéancier de plusieurs
   // mensualités (pas "un montant + une date"), proposées ci-dessous dès qu'elles arrivent, jamais
   // créées automatiquement sans confirmation.
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
@@ -517,6 +518,15 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
         setError('Ce fichier est déjà présent dans ce dossier (Pièces ou Documents) — pas réajouté.')
         return
       }
+      // LA LECTURE AVANT LE STOCKAGE (BOR6, troisième partie, ce qui restait, 27/11/2026) : une photo d'un bordereau de
+      // télétransmission, ou un PDF numérisé, ne se reconnaît qu'à la lecture d'extract-piece ; reconnu, rien ne part. La même
+      // lecture propose ensuite les échéances : elle ne tourne plus en arrière-plan après le dépôt, et le dépôt l'attend.
+      setAnalyseEnCours(true)
+      const lecture = await lireAvantLeStockage(file).finally(() => setAnalyseEnCours(false))
+      if (lecture.etat === 'bordereau') {
+        setError(`Ce fichier n’est pas déposé : ${REFUS_D_UN_BORDEREAU_LU}.`)
+        return
+      }
       const path = `${dossierId}/documents/${Date.now()}-${slugify(file.name)}`
       const { error: uploadError } = await supabase.storage.from('pieces').upload(path, pret.corps)
       if (uploadError) throw uploadError
@@ -529,23 +539,16 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
       })
       if (insertError) throw insertError
       load()
-      setAnalyseEnCours(true)
-
-      extractPiece(file, file.name)
-        .catch(() => null)
-        .then((extraction) => {
-          setEcheancesProposees(extraction?.lecture_cotisation.echeances ?? [])
-          // Toujours affiché (pas seulement à zéro résultat) : un document peut manquer une partie de
-          // ses échéances (ex. l'année suivante) alors que le reste a bien été trouvé — invisible
-          // autrement.
-          setDiagCotisation(extraction?.lecture_cotisation._diag_cotisation)
-        })
-        .finally(() => setAnalyseEnCours(false))
+      const extraction = lecture.etat === 'lue' ? lecture.extraction : null
+      setEcheancesProposees(extraction?.lecture_cotisation.echeances ?? [])
+      // Toujours affiché (pas seulement à zéro résultat) : un document peut manquer une partie de
+      // ses échéances (ex. l'année suivante) alors que le reste a bien été trouvé — invisible
+      // autrement.
+      setDiagCotisation(extraction?.lecture_cotisation._diag_cotisation)
     } catch (err) {
       setError(messageErreur(err))
     } finally {
-      // Relâché à la fin de l'ENVOI, pas de la lecture en arrière-plan : déposer un autre avis pendant qu'elle tourne
-      // reste permis (voir `analyseEnCours`), et le même fichier, déjà en base, serait reconnu par son empreinte.
+      // Relâché à la fin du dépôt, lecture comprise : depuis le 27/11/2026, elle précède l'envoi (un bordereau ne part pas).
       depotEnCours.current = false
       setUploading(false)
       e.target.value = ''

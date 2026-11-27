@@ -33,6 +33,7 @@ afterEach(() => { drapeau.leve = null })
 function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
   return {
       notesDeFrais: { etat: 'sans_objet' as const },
+      bordereauxDeposes: null,
     piecesValidees: [], piecesAValider: [], cotisations: [], lignes: [], relevesIncoherents: [], controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [], immobilisations: [],
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],
@@ -1234,5 +1235,27 @@ describe('pointsDeLaChecklist — le justificatif d’une note de frais à range
     expect(point(donnees({ notesDeFrais: notesDeFrais(true) }))?.detail).toContain('repas.pdf')
     expect(point(donnees({ notesDeFrais: notesDeFrais(false) }))?.nb).toBe(0)
     expect(point(donnees({}))?.nb).toBe(0)
+  })
+})
+
+// BOR6T-Q2 (A) : les bordereaux déjà déposés, en attention, jamais une erreur ; zéro tant que la recherche n'est pas faite ou
+// qu'elle n'a pas tout lu ; le détail ne nomme aucun fichier.
+describe('pointsDeLaChecklist — les bordereaux de télétransmission déjà déposés (BOR6T-Q2)', () => {
+  const point = (d: DonneesDeLaChecklist) =>
+    pointsDeLaChecklist(d, CONTEXTE).tousLesPointsATraiter.find((p) => p.id === 'bordereaux-deposes')
+  const trouves = (types: ('piece' | 'document')[]) => ({
+    etat: 'trouves' as const, dossierId: 'd',
+    bordereaux: types.map((type, i) => ({ type, id: `b${i}`, deposeLe: '2026-01-05T10:00:00Z' })),
+  })
+
+  it('compte une recherche finie, en attention, vers la pièce ou le document', () => {
+    expect(point(donnees({ bordereauxDeposes: trouves(['document', 'piece']) }))).toMatchObject({ nb: 2, severite: 'attention', cible: 'pieces' })
+    expect(point(donnees({ bordereauxDeposes: trouves(['document']) }))).toMatchObject({ nb: 1, cible: 'documents' })
+    expect(point(donnees({ bordereauxDeposes: trouves(['piece']) }))?.detail).not.toMatch(/\.pdf|\.jpg/)
+  })
+
+  it('se tait sans recherche et sur une recherche qui n’a pas tout lu', () => {
+    expect(point(donnees({}))?.nb).toBe(0)
+    expect(point(donnees({ bordereauxDeposes: { etat: 'incomplete', dossierId: 'd', motif: 'coupée' } }))?.nb).toBe(0)
   })
 })

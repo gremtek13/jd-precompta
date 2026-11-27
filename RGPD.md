@@ -777,7 +777,12 @@ journal, ni dans une Edge Function, ni dans la base. Ce qu'elle ne tient pas : l
 hors de l'application — ce qu'ils deviennent après l'import est laissé au jugement du cabinet, sans consigne (BOR3RGPD-Q2 (B),
 décision du cabinet du 20/11/2026, contre la recommandation). **La consigne aux clients** : un
 bordereau ne se dépose jamais comme pièce et ne s'envoie jamais par e-mail ; il s'importe depuis l'espace du praticien, ou par
-le cabinet, sur place ou remis de la main à la main.
+le cabinet, sur place ou remis de la main à la main. **Il ne se photographie pas** (BOR6T-Q1 (A), décision du cabinet du
+27/11/2026) : il s'enregistre en PDF depuis le logiciel de télétransmission et s'importe dans « Ma banque » — une photo, elle,
+passerait par Textract avant d'être refusée. Les refus du dépôt, l'écart d'une pièce jointe et la section « Facturé à
+l'assurance maladie » de « Ma banque » le disent au praticien. **Un bordereau déjà au dossier** (BOR6T-Q2 (A)) : la Vue
+d'ensemble du cabinet, d'un clic, liste les pièces et les documents dont le texte lu a la forme d'un bordereau, par leur seule
+date de dépôt ; le texte se juge dans le navigateur et n'en sort pas, et la suppression reste un geste confirmé du cabinet.
 
 **Pour mémoire, si un hébergement HDS devenait un jour nécessaire** (recherché le 24/09/2026) :
 411 hébergeurs certifiés en mai 2026, liste tenue par l'Agence du Numérique en Santé ; depuis le

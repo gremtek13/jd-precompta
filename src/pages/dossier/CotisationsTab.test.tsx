@@ -53,6 +53,8 @@ const faux = vi.hoisted(() => ({
   porteEnvoi: null as Promise<void> | null,
   erreurEnvoi: null as { message: string } | null,
   extractions: 0,
+  // La lecture de l'avis reconnaît un bordereau de télétransmission (BOR6, troisième partie) : rien ne se dépose.
+  bordereau: false,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -154,8 +156,13 @@ vi.mock('../../lib/supabase', async () => {
 
 // Doublés pour ne rien facturer : ce test porte sur l'écran, jamais sur l'OCR.
 vi.mock('../../lib/extraction', () => ({
+  // La lecture avant le stockage (BOR6, troisième partie) : Textract lit l'avis, et l'erreur d'un bordereau porte son code.
+  CODE_D_UN_BORDEREAU_LU: 'bordereau',
+  textractPeutLire: () => true,
+  pdfTropLourdPourEtreLu: () => false,
   extractPiece: () => {
     faux.extractions += 1
+    if (faux.bordereau) return Promise.reject(Object.assign(new Error('a la forme d’un bordereau'), { code: 'bordereau' }))
     return Promise.resolve({ lecture_cotisation: { echeances: faux.echeancesLues } })
   },
   fichierDejaPresent: () => Promise.resolve(false),
@@ -220,6 +227,7 @@ beforeEach(() => {
   faux.porteEnvoi = null
   faux.erreurEnvoi = null
   faux.extractions = 0
+  faux.bordereau = false
 })
 
 afterEach(() => {
@@ -974,7 +982,9 @@ describe('CotisationsTab — le verrou du dépôt d’un avis d’appel', () => 
     await act(async () => { fireEvent.change(champDeDepot(), { target: { files: [avis()] } }) })
 
     expect(faux.envois).toHaveLength(2)
-    await waitFor(() => expect(faux.extractions).toBe(1))
+    // La lecture PRÉCÈDE l'envoi depuis le 27/11/2026 (BOR6, troisième partie) : chaque dépôt lit son avis, même celui que le
+    // stockage refuse ensuite.
+    await waitFor(() => expect(faux.extractions).toBe(2))
   })
 })
 
@@ -1004,6 +1014,21 @@ describe('CotisationsTab — les bornes du seau', () => {
     await screen.findByText(/Ajouter une échéance/)
     await act(async () => { fireEvent.change(champDeDepot(), { target: { files: [new File(['jpeg'], 'avis.jpg', { type: '' })] } }) })
     expect(faux.typesEnvoyes).toEqual(['image/jpeg'])
+  })
+})
+
+// BOR6, troisième partie, ce qui restait (27/11/2026) : la lecture de l'avis venait après son dépôt, et un bordereau reconnu par
+// elle restait au dossier. Elle le précède désormais : reconnu, rien ne part, et le refus se dit.
+describe('CotisationsTab — un bordereau reconnu à la lecture ne se dépose pas', () => {
+  const champDeDepot = () => document.querySelector('input[type=file][accept=".pdf,.jpg,.jpeg,.png"]') as HTMLInputElement
+  it('lit avant l’envoi, n’envoie rien, et dit le refus', async () => {
+    faux.bordereau = true
+    monter()
+    await screen.findByText(/Ajouter une échéance/)
+    await act(async () => { fireEvent.change(champDeDepot(), { target: { files: [new File(['jpeg'], 'photo.jpg', { type: '' })] } }) })
+    expect(faux.extractions).toBe(1)
+    expect(faux.typesEnvoyes).toEqual([])
+    expect(await screen.findByText(/Ce fichier n’est pas déposé : ce document a la forme d’un bordereau/)).toBeDefined()
   })
 })
 

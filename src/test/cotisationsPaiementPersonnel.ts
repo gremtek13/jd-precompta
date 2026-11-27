@@ -158,6 +158,10 @@ export function supabaseFaux() {
 // Doublée pour ne rien facturer : ces tests portent sur l'écran, jamais sur l'OCR.
 export function extractionFausse() {
   return {
+    // La lecture avant le stockage (BOR6, troisième partie) : Textract lit l'avis, et le code d'un bordereau existe.
+    CODE_D_UN_BORDEREAU_LU: 'bordereau',
+    textractPeutLire: () => true,
+    pdfTropLourdPourEtreLu: () => false,
     extractPiece: () => Promise.resolve({ lecture_cotisation: { echeances: faux.echeancesLues } }),
     fichierDejaPresent: () => Promise.resolve(false),
     hashFichier: () => Promise.resolve('empreinte-de-test'),

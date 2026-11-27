@@ -212,6 +212,8 @@ export async function lireLaChecklist(
   const notesDeFrais = await lireLesNotesDeFraisDesControles(dossierId)
   return {
     notesDeFrais,
+    // Les bordereaux déjà déposés (BOR6T-Q2 (A)) ne se cherchent qu'au clic du cabinet, dans la Vue d'ensemble : jamais ici.
+    bordereauxDeposes: null,
     piecesValidees: lectureValidees.lignes,
     piecesAValider: lectureAValider.lignes,
     cotisations: lectureCotisations.lignes,

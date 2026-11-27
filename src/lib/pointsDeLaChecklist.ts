@@ -57,6 +57,10 @@ import {
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import { sansLesEcartsDeChange } from './ecartsDeReglement'
 import type { DossierTab } from './ongletsDossier'
+import {
+  cibleDesBordereaux, DETAIL_DES_BORDEREAUX_DEPOSES, LIBELLE_BORDEREAUX_DEPOSES, nombreDeBordereauxDeposes,
+  type RechercheDesBordereaux,
+} from './bordereauxDeposes'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, type ExerciceAReclamer } from './resteAEnvoyer'
 import type { LectureDesVentesDuReleve } from './mouvementsDesVentes'
 import { detailDesEncaissementsSansMouvement, ventesDeLaChecklist } from './ventesDeLaChecklist'
@@ -201,6 +205,10 @@ export interface DonneesDeLaChecklist {
   // LES NOTES DE FRAIS DU CLIENT (lot L3, L3-Q3 (A) ; lib/notesDeFraisEnComptabilite.ts) : sans objet le drapeau
   // `NOTES_DE_FRAIS_PREVUES` baissé (aucun point de plus), ou les lectures de la section. Sans valeur par défaut.
   notesDeFrais: NotesDeFraisDesControles
+  // LES BORDEREAUX DE TÉLÉTRANSMISSION DÉJÀ DÉPOSÉS (BOR6T-Q2 (A) ; lib/bordereauxDeposes.ts) : la recherche du cabinet, faite
+  // d'un clic dans la Vue d'ensemble, pour CE dossier — nulle tant qu'elle n'est pas faite (la lecture de la Vue d'ensemble et
+  // la révision ne la font pas : aucun point de plus), muette lue en partie. Sans valeur par défaut.
+  bordereauxDeposes: RechercheDesBordereaux | null
 }
 
 /** Ce que l'écran sait du dossier et du moment, lu au rendu. */
@@ -1120,6 +1128,13 @@ export function pointsDeLaChecklist(d: DonneesDeLaChecklist, c: ContexteDeLaChec
       id: 'assurance-maladie-exercices-en-ecart', label: LIBELLE_EXERCICES_EN_ECART, action: 'Voir ces crédits',
       nb: nombresAssuranceMaladie.exercicesEnEcart, cible: 'banque', severite: 'attention',
       detail: controlesAM ? detailDesExercicesEnEcart(controlesAM) : undefined,
+    },
+    // LES BORDEREAUX DE TÉLÉTRANSMISSION DÉJÀ DÉPOSÉS (BOR6T-Q2 (A)) : une attention, jamais un préalable de la validation, hors du
+    // module de l'assurance maladie (lib/bordereauxDeposes.ts dit pourquoi). Zéro tant que la recherche n'est pas faite.
+    {
+      id: 'bordereaux-deposes', label: LIBELLE_BORDEREAUX_DEPOSES, action: 'Voir les pièces',
+      nb: nombreDeBordereauxDeposes(d.bordereauxDeposes), cible: cibleDesBordereaux(d.bordereauxDeposes), severite: 'attention',
+      detail: DETAIL_DES_BORDEREAUX_DEPOSES,
     },
     {
       id: 'amortissements-repris-sous-un-autre-numero', label: 'compte(s) d’amortissement de la balance reprise sous un autre numéro que celui de l’application — non confronté(s) au registre',

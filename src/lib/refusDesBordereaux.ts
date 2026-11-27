@@ -56,13 +56,31 @@ export const REFUS_D_UN_BORDEREAU_LU =
   + 'depuis le PDF du bordereau, tel que le logiciel de télétransmission l’enregistre, dans la section « Facturé à l’assurance '
   + 'maladie » de l’onglet Banque'
 
+/**
+ * LA CONSIGNE AUX CLIENTS (BOR6T-Q1 (A), réponse du cabinet du 27/11/2026 ; RGPD.md § 8.7) : une photo d'un bordereau passe par
+ * la lecture (Textract) avant d'être refusée — le reste du risque, dit au § 8.7 —, d'où la consigne de ne pas le photographier.
+ * Le PDF que le logiciel de télétransmission enregistre porte son texte : il se lit dans le navigateur, sans partir, dans « Ma
+ * banque ». Aux mots du client (le tutoiement, `MOTS_DU_CABINET`), sans majuscule ni point final : elle se place dans une phrase.
+ */
+export const CONSIGNE_DU_BORDEREAU_AU_CLIENT = 'un bordereau ne se photographie pas : il s’enregistre en PDF depuis ton logiciel '
+  + 'de télétransmission, puis s’importe dans « Ma banque », section « Facturé à l’assurance maladie »'
+
+/**
+ * LE FICHIER D'UNE PIÈCE DÉJÀ AU DOSSIER, RECONNU À SA LECTURE (la fiche d'une pièce, « Extraire » sur le fichier attaché ;
+ * BOR6T-Q2 (A)) : rien n'en est rempli, et la phrase dit le geste — la suppression, confirmée, au clic du cabinet. Au cabinet.
+ */
+export const BORDEREAU_DEJA_AU_DOSSIER = 'Le fichier de cette pièce a la forme d’un bordereau de télétransmission (reconnu à sa '
+  + 'lecture) : il porte des noms de patients, que le dossier n’a pas à garder. Rien n’en est rempli ; « Supprimer » retire la '
+  + 'pièce, après confirmation. Ses totaux s’importent dans la section « Facturé à l’assurance maladie » de l’onglet Banque, '
+  + 'depuis le PDF du logiciel de télétransmission.'
+
 export const REFUS_D_UN_BORDEREAU_LU_AU_CLIENT =
   'ce document a la forme d’un bordereau de télétransmission (reconnu à sa lecture) : il porte des noms de patients, il ne se '
-  + 'dépose donc pas ici, et rien n’en a été gardé ; pour en importer les totaux, enregistre le bordereau en PDF depuis ton '
-  + 'logiciel de télétransmission, puis ouvre « Ma banque », section « Facturé à l’assurance maladie »'
+  + `dépose donc pas ici, et rien n’en a été gardé ; ${CONSIGNE_DU_BORDEREAU_AU_CLIENT}`
 
 /** Le même refus, aux mots du client (le tutoiement de l'espace client) : sa banque est « Ma banque ». */
 export const REFUS_D_UN_BORDEREAU_AU_CLIENT =
   'ce fichier a la forme d’un bordereau de télétransmission : il porte des noms de patients, il ne se dépose donc pas ici ; '
   + 'pour en importer les totaux, ouvre « Ma banque », section « Facturé à l’assurance maladie » : le fichier y est lu sur ton '
-  + 'appareil sans être envoyé'
+  + 'appareil sans être envoyé (un bordereau ne se photographie pas : il s’enregistre en PDF depuis ton logiciel de '
+  + 'télétransmission)'

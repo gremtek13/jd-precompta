@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DocumentsTab from './DocumentsTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
@@ -1149,5 +1149,33 @@ describe('DocumentsTab — le tri par un clic sur l’en-tête', () => {
     fireEvent.click(within(volet()).getByRole('button', { name: 'Document suivant' }))
     expect(await within(volet()).findByText('Document 2 sur 3')).toBeDefined()
     expect(within(volet()).getByText('C-contrat.pdf')).toBeDefined()
+  })
+})
+
+// BOR6T-Q2 (A) : la Vue d'ensemble renvoie à la fiche d'un bordereau déjà déposé ; l'onglet l'ouvre une fois sa liste lue.
+describe('DocumentsTab — la fiche demandée par la Vue d’ensemble', () => {
+  const volet = () => document.getElementById('panneau-droit')!
+  it('ouvre la fiche du document demandé et rend la demande ; dit celui qu’il ne trouve pas', async () => {
+    reinitialiser()
+    faux.documents = [documentDeTest({ id: 'doc-a', nom_fichier: 'scan-a.pdf', storage_path: 'dossier-de-test/scan-a.pdf', created_at: '2025-02-01T09:00:00Z' })]
+    const prise = vi.fn()
+    render(
+      <FournisseurPanneauDroit>
+        <DocumentsTab dossierId="dossier-de-test" ficheDemandee={{ dossierId: 'dossier-de-test', type: 'document', id: 'doc-a' }} onFicheDemandeePrise={prise} />
+        <EmplacementPanneauDroit />
+      </FournisseurPanneauDroit>,
+    )
+    expect(await within(volet()).findByText('Document 1 sur 1')).toBeDefined()
+    expect(prise).toHaveBeenCalledTimes(1)
+    cleanup()
+    reinitialiser()
+    faux.documents = []
+    render(
+      <FournisseurPanneauDroit>
+        <DocumentsTab dossierId="dossier-de-test" ficheDemandee={{ dossierId: 'dossier-de-test', type: 'document', id: 'parti' }} onFicheDemandeePrise={() => {}} />
+        <EmplacementPanneauDroit />
+      </FournisseurPanneauDroit>,
+    )
+    expect(await screen.findByText(/n’est pas dans la liste lue/)).toBeDefined()
   })
 })

@@ -1,4 +1,4 @@
-import { CODE_D_UN_BORDEREAU_LU, extractPiece, type ExtractionResult } from './extraction'
+import { CODE_D_UN_BORDEREAU_LU, extractPiece, pdfTropLourdPourEtreLu, textractPeutLire, type ExtractionResult } from './extraction'
 
 // LA LECTURE AU DÉPÔT, QUI RECONNAÎT UN BORDEREAU LU PAR TEXTRACT (conception 59, BOR6, troisième partie, 27/11/2026 ;
 // BOR-Q9 (A)). Une photo d'un bordereau de télétransmission, ou un PDF numérisé sans couche de texte, échappe au refus du
@@ -21,12 +21,28 @@ export type LectureAuDepot =
   /** La lecture a échoué (Textract, réseau, format) : le dépôt continue sans rien de lu, comme hier. */
   | { etat: 'ratee' }
 
+/** Vrai si l'erreur levée par `extractPiece` est le refus d'un bordereau reconnu à sa lecture (le code, jamais la phrase). */
+export function estUnBordereauLu(erreur: unknown): boolean {
+  const code = erreur !== null && typeof erreur === 'object' ? (erreur as { code?: unknown }).code : undefined
+  return code === CODE_D_UN_BORDEREAU_LU
+}
+
 /** Lit le fichier par `extract-piece`. Ne rejette jamais. */
 export async function lireAuDepot(source: Blob, nom: string): Promise<LectureAuDepot> {
   try {
     return { etat: 'lue', extraction: await extractPiece(source, nom) }
   } catch (erreur) {
-    const code = erreur !== null && typeof erreur === 'object' ? (erreur as { code?: unknown }).code : undefined
-    return code === CODE_D_UN_BORDEREAU_LU ? { etat: 'bordereau' } : { etat: 'ratee' }
+    return estUnBordereauLu(erreur) ? { etat: 'bordereau' } : { etat: 'ratee' }
   }
+}
+
+/**
+ * LE FICHIER CHOISI À LA MAIN, LU AVANT SON STOCKAGE (BOR6, troisième partie, ce qui restait : la fiche d'une pièce et l'onglet
+ * Cotisations, 27/11/2026) : la même lecture que les deux chemins du dépôt, sous les mêmes conditions qu'`importFichiers` — un
+ * format que Textract ne lit pas, ou un PDF trop lourd pour la lecture, n'est pas lu et rend `ratee` (le dépôt continue comme
+ * hier, rien n'y est reconnu). Ne rejette jamais.
+ */
+export async function lireAvantLeStockage(fichier: File): Promise<LectureAuDepot> {
+  if (!textractPeutLire(fichier.name) || pdfTropLourdPourEtreLu(fichier)) return { etat: 'ratee' }
+  return lireAuDepot(fichier, fichier.name)
 }

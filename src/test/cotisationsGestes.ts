@@ -125,6 +125,9 @@ export function supabaseFaux() {
 
 export function extractionFausse() {
   return {
+    CODE_D_UN_BORDEREAU_LU: 'bordereau',
+    textractPeutLire: () => true,
+    pdfTropLourdPourEtreLu: () => false,
     extractPiece: () => Promise.resolve({ lecture_cotisation: { echeances: [] } }),
     fichierDejaPresent: () => Promise.resolve(false),
     hashFichier: () => Promise.resolve('empreinte-de-test'),

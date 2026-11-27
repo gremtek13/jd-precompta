@@ -28,6 +28,7 @@ import { lireLesFacturesProbables, PHRASE_FACTURE_PROBABLE, type LectureDesFactu
 import PanneauDroit from '../../components/PanneauDroit'
 import { usePanneauDroit } from '../../lib/panneauDroit'
 import FicheDocument from './FicheDocument'
+import { demandePour, FICHE_DEMANDEE_INTROUVABLE, type FicheDemandee } from '../../lib/ficheDemandee'
 
 // « C'est une facture » sur une lecture des citations partielle, ou pas encore revenue : la révision d'un solde parle
 // d'abord, sous les mots d'hier ; le dossier permanent, seul en défaut, se nomme.
@@ -49,7 +50,10 @@ const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
 // relevés de compte, attestations, appels de cotisation avant rattachement à une échéance (voir
 // CotisationsTab). Alimentée automatiquement par le tri de AjouterDocumentsModal (même point d'entrée
 // que Pièces, voir PiecesTab) — reclassable et complétable ici à la main.
-export default function DocumentsTab({ dossierId }: { dossierId: string }) {
+// `ficheDemandee` : la fiche qu'un autre onglet demande d'ouvrir (la Vue d'ensemble, BOR6T-Q2 (A)) ; absente, rien ne s'ouvre seul.
+export default function DocumentsTab({ dossierId, ficheDemandee = null, onFicheDemandeePrise }: {
+  dossierId: string; ficheDemandee?: FicheDemandee | null; onFicheDemandeePrise?: () => void
+}) {
   // Le tri choisi d'un clic sur un en-tête (16/11/2026) : l'affichage seul, remis à l'ordre d'origine au changement de dossier.
   const { tri, trierPar, choisirTri } = useTriDuTableau(dossierId)
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
@@ -189,6 +193,19 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   }
 
   useEffect(() => { load() }, [dossierId])
+
+  // LA FICHE DEMANDÉE PAR LA VUE D'ENSEMBLE (BOR6T-Q2 (A), lib/ficheDemandee.ts) : un bordereau déjà déposé, nommé par sa date de
+  // dépôt, ouvre ici sa fiche une fois la liste lue — la suppression y reste le geste confirmé de toujours. La demande se rend
+  // aussitôt (une seule ouverture) ; introuvable dans la liste lue, l'onglet le dit.
+  const [demandeIntrouvable, setDemandeIntrouvable] = useState(false)
+  useEffect(() => {
+    const demande = demandePour(ficheDemandee, dossierId, 'document')
+    if (demande === null || loading) return
+    onFicheDemandeePrise?.()
+    const doc = documents.find((x) => x.id === demande.id)
+    setDemandeIntrouvable(doc === undefined)
+    if (doc !== undefined) ouvrirDocument(doc)
+  }, [ficheDemandee, loading, documents, dossierId])
 
   // Documents du dossier ENTIER, pas seulement ceux du filtre affiché : un texte manquant ne dépend
   // ni de la catégorie regardée ni de l'année, et le bouton annonce son nombre — ce qu'il va traiter
@@ -596,6 +613,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      {demandeIntrouvable && <p className="error-text" role="status">{FICHE_DEMANDEE_INTROUVABLE.document}</p>}
       <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
         Relevés bancaires, attestations, appels de cotisation — les documents sans montant à
         ventiler, triés et classés ici automatiquement plutôt que dans Justificatifs.

@@ -4,6 +4,8 @@ import { estOuvert } from '../../lib/modulesDuCabinet'
 import { supabase } from '../../lib/supabase'
 import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
+import { estUnBordereauLu, lireAvantLeStockage } from '../../lib/lectureAuDepot'
+import { BORDEREAU_DEJA_AU_DOSSIER, REFUS_D_UN_BORDEREAU_LU } from '../../lib/refusDesBordereaux'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT, LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
 import { convertirMontants, deviseDuTexte, DEVISE_PIVOT, libelleConversion } from '../../lib/devises'
@@ -153,6 +155,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   // poids et la borne, et le fichier n'est pas retenu. `choixDuFichier` est le choix en cours d'examen : la réponse pour
   // un fichier déjà remplacé par un autre choix ne décide plus rien.
   const choixDuFichier = useRef<File | null>(null)
+  // LE BORDEREAU RECONNU À LA LECTURE (BOR6, troisième partie, ce qui restait, 27/11/2026) : le fichier choisi qu'« Extraire » a
+  // lu sans y reconnaître un bordereau ne se relit pas à l'enregistrement ; tout autre fichier choisi se lit avant son envoi au
+  // stockage (`lireAvantLeStockage`), comme aux deux chemins du dépôt. Reconnu, il est retiré du champ et le refus se dit dessous.
+  const fichierLuSansBordereau = useRef<File | null>(null)
+  const champDuFichier = useRef<HTMLInputElement>(null)
   const [refusFichier, setRefusFichier] = useState<string | null>(null)
   const [datePiece, setDatePiece] = useState(piece?.date_piece ?? '')
   const [tiers, setTiers] = useState(piece?.tiers ?? '')
@@ -408,11 +415,22 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     }
   }
 
+  // Le fichier choisi reconnu comme un bordereau : il ne part pas, le champ se vide, et le refus se dit sous lui.
+  function retenirLeBordereau(choisi: File) {
+    if (choixDuFichier.current !== choisi) return
+    choixDuFichier.current = null
+    setFile(null)
+    if (champDuFichier.current) champDuFichier.current.value = ''
+    setRefusFichier(`Ce fichier n’est pas pris : ${REFUS_D_UN_BORDEREAU_LU}.`)
+  }
+
   async function handleExtract() {
     // Posé avant le `try` : dedans, le `return` du deuxième clic sortirait par le `finally` et relâcherait le verrou du
     // premier, encore en cours.
     if (extractionEnCours.current) return
     extractionEnCours.current = true
+    // Le fichier choisi que cette lecture lit, s'il y en a un (sinon, celui déjà attaché à la pièce).
+    const choisiLu = file
     setExtracting(true)
     setExtractionError(null)
     setConfiance(null)
@@ -438,6 +456,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       }
 
       const result = await extractPiece(source, name)
+      if (choisiLu) fichierLuSansBordereau.current = choisiLu
 
       if (result.date_piece) setDatePiece(result.date_piece)
       if (estDateDeduite(result)) setDateDeduiteParLExtraction(result.date_piece)
@@ -490,6 +509,13 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         setSuggestionAutre(`Ce document ressemble plutôt à ${labels[classification]} qu'à une facture — l'onglet Documents serait peut-être plus adapté.`)
       }
     } catch (err) {
+      // Un bordereau reconnu à la lecture (le code d'extract-piece, BOR6) : le fichier choisi ne part pas ; celui déjà attaché se
+      // dit, avec le geste qui le retire.
+      if (estUnBordereauLu(err)) {
+        if (choisiLu) retenirLeBordereau(choisiLu)
+        else setExtractionError(BORDEREAU_DEJA_AU_DOSSIER)
+        return
+      }
       setExtractionError(messageErreur(err, "L'extraction automatique a échoué — remplis le formulaire à la main."))
     } finally {
       extractionEnCours.current = false
@@ -584,6 +610,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     if (!file) return piece?.storage_path ?? null
     const pret = await preparerPiece(file)
     if ('refus' in pret) throw new Error(`Ce fichier n’est pas pris : ${pret.refus.message}.`)
+    // La lecture AVANT le stockage (BOR6, troisième partie) : une photo d'un bordereau ne se reconnaît qu'ici.
+    if (fichierLuSansBordereau.current !== file && (await lireAvantLeStockage(file)).etat === 'bordereau') {
+      retenirLeBordereau(file)
+      throw new Error(`Ce fichier n’est pas pris : ${REFUS_D_UN_BORDEREAU_LU}.`)
+    }
     const path = `${dossierId}/${Date.now()}-${slugify(file.name)}`
     const { error } = await supabase.storage.from('pieces').upload(path, pret.corps)
     if (error) throw error
@@ -1019,7 +1050,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             <>
               <div className="field">
                 <label htmlFor="file">{piece ? 'Remplacer le fichier' : 'Fichier'}</label>
-                <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={fige || remplacementRefuse !== null} onChange={(e) => { void choisirFichier(e.target) }} />
+                <input ref={champDuFichier} id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={fige || remplacementRefuse !== null} onChange={(e) => { void choisirFichier(e.target) }} />
                 {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
                 {refusFichier && <span className="error-text">{refusFichier}</span>}
               </div>

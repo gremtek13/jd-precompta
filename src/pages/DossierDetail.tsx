@@ -47,6 +47,7 @@ import { messageErreur } from '../lib/messageErreur'
 import { reglageDesVentes } from '../lib/sourceDeLaVente'
 import { DOSSIER_FERME_PAR_LE_CABINET, POUR_OUVRIR_LE_DOSSIER, ouvertureIllisible, type OuvertureLue } from '../lib/dossiersOuverts'
 import { lireLOuverture } from '../lib/dossiersOuvertsLecture'
+import type { FicheDemandee } from '../lib/ficheDemandee'
 
 // L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
 // simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
@@ -104,6 +105,9 @@ function PageDuDossier() {
   const dossier = lu && lu.id === id ? lu.dossier : null
   const erreurDossier = lu && lu.id === id ? lu.erreur : null
   const [essaiDossier, setEssaiDossier] = useState(0)
+  // La fiche qu'un onglet demande d'ouvrir dans un autre (BOR6T-Q2 (A), lib/ficheDemandee.ts) : la Vue d'ensemble renvoie à la
+  // fiche d'un bordereau déjà déposé. L'onglet visé l'ouvre une fois sa liste lue, puis la rend.
+  const [ficheDemandee, setFicheDemandee] = useState<FicheDemandee | null>(null)
   const [detectingNaf, setDetectingNaf] = useState(false)
   const [annees, setAnnees] = useState<{ id: string; liste: number[]; motif: string | null } | null>(null)
   const motifAnnees = annees && annees.id === id ? annees.motif : null
@@ -167,8 +171,10 @@ function PageDuDossier() {
     if (id && !tabParam) navigate(`/dossiers/${id}/checklist`, { replace: true })
   }, [id, tabParam, navigate])
 
-  function allerA(nouvelOnglet: DossierTab) {
-    if (id) navigate(`/dossiers/${id}/${nouvelOnglet}`)
+  function allerA(nouvelOnglet: DossierTab, fiche?: FicheDemandee) {
+    if (!id) return
+    setFicheDemandee(fiche ?? null)
+    navigate(`/dossiers/${id}/${nouvelOnglet}`)
   }
 
   useEffect(() => {
@@ -450,6 +456,7 @@ function PageDuDossier() {
                 dossierId={id} dossierSiret={dossier?.siret ?? null} ventesParLesFactures={dossier?.ventes_par_les_factures === true}
                 // Le modèle et le statut, pour la fiche d'une pièce qui se règle par la caisse (ligne 26.6, étape C9b).
                 modele={modele} assujettiTva={dossier?.assujetti_tva ?? false}
+                ficheDemandee={ficheDemandee} onFicheDemandeePrise={() => setFicheDemandee(null)}
               />
             )}
             {tab === 'factures' && modele && (
@@ -489,7 +496,7 @@ function PageDuDossier() {
                 onNavigate={allerA}
               />
             )}
-            {tab === 'documents' && <DocumentsTab dossierId={id} />}
+            {tab === 'documents' && <DocumentsTab dossierId={id} ficheDemandee={ficheDemandee} onFicheDemandeePrise={() => setFicheDemandee(null)} />}
             {tab === 'ecritures' && modele && (
               <EcrituresTab
                 dossierId={id}

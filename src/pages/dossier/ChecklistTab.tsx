@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useModulesOuverts } from '../../context/ModulesOuverts'
 import { estOuvert } from '../../lib/modulesDuCabinet'
 import { supabase } from '../../lib/supabase'
@@ -29,6 +29,12 @@ import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from '../../lib/paiementParLaCaisse'
 import {
   LIBELLE_OUVRIR_LA_CAISSE, NOM_DU_POINT_DES_SAISIES, lireLesOperationsVues, phraseDesSaisiesDuClient, saisiesDuClientNonVues,
 } from '../../lib/caisseDuClientAuCabinet'
+import { chercherLesBordereauxDeposes } from '../../lib/bordereauxDeposesLecture'
+import {
+  BOUTON_CHERCHER_LES_BORDEREAUX, CE_QUE_LA_RECHERCHE_NE_VOIT_PAS, nomDuBordereau, phraseDeLaRecherche, PRESENTATION_DE_LA_RECHERCHE,
+  TITRE_DE_LA_CARTE_DES_BORDEREAUX, type RechercheDesBordereaux,
+} from '../../lib/bordereauxDeposes'
+import type { FicheDemandee } from '../../lib/ficheDemandee'
 
 const NB_MOIS_TRESORERIE = 12
 const NB_MOIS_COLONNES = 6
@@ -61,7 +67,8 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   statutTva: StatutTva | null
   modele: ModeleComptable
   ventesParLesFactures: boolean
-  onNavigate: (tab: DossierTab) => void
+  // `fiche` : la fiche à ouvrir dans l'onglet visé (BOR6T-Q2 (A), lib/ficheDemandee.ts) — un bordereau déjà déposé.
+  onNavigate: (tab: DossierTab, fiche?: FicheDemandee) => void
 }) {
   const { ouverts: modulesOuverts } = useModulesOuverts()
   // Ce que les exercices validés ont figé ne se compare plus : la base refuse de le réécrire, et le dire
@@ -74,6 +81,22 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   // Le dernier changement du RIB des factures (étape A5b3b), lu À PART des points : sa panne ne tait que son avis, jamais la Vue
   // d'ensemble, qui ne l'attend pas — et la lecture survit aux relectures des points (elle ne repart qu'avec le dossier).
   const changementDuRib = useDernierChangementDeRib(dossierId)
+  // LES BORDEREAUX DE TÉLÉTRANSMISSION DÉJÀ DÉPOSÉS (BOR6T-Q2 (A) ; lib/bordereauxDeposes.ts) : cherchés d'un clic, jamais à
+  // l'ouverture — la recherche lit des textes de patients et parcourt chaque texte du dossier. Nulle avant le clic ; gardée avec
+  // le dossier lu, et ne vaut que pour lui. Un verrou contre deux clics : une seule recherche à la fois.
+  const [bordereaux, setBordereaux] = useState<RechercheDesBordereaux | 'en_cours' | null>(null)
+  const rechercheDesBordereauxEnCours = useRef(false)
+  async function chercherLesBordereaux() {
+    if (rechercheDesBordereauxEnCours.current) return
+    rechercheDesBordereauxEnCours.current = true
+    setBordereaux('en_cours')
+    try {
+      setBordereaux(await chercherLesBordereauxDeposes(dossierId))
+    } finally {
+      rechercheDesBordereauxEnCours.current = false
+    }
+  }
+  const rechercheDesBordereaux = bordereaux !== null && bordereaux !== 'en_cours' && bordereaux.dossierId === dossierId ? bordereaux : null
 
   async function load() {
     setLoading(true)
@@ -131,7 +154,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     pointsParametrage: pointsParametrageCalcules, pointsTravail: pointsTravailCalcules, documentsAttendus, moisManquants, moisRecus,
     piecesConfianceBasse, assuranceMaladie,
   } = pointsDeLaChecklist(
-    { ...lecture, relevesIncoherents: lecture.relevesIncoherents ?? [], doublonsTexte: lecture.doublonsTexte ?? [] },
+    {
+      ...lecture, relevesIncoherents: lecture.relevesIncoherents ?? [], doublonsTexte: lecture.doublonsTexte ?? [],
+      bordereauxDeposes: rechercheDesBordereaux,
+    },
     {
       assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHui: aujourdHuiFiscal, anneeCourante, moisEcoules,
       premierJourDuMois: premierJourDuMoisCourant(),
@@ -388,6 +414,35 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
 
         <Widget className="span-5" titre="Paramétrage à compléter" sousTitre="Configuration à finir une fois, indépendante du client">
           {listePoints(pointsParametrage, 'Rien à compléter — statut de TVA, comptes et postes 2035 sont renseignés.')}
+        </Widget>
+
+        {/* LES BORDEREAUX DE TÉLÉTRANSMISSION DÉJÀ DÉPOSÉS (BOR6T-Q2 (A)) : au clic, chaque pièce ou document reconnu, nommé par
+            sa date de dépôt — jamais le nom du fichier —, et le bouton qui ouvre sa fiche ; rien ne se supprime d'ici. Muette sur
+            une recherche qui n'a pas tout lu. */}
+        <Widget className="span-12" titre={TITRE_DE_LA_CARTE_DES_BORDEREAUX} sousTitre={PRESENTATION_DE_LA_RECHERCHE}>
+          {rechercheDesBordereaux !== null && (
+            <p className={rechercheDesBordereaux.etat === 'incomplete' ? 'error-text' : 'muted'} role="status">
+              {phraseDeLaRecherche(rechercheDesBordereaux)}
+            </p>
+          )}
+          {rechercheDesBordereaux?.etat === 'trouves' && rechercheDesBordereaux.bordereaux.map((b) => (
+            <div key={`${b.type}-${b.id}`} className="check-ligne">
+              <span className="check-dot check-attention" aria-hidden="true" />
+              <div className="check-ligne-corps">
+                <div className="check-ligne-libelle">{nomDuBordereau(b)}</div>
+              </div>
+              <button
+                type="button" className="btn btn-outline btn-sm"
+                onClick={() => onNavigate(b.type === 'piece' ? 'pieces' : 'documents', { dossierId, type: b.type, id: b.id })}
+              >
+                Ouvrir sa fiche
+              </button>
+            </div>
+          ))}
+          <p className="muted">{CE_QUE_LA_RECHERCHE_NE_VOIT_PAS}</p>
+          <button type="button" className="btn btn-outline btn-sm" disabled={bordereaux === 'en_cours'} onClick={() => { void chercherLesBordereaux() }}>
+            {bordereaux === 'en_cours' ? 'Recherche…' : rechercheDesBordereaux !== null ? 'Chercher de nouveau' : BOUTON_CHERCHER_LES_BORDEREAUX}
+          </button>
         </Widget>
 
         {/* La facture électronique du client (étape A6b2) : l'état lu en base, ses connexions et son adresse de réception. Sa
