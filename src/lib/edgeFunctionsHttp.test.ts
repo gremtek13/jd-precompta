@@ -459,6 +459,18 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     remplacements: [['    return new Response("Signature invalide", { status: 401 })', '    event = JSON.parse(rawBody)']],
     scenario: 'signé d’un autre secret : 401, rien de lu',
   },
+  // LE DOMAINE DE COLLECTE (relecture adverse de sécurité des Edge Functions, 27/11/2026) : le premier destinataire, de
+  // n'importe quel domaine, rendu au dossier — l'expression d'avant la correction ; et le domaine oublié par le filtre.
+  {
+    slug: 'receive-email', quoi: 'le dossier lu dans le premier destinataire, quel que soit son domaine',
+    remplacements: [['  const codeEmail = codeDeCollecte(to)\n', '  const codeEmail = to.map(extractEmail).map((addr) => addr.split("@")[0]).find((c) => !!c)\n']],
+    scenario: 'le code d’un dossier sous un AUTRE domaine, en premier : il ne désigne rien, la pièce jointe va au dossier de l’adresse de collecte',
+  },
+  {
+    slug: 'receive-email', quoi: 'le filtre du domaine de collecte retiré',
+    remplacements: [['    .filter((adresse) => adresse.endsWith(suffixe))\n', '']],
+    scenario: 'plusieurs destinataires, l’adresse de collecte en second : la pièce jointe va au dossier qu’elle désigne',
+  },
   // LA TRACE D'UNE PIÈCE JOINTE ÉCARTÉE (ligne 22.7) : jetée, mal écrite, instable au rejeu, tirée du poids au lieu des
   // identifiants, ou gardant l'identifiant de Resend tel quel ; et son refus par la base, tu.
   {
@@ -898,6 +910,23 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
     slug: 'send-email', quoi: 'la relance de pièces ouverte au client',
     remplacements: [['  relance_pieces: "cabinet",', '  relance_pieces: "ventes",']],
     scenario: 'relance_pieces — client « Ventes » : refusé (404) avant toute lecture, tout secret et toute dépense',
+  },
+  // L'EXPÉDITEUR ET L'OBJET (relecture adverse de sécurité des Edge Functions, 27/11/2026) : le nom recopié tel quel dans
+  // `From`, comme avant la correction ; ses guillemets laissés ; l'objet qui garde ses retours à la ligne.
+  {
+    slug: 'send-email', quoi: 'le nom de l’émetteur recopié tel quel dans l’en-tête From',
+    remplacements: [['    from: expediteurDeLEmail(nomExpediteur),', '    from: `${nomExpediteur} <contact@${DOMAINE_ENVOI}>`,']],
+    scenario: 'client « Ventes » : un nom d’émetteur à virgule, guillemets, adresse et retour à la ligne part en UNE boîte, l’objet sur une ligne',
+  },
+  {
+    slug: 'send-email', quoi: 'les guillemets du nom laissés dans la chaîne entre guillemets',
+    remplacements: [['.replace(/[<>"\\\\]/g, "")', '.replace(/[<>\\\\]/g, "")']],
+    scenario: 'client « Ventes » : un nom d’émetteur à virgule, guillemets, adresse et retour à la ligne part en UNE boîte, l’objet sur une ligne',
+  },
+  {
+    slug: 'send-email', quoi: 'l’objet qui garde ses retours à la ligne',
+    remplacements: [['  objet = objetDeLEmail(objet)\n', '']],
+    scenario: 'le cabinet : un nom de dossier fait de blancs et de retours à la ligne signe « Votre cabinet comptable », entre guillemets',
   },
   {
     slug: 'send-email', quoi: 'le plafond relâché à trente et un',

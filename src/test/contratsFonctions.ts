@@ -83,14 +83,25 @@ export interface ContratFonction {
 
 // ── LES DÉFAUTS CONNUS : CONSTATÉS, NOMMÉS, COMPTÉS ──────────────────────────────────────────────────────────────────
 
-// AUCUN DÉFAUT CONNU DEPUIS LE 12/11/2026. `objetAuJournal` n'y est plus (23-journalEmail, décision du cabinet du
+// AUCUN DÉFAUT CONNU DU 12/11/2026 AU 27/11/2026. `objetAuJournal` n'y est plus (23-journalEmail, décision du cabinet du
 // 18/10/2026) : receive-email ne journalise que des comptes — ni l'objet, ni l'expéditeur, ni une adresse ni un code de
 // collecte ; le contrat l'exige, au zéro. `tauxSansControle` non plus (ligne 23.4) : taux-change-bce contrôle son appelant
 // comme extract-piece, un compte RATTACHÉ, avant de lire le corps ; son contrat exige les refus, sans défaut. Le mécanisme
 // reste : un défaut constaté ajoute son nom à `CleDefaut` et son entrée ici, et le décompte se tient au nombre près.
-export type CleDefaut = never
+//
+// `plafondTenuParLeNavigateur` (relecture adverse de sécurité des Edge Functions, 27/11/2026) : le plafond mensuel de
+// l'assistant se compte sur des lignes que le navigateur du cabinet écrit et supprime, jamais la fonction (voir
+// `modeleQuiConsommeQuinzeDollars`). Sa correction demande un compteur que la fonction seule écrit, dans une table que ni le
+// cabinet ni le client ne touchent : une migration, que le cabinet arbitre (ASSIST-Q1). Deux scénarios, au nombre près.
+export type CleDefaut = 'plafondTenuParLeNavigateur'
 
-export const DEFAUTS_CONNUS: Readonly<Record<string, { nombre: number; raison: string }>> = {}
+export const DEFAUTS_CONNUS: Readonly<Record<string, { nombre: number; raison: string }>> = {
+  plafondTenuParLeNavigateur: {
+    nombre: 2,
+    raison: 'agent-comptable ne note rien de ce qu’il consomme : le plafond de blocage se compte sur les lignes que le navigateur ' +
+      'écrit (et que le cabinet supprime), et ne voit ni un appel direct ni une réponse en erreur après le modèle',
+  },
+}
 
 // ── LE JUGE ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -564,6 +575,8 @@ const NOM_AFFICHE_DU_DESTINATAIRE = 'Zelmorix Quandrebois'
 
 function evenementRecu(options: {
   a?: string; type?: string; pieces?: number; fichier?: { nom: string; type: string }
+  // Tous les destinataires de l'e-mail, dans l'ordre de son en-tête : `a` ne sert alors pas.
+  destinataires?: readonly string[]
   // Une pièce jointe par fichier, chacune son nom et le type que déclare l'expéditeur (ligne 22.7) : `pieces` et `fichier`
   // ne servent alors pas.
   fichiers?: { nom: string; type: string }[]
@@ -581,7 +594,7 @@ function evenementRecu(options: {
     type: options.type ?? 'email.received',
     data: {
       email_id: EMAIL_ID,
-      to: [options.a ?? 'Dossier <dossier-fictif@precompta.jdarnis.fr>'],
+      to: options.destinataires ?? [options.a ?? 'Dossier <dossier-fictif@precompta.jdarnis.fr>'],
       from: EXPEDITEUR,
       subject: OBJET,
       attachments: [
@@ -836,6 +849,40 @@ const RECEIVE_EMAIL: ContratFonction = {
           return fautes
         },
       },
+    },
+    // LE DESTINATAIRE QUI DÉSIGNE LE DOSSIER (relecture adverse de sécurité des Edge Functions, 27/11/2026) : le premier
+    // destinataire de l'e-mail, QUEL QUE SOIT SON DOMAINE, donnait son code au dossier. Un fournisseur qui écrit à son client
+    // ET à l'adresse de collecte voyait l'e-mail perdu sans trace (« adresse inconnue », 200, rien que Resend rejoue) ; et la
+    // partie locale d'une adresse d'un AUTRE domaine désignait le dossier qui porte ce code. Seule une adresse du domaine de
+    // collecte désigne un dossier.
+    {
+      nom: 'plusieurs destinataires, l’adresse de collecte en second : la pièce jointe va au dossier qu’elle désigne',
+      preparer: (m, voisine) => boiteAuxLettres(m, voisine),
+      requete: requeteWebhook(evenementRecu({ destinataires: ['Client <client-du-dossier@ailleurs.invalid>', `Dossier <${ADRESSE_DU_DOSSIER}>`] })),
+      attendu: {
+        statut: 200,
+        depenses: [...deposeeApres('AWS textract DetectDocumentText', 'modèle'), 'écriture insert pieces'],
+        verifier: (_r, m) => {
+          const piece = lignes(m, 'pieces')[0]
+          return piece?.dossier_id === D && lignes(m, 'pieces').length === 1 ? [] : [`pièces posées : ${JSON.stringify(lignes(m, 'pieces').map((p) => p.dossier_id))}`]
+        },
+      },
+    },
+    {
+      nom: 'le code d’un dossier sous un AUTRE domaine, en premier : il ne désigne rien, la pièce jointe va au dossier de l’adresse de collecte',
+      preparer: (m, voisine) => boiteAuxLettres(m, voisine),
+      requete: requeteWebhook(evenementRecu({ destinataires: ['dossier-voisin@ailleurs.invalid', ADRESSE_DU_DOSSIER] })),
+      attendu: {
+        statut: 200,
+        depenses: [...deposeeApres('AWS textract DetectDocumentText', 'modèle'), 'écriture insert pieces'],
+        verifier: (_r, m) => (lignes(m, 'pieces').map((p) => p.dossier_id).join() === D
+          ? [] : [`pièces posées dans ${JSON.stringify(lignes(m, 'pieces').map((p) => p.dossier_id))}, attendu le dossier de l’adresse de collecte`]),
+      },
+    },
+    {
+      nom: 'le code d’un dossier sous un AUTRE domaine, seul : il ne désigne rien, 200, rien d’écrit',
+      requete: requeteWebhook(evenementRecu({ a: 'dossier-voisin@ailleurs.invalid' })),
+      attendu: { statut: 200, aucuneDepense: true },
     },
     {
       nom: 'la photo d’un bordereau de télétransmission : lue par extract-piece, écartée avant le stockage, consignée « bordereau » au poids lu',
@@ -1364,6 +1411,19 @@ function consommation(monde: Monde, dossierId: string, dollars: number, ilYaJour
     id: identifiantGenere(), dossier_id: dossierId, role: 'assistant', tokens_entree: 0,
     tokens_sortie: Math.ceil(dollars / 0.000015), created_at: quand,
   })
+}
+
+// LE COMPTEUR DU PLAFOND (relecture adverse de sécurité des Edge Functions, 27/11/2026). `verifierPlafondCabinet` somme les tokens
+// des lignes `agent_conversations` du mois ; ces lignes, c'est le NAVIGATEUR qui les écrit après la réponse (AssistantTab,
+// `enregistrer`), avec les tokens que la réponse lui rend, et `agent_conversations_all` les ouvre en écriture et en suppression
+// à tout le cabinet du dossier — « Supprimer la conversation » les efface. La fonction n'en écrit aucune : un appel direct, une
+// réponse en erreur après le modèle, une conversation supprimée ne se comptent pas, et le plafond de blocage ne bloque rien.
+/** Le modèle qui rend sa réponse (ou la coupe) après un million de tokens de sortie : 15 $ au tarif de la fonction. */
+function modeleQuiConsommeQuinzeDollars(monde: Monde, arret: 'end_turn' | 'max_tokens') {
+  monde.modele = (demande) => {
+    ;(monde.notes.demandesAuModele ??= []).push(demande)
+    return { ...reponseModele('Aucune anomalie relevée.', arret), usage: { input_tokens: 0, output_tokens: 1_000_000 } }
+  }
 }
 
 function plafond(monde: Monde, alerte: number | null, blocage: number | null) {
@@ -3104,6 +3164,21 @@ const AGENT_COMPTABLE: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
       attendu: { statut: 200, depenses: ['modèle'] },
     },
+    // LE COMPTEUR DU PLAFOND, QUE LE NAVIGATEUR TIENT (relecture adverse de sécurité des Edge Functions, 27/11/2026) : défaut
+    // CONNU `plafondTenuParLeNavigateur`. La même question, posée deux fois dans le même monde : la première consomme 15 $ sur
+    // un plafond de 1 $, la seconde devrait être refusée en 402 sans un appel au modèle — elle passe, la fonction ne notant
+    // rien de ce qu'elle consomme.
+    ...([
+      ['une réponse rendue (200)', 'end_turn'],
+      ['une réponse coupée (502) après l’appel au modèle', 'max_tokens'],
+    ] as const).map(([issue, arret]): Scenario => ({
+      nom: `le plafond de blocage : ${issue} qui le dépasse se compte, et la question suivante est refusée en 402 (ASSIST-Q1)`,
+      preparer: (m) => { modeleQuiConsommeQuinzeDollars(m, arret); plafond(m, null, 1) },
+      dejaRecue: true,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: { statut: 402, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
+      defautConnu: 'plafondTenuParLeNavigateur',
+    })),
     {
       nom: 'les seuils du cabinet illisibles : 503 qui le dit, pas un appel au modèle',
       preparer: (m) => { modeleQuiRepond(m); m.pannes.push({ table: 'cabinets', operation: 'select', erreur: { message: 'délai dépassé' } }) },
@@ -5213,6 +5288,32 @@ function dejaEnvoyes(nombre: number, envoyes: string, maintenant: string, dossie
 
 /** Une facture validée du dossier, et Resend qui l'envoie. */
 const factureAEnvoyer = (m: Monde) => { resendQuiEnvoie(m); factureValidee(m) }
+
+// L'EXPÉDITEUR D'UN E-MAIL (relecture adverse de sécurité des Edge Functions, 27/11/2026). Le nom affiché vient d'une valeur que
+// l'appelant choisit en partie — l'`emetteur_nom` d'une facture, que `enregistrer_facture` prend du corps de SON appelant, le
+// client « Ventes » compris : la base juge le SIRET et l'adresse de l'émetteur, jamais son nom —, et partait tel quel dans
+// `From`. Une virgule y fait deux boîtes, « <…@…> » une seconde adresse, un retour à la ligne une en-tête de plus (RFC 5322,
+// § 3.4 et § 2.2). Le nom de ce marqueur porte les trois, et un guillemet.
+const NOM_QUI_STRUCTURERAIT_L_EN_TETE = 'Dupont, Jean "Kiné" <paiement@ailleurs.invalid>\r\nBcc: espion@ailleurs.invalid'
+/** Le même, tel qu'il doit s'afficher : sans caractère de contrôle, sans « < », « > », « " » ni « \ », les blancs réduits. */
+const NOM_AFFICHE_ATTENDU = 'Dupont, Jean Kiné paiement@ailleurs.invalid Bcc: espion@ailleurs.invalid'
+
+/**
+ * Ce que Resend a reçu : UNE boîte — le nom entre guillemets (RFC 5322, § 3.2.4), l'adresse du domaine d'envoi — et un objet
+ * sans caractère de contrôle, le même au journal des envois.
+ */
+const expediteurEtObjetSains = (nomAttendu: string) => (_r: Resultat, m: Monde): string[] => {
+  const envois = (m.notes.envois ?? []) as { from?: unknown; subject?: unknown }[]
+  if (envois.length !== 1) return [`${envois.length} envoi(s)`]
+  const fautes: string[] = []
+  const attendu = `"${nomAttendu}" <contact@precompta.jdarnis.fr>`
+  if (envois[0].from !== attendu) fautes.push(`expéditeur : ${JSON.stringify(envois[0].from)} — attendu ${JSON.stringify(attendu)}`)
+  const objet = String(envois[0].subject)
+  if (/\p{Cc}/u.test(objet)) fautes.push(`l’objet porte un caractère de contrôle : ${JSON.stringify(objet)}`)
+  const journal = lignes(m, 'emails_envoyes')
+  if (journal.length !== 1 || journal[0].objet !== objet) fautes.push(`objet journalisé : ${JSON.stringify(journal.map((e) => e.objet))}`)
+  return fautes
+}
 const ENVOI_JOURNALISE = ['Resend envoyer', 'écriture insert emails_envoyes', 'écriture update factures_emises']
 
 // L'ENVOI D'UN DEVIS (étape P6c2). `send-email` ne se déploie qu'APRÈS la migration préparée `envoi_des_devis` : chaque
@@ -5534,7 +5635,7 @@ const relanceDeDemandeInscriteSignee = (signature: string) => (r: Resultat, m: M
   if (envois.length !== 1) return [...fautes, `${envois.length} envoi(s)`]
   if (envois[0].to !== ADRESSE_DE_L_ACCES) fautes.push(`destinataire : ${String(envois[0].to)}`)
   if (!String(envois[0].html).includes(`Cordialement,<br>${signature}</p>`)) fautes.push(`le corps n’est pas signé « ${signature} »`)
-  if (typeof envois[0].from !== 'string' || !envois[0].from.startsWith(`${signature} <`)) fautes.push(`expéditeur : ${String(envois[0].from)}`)
+  if (envois[0].from !== `"${signature}" <contact@precompta.jdarnis.fr>`) fautes.push(`expéditeur : ${String(envois[0].from)}`)
   if (envois[0].subject !== 'Une demande de votre cabinet attend votre réponse') fautes.push(`sujet : ${String(envois[0].subject)}`)
   const html = String(envois[0].html)
   for (const attendu of ['« <strong>Relevé &lt;fictif&gt; de décembre</strong> »', 'attendue pour le 20/11/2026', 'rubrique « Mes demandes »']) {
@@ -5846,6 +5947,31 @@ const SEND_EMAIL: ContratFonction = {
       preparer: resendQuiEnvoie,
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...RELANCE, message: 42 } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true },
+    },
+    // L'EXPÉDITEUR ET L'OBJET (relecture adverse de sécurité des Edge Functions, 27/11/2026) : un nom d'émetteur que le client
+    // « Ventes » a écrit lui-même ne structure jamais l'en-tête — une seule boîte, celle du domaine d'envoi, le nom entre
+    // guillemets ; l'objet tient sur une ligne, au journal comme chez Resend.
+    {
+      nom: 'client « Ventes » : un nom d’émetteur à virgule, guillemets, adresse et retour à la ligne part en UNE boîte, l’objet sur une ligne',
+      preparer: (m) => {
+        resendQuiGarde(m); factureValidee(m, { emetteur_nom: NOM_QUI_STRUCTURERAIT_L_EN_TETE }); accesDuClient({ ventes: true })(m)
+      },
+      requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_FACTURE }),
+      attendu: { statut: 200, depenses: ENVOI_JOURNALISE, verifier: expediteurEtObjetSains(NOM_AFFICHE_ATTENDU) },
+    },
+    {
+      nom: 'le cabinet : un nom de dossier fait de blancs et de retours à la ligne signe « Votre cabinet comptable », entre guillemets',
+      preparer: (m) => {
+        resendQuiGarde(m)
+        const dossier = lignes(m, 'dossiers').find((d) => d.id === D)
+        if (!dossier) throw new Error('le monde de référence a perdu son dossier')
+        dossier.nom = ' \r\n\t '
+      },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE }),
+      attendu: {
+        statut: 200, depenses: ['Resend envoyer', 'écriture insert emails_envoyes'],
+        verifier: expediteurEtObjetSains('Votre cabinet comptable'),
+      },
     },
     ...corpsMalFormes('chef', ['dossierId', 'type', 'destinataire', 'devisId']),
   ],

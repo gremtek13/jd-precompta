@@ -34,6 +34,24 @@ function extractEmail(raw: string): string {
   return (match ? match[1] : raw).trim().toLowerCase()
 }
 
+// LE DOMAINE DE COLLECTE, ET LUI SEUL, DÉSIGNE UN DOSSIER (relecture adverse de sécurité des Edge Functions, 27/11/2026). Le
+// dossier se lisait dans la partie locale du PREMIER destinataire de l'e-mail, quel que soit son domaine : un fournisseur qui
+// écrit à la fois à son client et à l'adresse de collecte voyait son e-mail perdu sans trace (« adresse inconnue », 200, que
+// Resend ne rejoue pas), et la partie locale d'une adresse d'un autre domaine désignait le dossier qui porte ce code. Seule
+// une adresse `<code>@<domaine de collecte>` désigne un dossier, la première de l'en-tête. Le domaine est celui que compose
+// `src/lib/adresseCollecte.ts` (`DOMAINE_COLLECTE_EMAIL`), redit ici — la fonction est auto-portée — et confronté à lui par
+// adresseCollecte.test.ts.
+const DOMAINE_COLLECTE = "precompta.jdarnis.fr"
+
+/** Le code du dossier que désigne le premier destinataire au domaine de collecte, ou null : aucun n'en désigne. */
+function codeDeCollecte(destinataires: readonly string[]): string | null {
+  const suffixe = `@${DOMAINE_COLLECTE}`
+  return destinataires.map(extractEmail)
+    .filter((adresse) => adresse.endsWith(suffixe))
+    .map((adresse) => adresse.slice(0, -suffixe.length))
+    .find((code) => code !== "") ?? null
+}
+
 async function hashBytes(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes)
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("")
@@ -1479,7 +1497,7 @@ Deno.serve(async (req: Request) => {
   // ci-dessous dit COMBIEN (de destinataires, de pièces jointes, de pièces importées), jamais DE QUI ni DE QUOI ;
   // l'identifiant que Resend donne à l'e-mail reste, opaque : c'est lui qui retrouve l'e-mail chez Resend, où seul le
   // cabinet peut le lire.
-  const codeEmail = to.map(extractEmail).map((addr) => addr.split("@")[0]).find((c) => !!c)
+  const codeEmail = codeDeCollecte(to)
   if (!codeEmail) {
     console.error(`[receive-email] aucun destinataire exploitable : ${to.length} destinataire(s) reçu(s), e-mail ${email_id}`)
     return new Response("ok", { status: 200 })

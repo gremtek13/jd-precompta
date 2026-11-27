@@ -55250,3 +55250,23 @@ la chaîne des seize, elle, puis la double authentification : `rls.sql` 346/1 69
 leur pièce changer de dossier (SECU4-Q2). **Écartés** : `search_path = public` (aucun SQL libre par l'API) ; un déclencheur exécutable
 à PUBLIC ; `anon` sur huit colonnes de `cabinets` (zéro ligne) ; le reçu que `reprise_de_la_facture` dit (A8Q5Q3Q2-Q1) ; une
 ouverture attestée par un autre membre dans les cinq minutes ; les unicités, jugées après la RLS.
+### 27/11/2026 — RELECTURE ADVERSE DE SÉCURITÉ DES EDGE FUNCTIONS : LE DOMAINE DE COLLECTE, L'EN-TÊTE FROM, LE COMPTEUR DE L'ASSISTANT
+
+(Un agent architecte, sur sa branche, avant le premier dossier réel ; aucune migration, aucun outil de la base, rien déployé.)
+Les seize fonctions, celles qu'un client ou un inconnu atteint d'abord ; chaque défaut prouvé par un scénario HTTP du harnais,
+rouge sur la source d'avant. **Établis et corrigés** : (1) `receive-email` lisait le dossier dans la partie locale du PREMIER
+destinataire, quel que soit son domaine : un e-mail écrit au client ET à l'adresse de collecte se perdait (« adresse inconnue »,
+200, que Resend ne rejoue pas), et `dossier-voisin@ailleurs.invalid` en tête faisait déposer la pièce jointe dans le dossier
+voisin — seule une adresse du domaine de collecte désigne désormais un dossier (`codeDeCollecte`, sa constante confrontée à
+`DOMAINE_COLLECTE_EMAIL` par adresseCollecte.test.ts) ; (2) `send-email` recopiait le nom de l'émetteur tel quel dans `From` —
+un `emetteur_nom` que le client « Ventes » écrit lui-même par `enregistrer_facture` (la base juge son SIRET et son adresse,
+jamais son nom) : une virgule y faisait deux boîtes, « <…@…> » une seconde adresse, un retour à la ligne une en-tête (RFC 5322,
+§ 2.2 et 3.4) ; le nom part entre guillemets (§ 3.2.4), sans contrôle ni « < > " \ », l'objet sur une ligne, au journal comme
+chez Resend. Cinq défauts plantés les gardent. **Établi, non corrigé, défaut CONNU** (`plafondTenuParLeNavigateur`, deux
+scénarios) : le plafond mensuel de l'assistant se compte sur les lignes `agent_conversations` que le NAVIGATEUR écrit, avec les
+tokens que la réponse lui rend, et que tout le cabinet du dossier supprime (« Supprimer la conversation ») ; un appel direct ou
+une réponse en erreur après le modèle ne se comptent pas — la correction est un compteur que la fonction seule écrit, une
+migration (ASSIST-Q1). **Plausibles, au cabinet** : la lecture sans plafond des pièces jointes reçues par e-mail (RECEP-Q1) ; un
+compte rattaché sur confirmation dont un autre cabinet connaît le mot de passe (ACCES-Q1). **Écartés** (relus, sains) : l'ordre
+appelant puis dépense (aucune lecture sous la clé secrète avant un refus, hors du contrôle de l'appelant lui-même), la signature
+Svix, les identifiants du corps liés au dossier, le SSRF de `plateforme-agreee`, le HTML des e-mails, `historiqueDuClient`.

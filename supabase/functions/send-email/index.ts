@@ -57,6 +57,28 @@ function json(body: unknown, status = 200) {
 const DOMAINE_ENVOI = "precompta.jdarnis.fr"
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+// L'EXPÉDITEUR ET L'OBJET D'UN E-MAIL (relecture adverse de sécurité des Edge Functions, 27/11/2026). Le nom affiché est lu en
+// base, d'une valeur que l'appelant choisit en partie : l'`emetteur_nom` d'une facture, qu'`enregistrer_facture` prend du corps
+// de son appelant — le client « Ventes » compris : la base juge le SIRET et l'adresse de l'émetteur, jamais son nom —, celui
+// d'un devis, le nom du dossier, celui du cabinet. Il partait tel quel dans l'en-tête `From`, et l'objet qui le cite, tel quel
+// dans `Subject` : une virgule y faisait deux boîtes et « <…@…> » une seconde adresse (RFC 5322, § 3.4 : une liste de boîtes se
+// sépare par des virgules, l'adresse d'une boîte s'écrit entre chevrons), un retour à la ligne une en-tête de plus (§ 2.2).
+// Le nom part donc en CHAÎNE ENTRE GUILLEMETS (§ 3.2.4), sans caractère de contrôle ni séparateur de ligne, sans « < », « > »,
+// « " » ni « \ », coupé à 120 caractères (jamais au milieu d'un caractère) ; vide, il signe comme la relance d'une demande dont
+// le cabinet ne se lit pas (`SIGNATURE_DU_CABINET_PAR_DEFAUT`) ; l'objet perd ses caractères de contrôle, au journal comme chez
+// Resend. Le corps de l'e-mail, lui, échappe déjà ce qu'il cite (`echapper`). Contrats : edgeFunctionsHttp.test.ts (send-email).
+const CONTROLES = /[\p{Cc}\p{Zl}\p{Zp}]/gu
+
+function expediteurDeLEmail(nom: string | null | undefined): string {
+  const nettoye = (nom ?? "").replace(CONTROLES, " ").replace(/[<>"\\]/g, "").replace(/\s+/g, " ").trim()
+  const affiche = Array.from(nettoye).slice(0, 120).join("").trim()
+  return `"${affiche === "" ? SIGNATURE_DU_CABINET_PAR_DEFAUT : affiche}" <contact@${DOMAINE_ENVOI}>`
+}
+
+function objetDeLEmail(objet: string): string {
+  return objet.replace(CONTROLES, " ").replace(/\s+/g, " ").trim()
+}
+
 /** Un champ du corps qui se lit comme un texte : un texte, ou rien (absent, nul — « requis » le refuse ensuite). */
 function texteOuAbsent(valeur: unknown): valeur is string | null | undefined {
   return valeur == null || typeof valeur === "string"
@@ -1008,6 +1030,9 @@ Deno.serve(async (req: Request) => {
     html = construit.html
   }
 
+  // L'objet tel qu'il part et se journalise : sur une ligne (voir `objetDeLEmail`).
+  objet = objetDeLEmail(objet)
+
   // Le plafond d'un accès client, compté juste avant l'envoi : le dernier contrôle, une fois tout le reste jugé. Un
   // compte illisible refuse — l'e-mail parti ne se rattrape pas. Il compte tout le journal du dossier ce jour-là, quel
   // qu'en soit le type : les devis comme les factures et les relances.
@@ -1034,7 +1059,7 @@ Deno.serve(async (req: Request) => {
   const resend = new Resend(resendApiKey)
 
   const { data: sent, error: sendError } = await resend.emails.send({
-    from: `${nomExpediteur} <contact@${DOMAINE_ENVOI}>`,
+    from: expediteurDeLEmail(nomExpediteur),
     to: adresse,
     replyTo: callerData.user.email ?? undefined,
     subject: objet,
