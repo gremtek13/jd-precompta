@@ -1335,7 +1335,8 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   (`banque-au-releve`, `lib/releveAuTrenteEtUn.ts`, la règle de la preuve de la Révision) ; drapeau des quatre champs
   baissé, la carte et la confirmation disent l'exercice figé sans eux ; Clôture rappelle le relevé de janvier suivant ;
   le mois en double avertit → « LA VALIDATION : LA BANQUE CONFRONTÉE AU RELEVÉ, LE FEC DIT AVANT LE CLIC, LE RELEVÉ
-  SUIVANT, LE MOIS EN DOUBLE EN AVERTISSEMENT (MVPD7-Q2 À Q5) ».
+  SUIVANT, LE MOIS EN DOUBLE EN AVERTISSEMENT (MVPD7-Q2 À Q5) ». Sauf MCBR-Q2 (A) : un compte au 512 propre dès le 1er janvier suivant,
+  ce que son éclatement refuserait retient (`ouverture-suivante-retenue`, `refusDeLOuvertureSuivante` ; filet différé préparé) → « MCBR-Q2 ».
 - **Le modèle comptable** se règle tant que le brouillon est vide → « LA COMPTABILITÉ D'ENGAGEMENT » ; le lettrage se
   DÉDUIT du rapprochement → « LE LETTRAGE SE DÉDUIT DU RAPPROCHEMENT ». **Ouverture** : une balance reprise contrôlée
   devient les à-nouveaux, une fois ; ensuite seulement après validation du précédent (`soldes_reportes`) → « LA

@@ -38,14 +38,19 @@ const faux = vi.hoisted(() => ({
   relevesIllisibles: false,
   // Le compte connecté est-il chef du cabinet (la revue d'un cycle lui est réservée, hypothèse Q2) ?
   estChef: false,
+  // `COMPTES_BANCAIRES_PREVUS`, tel que le module le rend ici : baissé par défaut (l'état d'avant), levé le temps d'un cas.
+  comptesBancairesPrevus: false,
 }))
 
 // L'état d'avant les comptes bancaires, que ces cas éprouvent : `COMPTES_BANCAIRES_PREVUS` est LEVÉ depuis le 27/11/2026
-// (MCB5g en production, 258 et 259) ; ici forcé baissé — un drapeau levé garde son état d'avant éprouvé. L'écran sous le
-// drapeau levé (un seul compte : celui d'hier ; plusieurs : chacun le sien) se joue dans les tests de MCB2 à MCB7.
-vi.mock('../../lib/comptesBancaires', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../lib/comptesBancaires')>()), COMPTES_BANCAIRES_PREVUS: false,
-}))
+// (MCB5g en production, 258 et 259) ; ici baissé par défaut — un drapeau levé garde son état d'avant éprouvé. L'écran sous le
+// drapeau levé (un seul compte : celui d'hier ; plusieurs : chacun le sien) se joue dans les tests de MCB2 à MCB7 ; ici, le seul
+// cas de MCBR-Q2 (« Avant de valider l'exercice »), sous un accesseur.
+vi.mock('../../lib/comptesBancaires', async (importOriginal) => {
+  const module = { ...(await importOriginal<typeof import('../../lib/comptesBancaires')>()) }
+  Object.defineProperty(module, 'COMPTES_BANCAIRES_PREVUS', { get: () => faux.comptesBancairesPrevus, enumerable: true })
+  return module
+})
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatIn, predicatIs, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
@@ -91,9 +96,9 @@ vi.mock('../../lib/supabase', async () => {
   }
 })
 vi.mock('../../lib/controlesReleves', () => ({
-  chargerControlesReleves: async () => {
+  chargerControlesReleves: async (dossierId: string) => {
     if (faux.relevesIllisibles) throw new Error('lecture refusée')
-    return []
+    return (faux.tables.controles_releves_bancaires ?? []).filter((r) => (r as { dossier_id?: string }).dossier_id === dossierId)
   },
 }))
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
@@ -250,6 +255,7 @@ beforeEach(() => {
   faux.reponseRpc = rpcCommeLaBase
   faux.relevesIllisibles = false
   faux.estChef = false
+  faux.comptesBancairesPrevus = false
   numero = 0
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-03-15T10:00:00Z'))
@@ -1141,6 +1147,29 @@ describe('RevisionTab — avant de valider l’exercice', () => {
     expect(onNavigate).toHaveBeenLastCalledWith('cloture')
     // Aucune fonction appelée : la section ne fait que lire.
     expect(faux.appels.map((a) => a.nom)).not.toContain('valider_exercice')
+  })
+
+  // MCBR-Q2 (A), le drapeau des comptes bancaires levé : un second compte tient son 512200 dès le 01/01/2026 sans solde lisible
+  // au 31/12/2025 — parmi ce qui empêche de valider, aux mots du refus de l'éclatement, l'onglet Banque d'un clic.
+  it('dit, parmi ce qui empêche de valider, l’ouverture de 2026 qu’un second compte sans son solde du 31/12/2025 retiendrait', async () => {
+    dossier2025()
+    faux.comptesBancairesPrevus = true
+    const compte = (id: string, o: Record<string, unknown>) => ({
+      id, dossier_id: DOSSIER, fin_d_identifiant: null, ouvert_le: null, clos_le: null, ...o,
+    })
+    faux.tables.comptes_bancaires = [
+      compte('cb-p', { libelle: 'Compte principal', principal: true, compte: null, compte_propre_depuis: null }),
+      compte('cb-s', { libelle: 'Livret fictif', principal: false, compte: '512200', compte_propre_depuis: '2026-01-01', ouvert_le: '2024-06-01' }),
+    ]
+    const onNavigate = vi.fn()
+    rendre({ onNavigate })
+    await screen.findByRole('heading', { name: 'Avant de valider l’exercice 2025' })
+    const ici = section()
+    const ligne = within(ici).getByText(/« Livret fictif » ne se lit sur aucun de ses relevés contrôlés/).closest('li') as HTMLElement
+    expect(texte(ligne)).toContain('Le solde au 31/12/2025 du compte bancaire « Livret fictif » ne se lit sur aucun de ses relevés contrôlés')
+    expect(texte(ligne)).toContain('l’exercice 2026 ne se validerait plus')
+    await act(async () => { fireEvent.click(within(ligne).getByRole('button', { name: 'Banque' })) })
+    expect(onNavigate).toHaveBeenCalledWith('banque')
   })
 
   it('une lecture que seule la validation fait, refusée : un bandeau, et aucun préalable', async () => {

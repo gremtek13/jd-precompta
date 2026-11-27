@@ -265,6 +265,51 @@ export function phraseDeLEclatement(etat: EtatDeLEclatement, annee: number): str
   return (refusALaValidation(etat, annee) as RefusDit).message
 }
 
+// ── L'ouverture de l'exercice SUIVANT, à la validation (MCBR-Q2 (A), décision du cabinet du 27/11/2026) ─────────────────────
+// Un compte bancaire qui tient son propre 512 depuis le 1er janvier qui suit l'exercice y prendra, à l'éclatement de cette
+// ouverture, son solde au relevé du 31 décembre ; la somme des soldes de tous les comptes du 512 du rôle devra y faire ce 512,
+// tel que la validation le reporte. Validé sans cela, l'exercice figerait un 512 du rôle que rien ne répare (une écriture libre
+// ne touche pas la banque, lib/ecritureLibre.ts), et l'éclatement de l'exercice suivant se refuserait à jamais, sa validation
+// avec lui (le filet de MCB5G-Q2). La validation de l'exercice le refuse donc, dans ce seul cas, aux mots du refus de
+// l'éclatement : le MÊME calcul (`ouvertureEclateeAttendue`), sur l'exercice suivant tel que la validation le laissera —
+// l'exercice parmi les validés, ses soldes à reporter (lib/reportDesSoldes.ts) devenus les soldes reportés du 1er janvier
+// suivant. Le préalable `ouverture-suivante-retenue` (lib/prealablesValidation.ts) le dit avant le clic ; la base le refuse
+// aussi, au même calcul, une fois sa migration en base (supabase/preparees/20261127190000_ouverture_suivante_a_la_validation.sql,
+// `ouverture_eclatee_attendue` appelée sur l'exercice suivant à la fin de la transaction de `valider_exercice`).
+
+/** Le report que la validation de l'exercice écrira (`soldesAReporter`) : le 1er janvier suivant, et ses soldes. */
+export interface ReportDeLaValidation {
+  date: string
+  soldes: readonly Pick<SoldeReporte, 'compte' | 'sens' | 'montant'>[]
+}
+
+/**
+ * Le refus que l'éclatement de l'ouverture de l'exercice SUIVANT opposerait une fois cet exercice validé — un solde au
+ * 31 décembre qui ne se lit pas, deux relevés qui se contredisent, la somme des soldes qui ne fait pas l'ouverture du 512 du
+ * rôle —, ou rien : aucun compte n'en sort, ou il en sort à zéro, ou l'éclatement se fera. `e.annee` est l'exercice qu'on
+ * valide ; ses soldes reportés du 1er janvier suivant sont ceux du report, jamais ceux d'une lecture. Sans défaut.
+ */
+export function refusDeLOuvertureSuivante(e: EntreesDeLEclatement, report: ReportDeLaValidation): RefusDit | null {
+  const suivante = ouvertureEclateeAttendue({
+    ...e,
+    annee: e.annee + 1,
+    reportes: [
+      ...e.reportes.filter((s) => s.date !== report.date),
+      ...report.soldes.map((s) => ({ date: report.date, compte: s.compte, sens: s.sens, montant: s.montant })),
+    ],
+    anneesValidees: [...e.anneesValidees, e.annee],
+  })
+  return suivante.etat === 'refus' ? suivante.refus : null
+}
+
+/** Pourquoi le refus de l'éclatement de l'exercice suivant retient la validation de celui-ci : la phrase du détail du préalable. */
+export function detailDeLOuvertureSuivante(annee: number, role: string): string {
+  return `Un compte bancaire tient son propre 512 depuis le 01/01/${annee + 1} : l’ouverture de ${annee + 1} y passera son solde au `
+    + `relevé du 31/12/${annee}, face au ${role} que cette validation reportera. Validé ainsi, l’exercice ${annee} figerait ce ${role}, `
+    + `que rien ne répare ensuite — une écriture libre ne touche pas la banque —, et l’exercice ${annee + 1} ne se validerait plus. `
+    + `Dans Banque, importer le relevé qui manque, ou trouver ce qui fait l’écart — la preuve du ${role}, dans Révision, en compte les causes.`
+}
+
 // ── Ce que la Vue d'ensemble en dit (MCB5g ; lib/pointsDeLaChecklist.ts, le point `ouverture-a-eclater`) ──────────────────
 
 /** Un exercice ouvert dont l'éclatement appelle un clic, sous la phrase de la carte. */

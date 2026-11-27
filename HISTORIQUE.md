@@ -55275,3 +55275,22 @@ Svix, les identifiants du corps liés au dossier, le SSRF de `plateforme-agreee`
 
 (Agent dev ; aucune migration, aucun code de l'application.) Réunis, `compte_bancaire_id` obligatoire (`'cb-essai'` dans les fabriques) et le refus d'un compte que la lecture ne rend pas (`REFUS_COMPTE_INCONNU`, sous la banque du rôle) rendaient 14 fichiers d'écran rouges (53 tests) : leurs faux clients rendaient des mouvements au compte d'essai devant une table `comptes_bancaires` vide, un dossier que la base ne peut pas porter.
 La réparation est dans les jeux d'essai : `src/test/compteBancaireDEssai.ts` (`COMPTE_BANCAIRE_D_ESSAI` et sa ligne, le principal sans 512 propre), servie par les faux clients de `cotisationsGestes.ts`, `cotisationsPaiementPersonnel.ts` et des dix fichiers d’écran qui ont le leur ; les fabriques de `src/test/` citent la constante. La règle de `banqueDuMouvement.ts` est intacte, et aucun écran ne bâtissait ses banques sans les comptes lus : chaque échec venait d'un faux client, aucun d'un défaut de l'application.
+
+### 27/11/2026 — MCBR-Q2 : LA VALIDATION REFUSE L'OUVERTURE SUIVANTE QU'ELLE FIGERAIT SANS REMÈDE
+
+(Agent architecte ; rien en production.) MCBR-Q2 (A) écrite. **L'écran** : le préalable BLOQUANT `ouverture-suivante-retenue`
+(lib/prealablesValidation.ts, cycle trésorerie, vers Banque), par `refusDeLOuvertureSuivante` (lib/ouvertureEclatee.ts) : le calcul
+même de l'éclatement (`ouvertureEclateeAttendue`), sur l'exercice suivant tel que la validation le laissera — l'exercice parmi les
+validés, son report (`soldesAReporter`) en soldes reportés du 1er janvier suivant, jamais une lecture. Ses refus à leurs mots : un
+solde illisible (`inconnu`, et `plusieurs` : deux relevés qui se contredisent ne disent pas de solde lisible non plus), la somme
+(`somme`) ; le détail dit pourquoi l'exercice suivant ne se validerait plus. Muet drapeau baissé, sur des contrôles illisibles,
+avant une reprise ; une lecture partielle s'arrête avant. `banque-au-releve` reste dit, en avertissement. Clôture et « Avant de
+valider l'exercice » le reçoivent sans changement (deux tests d'écran ; RevisionTab.test lève le drapeau des comptes par un
+accesseur). **La base** : un filet, la validation ne se défaisant pas. `ouverture_suivante_a_la_validation`, préparée, sans drapeau
+(l'écran part seul), par l'outil : un déclencheur de contrainte AFTER INSERT sur `exercices_valides`, DIFFÉRÉ — avant l'insertion
+l'exercice n'est pas validé, juste après son ouverture n'est pas écrite (la mutation M4 : un 512 nul) —, sa condition
+`current_user <> 'authenticated'` jugée à l'insertion (la restauration exceptée, comme 259), sa fonction en definer qui appelle
+`ouverture_eclatee_attendue(new.dossier_id, new.annee + 1)` ; sa garde de tête lit l'empreinte de ce corps (`b675ca44…`, 258) et
+les deux insertions de `valider_exercice`. Une copie de `replique_227` portée à 259 (dérive `a540bcd9…`) : essai 13/13,
+5 mutations sur 5, seconde application refusée, retour → signature égale ; `ouvertureEclatee` 41/41 et `validationExercice` 250/250
+avant comme après ; les 16 autres par-dessus (276), puis elle après elles : justes. Le retour de 258 l'attend. MCBR2-Q1 et Q2 posées.

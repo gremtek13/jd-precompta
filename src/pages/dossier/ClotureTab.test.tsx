@@ -2418,6 +2418,43 @@ describe('ClotureTab — valider l’exercice', () => {
     expect(onNavigate).toHaveBeenCalledWith('ecritures')
   })
 
+  // MCBR-Q2 (A) : un second compte bancaire tient son propre 512 depuis le 01/01/2026, sans solde lisible sur ses relevés au
+  // 31/12/2025 — l'ouverture de 2026 ne s'éclaterait jamais, une fois 2025 figé. La validation de 2025 se retient, aux mots du
+  // refus de l'éclatement, et la carte mène à Banque ; son relevé du 31/12/2025 importé (un solde nul : rien à éclater), plus rien.
+  it('un second compte sans son solde du 31/12/2025, qui tient son 512 dès 2026, retient la validation de 2025', async () => {
+    poserTenu()
+    const compte = (id: string, o: Record<string, unknown>) => ({
+      id, dossier_id: 'dossier-de-test', fin_d_identifiant: null, ouvert_le: null, clos_le: null, ...o,
+    })
+    faux.parTable.comptes_bancaires = [
+      compte('cb-p', { libelle: 'Compte principal', principal: true, compte: null, compte_propre_depuis: null }),
+      compte('cb-s', { libelle: 'Livret fictif', principal: false, compte: '512200', compte_propre_depuis: '2026-01-01', ouvert_le: '2024-06-01' }),
+    ]
+    faux.parTable.lignes_bancaires = [{ ...PAIEMENT, compte_bancaire_id: 'cb-p' }]
+    const releve = (id: string, compteId: string, initial: number, final: number) => ({
+      id, dossier_id: 'dossier-de-test', compte_bancaire_id: compteId, source_fichier: null, solde_initial: initial, solde_final: final,
+      somme_mouvements: final - initial, ecart: 0, coherent: true, periode_debut: '2025-01-01', periode_fin: '2025-12-31',
+      created_at: '2026-01-05T00:00:00Z',
+    })
+    faux.parTable.controles_releves_bancaires = [releve('r-p', 'cb-p', 0, -120)]
+    const onNavigate = monterAvec()
+    const c = await carte()
+    const ligne = c.getByText(/« Livret fictif » ne se lit sur aucun de ses relevés contrôlés/).closest('li') as HTMLElement
+    expect(ligne.textContent).toContain('Le solde au 31/12/2025 du compte bancaire « Livret fictif » ne se lit sur aucun de ses relevés '
+      + 'contrôlés : importer le relevé qui finit ce jour-là, ou celui qui le couvre, avant d\'éclater l\'ouverture de la banque.')
+    expect(ligne.textContent).toContain('l’exercice 2026 ne se validerait plus')
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { fireEvent.click(within(ligne).getByRole('button', { name: 'Banque' })) })
+    expect(onNavigate).toHaveBeenCalledWith('banque')
+    cleanup()
+
+    faux.parTable.controles_releves_bancaires = [releve('r-p', 'cb-p', 0, -120), releve('r-s', 'cb-s', 0, 0)]
+    monterAvec()
+    const apres = await carte()
+    expect(apres.queryAllByText(/ne se lit sur aucun de ses relevés contrôlés/)).toHaveLength(0)
+    expect(apres.queryAllByText(/l’exercice 2026 ne se validerait plus/)).toHaveLength(0)
+  })
+
   // D4 (relecture du 03/11/2026) : la carte « Cases « dont » incohérentes » PEUT paraître — un remboursement de cotisations
   // classé en charge fait baisser BK sans toucher BT — et se tait une fois l'exercice validé : la validation la refuse
   // donc avant. Une échéance obligatoire de 600 € (BT), un contrat Madelin payé 400 € (BZ), un remboursement de 300 € classé

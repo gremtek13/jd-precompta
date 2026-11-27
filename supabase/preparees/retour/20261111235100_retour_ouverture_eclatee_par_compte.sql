@@ -16,6 +16,10 @@ begin
   if to_regprocedure('public.garder_ouverture_eclatee_a_la_validation()') is not null then
     raise exception 'Le filet de la validation (ouverture_eclatee_a_la_validation, MCB5G-Q2) est en base : son retour se colle d''abord.';
   end if;
+  -- Et celui de l'ouverture suivante (MCBR-Q2), préparé le 27/11/2026, qui l'appelle aussi, à la fin de chaque validation.
+  if to_regprocedure('public.garder_ouverture_suivante_a_la_validation()') is not null then
+    raise exception 'Le filet de l''ouverture suivante (ouverture_suivante_a_la_validation, MCBR-Q2) est en base : son retour se colle d''abord.';
+  end if;
   if exists (select 1 from public.ecritures_brouillon where ouverture_compte_bancaire_id is not null) then
     raise exception 'Des écritures éclatent l''ouverture de la banque : le retour se refuse tant qu''elles existent (une validation les aurait figées, ou les recomposer à vide les retire).';
   end if;

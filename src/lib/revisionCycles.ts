@@ -184,6 +184,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'ouverture-sans-reprise': 'tresorerie',
   // L'ouverture de la banque éclatée entre les comptes bancaires (MCB5, sixième partie) : la trésorerie de chaque compte.
   'ouverture-a-eclater': 'tresorerie',
+  // Et celle de l'exercice suivant, que la validation figerait sans remède (MCBR-Q2 (A)) : le relevé du 31 décembre de chaque compte.
+  'ouverture-suivante-retenue': 'tresorerie',
   'mouvements-a-traiter': 'tresorerie',
   'lignes-non-rapprochees': 'tresorerie',
   // La note de frais de l'exploitant rapprochée de son remboursement, en trésorerie (conception 58, § 2.1) : un mouvement à reclasser.

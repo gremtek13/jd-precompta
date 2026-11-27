@@ -13,7 +13,7 @@ import {
 import { refusDesChampsBnc, type LigneAJuger } from './champsBncFiges'
 import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { confronterLOuverture, ouvertureEnEcart } from './ouvertureConfrontee'
-import { eclatementDeLExercice, refusALaValidation } from './ouvertureEclatee'
+import { detailDeLOuvertureSuivante, eclatementDeLExercice, refusALaValidation, refusDeLOuvertureSuivante } from './ouvertureEclatee'
 import { MODELES_DE_LA_VALIDATION, prealablesDeLInventaire, type InventaireDeLaValidation } from './inventaireDeLaValidation'
 import { cibleDesPrealablesDeLInventaire } from './inventaireDesControles'
 import { INVENTAIRE_EXPORTE } from './inventaire'
@@ -890,6 +890,27 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
         message: refus.message,
         detail: 'Dans Écritures, la carte « Ouverture de la banque par compte » l’écrit, la réécrit ou la retire d’un clic.',
       })
+    }
+  }
+
+  // ── L'ouverture de l'exercice SUIVANT, que cette validation figerait sans remède (MCBR-Q2 (A), le 27/11/2026). ────────────
+  // Un compte bancaire qui tient son propre 512 depuis le 1er janvier qui suit l'exercice : son solde au relevé du 31 décembre
+  // qui ne se lit pas, deux relevés qui se contredisent, ou la somme des soldes des comptes qui ne fait pas le 512 du rôle que la
+  // validation reporte — l'éclatement de l'exercice suivant se refuserait à jamais, l'exercice validé n'y pouvant plus rien
+  // changer. Dans CE SEUL CAS, la validation se refuse, aux mots du refus de l'éclatement : le MÊME calcul
+  // (`refusDeLOuvertureSuivante`, lib/ouvertureEclatee.ts), sur l'exercice suivant tel que cette validation le laissera — ses
+  // soldes reportés, ceux de `report`. Pour tout autre dossier, le 512 confronté au relevé reste un avertissement
+  // (`banque-au-releve`, MVPD7-Q2). Comme `ouverture-a-eclater` : rien drapeau baissé (aucun compte lu), rien sur des contrôles
+  // illisibles (`releves-inconnus` retient la validation), et une lecture partielle s'est arrêtée plus haut ; rien pour un
+  // exercice que la reprise précède (`avant-ouverture` le retient). La base le refuse aussi, aux mêmes mots, une fois sa
+  // migration en base : supabase/preparees/20261127190000_ouverture_suivante_a_la_validation.sql.
+  if (d.comptesBancaires.etat === 'lus' && d.controlesReleves !== null && !(anneeOuverture !== null && d.annee < anneeOuverture)) {
+    const refus = refusDeLOuvertureSuivante({
+      annee: d.annee, role: d.modele.plan.banque, parts: partsDuReleve, reprise: d.aNouveaux, reportes: d.soldesReportes,
+      anneesValidees: d.anneesValidees, datesDesEcritures: d.ecritures.map((e) => e.date), datesDesMouvements: d.lignes.map((l) => l.date),
+    }, report)
+    if (refus !== null) {
+      bloque({ id: 'ouverture-suivante-retenue', nb: null, cible: 'banque', message: refus.message, detail: detailDeLOuvertureSuivante(d.annee, d.modele.plan.banque) })
     }
   }
 

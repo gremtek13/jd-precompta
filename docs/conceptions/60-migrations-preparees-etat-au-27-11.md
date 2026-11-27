@@ -49,6 +49,13 @@ ci-dessous restent ceux de la répétition.
 | 19 bis | `20261127200000_piece_d_une_ecriture_libre_dans_son_dossier` | SECU4-Q1, la pièce qu'une écriture libre cite tenue dans son dossier (relecture de sécurité du 27/11/2026) | aucun (l'application ne déplace jamais une pièce) | par l'outil | — (EL2 et EL7, en production) | SECU4-Q1 (et SECU4-Q2, plus large) | sur 259 : 12/12, 4 mutations sur 4 ; `rls.sql` 295/1 357/0/178 |
 | 20 | `20261107160000_deux_facteurs_exiges` | C7, la double authentification exigée | `DEUX_FACTEURS_EXIGES_EXPORTE` ; `DEUX_FACTEURS_EXIGES_EN_BASE` (quatorze Edge Functions) | à coller ; retour en deux temps | en dernier | SEC2-Q1 : après le MVP | 42/0, 15 sur 15 |
 | — | `20261107120000_facture_internationale` | e7a, la facture à un client hors de France | `FACTURE_INTERNATIONALE_EXPORTEE` | à coller | — | REPET-Q1 (B) : rebasée à son collage, après le MVP | REFUSE (sa garde vise le corps d'`enregistrer_facture` d'`acomptes_des_devis`) |
+| 21 | `20261127190000_ouverture_suivante_a_la_validation` | MCBR-Q2 (A), la validation refuse l'ouverture suivante qu'elle figerait sans remède | aucun (le préalable `ouverture-suivante-retenue` part seul) | par l'outil | — (258 et 259, en production) ; avant ou après les autres | l'accord | sur 259 : 13/13, 5 sur 5 ; puis sous et sur la chaîne (276) |
+
+**La 21, le 27/11/2026 au soir** (MCBR-Q2, HISTORIQUE.md, « MCBR-Q2 : LA VALIDATION REFUSE L'OUVERTURE SUIVANTE ») : sur une copie
+portée à 259 (dérive `a540bcd9…`), son essai `ouvertureSuivanteALaValidation` 13/13 et cinq mutations sur cinq, sa seconde
+application refusée, son retour rendant la signature d'avant ; `ouvertureEclatee` 41/41 et `validationExercice` 250/250 avant et
+après elle. Les 16 autres par-dessus, dans l'ordre du tableau (276) : les trois essais justes ; puis elle retirée et collée après
+elles, sur le corps d'INV3 de `valider_exercice` : son essai juste. Le retour de 258 se refuse désormais tant qu'elle est en base.
 
 **La chaîne**, dans l'ordre du tableau (e7a hors d'elle) : 275 migrations, toutes appliquées ; `rls.sql` 346 lignes, 1 692
 vérifications, 0 en faute, 220 mutations sur 220 qui mordent, aucune EN ATTENTE ; les retours, à rebours, rendent la base à 255

@@ -294,6 +294,8 @@ describe('le rangement des contrôles existants', () => {
       'caisse-paiements-a-retirer',
       // MVPD7-Q2 : le 512 confronté au relevé du 31 décembre, et la banque d'un dossier ouvert sans balance reprise.
       'banque-au-releve', 'ouverture-sans-reprise', 'ouverture-a-eclater',
+      // MCBR-Q2 (A) : l'ouverture de l'exercice suivant, que la validation figerait sans remède.
+      'ouverture-suivante-retenue',
     ],
     // Étape VF5f : l'encaissement d'une facture qui attend son mouvement du relevé, au registre des ventes.
     recettes: [
