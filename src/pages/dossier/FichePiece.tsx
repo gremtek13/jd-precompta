@@ -100,8 +100,13 @@ interface Props {
   // LA RÉVISION DES SOLDES QUI CITE CETTE PIÈCE (ligne 41, hypothèse Q8, `garder_source_citee`) : la phrase de la base
   // qui refuse sa suppression (`refusDuRetraitDUneSource`), ou rien. La fiche le dit et n'offre pas « Supprimer » ; le
   // reste de la pièce se modifie toujours — un fichier remplacé change son empreinte, et la décision qui la cite le dira.
-  // Ou, après elle et le dossier permanent, l'écriture libre qui la cite, sous sa référence (ELQ8Q1-Q1 (A)).
+  // Ou, après elle et le dossier permanent, l'écriture libre qui la cite, sous sa référence (ELQ8Q1-Q1 (A)) ; toutes, à la
+  // suite, quand plusieurs la citent (ELQ8Q1-Q2 (A)).
   citeePar?: string | null
+  // POURQUOI SON FICHIER NE SE REMPLACE PAS (RA253-Q3 (A) ; `remplacementDuFichierRetenu`, lib/pieceCiteeParUneEcritureLibre.ts) :
+  // une écriture libre la cite — la base refuse de retirer le fichier d'une pièce citée —, ou les citations ne sont pas revenues
+  // en entier. La fiche n'offre pas « Remplacer le fichier » et dit pourquoi, comme pour une pièce figée ; rien : le geste reste.
+  remplacementRetenu?: string | null
   // LA FACTURE ÉMISE QUE CETTE PIÈCE PORTE (ligne 28.6, lib/ventesJumelles.ts) : sa marque, et le nom des autres pièces
   // qui portent la même facture. L'écran appelant ne la donne que sur des listes lues en entier ; rien, sinon.
   venteEmise?: (Pick<MarqueDeLaPiece, 'genre' | 'libelle' | 'explication'> & { autres: string[] }) | null
@@ -128,7 +133,7 @@ interface Props {
   doublonProbable?: string | null
 }
 
-export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, venteEmise = null, horsDeFrance, exemplaire = null, caisse = null, doublonProbable = null }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, remplacementRetenu = null, venteEmise = null, horsDeFrance, exemplaire = null, caisse = null, doublonProbable = null }: Props) {
   const fige = piece !== null && figeePar !== null
   // « Proposer une catégorie » appartient à l'assistant (conception 56, OPT3) ; la règle apprise reste au socle.
   const { ouverts: modulesOuverts } = useModulesOuverts()
@@ -662,6 +667,8 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       if (!piece && !file) {
         throw new Error('Merci de déposer un fichier.')
       }
+      // Le champ est désactivé, mais un fichier choisi avant que la citation ne se lise ne part pas non plus (RA253-Q3 (A)).
+      if (file && remplacementRefuse !== null) throw new Error(remplacementRefuse)
       await enregistrerLaNote()
       // Uniquement quand un nouveau fichier est choisi (pas en simple modification d'une pièce
       // existante sans redéposer) — même détection que l'import en masse et les autres dépôts à
@@ -863,6 +870,9 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   // lecture du document ne ferait que deviner moins bien, et payer.
   const recuePlateforme = piece?.source === 'plateforme'
   const occupee = saving || deleting
+  // RA253-Q3 (A) : le fichier d'une pièce qu'une écriture libre cite ne se remplace pas, et la fiche dit pourquoi. Une pièce figée
+  // le dit déjà dans sa phrase, et celle de la plateforme n'offre jamais le remplacement : rien de plus pour elles.
+  const remplacementRefuse = piece !== null && !fige && !recuePlateforme ? remplacementRetenu : null
 
   // Une pièce sans catégorie : d'abord ce que les règles apprises savent de son fournisseur, et le
   // modèle SEULEMENT pour ce qu'elles ne savent pas (CLAUDE.md, « les règles d'abord »). Une règle
@@ -927,6 +937,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             </p>
           )}
           {citeePar && <p className="fiche-piece-figee"><NumerosEntiers texte={citeePar} /></p>}
+          {remplacementRefuse && <p className="fiche-piece-figee"><NumerosEntiers texte={remplacementRefuse} /></p>}
           {declareePar && <p className="fiche-piece-figee">{declareePar}</p>}
           {retenueParLaCaisse && <p className="fiche-piece-figee">{retenueParLaCaisse}</p>}
           {doublonProbable && (
@@ -1008,7 +1019,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             <>
               <div className="field">
                 <label htmlFor="file">{piece ? 'Remplacer le fichier' : 'Fichier'}</label>
-                <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={fige} onChange={(e) => { void choisirFichier(e.target) }} />
+                <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={fige || remplacementRefuse !== null} onChange={(e) => { void choisirFichier(e.target) }} />
                 {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
                 {refusFichier && <span className="error-text">{refusFichier}</span>}
               </div>

@@ -1639,7 +1639,8 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
     await ouvrir('ALPHA')
     expect(phraseDuVolet()).toBe(PHRASE)
     // La référence ne se coupe pas à son trait d'union (vu au banc le 26/11/2026, sur téléphone : « EL2026- / 0003 »).
-    expect([...volet().querySelectorAll('.fiche-piece-figee .numero-entier')].map((e) => e.textContent)).toEqual(['EL2026-0003'])
+    // Deux fois : la suppression, puis le remplacement du fichier (RA253-Q3 (A)).
+    expect([...volet().querySelectorAll('.fiche-piece-figee .numero-entier')].map((e) => e.textContent)).toEqual(['EL2026-0003', 'EL2026-0003'])
     expect(screen.queryByText(/secret/)).toBeNull()
     expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
 
@@ -1658,7 +1659,11 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
     await ouvrir('ALPHA')
     expect(phraseDuVolet()).toBe('Cette pièce est citée par l’écriture libre EL2026-0003 : elle ne se supprime plus, sauf avec son '
       + 'dossier. L’écriture EL2026-0003 est d’un exercice validé : sa citation ne se retire plus, et la pièce reste au dossier.')
-    expect([...volet().querySelectorAll('.fiche-piece-figee .numero-entier')].map((e) => e.textContent)).toEqual(['EL2026-0003', 'EL2026-0003'])
+    expect([...volet().querySelectorAll('.fiche-piece-figee .numero-entier')].map((e) => e.textContent))
+      .toEqual(['EL2026-0003', 'EL2026-0003', 'EL2026-0003', 'EL2026-0003'])
+    expect(phraseDuRemplacement()).toBe('Son fichier ne se remplace plus : l’écriture libre EL2026-0003 cite ce fichier-là. '
+      + 'L’écriture EL2026-0003 est d’un exercice validé : sa citation ne se retire plus, et le fichier reste celui-ci.')
+    expect(remplacement()?.disabled).toBe(true)
     expect(within(volet()).queryByText(/retire d’abord/)).toBeNull()
     expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
   })
@@ -1743,6 +1748,35 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
     await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Supprimer' })) })
     expect(await within(volet()).findByText(/^Cette pièce est citée par une écriture libre du dossier : elle ne se supprime plus/)).toBeTruthy()
     expect(faux.suppressions).toEqual(['p-citee'])
+  })
+
+  // RA253-Q3 (A) : la base refuse de retirer le fichier d'une pièce citée (254) ; la fiche n'offre plus « Remplacer le fichier ».
+  const remplacement = () => volet().querySelector<HTMLInputElement>('input#file')
+  const phraseDuRemplacement = () => [...volet().querySelectorAll('.fiche-piece-figee')].map((e) => e.textContent ?? '')
+    .find((t) => t.startsWith('Son fichier') || t.startsWith('Les écritures libres du dossier')) ?? null
+
+  it('la fiche d’une pièce citée n’offre pas le remplacement de son fichier, et dit pourquoi ; une autre l’offre', async () => {
+    poser(deux())
+    citer()
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(phraseDuRemplacement()).toBe('Son fichier ne se remplace plus : l’écriture libre EL2026-0003 cite ce fichier-là. '
+      + 'Pour le remplacer, retire d’abord la citation de l’écriture, dans l’onglet Écritures.')
+    expect(remplacement()?.disabled).toBe(true)
+
+    await ouvrir('BETA')
+    expect(phraseDuRemplacement()).toBeNull()
+    expect(remplacement()?.disabled).toBe(false)
+  })
+
+  it('lues en partie, les écritures libres retiennent le remplacement de toute pièce, et la fiche le dit', async () => {
+    poser(deux())
+    citer()
+    faux.muetApres = { ecritures_libres: 0 }
+    monter('toutes')
+    await ouvrir('BETA')
+    expect(phraseDuRemplacement()).toMatch(/^Les écritures libres du dossier n’ont pas pu être lues en entier \(.*\) : son fichier ne se remplace pas/)
+    expect(remplacement()?.disabled).toBe(true)
   })
 })
 
