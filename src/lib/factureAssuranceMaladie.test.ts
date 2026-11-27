@@ -155,9 +155,16 @@ describe('tout doute se refuse, aux mots dits avant le clic, sans numéro de lot
     expect(refuse([bordereau({ caisse: 1_000_000_001, mutuelle: 0 })])).toBe('bordereau 1 de l’envoi : un total du lot n’est pas un montant lisible')
   })
 
-  it('le même lot deux fois dans l’envoi, sous la même date ou sous une autre', () => {
+  it('le même lot deux fois dans l’envoi : un même numéro, une même date de création et une même caisse', () => {
     expect(refuse([bordereau(), bordereau({ lot: 999999002 }), bordereau()])).toBe('bordereaux 1 et 3 de l’envoi : le même lot deux fois')
-    expect(refuse([bordereau(), bordereau({ creeLe: '2026-10-09' })])).toBe('bordereaux 1 et 2 de l’envoi : le même lot deux fois')
+  })
+
+  it('relecture du 27/11/2026 : un même numéro sous une autre date ou une autre caisse est un AUTRE lot, comme pour la base', () => {
+    // La clé du registre de BOR3 est le numéro, la date de création et la caisse (`doublonLot`, l'empreinte HMAC) ; un numéro
+    // de lot à trois chiffres revient au fil d'une année (conception 59, § 5.2), et rien n'établit qu'il soit unique d'une
+    // caisse à l'autre (§ 8). Avant, l'écran refusait sur le numéro seul un envoi que la base aurait accepté.
+    expect(factureDesBordereaux([bordereau(), bordereau({ creeLe: '2026-10-09' })], parametres()).etat).toBe('pret')
+    expect(factureDesBordereaux([bordereau(), bordereau({ organisme: { code: '998', libelle: 'CPAM - VILLE FICTIVE' } })], parametres()).etat).toBe('pret')
   })
 
   it('une date impossible, ou après aujourd’hui ; le jour même passe', () => {
@@ -258,7 +265,7 @@ describe('le canari : ni numéro de lot ni libellé dans ce qui se sérialise, e
       }
       // Un envoi sur cinq porte un doute : un lot créé après aujourd'hui, ou un lot repris.
       const doute = entierTire(t, 5)
-      if (doute === 0) bs.push(bordereau({ lot: bs[0].lot }))
+      if (doute === 0) bs.push({ ...bs[0] })
       if (doute === 1) bs.push(bordereau({ lot: 999_999_998, creeLe: '2026-12-01' }))
       const r = factureDesBordereaux(bs, parametres())
       const texte = JSON.stringify(r)

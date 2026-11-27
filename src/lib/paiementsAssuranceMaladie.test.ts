@@ -287,6 +287,12 @@ describe('le réglage et les statuts', () => {
     expect(refusDuReglage({ parts: [{ ...REGLAGE.parts[0], montant: 14 }] }, 14)).toMatch(/pas dans le fichier/)
     expect(refusDuReglage({ parts: [{ ...REGLAGE.parts[0], statut: 9 }] }, 14)).toMatch(/qu’à un usage/)
   })
+  it('relecture du 27/11/2026 : la colonne du montant d’une part ne sert pas à l’autre — chaque facture se compterait deux fois', () => {
+    const doublee: ReglageDesColonnes = { parts: [REGLAGE.parts[0], { ...REGLAGE.parts[1], montant: REGLAGE.parts[0].montant }] }
+    expect(refusDuReglage(doublee, 14)).toBe('La colonne du montant d’une part ne sert pas à l’autre part : chaque somme se compterait deux fois.')
+    // La journée, le statut et l'organisme se partagent entre les parts (le même fichier les porte une fois) : rien ne change.
+    expect(refusDuReglage(REGLAGE, 14)).toBeNull()
+  })
   it('une liste fermée, sans casse ni accents ; un mot inconnu n’est rien', () => {
     expect(['Payée', 'PAYE', ' réglée ', 'Rejetée', 'refus', 'En  attente', 'Traitement caisse'].map(statutDe))
       .toEqual(['payee', 'payee', 'payee', 'rejetee', 'rejetee', 'en_attente', 'en_attente'])

@@ -55138,3 +55138,20 @@ trois scénarios HTTP (photo et PDF numérisé dans extract-piece, photo écart�
 receive-email remises dans l'ordre lecture puis stockage), deux cas de dépôt ; mutations du jugement d'extract-piece et du refus
 du dépôt : quatre tests rouges. Non fait : la fiche d'une pièce et Cotisations disent le refus sans retenir l'enregistrement ;
 l'état des paiements (forme inconnue, BOR6-Q2 (A)) ; BOR7 n'a plus rien à coder (conception 59, § 17.3).
+
+### 27/11/2026 — RELECTURE ADVERSE DES ÉCRANS ET MODULES DE L'ASSURANCE MALADIE (NOE4, NOE5B, BOR4, BOR5, NOE6)
+
+(Agent architecte ; aucune migration, aucun outil de la base, rien en production.) Avant le premier import réel. **Quatre défauts
+établis, chacun prouvé par un test rouge avant sa correction** : (1) la confirmation de l'import des paiements nommait le total et
+les journées du fichier ENTIER, paiements déjà en base aux mêmes chiffres compris, sous « N paiements partent » — elle compte
+désormais les nouveaux seuls et dit à part ceux que la base passe (`confirmationDeLImport(imp, enBase, espace)`) ; (2) le réglage
+des colonnes laissait la même colonne de MONTANT aux deux parts, et chaque facture se comptait deux fois — `refusDuReglage` le
+refuse (journée, statut et organisme se partagent toujours) ; (3) BOR1 et BOR2 tenaient pour « le même lot » un même NUMÉRO seul,
+quand la base (BOR3, `doublonLot` et l'empreinte du registre) le juge sur le numéro, la date de création et la caisse : un numéro à
+trois chiffres revient au fil d'une année (conception 59, § 5.2), et un envoi d'une année — la répétition de 2025 — se serait refusé
+à tort ; (4) l'écart d'un crédit dont la référence désigne une journée se chiffrait contre la somme de TOUS les organismes de cette
+journée (un écart de −51 € pour un écart réel de −1 €) : à plus d'un organisme, il ne se chiffre plus et le dit (`organismes`).
+**Plausibles, laissés au cabinet** : la période et les rejets d'un import couvrent les paiements passés (la fonction de la base) ;
+`releveCouvre` lit le dernier jour de tous les comptes bancaires ; une journée exportée incomplète ne se complète qu'en retirant tout
+l'import qui la porte. **Écartés** : le net négatif (conception 53, § 5 : il se rapproche d'un débit), les verrous, la lecture
+partielle, la fuite sans « Banque », la sortie de données de patient (relus, sains).

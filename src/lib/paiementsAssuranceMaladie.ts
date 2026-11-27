@@ -265,6 +265,12 @@ export function refusDuReglage(reglage: ReglageDesColonnes, largeur: number): st
     if (rangs.some((r) => !Number.isInteger(r) || r < 0 || r >= largeur)) return 'Une colonne choisie n’est pas dans le fichier.'
     if (new Set(rangs).size !== rangs.length) return 'Une même colonne ne sert qu’à un usage dans une part.'
   }
+  // La journée, le statut et l'organisme se partagent entre les deux parts (un fichier peut ne les porter qu'une fois) ; le
+  // MONTANT jamais : chaque facture apporterait la même somme aux deux parts, et l'agrégat la compterait deux fois (relecture
+  // du 27/11/2026 : le réglage le laissait passer).
+  if (reglage.parts.length === 2 && reglage.parts[0].montant === reglage.parts[1].montant) {
+    return 'La colonne du montant d’une part ne sert pas à l’autre part : chaque somme se compterait deux fois.'
+  }
   return null
 }
 

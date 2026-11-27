@@ -80,13 +80,26 @@ describe('les mots de l’aperçu', () => {
 
 describe('la confirmation et la phrase d’après l’import', () => {
   it('la confirmation nomme ce qui part (nombre, journées, total, rejets, déjà importés) et ce qui reste dans le fichier', () => {
-    const texte = confirmationDeLImport(imp, 1, 'client')
+    const tous = confirmationDeLImport(imp, [], 'cabinet')
+    expect(tous).toContain('2 paiements de l’assurance maladie partent en base')
+    expect(tous).toContain('journées comptables du 02/11/2026 au 03/11/2026')
+    expect(tous).toMatch(/pour 40,50\s€ au total ; 2 rejets, 15,00\s€\./)
+    expect(tous).toContain('restent dans le fichier, sur cet ordinateur')
+    const texte = confirmationDeLImport(imp, [imp.paiements[1]], 'client')
     expect(texte).toContain('1 paiement de l’assurance maladie part en base')
-    expect(texte).toContain('du 02/11/2026 au 03/11/2026')
-    expect(texte).toMatch(/pour 40,50\s€ au total ; 2 rejets, 15,00\s€\./)
-    expect(texte).toContain('1 paiement déjà importé aux mêmes chiffres est passé.')
     expect(texte).toContain('restent dans ton fichier')
-    expect(confirmationDeLImport(imp, 0, 'cabinet')).toContain('restent dans le fichier, sur cet ordinateur')
+  })
+
+  it('relecture du 27/11/2026 : la confirmation compte le total et les journées de ce qui PART, jamais des paiements passés', () => {
+    // Le paiement du 03/11 est déjà en base aux mêmes chiffres : la base le passe, il ne part pas. Avant, le total nommé
+    // était celui du fichier entier (40,50 €), sous « 1 paiement part en base ».
+    const texte = confirmationDeLImport(imp, [imp.paiements[1]], 'client')
+    expect(texte).toContain('1 paiement de l’assurance maladie part en base, journée comptable du 02/11/2026, ')
+    expect(texte).toMatch(/pour 45,50\s€ au total ; 2 rejets, 15,00\s€\./)
+    expect(texte).toContain('1 paiement déjà importé aux mêmes chiffres est passé : journée comptable du 03/11/2026, -5,00')
+    // Un paiement en base à d'autres chiffres n'est pas « passé » : il n'est pas compté ici (la base refuserait l'import).
+    const autre = { ...imp.paiements[0], montant_centimes: 1 }
+    expect(confirmationDeLImport(imp, [autre], 'cabinet')).toContain('2 paiements de l’assurance maladie partent en base')
   })
 
   it('NOE3-Q1 : seuls les chiffres ont été gardés, et le conseil de supprimer le fichier', () => {
@@ -107,7 +120,7 @@ describe('la confirmation et la phrase d’après l’import', () => {
 
   it('les phrases du client ne portent aucun mot du cabinet', () => {
     const textes = [
-      PRESENTATION_AU_CLIENT, SANS_LA_CASE_BANQUE, VIDE_DIT.client, phraseApresLImport('client'), confirmationDeLImport(imp, 1, 'client'),
+      PRESENTATION_AU_CLIENT, SANS_LA_CASE_BANQUE, VIDE_DIT.client, phraseApresLImport('client'), confirmationDeLImport(imp, [imp.paiements[1]], 'client'),
       reglageChoisi(reglageVide(), 'client').manque ?? '', refusDeLaTailleDesPaiements(1e9, 'client') ?? '',
     ]
     for (const t of textes) expect(motsDuCabinet(t)).toEqual([])

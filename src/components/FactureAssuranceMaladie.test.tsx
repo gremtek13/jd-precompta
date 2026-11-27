@@ -186,7 +186,7 @@ describe('le facturé à l’assurance maladie, à l’écran', () => {
     faux.lecture = lus()
     faux.bordereaux = {
       'a.pdf': { etat: 'lu', bordereaux: [bordereau()] },
-      'b.pdf': { etat: 'lu', bordereaux: [bordereau({ creeLe: '2026-10-06' })] },
+      'b.pdf': { etat: 'lu', bordereaux: [bordereau()] },
     }
     render(<FactureAssuranceMaladie espace="client" dossierId="d1" codeNaf="86.90D" />)
     await ouvrirEtChoisir('a.pdf', 'b.pdf')

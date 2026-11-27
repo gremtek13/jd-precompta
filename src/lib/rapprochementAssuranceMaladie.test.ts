@@ -185,6 +185,26 @@ describe('les associations et les contrôles', () => {
   })
 })
 
+describe('relecture du 27/11/2026 : l’écart d’une journée qui porte plusieurs organismes', () => {
+  it('ne se chiffre pas contre la somme de tous les organismes : la référence ne dit pas lequel a versé', () => {
+    const r = calcule(entree([mouvement({ id: 'm', date: '2026-03-06', montant: 99, libelle: REF('260303') })], [
+      paiement({ id: 'cpam', date_journee_comptable: '2026-03-03', montant_centimes: 9000 }),
+      paiement({ id: 'msa', date_journee_comptable: '2026-03-03', montant_centimes: 5000, regime: 2, caisse: 123 }),
+    ], [], { jour: '2026-03-07' }))
+    const ecart = r.controles.find((c) => c.genre === 'ecart')
+    expect(ecart).toMatchObject({ genre: 'ecart', paiementsCentimes: 14000, organismes: 2 })
+    expect(controleDit(ecart!, r.paiementsParId)).toBe(`Crédit de l’assurance maladie du 06/03/2026 (${montantDit(9900)}) : la référence du `
+      + `virement désigne la journée comptable du 03/03/2026, dont les paiements importés de 2 organismes font ensemble ${montantDit(14000)} `
+      + '— aucun ne fait son montant, et la référence ne dit pas lequel a versé : l’écart ne se chiffre pas.')
+    // Un seul organisme (ses deux parts comprises) : l'écart se chiffre, comme avant.
+    const un = calcule(entree([mouvement({ id: 'm', date: '2026-03-06', montant: 99, libelle: REF('260303') })], [
+      paiement({ id: 'o', date_journee_comptable: '2026-03-03', montant_centimes: 9000 }),
+      paiement({ id: 'c', date_journee_comptable: '2026-03-03', montant_centimes: 500, part: 'complementaire' }),
+    ], [], { jour: '2026-03-07' }))
+    expect(un.controles.find((c) => c.genre === 'ecart')).toMatchObject({ paiementsCentimes: 9500, organismes: 1 })
+  })
+})
+
 describe('muet sur une lecture partielle : ni candidat, ni proposition, ni contrôle', () => {
   const m = [mouvement({ id: 'm', date: '2026-03-04', montant: 50 })]
   const p = [paiement({ id: 'p', date_journee_comptable: '2026-03-03', montant_centimes: 5000 })]

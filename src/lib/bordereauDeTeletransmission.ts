@@ -421,7 +421,13 @@ export function lireBordereauxDeTeletransmission(pages: readonly PageDeTexte[]):
     for (let c = 0; c < 4; c++) {
       if (b.sommes[c] !== b.total.centimes[c]) return refus(`${ici} : la somme des lignes de la colonne « ${colonnes[c]} » diffère du total imprimé`)
     }
-    if (bordereaux.some((d) => d.lot === e.lot)) return refus(`${ici} : le même lot figure deux fois dans le fichier`)
+    // Le même lot : un même numéro, une même date de création et une même caisse — la clé du registre de la base (BOR3,
+    // `doublonLot`). Un numéro seul ne suffit pas (relecture du 27/11/2026) : à trois chiffres, il revient au fil d'une année
+    // (conception 59, § 5.2), et rien n'établit qu'il soit unique d'une caisse à l'autre.
+    const { lot, creeLe, organisme } = e
+    if (bordereaux.some((d) => d.lot === lot && d.creeLe === creeLe && d.organisme.code === organisme.code)) {
+      return refus(`${ici} : le même lot figure deux fois dans le fichier`)
+    }
     bordereaux.push({
       lot: e.lot,
       creeLe: e.creeLe,

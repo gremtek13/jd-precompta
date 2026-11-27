@@ -244,6 +244,14 @@ describe('plusieurs bordereaux, plusieurs pages', () => {
     expect(lus(r).map((b) => b.lot)).toEqual([42, 43])
   })
 
+  it('relecture du 27/11/2026 : un même numéro créé un autre jour, ou pour une autre caisse, est un autre lot', () => {
+    const autreJour = lignesDuBordereau().map((l) => l.replace('créé le 09/11/2026', 'créé le 10/11/2026'))
+    const autreCaisse = lignesDuBordereau().map((l) => l.replace(': 999 - CPAM', ': 998 - CPAM'))
+    expect(lus(lireBordereauxDeTeletransmission([page(lignesDuBordereau()), page(autreJour)])).map((b) => [b.lot, b.creeLe]))
+      .toEqual([[42, '2026-11-09'], [42, '2026-11-10']])
+    expect(lus(lireBordereauxDeTeletransmission([page(lignesDuBordereau()), page(autreCaisse)])).map((b) => b.organisme.code)).toEqual(['999', '998'])
+  })
+
   it('le même lot deux fois, ou un second bordereau faux, refusent le fichier entier', () => {
     expect(raison(lireBordereauxDeTeletransmission([page(lignesDuBordereau()), page(lignesDuBordereau())]))).toMatch(/bordereau 2 : le même lot figure deux fois/)
     expect(raison(lireBordereauxDeTeletransmission([page(lignesDuBordereau()), page(lignesDuBordereau({ lot: 43, annonce: 9 }))])))
