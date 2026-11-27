@@ -55393,3 +55393,19 @@ PLAN_DE_REPRISE.md était périmé : il renvoyait au pack pour reverser les fich
 | FicheHorsDeFrance | 3,3 s (409) → inchangé | 5,3 s (924) → 7,2 s (1 404), le bruit de la machine |
 
 Reste lent : la batterie de la copie déployée elle-même (agentComptableAnalyse, ~0,7 s, c'est l'assertion), le lexage des 21 Mo de tests (motifsSql, ~0,7 s par passe, deux gardes), et FicheHorsDeFrance, dont les 400 ms sont treize gestes et leurs requêtes par rôle de Testing Library, sans calcul commun à sortir. La charge : la suite entière bouclée à côté, sur quatre cœurs déjà partagés.
+
+### 27/11/2026 — QUINZE RÉPONSES DU CABINET (RELUES À 21 H 40 UTC), ET DEUX MIGRATIONS EN PRODUCTION (260, 261)
+
+Toutes à la recommandation. Deux migrations accordées et appliquées par l'outil le soir même, chacune à l'empreinte de son
+fichier (texte sans le saut de ligne final) : `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1 (A) ; 260, version
+`20261127213748`, md5 `d64d3aa0…`, 13 604 caractères) et `ouverture_suivante_a_la_validation` (MCBR-Q2-migration (A) ; 261,
+version `20261127214813`, md5 `30ebb2cd…`, 10 667 caractères). Sans changement de code : MCBR-Q4 (A) — un compte clos sort
+de « Ma trésorerie à 90 jours » et se dit (en place) ; BOR6TQ1-Q2, BOR6TQ2-Q1 et Q2 (A) — la lecture avant le stockage gardée,
+la recherche des bordereaux sur tout dossier, au clic (en place). À écrire : SECU4-Q2 (B) — interdire en base tout changement
+de dossier d'une pièce ; ASSIST-Q1 (A) — un journal de consommation de l'assistant écrit par la fonction seule ; RECEP-Q1 (A)
+— au-delà de 100 pièces jointes lues par dossier et par jour, le dépôt sans lecture ; ACCES-Q1 (A) — la confirmation d'un
+rattachement dit que le mot de passe a pu être choisi ailleurs et propose le lien « Mot de passe oublié » ; MCBR2-Q1 (A) — la
+fiche des comptes avertit avant le clic ; MCBR2-Q2 (A) — la validation bloque dès qu'un second compte s'écrit au 512 du
+principal ; BOR6TQ1-Q1 (A) — une ligne permanente dans « Mes pièces », sur les dossiers de santé ; FACT-Q4 (A) — l'avoir d'un
+particulier sans la phrase des pénalités ; FACT-Q5 (A) — vérifier puis aligner le nom du vendeur de la facture électronique.
+Restent ouvertes : NOE4R-migrations, NOE4RQ2-Q1 à Q4, RACLI-Q1 et Q2, SAUV-Q1 et Q2, NOE6R-Q1, B1-Q1.
