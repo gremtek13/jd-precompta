@@ -1,6 +1,6 @@
--- LA FRONTIÈRE DE LA TENUE, EN BASE (OPT6 ; la migration préparée `frontiere_de_la_tenue`,
--- supabase/preparees/20261126120000_frontiere_de_la_tenue.sql). Le récit : HISTORIQUE.md, « 26/11/2026 — OPT6 : LA
--- FRONTIÈRE DE LA TENUE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer après toute migration qui touche
+-- LA FRONTIÈRE DE LA TENUE, EN BASE (OPT6 ; la migration `frontiere_de_la_tenue`, en production depuis le 27/11/2026, 255,
+-- supabase/schema/20261127053521_frontiere_de_la_tenue.sql). Le récit : HISTORIQUE.md, « 26/11/2026 — OPT6 : LA
+-- FRONTIÈRE DE LA TENUE, EN BASE (PRÉPARÉE, PAS APPLIQUÉE) », « 27/11/2026 — OPT6 EN PRODUCTION (255) ». À rejouer après toute migration qui touche
 -- `garder_frontiere_de_la_tenue`, `options_des_cabinets`, `regler_option_du_cabinet`, les déclencheurs ou les policies
 -- d'`exercices_valides`, `situations_publiees` ou `ecritures_libres`. SANS LA MIGRATION (la garde absente du catalogue), il se
 -- dit EN ATTENTE.

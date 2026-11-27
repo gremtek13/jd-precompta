@@ -200,11 +200,11 @@ export const REFUS_DE_LA_LECTURE = 'Accès refusé à ce dossier.'
 
 // ── La frontière de la tenue, en base (OPT6 ; OPT-Q1 (A), OPT-Q4 (A)) ─────────────────────────────────────────────────────
 
-/** Le drapeau de la migration préparée `frontiere_de_la_tenue` (OPT6, supabase/preparees/20261126120000_frontiere_de_la_tenue.sql),
- *  BAISSÉ tant qu'elle n'est pas appliquée. Levé, la confirmation de fermer la tenue dit que la base refusera aussi la
+/** Le drapeau de la migration `frontiere_de_la_tenue` (OPT6, supabase/schema/20261127053521_frontiere_de_la_tenue.sql), LEVÉ :
+ *  en production depuis le 27/11/2026 (255, par l'outil). Levé, la confirmation de fermer la tenue dit que la base refusera aussi la
  *  validation, la publication et l'écriture libre (`TENUE_REFUSEE_EN_BASE`). Aucun écran ne lit la table autrement : la base
  *  refuse seule, sous les mots de `REFUS_DE_LA_TENUE`, et les écrans de la tenue ne se montent déjà plus (OPT3). */
-export const FRONTIERE_DE_LA_TENUE_PREVUE = false
+export const FRONTIERE_DE_LA_TENUE_PREVUE = true
 
 /** Le refus de `garder_frontiere_de_la_tenue` (P0001), aux mots de la base : frontiereDeLaTenue.test.ts le confronte au texte
  *  de la migration et de son essai. */

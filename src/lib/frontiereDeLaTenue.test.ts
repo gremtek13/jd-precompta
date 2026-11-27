@@ -1,31 +1,49 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import {
-  FRONTIERE_DE_LA_TENUE_PREVUE,
   REFUS_DE_LA_TENUE,
   TENUE_REFUSEE_EN_BASE,
   phrasesDeLaFermetureDeLaTenue,
 } from './modulesDuCabinet'
 import { motsDeLaConfirmation, type CaseDUnModule } from './optionsDuCabinetVue'
 
-// OPT6 — LA FRONTIÈRE DE LA TENUE, EN BASE : la migration préparée, son retour et son essai confrontés au module qui redit son
+// Le drapeau levé garde son état d'avant éprouvé (CLAUDE.md, « Un drapeau d'export levé garde son état d'avant éprouvé ») :
+// ses deux états joués par un accesseur, la valeur réelle relue par `importActual`.
+const etat = vi.hoisted(() => ({ drapeau: null as boolean | null }))
+vi.mock('./modulesDuCabinet', async (importOriginal) => {
+  const reel = await importOriginal<typeof import('./modulesDuCabinet')>()
+  return {
+    ...reel,
+    get FRONTIERE_DE_LA_TENUE_PREVUE() {
+      return etat.drapeau ?? reel.FRONTIERE_DE_LA_TENUE_PREVUE
+    },
+  }
+})
+
+// OPT6 — LA FRONTIÈRE DE LA TENUE, EN BASE : la migration (en production depuis le 27/11/2026, 255, par l'outil), son retour et son essai confrontés au module qui redit son
 // refus (CLAUDE.md, « Un module qui redit une fonction SQL a son test à côté »). L'essai (supabase/essais/frontiereDeLaTenue.sql)
-// se rejoue sur une réplique : 15 verdicts, et six mutations de la garde qui mordent (HISTORIQUE.md, 26/11/2026).
+// se joue en production par l'outil comme sur une réplique : 15 verdicts, et six mutations de la garde qui mordent (HISTORIQUE.md, 26/11/2026).
 
 const RACINE = new URL('../../', import.meta.url).pathname
-const MIGRATION = 'supabase/preparees/20261126120000_frontiere_de_la_tenue.sql'
+const PREPAREE = 'supabase/preparees/20261126120000_frontiere_de_la_tenue.sql'
 const RETOUR = 'supabase/preparees/retour/20261126120100_retour_frontiere_de_la_tenue.sql'
 const ESSAI = 'supabase/essais/frontiereDeLaTenue.sql'
-const EXPORTEE = 'supabase/schema/20261126120000_frontiere_de_la_tenue.sql'
+const EXPORTEE = 'supabase/schema/20261127053521_frontiere_de_la_tenue.sql'
 const lire = (chemin: string) => readFileSync(RACINE + chemin, 'utf8')
 const sql = (texte: string) => texte.replace(/''/g, '\'')
 
 describe('OPT6 : la frontière de la tenue, en base', () => {
-  const texte = lire(existsSync(RACINE + EXPORTEE) ? EXPORTEE : MIGRATION)
+  const texte = lire(EXPORTEE)
 
-  it('le drapeau suit la migration : baissé tant qu’elle n’est que préparée', () => {
-    expect(FRONTIERE_DE_LA_TENUE_PREVUE).toBe(existsSync(RACINE + EXPORTEE))
+  it('le drapeau suit la migration : levé, elle est rangée dans l’export sous sa version d’historique, texte inchangé', async () => {
+    const reel = await vi.importActual<typeof import('./modulesDuCabinet')>('./modulesDuCabinet')
+    expect(reel.FRONTIERE_DE_LA_TENUE_PREVUE).toBe(true)
+    expect(existsSync(RACINE + PREPAREE)).toBe(false)
+    // L'empreinte de la ligne d'historique (20261127053521), sans le saut de ligne final : 7 881 caractères.
+    const sansFin = texte.replace(/\n$/, '')
+    expect(sansFin.length).toBe(7881)
+    expect(createHash('md5').update(sansFin).digest('hex')).toBe('e1f243dc55a4c7e66826d0516199a93d')
   })
 
   it('le refus du module est celui de la garde, et de son essai, au caractère près', () => {
@@ -60,7 +78,8 @@ describe('OPT6 : la frontière de la tenue, en base', () => {
     expect(retour).toContain('drop function public.garder_frontiere_de_la_tenue();')
   })
 
-  it('la confirmation de fermer la tenue dit le refus de la base, le drapeau levé seulement', () => {
+  it.each([false, true])('la confirmation de fermer la tenue dit le refus de la base, le drapeau levé seulement (levé : %s)', (leve) => {
+    etat.drapeau = leve
     expect(phrasesDeLaFermetureDeLaTenue(false)).toEqual([])
     expect(phrasesDeLaFermetureDeLaTenue(true)).toEqual([TENUE_REFUSEE_EN_BASE])
     const tenue: CaseDUnModule = {
@@ -68,6 +87,7 @@ describe('OPT6 : la frontière de la tenue, en base', () => {
       jugeParLaBaseSeule: false,
     }
     const mots = motsDeLaConfirmation('Cabinet A', tenue)
-    expect(mots.phrases.includes(TENUE_REFUSEE_EN_BASE)).toBe(FRONTIERE_DE_LA_TENUE_PREVUE)
+    expect(mots.phrases.includes(TENUE_REFUSEE_EN_BASE)).toBe(leve)
+    etat.drapeau = null
   })
 })

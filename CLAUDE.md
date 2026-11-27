@@ -104,8 +104,8 @@ L'expert-comptable ne se sollicite plus : ce qui manque se cherche dans les sour
   de la ligne, plus le choix du sous-dossier (DOCF-Q1, la fiche seule, parmi les sous-dossiers du dossier lus en entier),
   chacun la fonction de l'onglet, et se ferme quand son document part. L'aperçu d'un fichier, commun aux
   deux fiches : `components/ApercuDuFichier.tsx` → « LA FICHE D'UN DOCUMENT DANS LE PANNEAU DE DROITE ». Le sous-dossier
-  d'un document ou d'une pièce tenu dans son dossier, en base : préparé (`sous_dossier_dans_son_dossier`, DOCF-Q1-B,
-  `SOUS_DOSSIER_DANS_SON_DOSSIER_PREVU` baissé) → « DOCF-Q1-B : LE SOUS-DOSSIER TENU DANS SON DOSSIER, EN BASE ».
+  d'un document ou d'une pièce tenu dans son dossier, en base : en production depuis le 27/11/2026 (257, par l'outil ;
+  `sous_dossier_dans_son_dossier`, DOCF-Q1-B, `SOUS_DOSSIER_DANS_SON_DOSSIER_PREVU` levé) → « DOCF-Q1-B : LE SOUS-DOSSIER TENU DANS SON DOSSIER, EN BASE ».
 - **Une page ne se remonte pas d'un dossier à l'autre** (`DossierDetail` reste monté) : sous `AnneeProvider key={id}`,
   ou clé par dossier, ou gardant ce qu'il lit AVEC l'identifiant lu. Côté client, `<Outlet key>` dans la coque → « LA
   BARRE LATÉRALE A ROUVERT UNE COURSE ».
@@ -518,7 +518,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   prévision de trésorerie publiée au client « Banque » (`previsions_publiees`, C8-Q2, en production depuis le 18/11/2026
   (241, par l'outil), `PREVISIONS_PUBLIEES_PREVUES` levé ; le mois de raccord au prorata des jours, C8Q2-Q3 (B)
   → « C8Q2-Q3 : LE MOIS DE RACCORD AU PRORATA, LA PRÉVISION PUBLIÉE PRÊTE », « C8-Q2 EN PRODUCTION ») ; le 512 propre refusé depuis une année validée, en base (`compte_propre_hors_des_exercices_valides`,
-  MCB6Q2-Q1) ; INV3Q2-Q1 (A) dans INV2, INV3 et INV4 ; le retour d'INAL1 récrit (INAL1R-Q1). Toute préparée qui remplace
+  MCB6Q2-Q1, en production depuis le 27/11/2026 (256, par l'outil, REPET2-Q1 (A)), avant MCB5g : `COMPTES_BANCAIRES_PREVUS` reste baissé) ; INV3Q2-Q1 (A) dans INV2, INV3 et INV4 ; le retour d'INAL1 récrit (INAL1R-Q1). Toute préparée qui remplace
   une fonction vérifie l'empreinte du corps qu'elle remplace (`remplacementsDesPreparees.test.ts`, REPET-Q2 : la garde
   d'INV3 le faisait déjà) → « A8Q5Q3Q2-Q2 : LA GARDE DES RÈGLEMENTS », « RET2-Q2 : L'EXONÉRATION DE 2025 », chercher
   « C8-Q2 », « REPET-Q2 » au 15/11/2026.
@@ -676,10 +676,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   PRODUCTION ». OPT5 écrit (20/11/2026, sans migration, le bloc OPTION DU CABINET : 403 module fermé, 503 illisible, après
   l'appelant), les huit fonctions déployées le 20/11/2026 au commit `6cb1f936` (`agent-comptable`, `proposer-categorie`,
   `banque-connexion`, `plateforme-agreee`, `superpdp-credentials`, `superpdp-emit`, `superpdp-sync`, `send-email`) → « OPT5 : LES EDGE FUNCTIONS REFUSENT ».
-  OPT6 préparée (26/11/2026, `frontiere_de_la_tenue`, par l'outil, `FRONTIERE_DE_LA_TENUE_PREVUE` baissé) : sans la tenue, la base refuse
+  OPT6 en production depuis le 27/11/2026 (255, par l'outil), `FRONTIERE_DE_LA_TENUE_PREVUE` levé (`frontiere_de_la_tenue` ; OPT6-Q1 et Q2 (A)) : sans la tenue, la base refuse
   (P0001) la validation, la publication d'une situation et l'écriture libre, par des déclencheurs AFTER ROW (la RLS juge avant ; ni porte
   ni heurt avec INAL5) ; une section d'un module ne se monte que sous `estOuvert` (`MODULE_DE_LA_SECTION`, `sectionsDesModules.test.ts`)
-  → « OPT6 : LA FRONTIÈRE DE LA TENUE, EN BASE ».
+  → « OPT6 : LA FRONTIÈRE DE LA TENUE, EN BASE », « OPT6 EN PRODUCTION (255) » (avec 256 et 257).
 - **Les exports vers les logiciels comptables** (17/11/2026), recherchés, rien d'écrit (`docs/conceptions/57-exports-vers-les-logiciels-comptables.md`) :
   le FEC avec ses pièces en ZIP est le pivot (ACD d'abord), puis l'ASCII Quadra et le TRA ; EXP-Q1 à Q8, EXP-E1 à E7 → « LES
   EXPORTS VERS LES LOGICIELS COMPTABLES : LA RECHERCHE ».
@@ -797,7 +797,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   composition par `lib/banqueDuMouvement.ts` dans la fiche Banque, puis (seconde partie) dans Écritures, Virements,
   Cotisations, le lot des règles et les sept détecteurs (`banques`, paramètre obligatoire ; une banque inconnue ne se juge pas) ; MCB6, la carte « Comptes bancaires » (Informations) et la
   preuve du relevé par compte ; MCB6-Q1 et Q2 (« Retirer ce compte », une suppression directe que l'écran n'offre que là où la base l'accepte ; le 512
-  propre refusé depuis une année validée, par l'écran seul, MCB6Q2-Q1 posée), relus et finis le 13/11/2026
+  propre refusé depuis une année validée, par l'écran et, depuis le 27/11/2026 (256), par la base, MCB6Q2-Q1), relus et finis le 13/11/2026
   (`lib/ficheDesComptesBancaires.ts`) → « MCB6-Q1 ET MCB6-Q2 : RETIRER UN COMPTE » ; MCB7, « Ma banque » compte par compte (`lib/banqueClientParCompte.ts`, sans nouvelle fonction)
   → « « MA BANQUE » ET « MA SIMULATION » POUR PLUSIEURS COMPTES BANCAIRES (MCB7) », « LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES DIX FONCTIONS DU RELEVÉ (MCB5) », « LA JAMBE DE BANQUE PAR COMPTE
   BANCAIRE : LES GESTES HORS DE BANQUE ET LES DÉTECTEURS (MCB5, SECONDE PARTIE) », « LES ÉCRANS

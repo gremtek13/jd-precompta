@@ -54998,3 +54998,19 @@ liste des déclencheurs d'`ecritures_libres` sans ceux d'OPT6, admis sous sa gar
 autres essais (207 jeux, avec leurs semis) : identiques sur 254 et sur la chaîne, hors des EN ATTENTE qui se lèvent ; les huit de la
 famille « apres » SÛRS au banc. **Au collage** : le socle se régénère (84 → 100 : chaque sœur du brouillon, douze restrictives), dont
 l'inventaire dépend (26 objets). Le tableau : `docs/conceptions/60-migrations-preparees-etat-au-27-11.md`. Question : REPET2-Q1.
+
+### 27/11/2026 — OPT6 EN PRODUCTION (255)
+
+(Agent architecte, rangement ; la migration appliquée par la session.) OPT6-migration (A), OPT6-Q1 (A) et OPT6-Q2 (A), le 27/11/2026.
+OPT6-Q1 : relevé en production, un seul cabinet, sa tenue ouverte — aucun cabinet à ouvrir avant l'application, rien n'est refusé.
+`frontiere_de_la_tenue` appliquée par l'outil (version `20261127053521`, 255e) ; ligne d'historique `e1f243dc…` (7 881 caractères),
+égale au fichier, rangé dans `supabase/schema/` texte inchangé ; quatre déclencheurs en base ; son retour reste dans `preparees/retour/`.
+`FRONTIERE_DE_LA_TENUE_PREVUE` levé : la confirmation de fermer la tenue dit le refus de la base (`TENUE_REFUSEE_EN_BASE`), les deux
+états du drapeau joués par un accesseur (`frontiereDeLaTenue.test.ts`). Contrôles égaux dépôt et production : dérive 255 `7f7b434c…`,
+inventaire 3 523 `2d71d9f1…` ; socle 84 `e54200f4…` côté dépôt, à relever en production. Reste : `frontiereDeLaTenue.sql` (14 519
+octets, classé production, aucune suppression) et `validationExercice.sql` (en une transaction) à rejouer en production par l'outil.
+Le même jour, REPET2-Q1 (A) : `compte_propre_hors_des_exercices_valides` (256, `20261127055505`, `84bc036d…`, 7 884 caractères) et
+`sous_dossier_dans_son_dossier` (257, `20261127055603`, `79345cf6…`, 16 658 caractères), par l'outil, rangés de même, textes inchangés.
+`SOUS_DOSSIER_DANS_SON_DOSSIER_PREVU` levé (ses deux états joués sur l'objet du drapeau ; l'essai sorti de la famille « apres » du
+leurre) ; `COMPTES_BANCAIRES_PREVUS` reste baissé (MCB5g et son filet pas collés). Dépôt à 257 : dérive `a77f41f1…`, socle 84
+`e54200f4…`, inventaire 3 530 `09aea267…`.

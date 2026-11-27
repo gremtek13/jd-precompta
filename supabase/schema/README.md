@@ -1002,6 +1002,25 @@ Les trois contrôles attendus, égaux dans le dépôt et sur une copie de `repli
 objets, `a6475fb053efb7708ffeb60aac80a936` — les deux derniers inchangés (un corps remplacé, aucun nom). Son retour reste dans
 `supabase/preparees/retour/` (HISTORIQUE.md, « RA253 : LE FICHIER D'UNE PIÈCE CITÉE EN PRODUCTION (254) »).
 
+**En production le 27/11/2026, `20261127053521_frontiere_de_la_tenue` (255), par l'outil, sur l'accord du cabinet
+(OPT6-migration (A))** : `garder_frontiere_de_la_tenue` et ses quatre déclencheurs AFTER ROW refusent la validation, la
+publication d'une situation et l'écriture libre aux dossiers d'un cabinet sans la tenue. Préparé sous la version provisoire
+`20261126120000`, le fichier entre ici sous sa version, texte inchangé : la ligne d'historique rend
+`e1f243dc55a4c7e66826d0516199a93d` (7 881 caractères, sans le saut de ligne final), celle du fichier. Les trois contrôles, égaux
+dans le dépôt et relevés en production : la dérive, 255 fichiers, `7f7b434cf22b5ad03f303a321e86198a` ; l'inventaire, 3 523 objets,
+`2d71d9f163e0413fb406328793425f0f` ; le socle, 84 instructions, `e54200f470db2f9199c62707d1df3f70` côté dépôt (inchangé, à relever
+en production). Son retour reste dans `supabase/preparees/retour/` (HISTORIQUE.md, « OPT6 EN PRODUCTION (255) »).
+
+**En production le 27/11/2026, `20261127055505_compte_propre_hors_des_exercices_valides` (256) et
+`20261127055603_sous_dossier_dans_son_dossier` (257), par l'outil, sur l'accord du cabinet (REPET2-Q1 (A))** : le filet de
+MCB6Q2-Q1 (un compte autre que le principal ne tient pas son 512 depuis une année validée), appliqué avant l'ouverture éclatée,
+et la garde de DOCF-Q1-B (le sous-dossier d'un document ou d'une pièce dans son dossier). Préparés sous `20261111235700` et
+`20261117150000`, les fichiers entrent ici sous leur version, texte inchangé : `84bc036db033fc47815677bc340cbf67` (7 884
+caractères) et `79345cf64ae700fde8e8c034ae09fd3e` (16 658 caractères), sans le saut de ligne final, ceux des lignes
+d'historique. Les trois contrôles côté dépôt : la dérive, 257 fichiers, `a77f41f17642cb032eabd1d0780a57ed` ; le socle, 84
+instructions, `e54200f470db2f9199c62707d1df3f70` (inchangé) ; l'inventaire, 3 530 objets, `09aea267a8d1771abdb7a001856519a6` — à
+comparer à la production. Leurs retours restent dans `supabase/preparees/retour/`.
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
