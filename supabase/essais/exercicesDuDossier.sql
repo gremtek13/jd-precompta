@@ -3,8 +3,9 @@
 -- EXERCICES DU DOSSIER, EN BASE (LIGNE 42) (PRÉPARÉE, PAS APPLIQUÉE) ».
 -- SUR UNE RÉPLIQUE SEULEMENT : il prend le membre d'équipe fictif de la réplique, que la production n'a pas, pose une
 -- validation et des exercices dans des dossiers jetables, et sa batterie appelle les lectures dix-huit mille fois. À rejouer
--- par psql (`-f`), sous le propriétaire, après toute migration qui touche `exercices`, ses gardes, ses fonctions,
--- `admin_du_dossier`, `dossiers.mode_comptable` ou la frontière de la validation.
+-- par psql en UNE transaction (`psql -1 -f` : ses verdicts vivent dans un réglage local à la transaction, qu'un `-f` seul
+-- perd avant la lecture finale), sous le propriétaire, après toute migration qui touche `exercices`, ses gardes, ses
+-- fonctions, `admin_du_dossier`, `dossiers.mode_comptable` ou la frontière de la validation.
 --
 -- Ce qui se prouve ici, chaque refus sous ses mots (le code et le message entiers) :
 --   - le catalogue : la RLS et sa seule policy, les deux gardes (avant et après chaque ligne), les deux exclusions

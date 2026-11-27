@@ -423,8 +423,12 @@ begin
          || 'ecritures_libres_une_contre_passation:u:UNIQUE (contre_passe_id)');
   select string_agg(tgname::text, ',' order by tgname collate "C") into texte
     from pg_trigger where tgrelid = 'public.ecritures_libres'::regclass and not tgisinternal;
+  -- Puis, quand la frontière de la tenue est en base (OPT6, migration préparée `frontiere_de_la_tenue` : sa garde au catalogue),
+  -- ses deux déclencheurs AFTER (répétition du 27/11/2026).
   perform pg_temp.verdict('CP-F2. les déclencheurs : la porte, la garde de la table, puis celle de la contre-passation', texte,
-    texte = '_acces_avant_les_gardes,ecritures_libres_garde,ecritures_libres_garde_de_la_contre_passation');
+    texte = '_acces_avant_les_gardes,ecritures_libres_garde,ecritures_libres_garde_de_la_contre_passation'
+      || case when to_regprocedure('public.garder_frontiere_de_la_tenue()') is not null
+              then ',frontiere_de_la_tenue,frontiere_de_la_tenue_a_la_modification' else '' end);
   select has_function_privilege('anon', fn, 'execute')::text || has_function_privilege('authenticated', fn, 'execute')::text
     || exists (select 1 from pg_proc p cross join lateral aclexplode(p.proacl) x where p.oid = fn and x.grantee = 0)::text
     || has_function_privilege('authenticated', garde, 'execute')::text || has_function_privilege('anon', garde, 'execute')::text

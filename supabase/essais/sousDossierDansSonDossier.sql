@@ -13,7 +13,9 @@
 --      mots (la garde tire avant la clé étrangère), au chef comme au propriétaire hors de la RLS, à l'insertion comme à la mise
 --      à jour ; il ne change pas de dossier avec son sous-dossier, il en change avec un sous-dossier de l'autre dossier ou sans
 --      sous-dossier ; le client d'essai range ce qu'il dépose dans un sous-dossier de son dossier, jamais d'un autre ;
---   3. LA PIÈCE, de même ; et le nul que la clé étrangère écrit à la suppression d'un sous-dossier passe ;
+--   3. LA PIÈCE, de même ; et le nul que la clé étrangère écrit à la suppression d'un sous-dossier passe ; une ligne qui change
+--      de dossier change aussi de chemin (2g, 2h, 3g) : le chemin d'une ligne commence par son dossier depuis CFCS-Q1
+--      (`chemin_dans_son_dossier`, 238, en production le 17/11/2026, après l'écriture de cet essai ; reprise le 27/11/2026) ;
 --   4. LE SOUS-DOSSIER : qui range un document ou une pièce ne change pas de dossier, au chef comme au propriétaire ; vide, il
 --      en change, comme hier ; occupé, il se renomme.
 --
@@ -117,12 +119,12 @@ begin
         null, '23514', document_hors),
       (9, '2g. … il y passe avec un sous-dossier de DB, dans la même mise à jour : accepté',
         $q$update documents_divers set sous_dossier_id = '{SA}' where id = '{DOA}';$q$, 'chef',
-        $q$update documents_divers set dossier_id = '{DB}', sous_dossier_id = '{SB}' where id = '{DOA}';$q$,
+        $q$update documents_divers set dossier_id = '{DB}', sous_dossier_id = '{SB}', storage_path = '{DB}/essai-docf-doa.pdf' where id = '{DOA}';$q$,
         $q$(select dossier_id::text || ' ' || sous_dossier_id::text from documents_divers where id = '{DOA}')$q$,
         'OK', 'd0cf0000-0000-4000-8000-0000000000d2 d0cf0000-0000-4000-8000-0000000000a3'),
       (10, '2h. … ou sans sous-dossier : accepté',
         $q$update documents_divers set sous_dossier_id = '{SA}' where id = '{DOA}';$q$, 'chef',
-        $q$update documents_divers set dossier_id = '{DB}', sous_dossier_id = null where id = '{DOA}';$q$,
+        $q$update documents_divers set dossier_id = '{DB}', sous_dossier_id = null, storage_path = '{DB}/essai-docf-doa.pdf' where id = '{DOA}';$q$,
         $q$(select dossier_id::text || ' ' || coalesce(sous_dossier_id::text, 'nul') from documents_divers where id = '{DOA}')$q$,
         'OK', 'd0cf0000-0000-4000-8000-0000000000d2 nul'),
       (11, '2i. le client d''essai dépose un document dans son dossier, rangé dans un sous-dossier de son dossier : accepté',
@@ -155,7 +157,7 @@ begin
         null, '23514', piece_hors),
       (20, '3g. … elle y passe avec un sous-dossier de DB, dans la même mise à jour : accepté',
         $q$update pieces set sous_dossier_id = '{SA}' where id = '{PIA}';$q$, 'chef',
-        $q$update pieces set dossier_id = '{DB}', sous_dossier_id = '{SB}' where id = '{PIA}';$q$,
+        $q$update pieces set dossier_id = '{DB}', sous_dossier_id = '{SB}', storage_path = '{DB}/essai-docf-pia.pdf' where id = '{PIA}';$q$,
         $q$(select dossier_id::text || ' ' || sous_dossier_id::text from pieces where id = '{PIA}')$q$,
         'OK', 'd0cf0000-0000-4000-8000-0000000000d2 d0cf0000-0000-4000-8000-0000000000a3'),
       (21, '3h. le nul que la clé étrangère écrit à la suppression d''un sous-dossier : la garde ne le juge pas',
