@@ -1,130 +1,156 @@
-# Les migrations préparées : leur état au 27/11/2026, la production à 259
+# Les migrations préparées : leur état au 27/11/2026, la production à 261
 
-La répétition générale du 14/11/2026 (218 migrations) rejouée sur la base d'aujourd'hui : une copie de la réplique portée à
-254 par les fichiers de l'export, chacun avec sa ligne d'historique, puis à 255 par `frontiere_de_la_tenue` (OPT6), appliquée
-en production par l'outil le 27/11/2026 pendant la répétition, sous la version `20261127053521`, au texte du fichier préparé
-(`122c3941…`, que l'export reçoit sous cette version) : dérive 255 `7f7b434c…`, socle 84 `e54200f4…`, inventaire 3 523
-`2d71d9f1…`, égaux à la production et aux fichiers (OPT6 simulée dans l'export). Les 21 autres fichiers de
-`supabase/preparees/` (hors `retour/`). Le récit : HISTORIQUE.md, « 27/11/2026 — LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES
-REFAITE À 254, PUIS À 255 ».
+La répétition générale des migrations préparées, refaite le 27/11/2026 au soir avec les quatre nées le même jour :
+`piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1), `ouverture_suivante_a_la_validation` (MCBR-Q2),
+`periode_des_imports_assurance_maladie` (NOE4R-Q1) et `remplacement_des_journees_assurance_maladie` (NOE4R-Q2) — les deux
+dernières n'avaient jamais été jouées au bout de la chaîne des autres. Jouée d'abord sur la production à 259, les 20 et e7a ;
+pendant ce temps, deux sont passées en production par l'outil, texte du fichier inchangé : **260**,
+`piece_d_une_ecriture_libre_dans_son_dossier` (version `20261127213748`, `d64d3aa0…`, 13 604 caractères), et **261**,
+`ouverture_suivante_a_la_validation` (`20261127214813`, `30ebb2cd…`, 10 667 caractères), leurs fichiers rangés dans
+`supabase/schema/` par ailleurs. Rejouée alors sur 261 : les 18 qui restent, et e7a. Le récit : HISTORIQUE.md, « 27/11/2026 —
+LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 261, AVEC LES QUATRE DU JOUR » ; celle du matin : « LA RÉPÉTITION DES
+MIGRATIONS PRÉPARÉES REFAITE À 254, PUIS À 255 ». La répétition n'a rien appliqué en production.
 
-« Seule » : appliquée sur 255 après ses seules dépendances déclarées ; son essai, puis ceux des trois tables que la frontière
-de la tenue garde (`frontiereDeLaTenue` 15/15, `validationExercice` 250/250, `situationsPubliees` 38/38, `ecrituresLibres`
-67/0 et 6 mutations, `contrePassationDesEcrituresLibres` 50/0 et 12 mutations, justes avec chacune) ; une seconde application
-(refusée par sa garde de tête, pour les 20) ; `rls.sql` entier (sans faute, pour les 20) ; son retour, puis la signature étendue
-(neuf familles de `signature.sql`, le stockage, auth, les rôles, les commentaires, les données), égale à celle d'avant sauf
-mention. « Mode » : ce que dit l'en-tête de la migration — « à coller » quand le texte porte un retrait (`drop`, `delete from`,
-`truncate`), même dans un corps de fonction ou un commentaire ; « par l'outil », à coller si l'outil la retient quand même.
-Tous les retours se collent.
+## La production à 261 : les trois contrôles
 
-**Depuis la répétition** (27/11/2026, sur l'accord du cabinet, REPET2-Q1 (A)) : les quatre premières lignes du tableau d'alors
-sont en production et sorties du tableau, rangées dans `supabase/schema/` sous leur version d'historique, textes inchangés —
-`compte_propre_hors_des_exercices_valides` (256, `20261127055505`, par l'outil) et `sous_dossier_dans_son_dossier` (257,
-`20261127055603`, par l'outil), puis MCB5g : `ouverture_eclatee_par_compte` (258, `20261127055700`, collée par le cabinet) et
-`ouverture_eclatee_a_la_validation` (259, `20261127142727`, par l'outil) ; `COMPTES_BANCAIRES_PREVUS` levé. Sur une copie de
-`replique_227` portée à 259 par l'export (dérive `a540bcd9…`, inventaire 3 542 `58b4a599…`, égaux à la production ; socle 85
-`585debf7…`) : les 16 autres s'appliquent encore SEULES, après leurs dépendances déclarées (e7a refuse, REPET-Q1), et EN CHAÎNE
-dans l'ordre du tableau (275 migrations, les dix contraintes de paire des cinq sources neuves du brouillon posées) ; sur la
-chaîne, `rls.sql` 346 lignes, 1 692 vérifications, 0 en faute, 220 mutations sur 220, aucune EN ATTENTE, et les essais
-d'INV2, LIA2, AFF2, INV4, INV3, EXD2, INAL5, PC6, de la double authentification et de MCB5g justes. Les numéros d'ordre
-ci-dessous restent ceux de la répétition. Le 27/11/2026 au soir, deux préparées d'après elle sont en production à leur tour, par
-l'outil, et sorties du tableau (les lignes 19 bis et 21), rangées de même : `piece_d_une_ecriture_libre_dans_son_dossier` (260,
-`20261127213748`, SECU4-Q1 (A)) et `ouverture_suivante_a_la_validation` (261, `20261127214813`, MCBR-Q2 (A)) ; la production à 261,
-dérive `84978ecb…`, inventaire 3 548 `c69af6cf…`, socle 85 `585debf7…` (HISTORIQUE.md, « SECU4-Q1 ET MCBR-Q2 EN PRODUCTION (260,
-261) »).
+Une copie de `replique_227` portée à 259 par les 32 fichiers de `supabase/schema/` qui suivent 227, chacun avec sa ligne
+d'historique (dérive 259 `a540bcd9…`, inventaire 3 542 `58b4a599…`, socle 85 `585debf7…`, égaux aux fichiers), puis à 261 par
+les deux fichiers sous leur version de production. Contre l'export à 261 (celui du dépôt et les deux fichiers rangés sous ces
+versions) :
 
-| Ordre | Préparée | Chantier | Drapeau(x) | Mode | Après | Ce qu'elle attend | Seule, sur 255 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 5 | `20261107140000_trois_cases_de_l_acces` | B1, trois cases de plus d'un accès | `TROIS_CASES_EXPORTEES` | par l'outil | — (P1-trace et C4a, en production) | B1-Q1, sans réponse | 16/16 |
-| 6 | `20261111234000_documents_et_demandes` | B2, les documents et les demandes | `DOCUMENTS_ET_DEMANDES_PREVUS` | par l'outil | 5 | 5, puis l'accord | 81/0 ; la suppression 17/0 |
-| 7 | `20261111237000_achats_du_client` | B4, les achats du client | `ACHATS_DU_CLIENT_PREVUS` | par l'outil | 5 | 5, puis l'accord | 63/0 |
-| 8 | `20261111238000_notes_de_frais` | B7, les notes de frais | `NOTES_DE_FRAIS_PREVUES` | par l'outil | 5 | 5 ; L3-Q1 à Q3 (l'écran) | 84/0 |
-| 9 | `20261112100000_lettres_du_client` | LM6, les lettres de mission au client | `DRAPEAU_DES_LETTRES_DU_CLIENT` | par l'outil | 5 (LM1, LM4 en production) | 5 ; l'acceptation en ligne reste fermée (LM-Q10) | 24/24 |
-| 10 | `20261111239000_relance_des_demandes_par_email` | B3b, la relance d'une demande par e-mail | `RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE` ; `RELANCES_DE_DEMANDES_EN_BASE` (`send-email`) | à coller | 5 et 6 | 6 ; puis `send-email` déployée | 20/0, 4 sur 4 |
-| 11 | `20261111191000_depart_du_client` | INAL5, le départ d'un client | `DEPART_DU_CLIENT_PREVU` | à coller (son en-tête) | — | l'accord (INAL-Q6 tranchée) | 49/0, 4 sur 4 |
-| 12 | `20261106130000_identifiant_du_fichier_ereporting` | e6b, l'identifiant du fichier d'e-reporting | `IDENTIFIANT_DU_FICHIER_EXPORTE` | à coller | — | E6Q8-Q1 : avec le bouton de téléchargement | 18/0 |
-| 13 | `20261112190000_operations_d_inventaire` | INV2, les opérations d'inventaire (hors BNC) | `INVENTAIRE_PREVU`, `INVENTAIRE_EXPORTE` | à coller | — | INV8 : 13, 16 et 17 avec les drapeaux, puis l'assistant | 92/0, 14 sur 14 |
-| 14 | `20261112200000_stocks_de_cloture` | LIA2, les stocks de clôture (hors BNC) | `STOCKS_PREVUS` | à coller | — | l'accord (LIA-Q2, Q3 à leur recommandation) | 31/0, 5 sur 5 |
-| 15 | `20261112233000_affectation_du_resultat` | AFF2, l'affectation du résultat (hors BNC) | `AFFECTATION_PREVUE`, `AFFECTATION_EXPORTEE` | à coller | — | l'accord | 58/0, 13 sur 13 |
-| 16 | `20261112230000_provisions` | INV4, les provisions (hors BNC) | `INVENTAIRE_PREVU` | à coller | 13 | INV8 | 74/0, 8 sur 8 |
-| 17 | `20261112235000_validation_de_l_inventaire` | INV3, la validation connaît l'inventaire (hors BNC) | `INVENTAIRE_PREVU`, `INVENTAIRE_EXPORTE` | par l'outil | 13 ; avant tout autre remplaçant de `valider_exercice` | INV8 | 71/0, 25 sur 25 |
-| 18 | `20261112210000_exercices_du_dossier` | EXD2, les exercices du dossier | `EXERCICES_DECALES_PREVUS` | par l'outil (aucun retrait ; l'en-tête ne le dit pas) | — | EXD3 (à écrire), EXD-Q1 à Q8 ; hors de REPET-Q3 | 63/0 ; son retour garde `btree_gist` (voulu) |
-| 19 | `20261111241000_plan_depuis_la_balance` | PC6, la reprise propose le plan | `PLAN_DEPUIS_LA_BALANCE_PREVU` | à coller | la levée de son drapeau et le déploiement | hors de REPET-Q3 | 26/0 |
-| 19 ter | `20261127215000_periode_des_imports_assurance_maladie` | NOE4R-Q1 (A), la période d'un import sur ses seuls paiements insérés | aucun (l'écran ne dit rien que la règle décide) | par l'outil | — (NOE3, en production) | rien : prête | sur 259 : 11/11, la seconde application refusée, le retour rend la signature |
-| 19 quater | `20261127215500_remplacement_des_journees_assurance_maladie` | NOE4R-Q2 (B), le remplacement d'une journée non associée, sa trace | `REMPLACEMENT_DES_JOURNEES_PREVU` | à coller (un `delete` dans le corps de sa fonction) | 19 ter (sa garde en exige le corps) | NOE4RQ2-Q1 à Q4 ; la lecture du client présentée au cabinet | sur 259 et 19 ter : 35/35, cinq mutations sur cinq ; refusée sans 19 ter |
-| 19 quinquies | `20261127230000_consommations_de_l_assistant` | ASSIST-Q1 (A), le journal de consommation de l'assistant, que `agent-comptable` écrit seule ; le plafond ne lit que lui | `CONSOMMATION_TENUE_PAR_LA_FONCTION` (l'application et `agent-comptable`, jumeaux : levés dans le commit qui range le fichier, la fonction déployée avant la fusion) | par l'outil | — ; avant ou après 20 (sa restrictive sous condition) | l'accord ; ASSIST1-Q1 à Q3 | sur 261 : 8/8, sa suppression 4/4, `rls.sql` 300/1 370/0/180, `restauration.sql` IDENTIQUE, le retour rend la signature ; avec 20, dans les deux ordres : 8/8, `rls.sql` 304/1 506/0/187 ; SÛR au banc |
-| 20 | `20261107160000_deux_facteurs_exiges` | C7, la double authentification exigée | `DEUX_FACTEURS_EXIGES_EXPORTE` ; `DEUX_FACTEURS_EXIGES_EN_BASE` (quatorze Edge Functions) | à coller ; retour en deux temps | en dernier | SEC2-Q1 : après le MVP | 42/0, 15 sur 15 |
-| — | `20261107120000_facture_internationale` | e7a, la facture à un client hors de France | `FACTURE_INTERNATIONALE_EXPORTEE` | à coller | — | REPET-Q1 (B) : rebasée à son collage, après le MVP | REFUSE (sa garde vise le corps d'`enregistrer_facture` d'`acomptes_des_devis`) |
+- **dérive** : 261 migrations, `84978ecbcc00e808a9953b09ce3c5dad`, égale — celle de la production si ses deux lignes
+  d'historique portent le texte des fichiers (au saut de ligne final près, que la règle de la dérive écarte) ;
+- **socle** : 85 instructions, `585debf740c5f74f4e2669a0d4ebcc9c`, inchangé (aucune des deux ne touche une table du socle) ;
+- **inventaire** : 3 548 objets, `c69af6cf57de4a878285b732538d99f2`, égal (six de plus qu'à 259 : les deux déclencheurs et la
+  garde de SECU4-Q1 ; le déclencheur de contrainte, sa contrainte et sa fonction pour MCBR-Q2).
 
-**La 21, le 27/11/2026 au soir** (en production depuis, 261 ; MCBR-Q2, HISTORIQUE.md, « MCBR-Q2 : LA VALIDATION REFUSE L'OUVERTURE SUIVANTE ») : sur une copie
-portée à 259 (dérive `a540bcd9…`), son essai `ouvertureSuivanteALaValidation` 13/13 et cinq mutations sur cinq, sa seconde
-application refusée, son retour rendant la signature d'avant ; `ouvertureEclatee` 41/41 et `validationExercice` 250/250 avant et
-après elle. Les 16 autres par-dessus, dans l'ordre du tableau (276) : les trois essais justes ; puis elle retirée et collée après
-elles, sur le corps d'INV3 de `valider_exercice` : son essai juste. Le retour de 258 se refuse désormais tant qu'elle est en base.
+Sur 261 : `rls.sql` 296 lignes, 1 358 vérifications, 0 en faute, 178 mutations sur 178, 14 blocs EN ATTENTE (ceux des seize et de
+NOE4R-Q2) ; les 214 jeux d'essais rendent les verdicts de 259, hors des essais des deux migrations, dont l'attente se lève sur des
+verdicts justes (`pieceDUneEcritureLibreDansSonDossier` 12/12, `ouvertureSuivanteALaValidation` 13/13 et 5 mutations sur 5) ;
+`restauration.sql` IDENTIQUE, 110 tables.
 
-**La chaîne**, dans l'ordre du tableau (e7a hors d'elle) : 275 migrations, toutes appliquées ; `rls.sql` 346 lignes, 1 692
-vérifications, 0 en faute, 220 mutations sur 220 qui mordent, aucune EN ATTENTE ; les retours, à rebours, rendent la base à 255
-(`btree_gist` excepté). Un second ordre (20 d'abord, puis 15, 14, 13, 16, 17, 11, 1 à 3, 5, 9, 8, 7, 6, 10, 4, 12, 19, 18) :
-la même base, à l'ordre des colonnes du brouillon et à la date de création du seau `documents-cabinet` près. Les 167 autres
-essais (207 jeux, ceux de réplique seulement sous les deux rôles, chaque famille avec son semis) sur 255 puis sur chaque ordre :
-identiques, hors des EN ATTENTE qui se lèvent sur des verdicts justes, une fois trois essais repris (`sousDossierDansSonDossier`,
-`ecrituresLibres`, `contrePassationDesEcrituresLibres`) ; `restauration.sql` IDENTIQUE, 110 puis 127 tables ; les huit essais de
-la famille « apres » et celui d'OPT6 SÛRS au banc du leurre.
+## La méthode
 
-**OPT6 en production** : les deux essais des écritures libres repris ici (`ecrituresLibres` EL-F1, `contrePassationDesEcrituresLibres`
-CP-F2) fermaient la liste des déclencheurs d'`ecritures_libres` sans ceux de la frontière ; depuis 255, ils tombaient sur la
-production elle-même, et non plus au seul collage. Repris, ils admettent ces déclencheurs quand la garde d'OPT6 est au catalogue.
+Chaque passe sur une base tirée de la copie (`create database … template`), une seule grappe : la double authentification
+reçoit d'abord le talon de la réplique (`auth.mfa_factors`, `auth.sessions`, le rôle `authenticator`), et sa pré-requête, qui
+vit dans la grappe, se pose ou se remet à zéro selon la base que l'on juge.
 
-**Au collage** : le socle s'est régénéré au collage de 1 (MCB5g, 258 : 85 instructions à 259, `585debf7…`) ; il se régénère
-encore au collage de 13, 14 et 15 (une colonne, des contraintes et un index du brouillon) et de 20 (douze restrictives) — 100 au
-bout de la chaîne ; tant qu'il ne l'est pas, l'inventaire de la base compte, sur ses seules tables, plus d'objets que les fichiers
-(à 259, sans le socle régénéré : deux de plus, la colonne et la paire de 258). e7a : le candidat du 14/11/2026 (hors du dépôt) vise le corps
-d'`enregistrer_facture` de LM1 (`a5e2f40e…`), toujours celui de la production ; à 254 puis à 255, il s'applique, son essai rend
-44/0 et 12 mutations sur 12 (SÛR au banc, au bout de la chaîne), seize essais des factures sont inchangés (à 254), et son retour
-rend la base d'avant.
+- **Seule** : après ses seules dépendances déclarées ; elle s'applique ; une seconde application se refuse (sa garde de tête) ;
+  son essai, puis ceux des tables partagées (`validationExercice`, `ouvertureEclatee`, `paiementsAssuranceMaladie`,
+  `ecrituresLibres`, `comptesBancaires`) ; `rls.sql` entier ; son retour, puis la signature étendue (les neuf familles de
+  `signature.sql`, le stockage, auth, les rôles, les commentaires, les données), égale à celle d'avant elle.
+- **En chaîne** : toutes, dans un ordre ; `rls.sql` entier ; les essais des préparées et des tables partagées ; puis les 214 jeux
+  d'essais de `supabase/essais/` (ceux de réplique seulement sous les deux rôles, chaque famille avec son semis), comparés jeu par
+  jeu ; les trois contrôles de l'export contre les fichiers SIMULÉS rangés (l'export à 261, chaque préparée sous la version de sa
+  ligne d'historique, le socle régénéré du catalogue comme au collage) ; les retours à rebours.
+- **Mode** : ce que dit l'en-tête — « à coller » quand le texte porte un retrait (`drop`, `delete from`, `truncate`), même dans
+  un corps de fonction ou un commentaire ; « par l'outil » sinon, à coller si l'outil la retient quand même. Tous les retours
+  se collent. Le md5 et la longueur sont ceux du texte sans son saut de ligne final : ceux de la ligne d'historique.
 
-**Préparée depuis** (27/11/2026, la relecture adverse de sécurité des migrations 218 à 259 ; HISTORIQUE.md, « 27/11/2026 — LA
-RELECTURE ADVERSE DE SÉCURITÉ DES MIGRATIONS 218 À 259 ») : `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1, ligne 19 bis,
-en production depuis, 260),
-indépendante des autres, par l'outil, son retour à coller. Sur une copie de `replique_227` portée à 259 : seule, son essai 12/12,
-quatre mutations sur quatre, `rls.sql` 295 lignes, 1 357 vérifications, 0 en faute, 178 mutations sur 178, une seconde
-application refusée, son retour rend la signature de 259 ; les 173 essais, avant et après elle, rendent les mêmes verdicts hors
-du sien, de `signature.sql` et `inventaire.sql` (deux déclencheurs et une fonction de plus), et d'EL-F1 et CP-F2, repris pour
-admettre son déclencheur ; SÛR au banc du leurre (famille « apres »). Au bout de la chaîne (les seize, elle, puis la double
-authentification, 20) : son essai 12/12, `rls.sql` 346 lignes, 1 692 vérifications, 0 en faute, 220 mutations sur 220.
+## Le tableau
 
-**Préparées depuis, le même soir** (27/11/2026, NOE4R-Q1 et NOE4R-Q2 ; HISTORIQUE.md, « 27/11/2026 — NOE4R-Q1 ET NOE4R-Q2 ») :
-deux de plus, lignes 19 ter et 19 quater, indépendantes de 19 bis et de 21, éprouvées sur une copie de `replique_227` portée à 259 par
-l'export (dérive `a540bcd9…`, inventaire 3 542 `58b4a599…`, socle 85 `585debf7…`) — seules, en chaîne (19 ter puis 19 quater :
-dérive 261 `170b1f02…` égale aux fichiers simulés rangés, inventaire 3 576 `63de153d…` égal aux fichiers), leurs essais
-(`periodeDesImportsAssuranceMaladie` 11/11, `remplacementDesJourneesAssuranceMaladie` 35/35, sa suppression 7/7 ;
-`paiementsAssuranceMaladie` 66/66 avant et après 19 ter), `rls.sql` entier (sur 19 quater : 479 lignes, 1 372 vérifications, 0 en
-faute, 180 mutations sur 180 ; sur 259 et 19 ter : RJ EN ATTENTE), `restauration.sql` IDENTIQUE (111 tables), les retours à rebours
-(signature et commentaires égaux à 259), le banc du leurre SÛR sur les quatre essais changés. Ni la répétition ci-dessus ni le
-bout de la chaîne ne les ont rejouées : aucune préparée ne remplace une des cinq fonctions que la garde de 19 quater épingle (B1,
-ligne 5, récrit `client_du_dossier` en gardant la ligne « banque » qu'elle lit) ; sa restrictive `deux_facteurs` se pose sous
-condition, avant comme après 20 (`deuxFacteursDesTablesNeuves.test.ts`) ; le retour de NOE3 exige désormais celui de 19 ter
-d'abord.
+| Ordre | Préparée | md5 · caractères | Ce qu'elle remplace, ce qu'elle pose | Mode | Après | Drapeau(x) | Retenue par | Seule, sur 261 | En chaîne (d1) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 5 | `20261107140000_trois_cases_de_l_acces` (B1) | `d5edd62c` · 22 148 | remplace `changer_droits_acces`, `client_du_dossier`, `droits_sur_le_dossier`, `tracer_les_droits` (les cases « Achats », « Notes de frais », « Documents ») | par l'outil | — (P1-trace, C4a en production) | `TROIS_CASES_EXPORTEES` | **B1-Q1**, sans réponse | 16/16 | 16/16 |
+| 6 | `20261111234000_documents_et_demandes` (B2) | `89e1cdb7` · 56 317 | pose cinq tables et le seau `documents-cabinet` | par l'outil | 5 | `DOCUMENTS_ET_DEMANDES_PREVUS` | B1-Q1 (par 5), puis l'accord | 81/81 ; sa suppression 17/17 | idem |
+| 7 | `20261111237000_achats_du_client` (B4) | `bfd305ba` · 30 160 | pose `paiements_declares`, `pieces_vues` | par l'outil | 5 | `ACHATS_DU_CLIENT_PREVUS` | B1-Q1 (par 5), puis l'accord | 63/63 | 63/63 |
+| 8 | `20261111238000_notes_de_frais` (B7) | `f43786e1` · 47 187 | pose `notes_de_frais`, le rôle `personnel` au 421000 | par l'outil | 5 | `NOTES_DE_FRAIS_PREVUES` | B1-Q1 (par 5) | 84/84 | 84/84 |
+| 9 | `20261112100000_lettres_du_client` (LM6) | `74d40992` · 10 621 | les lettres de mission au client (l'acceptation en ligne reste fermée, LM-Q10) | par l'outil | 5 (LM1, LM4 en production) | `DRAPEAU_DES_LETTRES_DU_CLIENT` | B1-Q1 (par 5) | 24/24 | 24/24 |
+| 10 | `20261111239000_relance_des_demandes_par_email` (B3b) | `95eb3083` · 8 732 | remplace la contrainte `emails_envoyes_type_check` | à coller | 5 et 6 | `RELANCE_DES_DEMANDES_PAR_EMAIL_PREVUE` ; `RELANCES_DE_DEMANDES_EN_BASE` (`send-email`) | B1-Q1 (par 6) ; puis `send-email` déployée | 20/20, 4 mutations sur 4 | idem |
+| 11 | `20261111191000_depart_du_client` (INAL5) | `e6d4b7d9` · 25 213 | pose `conservations_des_dossiers`, `paquets_d_archive_telecharges` | à coller (son en-tête) | — | `DEPART_DU_CLIENT_PREVU` | l'accord (INAL-Q6 tranchée) | 49/49, 4 sur 4 | idem |
+| 12 | `20261106130000_identifiant_du_fichier_ereporting` (e6b) | `461a0458` · 22 714 | retire et recrée `declarer_ereporting_hors_application` | à coller | — | `IDENTIFIANT_DU_FICHIER_EXPORTE` | E6Q8-Q1 : avec le bouton de téléchargement | 18/18 | 18/18 |
+| 13 | `20261112190000_operations_d_inventaire` (INV2, hors BNC) | `175bfd47` · 57 153 | pose `operations_inventaire`, une colonne du brouillon et ses paires | à coller | — | `INVENTAIRE_PREVU`, `INVENTAIRE_EXPORTE` | INV8 : 13, 16 et 17 avec les drapeaux, puis l'assistant | 92/92, 14 sur 14 | idem |
+| 14 | `20261112200000_stocks_de_cloture` (LIA2, hors BNC) | `936ac32c` · 38 376 | pose `stocks_de_cloture`, une colonne du brouillon et ses paires | à coller | — | `STOCKS_PREVUS` | l'accord (LIA-Q2, Q3 à leur recommandation) | 31/31, 5 sur 5 | idem |
+| 15 | `20261112233000_affectation_du_resultat` (AFF2, hors BNC) | `813e441e` · 73 704 | pose `affectations_du_resultat`, `lignes_d_affectation`, une colonne du brouillon et ses paires | à coller | — | `AFFECTATION_PREVUE`, `AFFECTATION_EXPORTEE` | l'accord | 58/58, 13 sur 13 | idem |
+| 16 | `20261112230000_provisions` (INV4, hors BNC) | `22ff51e4` · 53 111 | pose `provisions` | à coller | 13 | `INVENTAIRE_PREVU` | INV8 | 74/74, 8 sur 8 | idem |
+| 17 | `20261112235000_validation_de_l_inventaire` (INV3, hors BNC) | `39e5c3f5` · 105 135 | remplace `valider_exercice` (65df5e35…), `empreinte_exercice_forme_2`, `fichier_fige` (5e7016c0…) ; pose `inventaires_declares` | par l'outil | 13 ; avant tout autre remplaçant de `valider_exercice` (le filet de 261 ne le remplace pas) | `INVENTAIRE_PREVU`, `INVENTAIRE_EXPORTE` | INV8 | 71/71 (2 EN ATTENTE : 16), 25 sur 25 | 77/77, 26 sur 26 |
+| 18 | `20261112210000_exercices_du_dossier` (EXD2) | `8c279d73` · 32 192 | pose `exercices` et l'extension `btree_gist` | par l'outil (aucun retrait ; l'en-tête ne le dit pas) | — | `EXERCICES_DECALES_PREVUS` | EXD3 (à écrire), EXD-Q1 à Q8 ; hors de REPET-Q3 | 63/63 ; son retour garde `btree_gist` (voulu) | 63/63 |
+| 19 | `20261111241000_plan_depuis_la_balance` (PC6) | `6b6ed989` · 11 765 | remplace `enregistrer_a_nouveaux` | à coller | la levée de son drapeau et le déploiement | `PLAN_DEPUIS_LA_BALANCE_PREVU` | hors de REPET-Q3 | 26/26 | 26/26 |
+| 19 ter | `20261127215000_periode_des_imports_assurance_maladie` (NOE4R-Q1) | `7cc09cb0` · 13 797 | remplace `importer_paiements_assurance_maladie` (62b9f0f6…) : la période d'un import sur ses seuls paiements insérés | par l'outil | — (NOE3 en production) | aucun (l'écran ne dit rien que la règle décide) | rien : prête (NOE4R-Q1 (A)) | 11/11 | 11/11 |
+| 19 quater | `20261127215500_remplacement_des_journees_assurance_maladie` (NOE4R-Q2) | `d578b16a` · 31 775 | pose `remplacements_assurance_maladie` (la trace), `remplacer_journees_assurance_maladie` ; épingle cinq fonctions à leur empreinte, dont celle de 19 ter | à coller (un `delete` dans le corps de sa fonction) | 19 ter (refusée sans elle) ; avant ou après 20 | `REMPLACEMENT_DES_JOURNEES_PREVU` | NOE4RQ2-Q1 à Q4 ; la lecture du client « Banque » présentée au cabinet | 35/35 ; sa suppression 7/7 | idem |
+| 20 | `20261107160000_deux_facteurs_exiges` (C7) | `42141f44` · 33 327 | pose `exigences_deux_facteurs`, `retraits_deux_facteurs`, une restrictive `deux_facteurs` par table et sur le stockage, la pré-requête de PostgREST | à coller ; retour en deux temps | en dernier | `DEUX_FACTEURS_EXIGES_EXPORTE` ; `DEUX_FACTEURS_EXIGES_EN_BASE` (quatorze Edge Functions) | SEC2-Q1 : après le MVP | 42/42, 15 sur 15 | idem |
+| — | `20261107120000_facture_internationale` (e7a) | `9ba1c647` · 82 246 | remplace `enregistrer_facture`, `garder_factures_validees` | à coller | — | `FACTURE_INTERNATIONALE_EXPORTEE` | **REPET-Q1 (B)** : rebasée à son collage, après le MVP | REFUSE (sa garde vise le corps d'`enregistrer_facture` d'`acomptes_des_devis`) | hors de la chaîne |
 
-**Préparées depuis, le même soir** (27/11/2026, SECU4-Q2 (B) et MCBR2-Q2 (A), réponses du cabinet de 21 h 40 UTC ; HISTORIQUE.md,
-« 27/11/2026 — SECU4-Q2 ET MCBR2-Q2 ») : deux de plus, indépendantes des autres préparées, éprouvées sur une copie de `replique_227`
-portée à 261 par l'export et les deux fichiers du soir (260 et 261, en production ; dérive `84978ecb…`, inventaire 3 548
-`c69af6cf…`, socle 85 `585debf7…`), seules et ensemble (dérive 263 `b8c7e851…`, inventaire 3 554 `0ef6c24b…`, égaux aux fichiers
-simulés rangés ; socle inchangé). Les 179 essais rejoués dans les quatre états (261, chacune, les deux) : aucune faute neuve, `rls.sql`
-296 lignes, 1 358 vérifications, 0 en faute, 178 mutations sur 178, `validationExercice` et `restauration.sql` identiques ; chaque
-retour rend la signature de 261 (commentaires compris) ; une seconde application se refuse ; le banc du leurre SÛR sur les dix
-essais joués en production qui changent, dans les deux états.
+Seules, sur 261 (et déjà sur 259, les quatre du jour comprises), les 18 s'appliquent, une seconde application se refuse pour
+chacune, leurs essais et ceux des tables partagées sont justes, `rls.sql` sans faute avec chacune, et chaque retour rend la
+signature étendue d'avant elle (EXD2 garde `btree_gist`, voulu). NOE4R-Q2 se refuse sans NOE4R-Q1 (« appliquer d'abord
+periode_des_imports_assurance_maladie »), et le retour de NOE4R-Q1 se refuse tant que NOE4R-Q2 est en base. Le candidat d'e7a du
+14/11/2026 (hors du dépôt) vise encore le corps de la production : sur 261 et au bout de la chaîne d1, il s'applique, son essai
+rend 44/44 et 12 mutations sur 12, seize essais des factures sont inchangés, son retour rend la signature d'avant.
 
-| Ordre | Préparée | Chantier | Drapeau(x) | Mode | Après | Ce qu'elle attend | Sur 261 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 21 bis | `20261127230000_ni_piece_ni_document_ne_change_de_dossier` | SECU4-Q2 (B), ni une pièce ni un document ne change de dossier, pour tout auteur | aucun (l'application ne change jamais le dossier d'une ligne) | par l'outil | — ; avant ou après les autres (B4, B7, INAL5, INV3 nomment leur déclencheur avant le sien) | l'accord | 16/16, 8 mutations sur 8 ; neuf essais repris, justes dans les deux états |
-| 21 ter | `20261127231000_banque_partagee_a_la_validation` | MCBR2-Q2 (A), le 512 du principal partagé au 31/12 retient la validation | aucun (le préalable `banque-partagee-retenue` part seul) | par l'outil | 258 et 261 (en production) ; avant ou après les autres | l'accord | 17/17, 8 mutations sur 8 ; `ouvertureSuivanteALaValidation` 13/13, 5 sur 5, repris (OS-C2) |
+## Ce que la répétition a trouvé, et corrigé
 
-**21 bis.** Une garde qui ne lit rien, aux droits de l'appelant, et deux déclencheurs BEFORE UPDATE sans liste de colonnes, sous la
-condition que le dossier change, nommés pour tirer en dernier de leur table : les gardes relation par relation tirent avant et gardent
-leurs mots. Treize contrôles positifs de neuf essais (« une pièce que rien ne cite change de dossier ») admettent, la règle en base,
-son refus et lui seul. Le retour se colle. **21 ter.** Un déclencheur de contrainte différé sur `exercices_valides`, sur le modèle de
-261, sans réécrire `valider_exercice` ; il lit `soldes_des_comptes_au_trente_et_un` (sa garde de tête en exige le corps de 258,
-`6682875d…`) et tire après le filet de 261, dont le refus se dit d'abord ; les retours de 258 et de 261 se refusent tant qu'il est en
-base. Ni la répétition ni le bout de la chaîne ne les ont rejouées : aucune préparée ne remplace `garder_dossier_de_depot`,
-`soldes_des_comptes_au_trente_et_un` ni le déclencheur de 261 ; INV3, qui remplace `valider_exercice`, garde ses deux insertions.
+**Un essai joué en production aurait viré au rouge au collage de NOE4R-Q2.** Le contrôle 141 de `validationExercice.sql` (« tout
+déclencheur qui garde une suppression laisse passer la cascade d'un dossier qu'on supprime ») compare les gardes BEFORE … DELETE
+de la base à une liste tenue à la main : la garde de la trace, `remplacements_assurance_maladie_garde`, de la forme « dossier »
+(la cascade passe), n'y était pas — 85 gardes observées contre 84 attendues avec NOE4R-Q2 seule sur 259, 107 contre 106 au bout
+de la chaîne. Ni la préparation de NOE4R-Q2 ni la répétition du matin ne rejouaient cet essai après elle. Corrigé dans l'essai
+(une ligne comptée quand la table existe ; rien ne change sans elle) : 250/250 sur 259 et sur 261, avec NOE4R-Q1 et Q2, et au
+bout de chaque chaîne ; SÛR au banc du leurre, sur 259, sur 261 et au bout de la chaîne. Gardé par
+`remplacementDesJourneesAssuranceMaladie.test.ts` (la ligne et la forme de la garde), et par un relevé qui part de TOUT,
+`gardesDeSuppressionAttendues.test.ts` : chaque déclencheur BEFORE … DELETE que l'export (migrations et socle) et les préparées
+laissent en place — 109 le 27/11/2026, dont 23 des préparées — paraît dans l'essai sous la forme que le contrôle observe, hors
+des deux gardes de la caisse que sa requête écarte ; des défauts plantés le prouvent ; il nomme la table de la trace et se range
+donc parmi les lecteurs permis de `paiementsAssuranceMaladieSansSortie.test.ts`, sous sa raison. Aucune préparée n'a dérivé :
+aucune garde de tête qui refuse à tort, aucun heurt de nom, aucune empreinte périmée (hors e7a, connue).
+
+## Les ordres joués
+
+Sur 261 (les 18 qui restent) :
+
+| Chaîne | L'ordre | Migrations | `rls.sql` : lignes · vérifications · en faute · mutations | Essais (214 jeux) | Contrôles simulés : dérive · socle · inventaire |
+| --- | --- | --- | --- | --- | --- |
+| d1 | celui du tableau : 5 à 19, 19 ter, 19 quater, puis 20 | 279 | 350 · 1 708 · 0 · 222 sur 222, aucune EN ATTENTE | 180 identiques à 259 et 25 attentes levées sur des verdicts justes ; les essais de 13 à 16 et de 20 justes au lieu d'attendre leur migration | 279 `12842da3…` égale · 100 `3ccceb27…` égal · 4 329 `739a62bd…` égal |
+| d2 | 19 ter et 19 quater d'abord, puis 5 à 19, puis 20 | 279 | 350 · 1 708 · 0 · 222 sur 222 | les 214 identiques à d1 | 279 `d6ee63aa…` égale · 100 · 4 329 |
+| d3 | d1 sans NOE4R-Q2 (NOE4R-Q1 seule), puis NOE4R-Q2 au bout, après 20 | 278, puis 279 | 347 · 1 693 · 0 · 220 sur 220, RJ EN ATTENTE ; avec Q2 : 350 · 1 708 · 0 · 222 | identiques à d2 hors des deux essais de NOE4R-Q2, EN ATTENTE ; avec Q2 au bout : 35/35, 7/7, le contrôle 141 juste | 278 `51a8e273…` égale · 100 · 4 294 `432e1f23…` égal |
+| d4 | la double authentification d'abord, puis 19 ter, 19 quater, puis 5 à 19 | 279 | 350 · 1 708 · 0 · 222 sur 222 | les 214 identiques à d2 | 279 `c290ecd1…` égale · 100 · 4 329 |
+| n2 | 19 ter et 19 quater seules (la production à 263 de demain) | 263 | 299 · 1 372 · 0 · 180 sur 180, 13 EN ATTENTE (les seize) | 210 identiques à 261, 4 attentes levées | 263 `eff47f57…` égale · 85 `585debf7…` inchangé · 3 582 `ac470e3b…` égal |
+
+Au bout de d1, d2, d4, et de d3 une fois NOE4R-Q2 posée, la base est la même : signature étendue égale, aux données de
+`storage.buckets` près (la date de création du seau `documents-cabinet`). `restauration.sql` IDENTIQUE partout (110 tables à 261,
+111 en n2, 127 en d3, 128 au bout des chaînes). Les retours, à rebours, rendent 261 sur chaque chaîne (`btree_gist` excepté) ;
+`rls.sql` y revient à 296 · 1 358 · 0 · 178. Le banc du leurre : les neuf essais de la famille « apres » (B1, B2, B3b, B4, B7,
+e6b, SECU4-Q1, NOE4R-Q1 et Q2) SÛRS sur la chaîne d1 entière ; `validationExercice` SÛR sur 261 et sur la chaîne.
+
+Sur 259, avant les deux mises en production, les mêmes cinq ordres avec les 20 (SECU4-Q1 et MCBR-Q2 à leur place du tableau
+d'alors, puis d'abord, puis seules avec NOE4R-Q1 et Q2) avaient rendu la même chose : 279 migrations, `rls.sql` 350 · 1 708 · 0 ·
+222, les mêmes bases au bout, les mêmes contrôles (socle 100 `3ccceb27…`, inventaire 4 329 `739a62bd…`), et le seul défaut
+ci-dessus ; MCBR-Q2 avant comme après INV3.
+
+## L'ordre de collage recommandé (la production à 261)
+
+1. **`periode_des_imports_assurance_maladie`** (19 ter), prête, par l'outil : rien d'autre ne l'attend ni ne la retient. Après
+   elle (262) : socle 85 `585debf7…` et inventaire 3 548 `c69af6cf…` inchangés (elle ne remplace qu'un corps), la dérive à
+   relever sous sa version ; `paiementsAssuranceMaladie` 66/66 et son essai 11/11 à rejouer en production.
+2. **`remplacement_des_journees_assurance_maladie`** (19 quater), à coller, après 19 ter, quand NOE4RQ2-Q1 à Q4 sont tranchées,
+   avec dans le même commit `REMPLACEMENT_DES_JOURNEES_PREVU` levé et la trace au plan de sauvegarde ; avant ou après 20 (sa
+   restrictive se pose sous condition, d3). Après elle (263) : socle 85, inventaire 3 582 `ac470e3b…` ; `validationExercice`
+   250/250 grâce à la ligne du contrôle 141.
+3. **Puis les seize**, dans l'ordre du tableau, chacune quand ce qui la retient est levé : B1 (5) d'abord, qui retient 6 à 10 ;
+   13, 16 et 17 ensemble (INV8) ; 18 et 19 hors de REPET-Q3. **20 en dernier**, après le MVP (SEC2-Q1).
+4. **e7a** rebasée à son collage (REPET-Q1 (B)), après le MVP.
+
+**Au collage**, le socle se régénère au collage de 13, 14 et 15 (la ligne du brouillon, et un index chacune) et de 20 (douze
+restrictives sur les tables du socle) : 85 → 100 au bout de la chaîne, `3ccceb27…` — une instruction remplacée
+(`create table public.ecritures_brouillon`), seize neuves ; sans lui, l'inventaire des fichiers compte 24 objets de moins que la
+base (4 305 contre 4 329). Ni 19 ter ni 19 quater ne le touchent. L'inventaire ne nomme que des objets : la version des lignes
+d'historique n'y change rien.
+
+## Ce qui reste retenu par une question
+
+- **B1-Q1**, sans réponse : retient B1 (5), donc B2, B3b, B4, B7 et LM6 (6 à 10).
+- **REPET-Q1 (B)** : e7a se rebase à son collage, après le MVP.
+- **NOE4RQ2-Q1 à Q4** (19 quater) ; **SEC2-Q1** (20, après le MVP) ; **INV8** (13, 16, 17) ; **E6Q8-Q1** (12) ; **EXD-Q1 à Q8** et
+  EXD3 (18) ; l'accord pour 11, 14 et 15 ; 18 et 19 hors de REPET-Q3 (B).
+- **REPET3-Q1** (posée par cette répétition) : 19 ter maintenant, par l'outil, avant les seize.
+
+## Les répétitions d'avant (27/11/2026)
+
+**Le matin, à 254 puis à 255** (OPT6, `frontiere_de_la_tenue`, appliquée en production pendant la répétition) : 21 des 22 d'alors
+s'appliquaient seules et en chaîne (275 migrations ; `rls.sql` 346 · 1 692 · 0 · 220 sur 220), e7a refusait ; trois essais repris
+(`sousDossierDansSonDossier`, et EL-F1, CP-F2 qui ignoraient les déclencheurs d'OPT6). Puis, sur l'accord du cabinet
+(REPET2-Q1 (A)), les quatre premières lignes d'alors sont passées en production et sorties du tableau :
+`compte_propre_hors_des_exercices_valides` (256), `sous_dossier_dans_son_dossier` (257), puis MCB5g, `ouverture_eclatee_par_compte`
+(258, collée) et `ouverture_eclatee_a_la_validation` (259). **Le soir**, quatre préparées de plus, chacune éprouvée seule sur 259 —
+SECU4-Q1 (la relecture adverse de sécurité des migrations 218 à 259), MCBR-Q2, NOE4R-Q1 et NOE4R-Q2 — puis la répétition
+ci-dessus, pendant laquelle SECU4-Q1 (260) et MCBR-Q2 (261) sont passées en production.

@@ -55481,3 +55481,23 @@ scénario commun rend la même chose, onze défauts plantés ; sur une copie de 
 4/4, `rls.sql` 300/1 370/0/180 (297/1 359/0/178 avant, CO EN ATTENTE), avec `deux_facteurs_exiges` dans les deux ordres 304/1 506/0/187,
 `restauration.sql` IDENTIQUE, le retour rend la signature, l'inventaire simulé égal à la base (3 566 `29a479ab…`) ; SÛR au banc (le
 modèle avant et après). Questions : ASSIST1-Q1 à Q3.
+### 27/11/2026 — LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 261, AVEC LES QUATRE DU JOUR
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 259 par l'export, puis à 261 par SECU4-Q1 et
+MCBR-Q2 sous leurs versions de production — `20261127213748`, `20261127214813`, appliquées par l'outil pendant la répétition —,
+chaque passe sur une base tirée d'elle, la copie supprimée.) À 261 : dérive `84978ecb…`, inventaire 3 548 `c69af6cf…`, socle 85
+`585debf7…`, égaux à l'export rangé ; `rls.sql` 296 · 1 358 · 0 · 178 sur 178. **Seules**, sur 259 les 20 puis sur 261 les 18 qui
+restent : elles s'appliquent, une seconde application se refuse, leurs essais et ceux des tables partagées sont justes, chaque
+retour rend la signature étendue d'avant (EXD2 garde `btree_gist`) ; e7a refuse (REPET-Q1 (B)), son candidat hors du dépôt
+s'applique encore (44/44, seize essais des factures inchangés) ; NOE4R-Q2 se refuse sans Q1, le retour de Q1 avec Q2. **Cinq
+ordres**, sur 259 puis sur 261 — celui du tableau, les nouvelles d'abord, NOE4R-Q1 sans Q2 puis Q2 après la double
+authentification, la double authentification d'abord, les nouvelles seules : tout s'applique (279 ; `rls.sql` 350 · 1 708 · 0 ·
+222), la même base au bout (au seau `documents-cabinet` près), les 214 jeux d'essais identiques d'un ordre à l'autre,
+`restauration.sql` IDENTIQUE, les retours rendent le départ, dérive, socle (100 `3ccceb27…`, régénéré comme au collage) et
+inventaire (4 329 `739a62bd…` ; 3 582 `ac470e3b…` pour NOE4R-Q1 et Q2 seules) égaux aux fichiers simulés. **Établi et corrigé** :
+le contrôle 141 de `validationExercice.sql`, joué en production, aurait viré au rouge au collage de NOE4R-Q2 — sa garde, de la
+forme « dossier », manquait à la liste tenue à la main (85 observées, 84 attendues) ; une ligne comptée quand la table existe :
+250/250 partout, SÛR au banc, gardée par `remplacementDesJourneesAssuranceMaladie.test.ts` et un relevé qui part de tout,
+`gardesDeSuppressionAttendues.test.ts` (109 gardes BEFORE … DELETE ; défauts plantés). Aucune préparée n'a dérivé. Ordre
+recommandé : NOE4R-Q1 maintenant, NOE4R-Q2 après elle (NOE4RQ2-Q1 à Q4), puis les seize, la double authentification en dernier.
+Le tableau : la conception 60 ; question : REPET3-Q1.
