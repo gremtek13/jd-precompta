@@ -505,7 +505,7 @@ export function controlesDuDossier(contenu: Record<string, Ligne[]>, categories:
     jumellesPartielles: false, facturesSources: facturesSourcesDe([]), info: null, infoInconnue: null, anneesCloturees: [],
     ouverture: banque === null ? null : ouvertureBanque(aNouveaux, banque), ouvertureIncomplete: null, aNouveaux, soldesReportes: [],
     entreesDeLOuvertureIncompletes: null, ventesFacturees: null, caisse, entreesDeLaCaisseIncompletes: null,
-    entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' }, assuranceMaladie: null,
+    entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' }, assuranceMaladie: null, bordereauxDeposes: null,
   }, {
     assujettiTva: ASSUJETTI, periodiciteTva: 'trimestrielle', statutTva: 'exonere', modele: MODELE, frontiere: null, anneesValidees: [],
     aujourdHui: AUJOURD_HUI, anneeCourante: 2026, moisEcoules: 10, premierJourDuMois: '2026-11-01', offreAssuranceMaladie: { codeNaf: null, moduleOuvert: false },

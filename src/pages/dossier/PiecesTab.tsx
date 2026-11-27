@@ -67,6 +67,7 @@ import {
   etatDeLaCaisseDeLaFiche, paiementsDeLaLecture, piecesPayeesEnEspeces, refusDeSuppressionParLaCaisse, suppressionRetenueParLaCaisse,
 } from '../../lib/paiementParLaCaisseEcran'
 import type { CaisseDeLaPiece } from './ReglementParLaCaisse'
+import { demandePour, FICHE_DEMANDEE_INTROUVABLE, type FicheDemandee } from '../../lib/ficheDemandee'
 
 // Les factures sources tant que le pont n'est pas lu en entier (voir le badge « Devise non convertie ») : aucune n'est écartée.
 const SOURCES_NON_LUES: FacturesSources = new Set()
@@ -78,9 +79,13 @@ const SOURCES_NON_LUES: FacturesSources = new Set()
 // `modele` et `assujettiTva` : le modèle comptable et le statut du dossier, que la page lit (ligne 26.6, étape C9b) — la fiche
 // d'une pièce règle par la caisse dans un dossier en trésorerie, la migration `paiement_par_la_caisse` en base. Sans modèle
 // (un appelant qui ne le lit pas), la caisse ne se lit pas : la liste et la fiche sont celles d'hier.
-export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLesFactures, modele = null, assujettiTva = false }: {
+// `ficheDemandee` : la fiche qu'un autre onglet demande d'ouvrir (la Vue d'ensemble, BOR6T-Q2 (A)) ; absente, rien ne s'ouvre seul.
+export default function PiecesTab({
+  dossierId, dossierSiret = null, ventesParLesFactures, modele = null, assujettiTva = false, ficheDemandee = null, onFicheDemandeePrise,
+}: {
   dossierId: string; dossierSiret?: string | null; ventesParLesFactures: boolean
   modele?: ModeleComptable | null; assujettiTva?: boolean
+  ficheDemandee?: FicheDemandee | null; onFicheDemandeePrise?: () => void
 }) {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
@@ -648,6 +653,20 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
     if (panneauPiece.fermer()) afficherPiece(null)
   }
 
+  // LA FICHE DEMANDÉE PAR LA VUE D'ENSEMBLE (BOR6T-Q2 (A), lib/ficheDemandee.ts) : un bordereau déjà déposé, nommé par sa date de
+  // dépôt, ouvre ici sa fiche une fois la liste lue — la suppression y reste le geste confirmé de toujours. La demande se rend
+  // aussitôt (une seule ouverture) ; introuvable dans la liste lue, l'onglet le dit. La fiche dit « hors de la liste affichée »
+  // quand l'exercice choisi ne la montre pas : rien ne change l'exercice à la place du cabinet.
+  const [demandeIntrouvable, setDemandeIntrouvable] = useState(false)
+  useEffect(() => {
+    const demande = demandePour(ficheDemandee, dossierId, 'piece')
+    if (demande === null || loading) return
+    onFicheDemandeePrise?.()
+    const p = pieces.find((x) => x.id === demande.id)
+    setDemandeIntrouvable(p === undefined)
+    if (p !== undefined) ouvrirPiece(p)
+  }, [ficheDemandee, loading, pieces, dossierId])
+
   // Après une validation, la prochaine pièce À VALIDER de la liste affichée — après celle-ci, puis en
   // reprenant du début : le geste de la maquette, valider à la chaîne sans revenir à la liste. Plus
   // aucune, la fiche se ferme. Et rien ne bouge si l'opérateur a déjà ouvert une autre pièce pendant
@@ -997,6 +1016,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
 
   return (
     <>
+      {demandeIntrouvable && <p className="error-text" role="status">{FICHE_DEMANDEE_INTROUVABLE.piece}</p>}
       <BandeauLecturePartielle
         quoi="Les pièces du dossier"
         motif={lectureIncomplete}

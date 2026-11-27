@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
@@ -2568,5 +2568,44 @@ describe('PiecesTab — le tri par un clic sur l’en-tête', () => {
     expect(th('Montant TTC').getAttribute('aria-sort')).toBe('descending')
     await act(async () => { fireEvent.change(selecteur, { target: { value: '' } }) })
     expect(tiersAffiches()).toEqual(origine)
+  })
+})
+
+// BOR6T-Q2 (A) : la Vue d'ensemble renvoie à la fiche d'un bordereau déjà déposé ; l'onglet l'ouvre une fois sa liste lue, rend
+// la demande, et dit celle qu'il ne trouve pas. Une demande pour un autre dossier n'ouvre rien.
+describe('PiecesTab — la fiche demandée par la Vue d’ensemble', () => {
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  function monterAvecDemande(demande: { dossierId: string; type: 'piece' | 'document'; id: string }, prise: () => void) {
+    return render(
+      <FournisseurPanneauDroit>
+        <AnneeProvider defaut={2025}>
+          <PiecesTab dossierId="dossier-de-test" ventesParLesFactures={false} ficheDemandee={demande} onFicheDemandeePrise={prise} />
+        </AnneeProvider>
+        <EmplacementPanneauDroit />
+      </FournisseurPanneauDroit>,
+    )
+  }
+
+  it('ouvre la fiche de la pièce demandée, même hors de l’exercice affiché, et rend la demande', async () => {
+    poser([piece({ id: 'p1', tiers: 'ALPHA', date_piece: '2026-03-01' }), piece({ id: 'p2', tiers: 'BETA', date_piece: '2026-03-02' })])
+    const prise = vi.fn()
+    monterAvecDemande({ dossierId: 'dossier-de-test', type: 'piece', id: 'p2' }, prise)
+    await waitFor(() => expect(within(volet()).queryByRole('heading', { level: 2 })?.textContent).toBe('Justificatif hors de la liste affichée'))
+    expect(within(volet()).getByText('BETA')).toBeTruthy()
+    expect(prise).toHaveBeenCalledTimes(1)
+  })
+
+  it('dit la pièce introuvable, et n’ouvre rien pour un autre dossier ni pour un document', async () => {
+    poser([piece({ id: 'p1', tiers: 'ALPHA', date_piece: '2026-03-01' })])
+    const prise = vi.fn()
+    monterAvecDemande({ dossierId: 'dossier-de-test', type: 'piece', id: 'partie' }, prise)
+    expect(await screen.findByText(/n’est pas dans la liste lue/)).toBeTruthy()
+    cleanup()
+    poser([piece({ id: 'p1', tiers: 'ALPHA', date_piece: '2025-03-01' })])
+    const autre = vi.fn()
+    monterAvecDemande({ dossierId: 'autre-dossier', type: 'piece', id: 'p1' }, autre)
+    await screen.findByText('ALPHA', { selector: 'td' })
+    expect(autre).not.toHaveBeenCalled()
+    expect(within(volet()).queryByRole('heading', { level: 2 })).toBeNull()
   })
 })

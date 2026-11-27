@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FichePiece from './FichePiece'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT } from '../../lib/controles'
@@ -48,6 +48,9 @@ const faux = vi.hoisted(() => ({
   // Les lectures automatiques demandées — chacune FACTURÉE (OCR puis citation) —, la porte qui retient leur réponse, et
   // l'échec qu'un test peut leur faire rendre.
   extractions: 0,
+  // Textract lit-il le fichier choisi, à l'enregistrement (lib/lectureAuDepot.ts, `lireAvantLeStockage`) ? Faux par défaut : les
+  // cas d'hier enregistrent sans lecture, et leurs comptes de lectures ne changent pas.
+  textractLit: false,
   porteExtraction: null as Promise<void> | null,
   erreurExtraction: null as Error | null,
   // Ce que la lecture rend : rien par défaut (le verrou ne regarde pas ce qu'elle lit), une date déduite pour D2.
@@ -163,6 +166,9 @@ vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ monCabinetId: nu
 vi.mock('../../lib/extraction', () => ({
   hashFichier: () => Promise.resolve('empreinte-de-test'),
   fichierDejaPresent: () => Promise.resolve(false),
+  CODE_D_UN_BORDEREAU_LU: 'bordereau',
+  textractPeutLire: () => faux.textractLit,
+  pdfTropLourdPourEtreLu: () => false,
   extractPiece: async () => {
     faux.extractions += 1
     await faux.porteExtraction
@@ -207,6 +213,7 @@ beforeEach(() => {
   URL.createObjectURL = () => 'blob:apercu'
   URL.revokeObjectURL = () => {}
   faux.extractions = 0
+  faux.textractLit = false
   faux.porteExtraction = null
   faux.erreurExtraction = null
   faux.extractionRendue = {}
@@ -1212,5 +1219,44 @@ describe('FichePiece — la date déduite (D2) et le doublon probable (D1)', () 
     cleanup()
     monterAvecProps()
     expect(screen.queryByText('Doublon probable')).toBeNull()
+  })
+})
+
+// BOR6, troisième partie, ce qui restait (27/11/2026) : la fiche disait le refus d'un bordereau reconnu à la lecture, mais son
+// enregistrement déposait quand même le fichier choisi. Désormais il le retient — après « Extraire », et sans lui, par la lecture
+// avant le stockage. Le fichier de l'essai est FICTIF ; seul le code du refus compte.
+describe('FichePiece — un bordereau reconnu à la lecture ne se dépose pas', () => {
+  const bordereau = () => Object.assign(new Error('a la forme d’un bordereau'), { code: 'bordereau' })
+
+  it('après « Extraire » : le champ se vide, le refus se dit, et l’enregistrement ne dépose rien', async () => {
+    const valider = monter()
+    faux.erreurExtraction = bordereau()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '✨ Extraire automatiquement' })) })
+    expect(await screen.findByText(/Ce fichier n’est pas pris : ce document a la forme d’un bordereau/)).toBeTruthy()
+    expect((document.querySelector('#file') as HTMLInputElement).value).toBe('')
+    await act(async () => { fireEvent.click(valider) })
+    expect(faux.uploads).toEqual([])
+    expect(faux.inserts).toEqual([])
+  })
+
+  it('sans « Extraire » : l’enregistrement lit d’abord, et ne dépose ni n’écrit un bordereau', async () => {
+    const valider = monter()
+    faux.textractLit = true
+    faux.erreurExtraction = bordereau()
+    await act(async () => { fireEvent.click(valider) })
+    expect(faux.extractions).toBe(1)
+    expect(faux.uploads).toEqual([])
+    expect(faux.inserts).toEqual([])
+    expect((await screen.findAllByText(/n’est pas pris : ce document a la forme d’un bordereau/)).length).toBeGreaterThan(0)
+  })
+
+  it('un fichier lu sans bordereau par « Extraire » ne se relit pas à l’enregistrement', async () => {
+    const valider = monter()
+    faux.textractLit = true
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '✨ Extraire automatiquement' })) })
+    expect(faux.extractions).toBe(1)
+    await act(async () => { fireEvent.click(valider) })
+    await waitFor(() => expect(faux.uploads.length).toBe(1))
+    expect(faux.extractions).toBe(1)
   })
 })

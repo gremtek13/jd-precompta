@@ -356,6 +356,9 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
 export const CONTROLES_HORS_CYCLE: Readonly<Record<string, string>> = {
   'lecture-partielle': 'l’état de la lecture du dossier, pas un contrôle : l’écran de la révision le dit par son propre '
     + 'bandeau, et n’offre alors aucun geste',
+  // BOR6T-Q2 (A) : la Vue d'ensemble seule le cherche, d'un clic ; la révision ne le fait pas et n'en compte jamais.
+  'bordereaux-deposes': 'la présence au dossier d’un document qui n’a pas à y être (un bordereau de télétransmission), pas le '
+    + 'contrôle d’un compte : la recherche se fait d’un clic dans la Vue d’ensemble, jamais dans la révision',
 }
 
 // Les documents attendus d'un exercice portent son année dans leur identifiant (`banque-2025`) : on range la famille.

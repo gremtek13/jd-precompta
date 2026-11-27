@@ -610,6 +610,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   d'un vrai bordereau (BOR6R-Q1), la raison `bordereau` en production (249) et dite aux écrans ; `receive-email` déployée le 22/11/2026 (v26, au commit `54c3a62f`) ; reste un premier bordereau réel reçu par e-mail → « BOR6, SECONDE PARTIE », « BOR6R » ; troisième partie (27/11/2026) : une photo ou un PDF
   numérisé, reconnu par `extract-piece` sur sa lecture (bloc copié, 422 `bordereau`, rien au modèle ni rendu), le dépôt du navigateur et
   `receive-email` lisant AVANT le stockage (`lib/lectureAuDepot.ts`) ; à redéployer → « BOR6, TROISIÈME PARTIE » (conception 59, § 17).
+  Le 27/11/2026 (BOR6T-Q1, Q2 (A)) : la fiche d'une pièce et Cotisations lisent aussi avant le stockage (`lireAvantLeStockage`) ; la consigne
+  « ne se photographie pas » dite au client ; les bordereaux déjà déposés cherchés d'un clic dans la Vue d'ensemble (`lib/bordereauxDeposes.ts`, une attention, par la date de dépôt, la fiche ouverte par `lib/ficheDemandee.ts`) → « BOR6T-Q1 ET BOR6T-Q2 ».
 - **Les réponses de l'expert-comptable du 17/11/2026**, analysées sans code (`docs/conceptions/58-…`) : huit changements, lots L1
   à L4, EXP58-Q1 à Q5 → « LES RÉPONSES DE L'EXPERT-COMPTABLE : L'ANALYSE D'IMPACT ». L2, points 6 et 7 (la CFP et la CURPS en
   BS, la dotation du véhicule au barème hors de CH) : rien sans la base, le module avec sa migration (EXP58-Q6 à Q9, § 12)

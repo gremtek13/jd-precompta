@@ -213,7 +213,10 @@ export function phraseApresLImportDuFacture(espace: EspaceVentes): string {
 export const PRESENTATION_DU_FACTURE_AU_CLIENT = 'Tes bordereaux de télétransmission (les PDF que ton logiciel imprime pour '
   + 'chaque lot) se lisent ici, dans ton navigateur : ils ne partent nulle part. Tu vois, avant d’importer, ce qu’ils facturent '
   + 'à l’assurance maladie par jour de création des lots, organisme et part ; seuls ces chiffres partent, jamais un nom ni une '
-  + 'ligne. Ils servent à contrôler ce que l’assurance maladie te doit ; ils ne comptent pas dans tes recettes.'
+  + 'ligne. Ils servent à contrôler ce que l’assurance maladie te doit ; ils ne comptent pas dans tes recettes. Un bordereau ne '
+  // La consigne aux clients (BOR6T-Q1 (A)) : une photo ne se lit pas ici, et déposée ailleurs, elle passe par la lecture.
+  + 'se photographie pas : enregistre-le en PDF depuis ton logiciel de télétransmission, puis importe-le ici. Et il ne se dépose '
+  + 'jamais dans « Mes pièces ».'
 
 export const PRESENTATION_DU_FACTURE_AU_CABINET = 'Les bordereaux de télétransmission du praticien (les PDF que son logiciel '
   + 'imprime pour chaque lot) se lisent ici, dans ce navigateur : ils ne partent nulle part. L’aperçu donne le facturé par jour '

@@ -331,7 +331,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
     declarationsTva: [], declarationsPartielles: false, facturesEmises, transmissions: [], jumellesPartielles: false,
     facturesSources: ventes.sources, info: null, infoInconnue: null, anneesCloturees: [], ouverture: null, ouvertureIncomplete: null,
     aNouveaux: A_NOUVEAUX, soldesReportes: v.soldesReportes, entreesDeLOuvertureIncompletes: null, ventesFacturees: lectureDesSources, caisse: caisseLue,
-    entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' }, assuranceMaladie: null,
+    entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' }, assuranceMaladie: null, bordereauxDeposes: null,
   }, {
     assujettiTva: ASSUJETTI, periodiciteTva: 'mensuelle', statutTva: 'exonere', modele: MODELE, frontiere, anneesValidees: v.anneesValidees,
     aujourdHui: h.aujourdHui, anneeCourante: h.anneeCourante, moisEcoules: h.moisEcoules, premierJourDuMois: h.premierJourDuMois, offreAssuranceMaladie: { codeNaf: null, moduleOuvert: false },

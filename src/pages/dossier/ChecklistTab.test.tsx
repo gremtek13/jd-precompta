@@ -57,6 +57,18 @@ vi.mock('../../lib/paiementsAssuranceMaladieLecture', async (original) => {
 })
 afterEach(() => { assuranceMaladieDuTest.leve = true; assuranceMaladieDuTest.lecture = null })
 
+// LES BORDEREAUX DÉJÀ DÉPOSÉS (BOR6T-Q2 (A)) : la recherche remplacée, et comptée — elle ne part qu'au clic, jamais à l'ouverture.
+const bordereauxDuTest = vi.hoisted(() => ({ appels: 0, reponse: null as unknown, liberer: null as null | (() => void) }))
+vi.mock('../../lib/bordereauxDeposesLecture', () => ({
+  chercherLesBordereauxDeposes: (dossierId: string) => {
+    bordereauxDuTest.appels++
+    return new Promise((resoudre) => {
+      bordereauxDuTest.liberer = () => resoudre({ ...(bordereauxDuTest.reponse as object), dossierId })
+    })
+  },
+}))
+afterEach(() => { bordereauxDuTest.appels = 0; bordereauxDuTest.reponse = null; bordereauxDuTest.liberer = null })
+
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
   // Tables dont la lecture est REFUSÉE. Sans ce levier, « la liste des clôtures est inconnue »
@@ -3284,5 +3296,48 @@ describe('les contrôles des paiements de l’assurance maladie (NOE6)', () => {
     expect(await screen.findByText(/Les paiements de l’assurance maladie ne se lisent pas \(refus de la base\).*leur silence ne prouve rien/)).toBeTruthy()
     expect(screen.queryByText(/Les données du dossier n'ont pas pu être lues/)).toBeNull()
     expect(screen.queryByText(POINT)).toBeNull()
+  })
+})
+
+describe('ChecklistTab — les bordereaux de télétransmission déjà déposés (BOR6T-Q2)', () => {
+  const BOUTON = 'Chercher les bordereaux déjà déposés'
+
+  it('ne cherche rien à l’ouverture, une seule fois sous deux clics, puis nomme par la date et ouvre la fiche', async () => {
+    poser({})
+    const onNavigate = vi.fn()
+    monter(false, TRESORERIE, [], 'trimestrielle', 'exonere', onNavigate)
+    const bouton = await screen.findByRole('button', { name: BOUTON })
+    expect(bordereauxDuTest.appels).toBe(0)
+    bordereauxDuTest.reponse = {
+      etat: 'trouves',
+      bordereaux: [
+        { type: 'document', id: 'd1', deposeLe: '2026-01-05' },
+        { type: 'piece', id: 'p1', deposeLe: '2026-02-01' },
+      ],
+    }
+    act(() => { fireEvent.click(bouton); fireEvent.click(bouton) })
+    expect(bordereauxDuTest.appels).toBe(1)
+    await act(async () => { bordereauxDuTest.liberer?.() })
+    expect(await screen.findByText('Pièce déposée le 01/02/2026')).toBeDefined()
+    expect(screen.getByText('Document déposé le 05/01/2026')).toBeDefined()
+    // Le point de la liste, en attention.
+    expect(screen.getByText(/^2 pièce\(s\) ou document\(s\) déjà au dossier/)).toBeDefined()
+    const ouvrir = screen.getAllByRole('button', { name: 'Ouvrir sa fiche' })
+    fireEvent.click(ouvrir[1])
+    expect(onNavigate).toHaveBeenCalledWith('pieces', { dossierId: 'dossier-de-test', type: 'piece', id: 'p1' })
+    fireEvent.click(ouvrir[0])
+    expect(onNavigate).toHaveBeenCalledWith('documents', { dossierId: 'dossier-de-test', type: 'document', id: 'd1' })
+  })
+
+  it('une recherche qui n’a pas tout lu ne dit ni « aucun » ni un point', async () => {
+    poser({})
+    monter()
+    bordereauxDuTest.reponse = { etat: 'incomplete', motif: 'les textes lus : coupée' }
+    fireEvent.click(await screen.findByRole('button', { name: BOUTON }))
+    await act(async () => { bordereauxDuTest.liberer?.() })
+    expect(await screen.findByText(/rien ne se conclut/)).toBeDefined()
+    expect(screen.queryByText(/^Aucune pièce ni aucun document/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ouvrir sa fiche' })).toBeNull()
+    expect(screen.queryByText(/déjà au dossier dont le texte lu/)).toBeNull()
   })
 })

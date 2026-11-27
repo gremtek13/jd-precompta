@@ -1009,6 +1009,12 @@ règle entière) ; la section : `src/components/DuContrePaye.tsx`, au cabinet se
   un procès-verbal n'est lue par personne et ne se reconnaît pas ; une photo que Textract lit mal ne se reconnaît pas ; les
   pièces DÉJÀ au dossier (BOR6T-Q2).
 
+- **Fait le 27/11/2026 (BOR6T-Q1, BOR6T-Q2 (A))** : la fiche d'une pièce et l'onglet Cotisations lisent avant le stockage
+  (`lireAvantLeStockage`) et retiennent le refus ; la consigne « un bordereau ne se photographie pas » est dite au praticien ;
+  les pièces et documents DÉJÀ au dossier se cherchent d'un clic dans la Vue d'ensemble (`lib/bordereauxDeposes.ts`), nommés
+  par leur date de dépôt, leur fiche ouverte pour la suppression confirmée. Restent l'image d'un document du cabinet, d'un
+  original d'import ou d'un procès-verbal, et la photo que Textract lit mal.
+
 ### 17.2 L'état des paiements par journée comptable
 
 Pas écrit : sa forme n'est pas connue (§ 13.4, BOR-Q1 ; BOR6-Q2 (A), le 21/11/2026 : « il attend une page rendue anonyme »).
