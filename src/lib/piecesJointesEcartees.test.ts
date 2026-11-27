@@ -266,11 +266,13 @@ describe('la table, la fonction qui l’écrit et l’écran disent la même cho
     expect(MIGRATION_VIDE).not.toMatch(/(drop|add) constraint pieces_jointes_ecartees_poids_connu\b/i)
     // La fonction : chaque appel, dans l'ordre du fichier — deux pertes avant toute lecture, au poids inconnu ; la vide, au
     // poids zéro, sitôt téléchargée ; le format et la taille, au poids téléchargé ; quatre pertes après la lecture, au
-    // poids lu (l'exception aussi : inconnu si elle est venue avant).
+    // poids lu (l'exception aussi : inconnu si elle est venue avant). Le bordereau deux fois, au poids téléchargé : sa couche de
+    // texte (un PDF), puis, après le doublon, la lecture d'extract-piece (une photo, un PDF numérisé : BOR6, troisième partie),
+    // avant le stockage.
     const appels = [...RECEIVE_EMAIL.matchAll(/noterLaPieceJointeEcartee\(supabase, dossier\.id, email_id, fichier\.id, "(\w+)", ([\w.]+)\)/g)]
     expect(appels.map((m) => `${m[1]}:${m[2]}`)).toEqual([
       'depot:null', 'depot:null', 'vide:0', 'format:bytes.byteLength', 'taille:bytes.byteLength', 'bordereau:bytes.byteLength',
-      'depot:octets', 'depot:octets', 'depot:octets', 'depot:octets',
+      'depot:octets', 'bordereau:bytes.byteLength', 'depot:octets', 'depot:octets', 'depot:octets',
     ])
     const lu = RECEIVE_EMAIL.indexOf('      octets = bytes.byteLength\n')
     expect(lu).toBeGreaterThan(0)

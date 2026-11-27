@@ -323,6 +323,8 @@ describe('receive-email — le seul appelant sans session', () => {
   it('journalise un refus au lieu de déposer la pièce jointe sans rien dire', () => {
     // Un changement de contrat entre les deux fonctions — celui-ci en est un — rendrait chaque pièce
     // jointe sans lecture ; le journal est le seul endroit où cela se verrait.
-    expect(appel).toMatch(/if \(!res\.ok\) \{\s*console\.error\(`\[receive-email\] extract-piece a répondu \$\{res\.status\}/)
+    // Seul le refus CODÉ d'un bordereau (422, `bordereau` : BOR6, troisième partie) passe avant, et il n'est pas une lecture ratée.
+    expect(appel).toMatch(
+      /if \(!res\.ok\) \{\s*if \(res\.status === 422\) \{[\s\S]*?return \{ etat: "bordereau" \}\s*\}\s*console\.error\(`\[receive-email\] extract-piece a répondu \$\{res\.status\}/)
   })
 })
