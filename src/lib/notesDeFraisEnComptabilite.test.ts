@@ -4,6 +4,7 @@ import {
   PHRASE_NOTE_D_UN_SALARIE_TRESORERIE, PHRASE_NOTE_DE_L_EXPLOITANT_ENGAGEMENT, PHRASE_NOTE_DE_L_EXPLOITANT_TRESORERIE,
   PHRASE_POUR_QUI_INCONNU, PHRASE_PROPOSE_EXPLOITANT, PHRASE_PROPOSE_SALARIE, pourQuiEstLaNote, rangementDuJustificatif,
   seJugeLeJustificatif, suiteDuRemboursement, typeAttenduDuJustificatif,
+  detailDesJustificatifsARanger, justificatifsARanger, NOTES_DE_FRAIS_SANS_OBJET, type NotesDeFraisDesControles,
 } from './notesDeFraisEnComptabilite'
 import { estNoteDeLExploitant } from './noteDeFraisEnTresorerie'
 import { ETATS_DES_NOTES } from './notesDeFrais'
@@ -113,5 +114,39 @@ describe('ce que la confirmation du remboursement ajoute', () => {
     expect(suiteDuRemboursement({ pourQui: 'exploitant', certain: false }, 'engagement')).toBeNull()
     expect(suiteDuRemboursement(null, 'tresorerie')).toBeNull()
     expect(suiteDuRemboursement({ pourQui: 'salarie', certain: true }, null)).toBeNull()
+  })
+})
+
+// L3-Q3 (A) : le justificatif à ranger, dit dans la Vue d'ensemble et avant la validation par le calcul de la section.
+describe('les justificatifs à ranger, pour les contrôles', () => {
+  const lues = (o: Partial<Extract<NotesDeFraisDesControles, { etat: 'lues' }>> = {}): NotesDeFraisDesControles => ({
+    etat: 'lues',
+    lesNotes: { complete: true, lignes: [
+      { id: 'n1', ...note({ piece_id: 'p1' }) },
+      { id: 'n2', ...note({ piece_id: 'p2', beneficiaire_salarie: 'Salarié fictif' }) },
+      { id: 'n3', ...note({ piece_id: 'p3', etat: 'soumise' }) },
+    ] },
+    justificatifs: { complete: true, lignes: [
+      { id: 'p1', nom_fichier: 'b.pdf', type_piece: 'achat' }, { id: 'p2', nom_fichier: 'a.pdf', type_piece: 'achat' },
+      { id: 'p3', nom_fichier: 'c.pdf', type_piece: 'achat' },
+    ] },
+    acces: { complete: true, lignes: [{ user_id: 'u1', droit_achats: true }] },
+    ...o,
+  })
+
+  it('nomme le justificatif d’une note de l’exploitant rangé en « Achat », comme la section, et pas celui d’un salarié', () => {
+    expect(justificatifsARanger(lues(), 'tresorerie')).toEqual([
+      { noteId: 'n1', pieceId: 'p1', nomFichier: 'b.pdf', range: 'achat', attendu: 'note_frais' },
+    ])
+    expect(detailDesJustificatifsARanger(justificatifsARanger(lues(), 'tresorerie'))).toBe('b.pdf : rangé en « Achat », attendu en « Note de frais »')
+    expect(detailDesJustificatifsARanger([])).toBeUndefined()
+  })
+
+  it('muet sur une lecture partielle des notes ou de leurs justificatifs, et le drapeau baissé', () => {
+    expect(justificatifsARanger(lues({ lesNotes: { complete: false, lignes: [] } }), 'tresorerie')).toEqual([])
+    expect(justificatifsARanger(lues({ justificatifs: { complete: false, lignes: [] } }), 'tresorerie')).toEqual([])
+    expect(justificatifsARanger(NOTES_DE_FRAIS_SANS_OBJET, 'tresorerie')).toEqual([])
+    // Les accès lus en partie : rien ne se propose pour une note saisie pour soi, et le point non plus.
+    expect(justificatifsARanger(lues({ acces: { complete: false, lignes: [] } }), 'tresorerie')).toEqual([])
   })
 })

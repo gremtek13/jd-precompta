@@ -173,6 +173,7 @@ function releveQuiConcorde(b: Omit<DonneesDeValidation, 'declaration' | 'concord
 // Les données de validation de 2025, la 2035 et la concordance recalculées sur les données passées.
 function donnees(o: Surcharges = {}): DonneesDeValidation {
   const base: Omit<DonneesDeValidation, 'declaration' | 'concordance'> = {
+      notesDeFrais: { etat: 'sans_objet' as const },
     annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode: 'tresorerie', compteNotesDeFrais: '108000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }, assujettiTva: false,
     anneesValidees: [], lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: [P1], piecesAValider: [], categories: [ACHATS],
     immobilisations: [], natures: [], ecritures: [E1, E2], lignes: [L1], ventilations: [], reglements: [], encaissees: [], cotisations: [],
@@ -1043,6 +1044,8 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         'pieces-sans-empreinte',
         // Un avertissement de L1-Q1 (A) : un compte sur plusieurs lignes de la 2035. Son cas est plus bas.
         'comptes-sur-plusieurs-postes',
+        // Un avertissement de L3-Q3 (A) : le justificatif d'une note de frais à ranger. Son cas est en fin de fichier.
+        'justificatifs-de-notes-a-ranger',
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
@@ -2732,5 +2735,23 @@ describe('les écritures libres hors de la 2035 (EL4)', () => {
     // La validation n'en est pas retenue : l'état est celui de la même donnée sans eux.
     expect(prealablesDeValidation(avec).prealables.filter((x) => x.bloquant))
       .toEqual(prealablesDeValidation(d).prealables.filter((x) => x.bloquant))
+  })
+})
+
+// L3-Q3 (A) : le justificatif d'une note de frais rangé sous un autre type se dit avant la validation, sans la retenir.
+describe('prealablesDeValidation — le justificatif d’une note de frais à ranger (L3-Q3)', () => {
+  const notesDeFrais = {
+    etat: 'lues' as const,
+    lesNotes: { complete: true, lignes: [{ id: 'n1', auteur: 'u1', beneficiaire_salarie: null, etat: 'remboursee' as const, piece_id: 'p1' }] },
+    justificatifs: { complete: true, lignes: [{ id: 'p1', nom_fichier: 'repas.pdf', type_piece: 'achat' as const }] },
+    acces: { complete: true, lignes: [{ user_id: 'u1', droit_achats: true }] },
+  }
+
+  it('un avertissement qui mène aux Justificatifs, jamais un refus ; rien le drapeau baissé', () => {
+    const etat = prealablesDeValidation(donnees({ notesDeFrais }))
+    expect(etat.prealables.find((p) => p.id === 'justificatifs-de-notes-a-ranger'))
+      .toMatchObject({ nb: 1, bloquant: false, cible: 'pieces', detail: 'repas.pdf : rangé en « Achat », attendu en « Note de frais »' })
+    expect(etat.validable).toBe(true)
+    expect(ids(donnees())).not.toContain('justificatifs-de-notes-a-ranger')
   })
 })

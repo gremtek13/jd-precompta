@@ -36,6 +36,7 @@ function ligne(o: Partial<LigneBancaire>): LigneBancaire {
 
 function donnees(o: Partial<DonneesDeLaChecklist>): DonneesDeLaChecklist {
   return {
+      notesDeFrais: { etat: 'sans_objet' as const },
     piecesValidees: [], piecesAValider: [], cotisations: [], lignes: [], relevesIncoherents: [], controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [], immobilisations: [],
     natures: [], categories: [], ecritures: [], emprunts: [], ventilations: [], ventilationsPartielles: false, reglements: [],
     reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [], declarationsTva: [],

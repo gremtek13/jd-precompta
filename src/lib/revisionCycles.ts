@@ -188,6 +188,8 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'lignes-non-rapprochees': 'tresorerie',
   // La note de frais de l'exploitant rapprochée de son remboursement, en trésorerie (conception 58, § 2.1) : un mouvement à reclasser.
   'notes-de-frais-rapprochees': 'tresorerie',
+  // Le justificatif d'une note de frais rangé sous un autre type que celui de la note (L3-Q3 (A)) : une dépense à reprendre.
+  'justificatifs-de-notes-a-ranger': 'depenses',
   // Un mouvement du relevé que des encaissements de factures réservent, à classer (étape VF5f) : ce que le relevé porte.
   'mouvements-reserves': 'tresorerie',
   'mouvements-ignores': 'tresorerie',

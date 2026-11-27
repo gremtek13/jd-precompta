@@ -324,6 +324,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
   const frontiere = frontiereDeValidation(v.anneesValidees)
 
   const checklist = pointsDeLaChecklist({
+      notesDeFrais: { etat: 'sans_objet' as const },
     piecesValidees: PIECES, piecesAValider: [], cotisations: COTISATIONS, lignes, relevesIncoherents: controles.filter((k) => !k.coherent), controlesReleves: controles, comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [],
     immobilisations: IMMOBILISATIONS, natures: [NATURE_MATERIEL], categories: CATEGORIES, ecritures: brouillon, emprunts: [], ventilations: [],
     ventilationsPartielles: false, reglements, reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: VEHICULES,
@@ -337,6 +338,7 @@ function parcours(enBase: readonly LigneEnBase[], controles: ControleReleveBanca
   })
 
   const validation = prealablesDeValidation({
+      notesDeFrais: { etat: 'sans_objet' as const },
     annee: ANNEE, anneeCourante: h.anneeCourante, aujourdHui: h.aujourdHui, modele: MODELE, assujettiTva: ASSUJETTI, anneesValidees: v.anneesValidees,
     lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: PIECES, piecesAValider: [], categories: CATEGORIES, immobilisations: IMMOBILISATIONS,
     natures: [NATURE_MATERIEL], ecritures: brouillon, lignes, ventilations: [], reglements, encaissees: [], cotisations: COTISATIONS,

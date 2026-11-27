@@ -20,6 +20,7 @@ import { PAIEMENT_PAR_LA_CAISSE_EXPORTE } from './paiementParLaCaisse'
 import { lireLInventaireDesControles } from './inventaireLecture'
 import { CONTROLES_ASSURANCE_MALADIE_PREVUS, controlesOfferts } from './controlesAssuranceMaladie'
 import { lireLesPaiementsAssuranceMaladie } from './paiementsAssuranceMaladieLecture'
+import { lireLesNotesDeFraisDesControles } from './notesDeFraisLecture'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, FactureEmise, Immobilisation,
   LigneBancaire, LettrageManuel, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
@@ -207,7 +208,10 @@ export async function lireLaChecklist(
     console.error(err)
     return null
   })
+  // Les notes de frais du client (L3-Q3 (A)) : ne rejette jamais ; le drapeau baissé, sans un appel (sans objet).
+  const notesDeFrais = await lireLesNotesDeFraisDesControles(dossierId)
   return {
+    notesDeFrais,
     piecesValidees: lectureValidees.lignes,
     piecesAValider: lectureAValider.lignes,
     cotisations: lectureCotisations.lignes,

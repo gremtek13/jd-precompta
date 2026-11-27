@@ -4,6 +4,7 @@ import { supabase } from './supabase'
 import { NOTES_DE_FRAIS_PREVUES } from './notesDeFrais'
 import type { NoteDeFrais, PieceDeLAuteur } from './notesDeFraisVue'
 import type { TypePiece } from './types'
+import { NOTES_DE_FRAIS_SANS_OBJET, type NotesDeFraisDesControles } from './notesDeFraisEnComptabilite'
 
 // LES NOTES DE FRAIS, CE QUE LES ÉCRANS LISENT (espace client, ligne 51.5, étape B8 ; le patron : lib/achatsClientLecture.ts).
 // Aucune de ces lectures ne rejette : une requête qui lève ou un refus tombent du côté signalé, avec leur motif — jamais une
@@ -132,4 +133,19 @@ export async function lireLesNotesDeFraisDuDossier(dossierId: string): Promise<N
     const motif = messageErreur(erreur, 'lecture refusée')
     return { dossierId, lesNotes: echec(motif), justificatifs: echec(motif), acces }
   }
+}
+
+/**
+ * Ce que les contrôles reçoivent (L3-Q3 (A), lib/notesDeFraisEnComptabilite.ts) : sans objet le drapeau baissé, ou une lecture pas
+ * revenue ou d'un autre dossier — aucun point ; les trois lectures de la section sinon, que le calcul juge (partielles : muet).
+ */
+export function notesDeFraisDesControles(lecture: NotesDeFraisDuDossierLues | null, dossierId: string): NotesDeFraisDesControles {
+  if (!NOTES_DE_FRAIS_PREVUES || lecture === null || lecture.dossierId !== dossierId) return NOTES_DE_FRAIS_SANS_OBJET
+  return { etat: 'lues', lesNotes: lecture.lesNotes, justificatifs: lecture.justificatifs, acces: lecture.acces }
+}
+
+/** La lecture des contrôles : sans un appel le drapeau baissé. Ne rejette jamais. */
+export async function lireLesNotesDeFraisDesControles(dossierId: string): Promise<NotesDeFraisDesControles> {
+  if (!NOTES_DE_FRAIS_PREVUES) return NOTES_DE_FRAIS_SANS_OBJET
+  return notesDeFraisDesControles(await lireLesNotesDeFraisDuDossier(dossierId), dossierId)
 }

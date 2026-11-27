@@ -363,6 +363,7 @@ function mesurer(k: number): Map<string, number | string> {
       const lectureDuReleve = { dossierId: D, etat: 'lue' as const, sources: sourcesEcritures }
       const facturesEmises = a.factures.map((f) => ({ ...f, emetteur_siret: null, superpdp_invoice_id: null }))
       t('points de la Checklist', () => pointsDeLaChecklist({
+      notesDeFrais: { etat: 'sans_objet' as const },
         piecesValidees: a.pieces, piecesAValider: [], cotisations: a.cotisations, lignes: a.lignes, relevesIncoherents: [], controlesReleves: [], comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [],
         immobilisations: a.immobilisations, natures: [], categories: CATEGORIES, ecritures: brouillon, emprunts: [], ventilations: [],
         ventilationsPartielles: false, reglements: [], reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: [],
@@ -375,6 +376,7 @@ function mesurer(k: number): Map<string, number | string> {
         aujourdHui: `${ANNEE}-11-07`, anneeCourante: ANNEE, moisEcoules: 10, premierJourDuMois: `${ANNEE}-11-01`, offreAssuranceMaladie: { codeNaf: null, moduleOuvert: false },
       }), (r) => `${r.tousLesPointsATraiter.length} points : ${r.tousLesPointsATraiter.map((x) => x.id).join(', ')}`)
       t('préalables de la validation', () => prealablesDeValidation({
+      notesDeFrais: { etat: 'sans_objet' as const },
         annee: ANNEE, anneeCourante: ANNEE + 1, aujourdHui: `${ANNEE + 1}-01-15`, modele: MODELE, assujettiTva: assujetti, anneesValidees: [],
         lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: a.pieces, piecesAValider: [], categories: CATEGORIES, immobilisations: a.immobilisations,
         natures: [], ecritures: brouillon, lignes: a.lignes, ventilations: [], reglements: [], encaissees: [], cotisations: a.cotisations,

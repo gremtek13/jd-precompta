@@ -225,6 +225,7 @@ describe.each(PLANS)('composer, écrire, numéroter : la demande de validation d
       acomptes: SANS_ACOMPTE, dossierId: sources.dossierId, factures: sources.factures, lignes: sources.lignes, encaissements: sources.encaissements, parts: sources.parts,
     })
     const ouvert = (o: Partial<DonneesDeValidation>): DonneesDeValidation => ({
+      notesDeFrais: { etat: 'sans_objet' as const },
       annee: 2025, anneeCourante: 2026, aujourdHui: '2026-03-15', modele: { mode, compteNotesDeFrais: plan.associe, ...planLuDe(plan) }, assujettiTva: true,
       anneesValidees: [], lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: [], piecesAValider: [], categories: [], immobilisations: [], natures: [],
       ecritures: brouillon, lignes, ventilations: [], reglements: [], encaissees: [], cotisations: [], vehicules: [], emprunts: [],

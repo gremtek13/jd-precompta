@@ -214,6 +214,7 @@ beforeAll(() => {
   }] : []
 
   const checklist = pointsDeLaChecklist({
+      notesDeFrais: { etat: 'sans_objet' as const },
     piecesValidees: PIECES, piecesAValider: [], cotisations: COTISATIONS, lignes, relevesIncoherents: controlesReleves.filter((k) => !k.coherent), controlesReleves, comptesBancaires: { etat: 'sans_objet' }, doublonsTexte: [],
     immobilisations: IMMOBILISATIONS, natures: [NATURE_MATERIEL], categories: CATEGORIES, ecritures: brouillon, emprunts: [], ventilations: [],
     ventilationsPartielles: false, reglements, reglementsPartiels: false, paiementsPartiels: false, lettragesManuels: [], vehicules: VEHICULES,
@@ -227,6 +228,7 @@ beforeAll(() => {
   }).tousLesPointsATraiter
 
   const validation = prealablesDeValidation({
+      notesDeFrais: { etat: 'sans_objet' as const },
     annee: ANNEE, anneeCourante: ANNEE + 1, aujourdHui: `${ANNEE + 1}-01-20`, modele: MODELE, assujettiTva: ASSUJETTI, anneesValidees: [],
     lectureIncomplete: null, ecrituresLibres: ECRITURES_LIBRES_ABSENTES, piecesValidees: PIECES, piecesAValider: [], categories: CATEGORIES, immobilisations: IMMOBILISATIONS,
     natures: [NATURE_MATERIEL], ecritures: brouillon, lignes, ventilations: [], reglements, encaissees: [], cotisations: COTISATIONS,
