@@ -77,23 +77,48 @@ export function quiCite(
 }
 
 // UNE PIÈCE, CITÉE AUSSI PAR UNE ÉCRITURE LIBRE (ELQ8Q1-Q1 (A), 25/11/2026) : la clé `ecritures_libres_piece_citee_id_fkey` refuse sa
-// suppression comme `garder_source_citee` celle d'une source de la révision. La même règle, dans le même ordre : la révision et le
-// dossier permanent d'abord, sous les mots de la base, puis les écritures libres sous leur référence. Un document n'est jamais
-// cité par une écriture libre : ces deux fonctions ne valent que pour une pièce.
+// suppression comme `garder_source_citee` celle d'une source de la révision. Un document n'est jamais cité par une écriture
+// libre : ces fonctions ne valent que pour une pièce.
+//
+// TOUTES LES CITATIONS SE DISENT (ELQ8Q1-Q2 (A), réponse du cabinet du 27/11/2026) : une pièce que la révision d'un solde, le
+// dossier permanent et une écriture libre citent ensemble dit les trois, à la suite, dans cet ordre — chacune sous sa phrase
+// d'hier, mot pour mot, l'écriture libre avec son remède quand il existe. Retirer une seule citation ne la rend pas
+// supprimable : une phrase qui n'en dirait qu'une laisserait croire le contraire. La base, elle, ne change pas.
 
-/** Le refus de la suppression de cette pièce : la révision, le dossier permanent, puis les écritures libres ; nul sinon. */
+/** Les phrases de chaque citation de cette pièce, dans l'ordre : la révision d'un solde, le dossier permanent, les écritures libres. */
+function citationsDeLaPiece(
+  pieceId: string, citations: LectureDesCitations | null, libres: CitationsDesEcrituresLibres | null,
+): { qui: QuiCite; phrase: string }[] {
+  const source = { pieceId }
+  const revision = citations === null ? null : refusDuRetraitDUneSource(source, 'suppression', citations.decisions, citations.preuves)
+  const permanent = citations === null ? null : refusDuRetraitParLeDossierPermanent(source, 'suppression', citations.entrees)
+  const libre = refusDeSuppressionParLesEcrituresLibres(pieceId, libres)
+  const toutes: { qui: QuiCite; phrase: string | null }[] = [
+    { qui: 'revision', phrase: revision }, { qui: 'dossier-permanent', phrase: permanent }, { qui: 'ecriture-libre', phrase: libre },
+  ]
+  return toutes.flatMap((c) => (c.phrase === null ? [] : [{ qui: c.qui, phrase: c.phrase }]))
+}
+
+/** Le refus de la suppression de cette pièce : toutes ses citations, à la suite ; nul quand rien de ce qui a été lu ne la cite. */
 export function refusDeSuppressionDUnePiece(
   pieceId: string, citations: LectureDesCitations | null, libres: CitationsDesEcrituresLibres | null,
 ): string | null {
-  return refusDeSuppression({ pieceId }, citations) ?? refusDeSuppressionParLesEcrituresLibres(pieceId, libres)
+  const phrases = citationsDeLaPiece(pieceId, citations, libres).map((c) => c.phrase)
+  return phrases.length === 0 ? null : phrases.join(' ')
 }
 
-/** Qui cite cette pièce, dans le même ordre. */
+/** Tout ce qui cite cette pièce, dans le même ordre : `citantDe` les nomme ensemble. */
+export function quiCitentLaPiece(
+  pieceId: string, citations: LectureDesCitations | null, libres: CitationsDesEcrituresLibres | null,
+): QuiCite[] {
+  return citationsDeLaPiece(pieceId, citations, libres).map((c) => c.qui)
+}
+
+/** Le premier qui cite cette pièce, dans le même ordre. */
 export function quiCiteLaPiece(
   pieceId: string, citations: LectureDesCitations | null, libres: CitationsDesEcrituresLibres | null,
 ): QuiCite | null {
-  return quiCite({ pieceId }, citations)
-    ?? (refusDeSuppressionParLesEcrituresLibres(pieceId, libres) !== null ? 'ecriture-libre' : null)
+  return quiCitentLaPiece(pieceId, citations, libres)[0] ?? null
 }
 
 /**

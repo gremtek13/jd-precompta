@@ -1554,14 +1554,13 @@ describe('PiecesTab — une pièce citée par le dossier permanent', () => {
     expect(within(volet()).getByRole('button', { name: 'Supprimer' })).toBeTruthy()
   })
 
-  it('la révision d’un solde se dit D’ABORD, mot pour mot, quand les deux citent', async () => {
+  it('la révision d’un solde se dit D’ABORD, mot pour mot, quand les deux citent — puis le dossier permanent (ELQ8Q1-Q2 (A))', async () => {
     poser(deux())
     citerParLaRevision()
     faux.parTable.dossier_permanent = [entree({})]
     monter('toutes')
     await ouvrir('ALPHA')
-    expect(within(volet()).getByText(PHRASE_REVISION)).toBeTruthy()
-    expect(within(volet()).queryByText(PHRASE)).toBeNull()
+    expect(within(volet()).getByText(`${PHRASE_REVISION} ${PHRASE}`)).toBeTruthy()
   })
 
   it('une sélection écarte la pièce citée, et la confirmation la NOMME : « citée par le dossier permanent »', async () => {
@@ -1687,6 +1686,30 @@ describe('PiecesTab — une pièce citée par une écriture libre', () => {
     expect(message).toMatch(/^Supprimer définitivement 1 pièce\(s\) \?/)
     expect(message.endsWith(`Une pièce de la sélection reste, citée par une écriture libre :\n• facture-regularisee.pdf — ${PHRASE}`)).toBe(true)
     expect(message).not.toContain('secret')
+    expect(faux.suppressions).toEqual(['p-libre'])
+  })
+
+  // ELQ8Q1-Q2 (A) : une pièce citée aussi par le dossier permanent dit ses deux citations, dans la fiche et dans la sélection.
+  it('citée aussi par le dossier permanent : la fiche et la sélection disent les deux citations, à la suite', async () => {
+    const PERMANENT = 'Cette pièce est citée par le dossier permanent (bail) : elle ne se supprime plus, sauf avec son dossier.'
+    poser(deux())
+    citer()
+    faux.parTable.dossier_permanent = [{
+      id: 'e-1', dossier_id: 'dossier-de-test', nature: 'bail', titre: 'T', texte: null, piece_id: 'p-citee', document_id: null,
+      fichier_id: null, empreinte: null, valable_du: null, valable_jusqu_au: null, remplace_id: null, retire_le: null,
+      cree_le: '2026-01-01T00:00:00Z',
+    }]
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return true })
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect([...volet().querySelectorAll('.fiche-piece-figee')].map((e) => e.textContent)).toContain(`${PERMANENT} ${PHRASE}`)
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+    expect(message.endsWith('Une pièce de la sélection reste, citée par le dossier permanent et une écriture libre :\n'
+      + `• facture-regularisee.pdf — ${PERMANENT} ${PHRASE}`)).toBe(true)
     expect(faux.suppressions).toEqual(['p-libre'])
   })
 

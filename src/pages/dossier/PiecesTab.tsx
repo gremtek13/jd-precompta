@@ -42,7 +42,7 @@ import { jumellesDuDossier, marquesDesPieces, PASTILLE_DE_LA_MARQUE, type Marque
 import { lireVentesEmises, sourcesDuPont, type LectureVentesEmises } from '../../lib/ventesJumellesLecture'
 import { lireLesFacturesProposees, type FactureProposee } from '../../lib/exemplairesDesFacturesLecture'
 import { lireLesVentesFacturees } from '../../lib/ventesFactureesLecture'
-import { citantDe, lireCitationsDeLaRevision, quiCiteLaPiece, refusDeSuppressionDUnePiece, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
+import { citantDe, lireCitationsDeLaRevision, quiCitentLaPiece, refusDeSuppressionDUnePiece, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
 import { lireLesCitationsDesEcrituresLibres } from '../../lib/ecrituresLibresLecture'
 import {
   motifDesCitationsDesEcrituresLibres, refusDeSuppressionParUneEcritureLibre, type CitationsDesEcrituresLibres,
@@ -854,8 +854,9 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
         : `\n\n${nbFigees} pièces de la sélection justifient une écriture validée : elles ne se suppriment plus, et restent.`
     const listeDesCitees = citees.slice(0, 5).map((c) => `• ${c.piece.nom_fichier} — ${c.refus}`).join('\n')
       + (citees.length > 5 ? `\n… et ${citees.length - 5} autre(s)` : '')
-    // Citée par la révision des soldes, comme hier ; par le dossier permanent, par une écriture libre, ou par plusieurs.
-    const citant = citantDe(citees.map((c) => quiCiteLaPiece(c.piece.id, citations, citationsLibres)))
+    // Citée par la révision des soldes, comme hier ; par le dossier permanent, par une écriture libre, ou par plusieurs — une
+    // pièce citée plusieurs fois les nomme toutes, et sa ligne dit chacune de ses citations (ELQ8Q1-Q2 (A)).
+    const citant = citantDe(citees.flatMap((c) => quiCitentLaPiece(c.piece.id, citations, citationsLibres)))
     const avertissementCitees = citees.length === 0 ? ''
       : `\n\n${citees.length === 1 ? 'Une pièce de la sélection reste' : `${citees.length} pièces de la sélection restent`}, `
         + `citée${citees.length > 1 ? 's' : ''} par ${citant} :\n${listeDesCitees}`
