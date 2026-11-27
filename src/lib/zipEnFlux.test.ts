@@ -71,4 +71,31 @@ describe('le ZIP écrit en flux', () => {
     await z.fermer()
     await expect(z.ajouter('b', new Uint8Array(0))).rejects.toThrow('déjà fermé')
   })
+
+  it('65 535 fichiers s’écrivent en un temps linéaire, et le 65 536e se refuse (relecture adverse du 27/11/2026)', async () => {
+    // Le répertoire central se recomptait EN ENTIER à chaque `depasserait` — deux fois par fichier dans la copie des
+    // fichiers (le plafond de la sortie, puis `ajouter`) : un temps carré, quelque quatre milliards de pas pour un ZIP au
+    // nombre de fichiers que le format admet, l'onglet figé pendant des minutes. Tenu au fil des ajouts, il ne coûte plus
+    // rien. La sortie ne garde rien : seule la mesure compte ici.
+    const z = new EcrivainZip({ ecrire: async () => {} }, new Date('2026-11-12T10:00:00Z'))
+    const debut = performance.now()
+    for (let i = 0; i < FICHIERS_AU_PLUS; i++) {
+      const nom = `d/${i}.pdf`
+      expect(z.depasserait(nom, 0)).toBe(false)
+      await z.ajouter(nom, new Uint8Array(0))
+    }
+    expect(z.nombreDeFichiers).toBe(FICHIERS_AU_PLUS)
+    expect(z.depasserait('d/de-trop.pdf', 0)).toBe(true)
+    await expect(z.ajouter('d/de-trop.pdf', new Uint8Array(0))).rejects.toThrow('65 535 fichiers')
+    expect(performance.now() - debut).toBeLessThan(4000)
+  }, 20_000)
+
+  it('la borne d’octets compte le répertoire central déjà tenu : un ZIP qui tient tout juste, puis un octet de trop', async () => {
+    const z = new EcrivainZip({ ecrire: async () => {} }, new Date('2026-11-12T10:00:00Z'))
+    await z.ajouter('a', new Uint8Array(10))
+    // Écrit : 30 + 1 + 10 = 41 ; le central de « a » et de « b » : 2 × (46 + 1) = 94 ; la fin : 22 ; « b » : 30 + 1 + taille.
+    const plafond = 41 + 31 + 5 + 94 + 22
+    expect(z.depasserait('b', 5, plafond)).toBe(false)
+    expect(z.depasserait('b', 6, plafond)).toBe(true)
+  })
 })
