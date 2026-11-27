@@ -430,6 +430,22 @@ function candidatsPiecesDeLIndex(
 }
 
 /**
+ * `candidatsPieces` pour chacun de ces mouvements, sur l'index par montant bâti UNE fois : mouvement → ses candidates, le
+ * même rendu dans le même ordre (chargeEmpreintes.test.ts). La liste de l'onglet Banque en tire la pièce proposée de chaque
+ * ligne, une fois par changement de ses données, jamais à chaque frappe dans la recherche (pages/dossier/BanqueTab.tsx).
+ */
+export function candidatsPiecesDesMouvements(
+  lignes: readonly LigneBancaire[],
+  piecesValidees: readonly Piece[],
+  dejaRapprochees: ReadonlySet<string>,
+  sources: FacturesSources,
+  joursTolerance = JOURS_TOLERANCE_RAPPROCHEMENT,
+): Map<string, Piece[]> {
+  const index = piecesParMontant(piecesValidees)
+  return new Map(lignes.map((l) => [l.id, candidatsPiecesDeLIndex(l, index, dejaRapprochees, sources, joursTolerance)]))
+}
+
+/**
  * LA QUESTION INVERSE : ce mouvement a-t-il PEUT-ÊTRE son justificatif au dossier ? Elle ne rapproche rien, elle retient un
  * lot (`justificatifPossible`, lib/reglesAffectation.ts) — elle se pose donc LARGE : dans la fenêtre de l'appariement
  * (`JOURS_TOLERANCE`, sept jours, celle qui a été mesurée pour la facture du 30 avril prélevée le 7 mai), jamais dans

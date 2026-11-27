@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useModulesOuverts } from '../../context/ModulesOuverts'
 import { estOuvert } from '../../lib/modulesDuCabinet'
 import { supabase } from '../../lib/supabase'
@@ -115,7 +115,34 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     load()
   }
 
-  if (loading || !lecture) {
+  // Même instant pour les deux (voir anneeEtMoisEcoules) : « N mois écoulés » ne désigne des mois que
+  // rapporté à SON année, et ces trois écrans doivent dire la même chose au même moment. Lus à chaque rendu, ce sont des
+  // valeurs simples : les points qui en dépendent se recalculent quand le jour change, jamais sur un jour d'hier.
+  const { annee: anneeCourante, moisEcoules } = anneeEtMoisEcoules()
+  const aujourdHuiFiscal = aujourdHuiAParis()
+  const premierJourDuMois = premierJourDuMoisCourant()
+  const moduleAssuranceMaladieOuvert = estOuvert('assurance_maladie', modulesOuverts)
+  // LES POINTS DE LA VUE D'ENSEMBLE (lib/pointsDeLaChecklist.ts), calculés une fois par changement de ce qu'ils lisent — la
+  // lecture, la recherche des bordereaux, les réglages du dossier, les exercices validés, le jour — et non à chaque rendu
+  // (le banc de charge, 27/11/2026 : une centaine de millisecondes sur une année). Nuls avant la première lecture.
+  // Les relevés incohérents et les doublons de contenu sont BEST-EFFORT ici : illisibles, ils se lisent comme vides —
+  // l'échec est journalisé par la lecture —, comme avant que leurs lectures sortent de cet écran.
+  const points = useMemo(() => (lecture === null ? null : pointsDeLaChecklist(
+    {
+      ...lecture, relevesIncoherents: lecture.relevesIncoherents ?? [], doublonsTexte: lecture.doublonsTexte ?? [],
+      bordereauxDeposes: rechercheDesBordereaux,
+    },
+    {
+      assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHui: aujourdHuiFiscal, anneeCourante, moisEcoules,
+      premierJourDuMois,
+      offreAssuranceMaladie: { codeNaf, moduleOuvert: moduleAssuranceMaladieOuvert },
+    },
+  )), [
+    lecture, rechercheDesBordereaux, assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHuiFiscal,
+    anneeCourante, moisEcoules, premierJourDuMois, codeNaf, moduleAssuranceMaladieOuvert,
+  ])
+
+  if (loading || !lecture || !points) {
     return (
       <div className="bento" aria-busy="true" aria-label="Chargement">
         <div className="skeleton skeleton-kpi span-3" />
@@ -128,15 +155,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     )
   }
 
-  // Même instant pour les deux (voir anneeEtMoisEcoules) : « N mois écoulés » ne désigne des mois que
-  // rapporté à SON année, et ces trois écrans doivent dire la même chose au même moment.
-  const { annee: anneeCourante, moisEcoules } = anneeEtMoisEcoules()
-
   // LE CALENDRIER DE LA CFE, DE LA CVAE ET DE LA LIASSE (lib/echeancesFiscales.ts), les douze prochains mois, lu à Paris
   // comme l'administration date ses échéances. Chaque échéance DIT à qui elle s'adresse : la Checklist ne sait ni la CFE
   // de l'an dernier, ni la CVAE, ni si un établissement a été créé, et elle ne les devine pas. La 2035 n'est pas la
   // liasse d'un dossier tenu en engagement : son échéance n'y figure pas, celles de la CFE et de la CVAE si.
-  const aujourdHuiFiscal = aujourdHuiAParis()
   // L'IS (LIA8, derrière CALENDRIER_IS_EXPORTE) : le régime d'un exercice ne se lit pas encore en base (LIA4), aucun
   // dossier ne l'a donc au calendrier ; le module rend alors le calendrier d'hier, à l'octet.
   const { echeances: echeancesDuDossier, avis: avisDuCalendrier } = prochainesEcheancesDuDossier(aujourdHuiFiscal, SANS_IMPOT_SUR_LES_SOCIETES)
@@ -148,22 +170,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     lectureIncomplete, ouvertureIncomplete, soldesReportesIncomplets, ouverture, clotureInconnue, infoInconnue, ecritures, piecesAValider,
     ventesIncompletes, entreesDeLaCaisseIncompletes,
   } = lecture
-  // Les relevés incohérents et les doublons de contenu sont BEST-EFFORT ici : illisibles, ils se lisent comme vides —
-  // l'échec est journalisé par la lecture —, comme avant que leurs lectures sortent de cet écran.
   const {
     pointsParametrage: pointsParametrageCalcules, pointsTravail: pointsTravailCalcules, documentsAttendus, moisManquants, moisRecus,
     piecesConfianceBasse, assuranceMaladie,
-  } = pointsDeLaChecklist(
-    {
-      ...lecture, relevesIncoherents: lecture.relevesIncoherents ?? [], doublonsTexte: lecture.doublonsTexte ?? [],
-      bordereauxDeposes: rechercheDesBordereaux,
-    },
-    {
-      assujettiTva, periodiciteTva, statutTva, modele, frontiere, anneesValidees, aujourdHui: aujourdHuiFiscal, anneeCourante, moisEcoules,
-      premierJourDuMois: premierJourDuMoisCourant(),
-      offreAssuranceMaladie: { codeNaf, moduleOuvert: estOuvert('assurance_maladie', modulesOuverts) },
-    },
-  )
+  } = points
   // Les points des seuls modules ouverts du cabinet (conception 56, OPT3) : le drapeau baissé, tous ceux d'hier.
   const pointsParametrage = pointsSousLesModules(pointsParametrageCalcules, modulesOuverts)
   const pointsTravail = pointsSousLesModules(pointsTravailCalcules, modulesOuverts)

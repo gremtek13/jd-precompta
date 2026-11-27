@@ -15,7 +15,7 @@ import {
 } from '../../lib/importReleve'
 import { extractPdfLignes } from '../../lib/pdfText'
 import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
-import { anneeDe, aujourdHuiAParis, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
+import { anneeDe, aujourdHuiAParis, formatDate, formatMoney, moisDe } from '../../lib/format'
 import { rendreAuxDatesDeFacture, retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
@@ -30,6 +30,7 @@ import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee, estFigee } from '../../lib/validationExercice'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { propositionsDuReleve } from '../../lib/propositionsDuReleve'
 import { EnTeteTriable, SelecteurDeTri } from '../../components/EnTeteTriable'
 import { trierLignes, type ColonneTriable } from '../../lib/triDesTableaux'
 import { useTriDuTableau } from '../../lib/useTriDuTableau'
@@ -52,7 +53,7 @@ import {
   controleDuFichier, phraseDeLaRupture, phraseDeLaSuiteDuFichier, relevesIncoherentsDe, rupturesDesReleves,
 } from '../../lib/suiteDesReleves'
 import {
-  analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE,
+  analyserAppariements, JOURS_TOLERANCE,
   libelleExploitable, lotDesCertains, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
 import {
@@ -667,8 +668,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     [lettragesManuels, pieces, modele],
   )
   // L'exemplaire d'une facture source n'attend aucun mouvement : sa vente se règle par les encaissements de sa facture.
-  const piecesSansMouvement = piecesValidees.filter((p) =>
-    !piecesRapprochees.has(p.id) && !lettreesALaMain.has(p.id) && !exemplaireDUneSource(p, facturesSources))
+  // Mémoïsée parce que `piecesMontantSuspect` en dépend : recréée à chaque rendu, elle relançait la recherche de chaque
+  // montant dans le relevé entier à chaque frappe dans la recherche (le banc de charge, 27/11/2026).
+  const piecesSansMouvement = useMemo(() => piecesValidees.filter((p) =>
+    !piecesRapprochees.has(p.id) && !lettreesALaMain.has(p.id) && !exemplaireDUneSource(p, facturesSources)),
+  [piecesValidees, piecesRapprochees, lettreesALaMain, facturesSources])
   // EN TRÉSORERIE, UNE PIÈCE QUI PORTE ELLE-MÊME UNE ÉCRITURE VALIDÉE NE SE RAPPROCHE PLUS. Son écriture s'équilibre déjà
   // sans paiement — une note de frais, face au compte de l'exploitant —, et la rapprocher la redaterait au paiement, ce
   // que la base refuse, pendant que la 2035 de l'exercice suivant la compterait une seconde fois. Le remboursement d'une
@@ -698,6 +702,23 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     [lignes],
   )
   const cotisationsSansMouvement = cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
+  // LES PROPOSITIONS DE CHAQUE MOUVEMENT À TRAITER (lib/propositionsDuReleve.ts) : la pièce, l'échéance et la récurrence que la
+  // liste et la fiche disent, par les critères de lib/appariementBanque.ts — les mêmes que « Tout rapprocher », par
+  // construction. La pièce proposée est la première candidate ; la fiche montre de toute façon TOUTES les pièces triées par
+  // score, et propose de voir le justificatif avant de confirmer. Calculées une fois par changement de leurs données : la
+  // liste les posait ligne à ligne à chaque rendu, donc à chaque frappe dans la recherche (le banc de charge, 27/11/2026).
+  const propositions = useMemo(
+    () => propositionsDuReleve({
+      lignes, justificatifs: justificatifsDuReleve, piecesHorsRapprochement, facturesSources, cotisations, cotisationsRapprochees,
+    }),
+    [lignes, justificatifsDuReleve, piecesHorsRapprochement, facturesSources, cotisations, cotisationsRapprochees],
+  )
+  const recurrenceDe = (ligne: LigneBancaire) => propositions.get(ligne.id)?.recurrence ?? null
+  // Les pièces, les échéances, les catégories et les emprunts par identifiant, pour la pastille de chaque ligne de la liste.
+  const piecesParId = useMemo(() => new Map(pieces.map((p) => [p.id, p])), [pieces])
+  const cotisationsParId = useMemo(() => new Map(cotisations.map((c) => [c.id, c])), [cotisations])
+  const categoriesParId = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories])
+  const empruntsParId = useMemo(() => new Map(emprunts.map((e) => [e.id, e])), [emprunts])
   // Ce que le relevé a payé de chaque déclaration de TVA, et ce qu'il lui a remboursé — calculé une fois, pour la liste,
   // la fiche d'un mouvement et le lot des règles.
   const suivisTva = useMemo(() => suiviDesDeclarations(declarationsTva, lignes), [declarationsTva, lignes])
@@ -735,51 +756,6 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // LE TRI CHOISI PAR UN CLIC SUR UN EN-TÊTE (16/11/2026) : il ordonne les lignes dessinées et le « précédent / suivant »
   // de la fiche d'un mouvement, rien d'autre — les lots, les totaux et le compteur restent sur les listes d'avant.
   const affiches = trierLignes(filtered, COLONNES_DES_MOUVEMENTS, triMouvements)
-
-  // Le critère vit dans lib/appariementBanque.ts, testé, et non plus recopié ici : c'est le même que
-  // celui du bouton « Tout rapprocher », qui doit rester le même par construction et pas par
-  // vigilance. Ici on garde la première candidate — le panneau montre de toute façon TOUTES les
-  // pièces triées par score, et propose de voir le justificatif avant de confirmer.
-  function suggestion(ligne: LigneBancaire): Piece | null {
-    if (ligne.statut !== 'non_rapprochee') return null
-    return candidatsPieces(ligne, justificatifsDuReleve, piecesHorsRapprochement, facturesSources)[0] ?? null
-  }
-
-  function suggestionCotisation(ligne: LigneBancaire): CotisationDeclaree | null {
-    if (ligne.statut !== 'non_rapprochee') return null
-    return candidatsCotisations(ligne, cotisations, cotisationsRapprochees)[0] ?? null
-  }
-
-  // Un prélèvement récurrent (assurance, virement personnel...) sans règle "Toujours ignorer" — soit
-  // parce que le libellé varie légèrement d'un mois à l'autre (une date ou un numéro dedans), soit
-  // simplement parce que personne n'a pensé à créer la règle — se retraite à la main chaque mois sans
-  // que l'appli s'en souvienne. Repère ici un mouvement au même montant et à peu près au même jour du
-  // mois qu'un ou plusieurs mois précédents déjà résolus de façon cohérente (tous ignorés, ou tous
-  // marqués virement personnel) et propose d'appliquer la même résolution — jamais si les résolutions
-  // passées divergent, ni sur une seule occurrence antérieure (trop tôt pour parler de récurrence).
-  function suggestionRecurrente(ligne: LigneBancaire): { action: 'ignorer' | 'virement_personnel'; occurrences: number } | null {
-    if (ligne.statut !== 'non_rapprochee') return null
-    const jourLigne = jourDe(ligne.date)
-    const moisLigne = anneeDe(ligne.date) * 12 + (moisDe(ligne.date) - 1)
-
-    const correspondances = lignes.filter((l) => {
-      if (l.id === ligne.id) return false
-      if (Math.abs(l.montant - ligne.montant) > 0.01) return false
-      const moisL = anneeDe(l.date) * 12 + (moisDe(l.date) - 1)
-      if (moisL === moisLigne) return false
-      if (Math.abs(jourDe(l.date) - jourLigne) > 3) return false
-      return l.prelevement_personnel || l.statut === 'ignoree'
-    })
-    if (correspondances.length < 2) return null
-
-    if (correspondances.every((l) => l.prelevement_personnel)) {
-      return { action: 'virement_personnel', occurrences: correspondances.length }
-    }
-    if (correspondances.every((l) => l.statut === 'ignoree' && !l.prelevement_personnel)) {
-      return { action: 'ignorer', occurrences: correspondances.length }
-    }
-    return null
-  }
 
   // UN SEUL verrou pour toutes les écritures de rapprochement de l'écran : le lot « sans doute
   // possible », « Tout rapprocher automatiquement » et les actions du panneau d'un mouvement. Tant que
@@ -2598,16 +2574,17 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
               </thead>
               <tbody>
                 {affiches.map((l, rang) => {
-                  const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
+                  const piecePayee = l.piece_id ? piecesParId.get(l.piece_id) : null
                   const pastillesPaiement = pastillesDePaiement(piecesPayeesPar(l, reglementsParLigne.get(l.id) ?? []), restesAPayer, payeesEnTrop, l.reglement_groupe)
-                  const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
+                  const cotisationPayee = l.cotisation_id ? cotisationsParId.get(l.cotisation_id) : null
                   const categorieAffectee = l.statut === 'rapprochee' && l.categorie_id
-                    ? categories.find((c) => c.id === l.categorie_id) ?? null
+                    ? categoriesParId.get(l.categorie_id) ?? null
                     : null
                   const empruntDuMouvement = l.statut === 'rapprochee' && l.emprunt_id
-                    ? emprunts.find((e) => e.id === l.emprunt_id) ?? null
+                    ? empruntsParId.get(l.emprunt_id) ?? null
                     : null
-                  const aUneSuggestion = l.statut === 'non_rapprochee' && (!!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
+                  const proposition = propositions.get(l.id)
+                  const aUneSuggestion = l.statut === 'non_rapprochee' && (!!(proposition && (proposition.piece || proposition.cotisation || proposition.recurrence))
                     || idsProposesParRegle.has(l.id) || idsEmpruntPlausible.has(l.id) || idsPaiementTvaPlausible.has(l.id))
                   // Classé par ses encaissements de factures, ou réservé à eux (étape VF5a1) : sa pastille le dit, avec ses factures.
                   const vente = venteDe(l.id)
@@ -2751,7 +2728,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             piecesRapprochees={piecesRapprochees}
             piecesFigees={piecesFigeesHorsRapprochement}
             cotisationsRapprochees={cotisationsRapprochees}
-            recurrence={suggestionRecurrente(ligneOuverte)}
+            recurrence={recurrenceDe(ligneOuverte)}
             navigation={navigationMouvement}
             occupe={actionMouvementEnCours || rapprochementAuto || affectationLotEnCours}
             onFermer={fermerMouvement}
