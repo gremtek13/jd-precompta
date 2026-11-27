@@ -169,7 +169,7 @@ function Section({ espace, dossierId, lu, relire }: {
           {entier && (
             <>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-                <button type="button" className="btn btn-primary" disabled={enCours} onClick={() => { setErreur(null); setApres(null); setFenetre(true) }}>
+                <button type="button" className="btn btn-primary btn-qui-passe-a-la-ligne" disabled={enCours} onClick={() => { setErreur(null); setApres(null); setFenetre(true) }}>
                   Importer des bordereaux de télétransmission
                 </button>
               </div>

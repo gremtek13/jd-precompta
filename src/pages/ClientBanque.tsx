@@ -737,7 +737,7 @@ function MonAnnee({ lecture }: { lecture: Lecture }) {
           </div>
         )}
         {comptes !== null && choisi !== null && (
-          <div className="field annee-banque-choix">
+          <div className="field annee-banque-choix annee-banque-choix-compte">
             <label htmlFor="banque-annee-compte">Compte analysé</label>
             <select id="banque-annee-compte" value={choisi.compte.id} onChange={(e) => setChoixCompte(e.target.value)}>
               {comptes.map((c) => <option key={c.compte.id} value={c.compte.id}>{c.compte.libelle}</option>)}

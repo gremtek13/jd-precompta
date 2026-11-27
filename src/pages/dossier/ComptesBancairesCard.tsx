@@ -180,12 +180,12 @@ function CarteDesComptes({ dossierId, plan }: { dossierId: string; plan: PlanCom
                   <div className="muted">{ceQuiResteModifiable(c, u)}</div>
                   {!retrait.offert && <div className="muted" data-testid={`retrait-refuse-${c.id}`}>{retrait.raison}</div>}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    <button type="button" className="btn btn-secondary btn-sm" disabled={enCours || edition !== null}
+                    <button type="button" className="btn btn-secondary btn-sm btn-qui-passe-a-la-ligne" disabled={enCours || edition !== null}
                       onClick={() => ouvrir({ mode: 'correction', id: c.id })}>
                       Corriger « {c.libelle} »
                     </button>
                     {retrait.offert && (
-                      <button type="button" className="btn btn-danger btn-sm" disabled={enCours || edition !== null}
+                      <button type="button" className="btn btn-danger btn-sm btn-qui-passe-a-la-ligne" disabled={enCours || edition !== null}
                         onClick={() => { void retirer(c.id) }}>
                         Retirer « {c.libelle} »
                       </button>

@@ -147,6 +147,9 @@ h3 { font-size: 1.02rem; }
 .btn-danger { background: var(--color-surface); border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border)); color: var(--color-danger); }
 .btn-danger:hover:not(:disabled) { background: var(--color-danger-light); border-color: var(--color-danger); }
 .btn-sm { padding: 6px 11px; font-size: 0.8rem; border-radius: var(--radius-xs); }
+/* Un bouton au libellé long ou saisi (le nom d'un compte bancaire, « Importer des bordereaux de télétransmission ») : `.btn` ne coupe jamais
+   ses lignes, et son libellé sortirait de la zone de sa carte (de 16 px sur téléphone, sans que rien ne le dise). */
+.btn-qui-passe-a-la-ligne { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
 
 /* ---------- Cartes ---------- */
 .card {
@@ -1391,6 +1394,8 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 .annee-banque-entrees { fill: var(--color-primary); }
 .annee-banque-sorties { fill: color-mix(in srgb, var(--color-primary) 35%, var(--color-surface)); }
 .annee-banque-choix { max-width: 220px; }
+/* Le choix du compte porte le nom SAISI du compte (jusqu'à quatre-vingts caractères) : 220 px le coupaient (« Compte courant profes… »). */
+.annee-banque-choix.annee-banque-choix-compte { max-width: min(100%, 440px); }
 .annee-banque-absent { fill: none; stroke: var(--color-border-strong); stroke-dasharray: 3 3; }
 .annee-banque-axe { stroke: var(--color-border-strong); stroke-width: 1; }
 .annee-banque-mois { fill: var(--color-text-light); font-size: 11px; }

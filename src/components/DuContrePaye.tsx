@@ -103,7 +103,7 @@ function SectionDuDu({ espace, dossierId, codeNaf }: { espace: EspaceVentes; dos
         {r.etat !== 'compte' ? <p className="muted" role="status">{phraseSansCompte(r)}</p> : (
           <>
             <ul className="muted" style={{ marginTop: 8 }}>{avisDuCompte(r).map((a) => <li key={a}>{a}</li>)}</ul>
-            <div className="tableau-adaptable">
+            <div className="table-scroll tableau-adaptable">
               <table className="table-empilable-etroite" aria-label="Ce que l’assurance maladie doit, par organisme">
                 <thead>
                   <tr>
