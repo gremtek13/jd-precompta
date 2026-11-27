@@ -176,6 +176,37 @@ interface FactureRow {
   id: string; numero: string | null; date_emission: string; date_echeance: string | null
   tiers_nom: string; montant_ht: number; montant_tva: number; montant_ttc: number
   mentions_legales: string | null; emetteur_nom: string | null; type: "facture" | "avoir"
+  facture_origine_id: string | null; mentions_figees: boolean; denomination_imprimee: string | null
+}
+
+// LE NOM DE L'ÉMETTEUR QUE L'E-MAIL D'UNE FACTURE DIT (FACT-Q2 (B), réponse du cabinet du 27/11/2026) : son objet, sa signature et
+// son expéditeur nommaient l'`emetteur_nom` de la facture — le nom interne du dossier, recopié à l'émission —, quand la facture
+// figée imprime la dénomination qu'elle a figée à sa validation (`ceQueLaFactureImprime`). Ils disent désormais ce que la
+// facture imprime, par le bloc qui suit, copié de src/lib/nomDeLEmetteur.ts au caractère près (nomDeLEmetteurCopie.test.ts) ;
+// une facture d'avant garde son `emetteur_nom`. Le drapeau `mentions_figees` (NOT NULL en base) qui n'est pas un booléen est
+// ILLISIBLE, jamais « d'avant » : rien ne part (503) plutôt qu'un e-mail sous un autre nom que celui de la facture. Le devis
+// n'en a pas besoin : `enregistrer_devis` pose déjà la dénomination du dossier dans son `emetteur_nom` à l'émission.
+// ── DÉBUT COPIE nomDeLEmetteur ───────────────────────────────────────────────────────────────────────────────────────
+/** Ce qu'une facture lue porte de son émetteur : le drapeau des mentions figées, la dénomination figée, le nom recopié. */
+export interface EmetteurDeLaFacture {
+  mentions_figees?: boolean | null
+  denomination_imprimee?: string | null
+  emetteur_nom: string | null
+}
+
+/** Le nom que la facture imprime pour son émetteur : la dénomination figée d'une facture figée, sinon `emetteur_nom`. */
+export function nomDeLEmetteur(f: EmetteurDeLaFacture): string | null {
+  const denomination = f.denomination_imprimee
+  if (f.mentions_figees === true && typeof denomination === 'string' && denomination.trim() !== '') return denomination
+  return f.emetteur_nom
+}
+// ── FIN COPIE nomDeLEmetteur ─────────────────────────────────────────────────────────────────────────────────────────
+
+/** Le refus d'une facture dont le drapeau des mentions figées ne se lit pas ; nul quand il se lit. */
+function drapeauDesMentionsIllisible(f: { mentions_figees?: unknown }): string | null {
+  return typeof f.mentions_figees === "boolean"
+    ? null
+    : "Le nom que la facture imprime pour son émetteur n'a pas pu être lu : l'e-mail n'a pas été envoyé. Réessaie dans un instant."
 }
 interface LigneRow { designation: string; quantite: number; prix_unitaire_ht: number; taux_tva: number }
 
@@ -223,6 +254,32 @@ async function acompteDeLEmail(
     return { erreur: `La marque d'acompte de la facture que l'avoir corrige n'a pas pu être lue${erreurOrigine ? ` (${erreurOrigine.message})` : ""}. L'e-mail n'a pas été envoyé. Réessaie dans un instant.` }
   }
   return { acompte: false, origine: origine.acompte ? { numero: origine.numero as string } : null }
+}
+
+// LA FACTURE QU'UN AVOIR CORRIGE (FACT-Q3 (B), réponse du cabinet du 27/11/2026) : l'e-mail de TOUT avoir la cite par son
+// numéro — l'objet « Avoir A… sur la facture F… », le corps « qui crédite la facture F… » —, comme celui de l'avoir d'un
+// acompte la citait seul (« sur la facture d'acompte F… »). Le numéro est relu ici, par l'identifiant que l'avoir porte
+// (`facture_origine_id`, lu en base, jamais un texte de l'appelant) ET le dossier de la requête ; la marque d'acompte avec
+// lui, par la lecture gardée de l'acompte (`acompteDeLEmail`), seule à nommer ses colonnes. Une lecture en erreur, une facture
+// non rendue, un numéro qui ne se lit pas sont ILLISIBLES : rien ne part (503). Un avoir qui ne cite aucune facture (la base
+// le permet d'un avoir d'avant) n'en nomme pas.
+interface OrigineDeLAvoir {
+  numero: string
+}
+
+async function origineDeLAvoir(
+  admin: ReturnType<typeof createClient>,
+  dossierId: string,
+  facture: Pick<FactureRow, "type" | "facture_origine_id">,
+): Promise<{ origine: OrigineDeLAvoir | null } | { erreur: string }> {
+  if (facture.type !== "avoir" || typeof facture.facture_origine_id !== "string") return { origine: null }
+  const { data: origine, error: erreurOrigine } = await admin.from("factures_emises")
+    .select("numero").eq("id", facture.facture_origine_id).eq("dossier_id", dossierId).maybeSingle()
+  const lue = origine as { numero?: unknown } | null
+  if (erreurOrigine || !lue || typeof lue.numero !== "string" || lue.numero.trim() === "") {
+    return { erreur: `L'e-mail d'un avoir cite la facture qu'il corrige, et la facture que l'avoir corrige n'a pas pu être lue${erreurOrigine ? ` (${erreurOrigine.message})` : ""}. L'e-mail n'a pas été envoyé. Réessaie dans un instant.` }
+  }
+  return { origine: { numero: lue.numero } }
 }
 
 // Les colonnes d'un devis que l'e-mail montre, et elles seules (la lecture ne nomme qu'elles) : ni `notes`, ni
@@ -375,7 +432,7 @@ function echapper(s: string): string {
 // encaissements et ses avoirs (`lireLeResteDu`) : le reste dû que l'e-mail dit, et qui refuse une facture soldée.
 interface FactureRelancee {
   id: string; numero: string | null; statut: string; type: string; date_echeance: string | null
-  montant_ttc: number | null; emetteur_nom: string | null
+  montant_ttc: number | null; emetteur_nom: string | null; mentions_figees: boolean; denomination_imprimee: string | null
 }
 
 // Ce qui retient la relance, dit avant tout envoi : une facture validée — ni un brouillon ni un avoir —, qui porte son
@@ -454,7 +511,8 @@ function construireEmailRelanceFacture(
   f: FactureRelancee & { numero: string; montant_ttc: number; date_echeance: string }, reste: ResteDuDeLaFacture,
   messagePerso: string | null,
 ): { objet: string; html: string } {
-  const emetteur = f.emetteur_nom ?? "Le cabinet"
+  // Le nom que la facture relancée imprime (FACT-Q2) : sa dénomination figée, sinon son `emetteur_nom`.
+  const emetteur = nomDeLEmetteur(f) ?? "Le cabinet"
   // Le reste dû ET le total : une facture payée en partie se relance pour ce qu'il en manque, et le client retrouve sa
   // facture à son total.
   const html = `
@@ -469,17 +527,17 @@ function construireEmailRelanceFacture(
 }
 
 function construireEmailFacture(
-  facture: FactureRow, lignes: LigneRow[], messagePerso: string | null, acompte: AcompteDeLEmail,
+  facture: FactureRow, lignes: LigneRow[], messagePerso: string | null, acompte: AcompteDeLEmail, origine: OrigineDeLAvoir | null,
 ): { objet: string; html: string } {
-  const emetteur = facture.emetteur_nom ?? "Le cabinet"
+  // Le nom que la facture imprime (FACT-Q2) : sa dénomination figée, sinon son `emetteur_nom`.
+  const emetteur = nomDeLEmetteur(facture) ?? "Le cabinet"
   const typeLabel = facture.type === "avoir" ? "Avoir" : "Facture"
-  // L'acompte d'un devis : « Facture d'acompte », et l'avoir qui crédite une facture d'acompte la nomme. Sans acompte
-  // (`SANS_ACOMPTE_EMAIL`), les trois textes sont vides et l'e-mail est celui d'hier.
+  // L'acompte d'un devis : « Facture d'acompte ». Un avoir nomme la facture qu'il corrige (FACT-Q3), « d'acompte » quand la
+  // lecture gardée de l'acompte l'a dit. Une facture sans acompte : l'e-mail d'hier.
   const dAcompte = typeLabel === "Facture" && acompte.acompte ? " d'acompte" : ""
-  const surLAcompte = typeLabel === "Avoir" && acompte.origine ? ` sur la facture d'acompte ${acompte.origine.numero}` : ""
-  const credite = typeLabel === "Avoir" && acompte.origine
-    ? `, qui crédite la facture d'acompte <strong>${echapper(acompte.origine.numero)}</strong>`
-    : ""
+  const corrigee = typeLabel === "Avoir" && origine ? `la facture${acompte.origine ? " d'acompte" : ""}` : null
+  const surLAcompte = corrigee !== null && origine ? ` sur ${corrigee} ${origine.numero}` : ""
+  const credite = corrigee !== null && origine ? `, qui crédite ${corrigee} <strong>${echapper(origine.numero)}</strong>` : ""
   const lignesHtml = lignes.map((l) => {
     // Le HT de la ligne tel que la facture le porte (le bloc `montantsFacture`, le calcul de l'application et de la base) :
     // calculé ici à part, en virgule flottante et le demi vers +∞, l'e-mail disait d'une ligne de 16,025 € qu'elle en
@@ -883,8 +941,8 @@ Deno.serve(async (req: Request) => {
   let factureId: string | null = null
   // L'adresse où part l'e-mail : celle du corps, sauf pour la relance d'une demande (l'accès choisi, lu en base).
   let adresse: string = destinataire ?? ""
-  // Nom affiché comme expéditeur — celui de la facture (recopié à l'émission, voir types.ts) quand il
-  // y en a un, sinon celui du dossier (cas "relance_pieces", qui n'a pas de facture associée).
+  // Nom affiché comme expéditeur — celui que la facture imprime (sa dénomination figée, sinon son `emetteur_nom`, FACT-Q2)
+  // quand il y en a un, sinon celui du dossier (cas "relance_pieces", qui n'a pas de facture associée).
   let nomExpediteur = dossierRow.nom
 
   if (type === "facture") {
@@ -894,13 +952,17 @@ Deno.serve(async (req: Request) => {
     }
     const { data: factureData, error: factureError } = await admin
       .from("factures_emises")
-      .select("id, numero, statut, type, date_emission, date_echeance, tiers_nom, montant_ht, montant_tva, montant_ttc, mentions_legales, emetteur_nom")
+      .select("id, numero, statut, type, date_emission, date_echeance, tiers_nom, montant_ht, montant_tva, montant_ttc, mentions_legales, emetteur_nom, facture_origine_id, mentions_figees, denomination_imprimee")
       .eq("id", factureId).eq("dossier_id", dossierId).maybeSingle()
     if (factureError || !factureData) {
       return json({ error: "Facture introuvable." }, 404)
     }
     if (factureData.statut !== "validee") {
       return json({ error: "Seule une facture validée peut être envoyée par e-mail." }, 400)
+    }
+    const drapeauIllisible = drapeauDesMentionsIllisible(factureData)
+    if (drapeauIllisible) {
+      return json({ error: drapeauIllisible }, 503)
     }
     // SA JUMELLE SIX LIGNES PLUS HAUT LIT SON ERREUR, PAS ELLE. `(lignesData ?? [])` sur une lecture
     // refusée construisait une facture au bon en-tête et au bon total, SANS AUCUNE LIGNE, et
@@ -920,10 +982,15 @@ Deno.serve(async (req: Request) => {
     if ("erreur" in acompte) {
       return json({ error: acompte.erreur }, 503)
     }
-    const construit = construireEmailFacture(factureData as FactureRow, (lignesData ?? []) as LigneRow[], messagePerso, acompte)
+    // La facture qu'un avoir corrige, relue ici (FACT-Q3) : illisible, rien ne part.
+    const corrigee = await origineDeLAvoir(admin, dossierId, factureData as FactureRow)
+    if ("erreur" in corrigee) {
+      return json({ error: corrigee.erreur }, 503)
+    }
+    const construit = construireEmailFacture(factureData as FactureRow, (lignesData ?? []) as LigneRow[], messagePerso, acompte, corrigee.origine)
     objet = construit.objet
     html = construit.html
-    nomExpediteur = factureData.emetteur_nom ?? dossierRow.nom
+    nomExpediteur = nomDeLEmetteur(factureData as FactureRow) ?? dossierRow.nom
   } else if (type === "devis" && devisId) {
     // Le devis, par son identifiant ET le dossier de la requête : un devis d'un autre dossier n'existe pas pour cet appel,
     // sous le même mot qu'un devis inconnu — les droits ne valent que pour CE dossier. Seules les colonnes que l'e-mail
@@ -960,7 +1027,7 @@ Deno.serve(async (req: Request) => {
     // La facture, par son identifiant ET le dossier de la requête ; une lecture en erreur n'est pas une facture absente.
     const { data: relancee, error: erreurRelancee } = await admin
       .from("factures_emises")
-      .select("id, numero, statut, type, date_echeance, montant_ttc, emetteur_nom")
+      .select("id, numero, statut, type, date_echeance, montant_ttc, emetteur_nom, mentions_figees, denomination_imprimee")
       .eq("id", factureRelanceeId).eq("dossier_id", dossierId).maybeSingle()
     if (erreurRelancee) {
       return json({ error: `La facture n'a pas pu être lue (${erreurRelancee.message}). La relance n'est pas partie. Réessaie dans un instant.` }, 503)
@@ -972,6 +1039,10 @@ Deno.serve(async (req: Request) => {
     const refus = refusDeLaRelance(facture, jourCivilDeParis(Date.now()))
     if (refus) {
       return json({ error: refus.message }, refus.statut)
+    }
+    const drapeauIllisible = drapeauDesMentionsIllisible(facture)
+    if (drapeauIllisible) {
+      return json({ error: drapeauIllisible }, 503)
     }
     const relue = facture as FactureRelancee & { numero: string; montant_ttc: number; date_echeance: string }
     // Le reste dû, relu ici avant tout envoi (C5-Q4) : l'écran le juge, mais une facture soldée entre-temps, ou une
@@ -989,7 +1060,7 @@ Deno.serve(async (req: Request) => {
     html = construit.html
     // Le journal cite la facture relancée : « Relancée le … » s'en déduit, rien d'autre ne se stocke.
     factureId = factureRelanceeId
-    nomExpediteur = facture.emetteur_nom ?? dossierRow.nom
+    nomExpediteur = nomDeLEmetteur(facture) ?? dossierRow.nom
   } else if (relanceDeDemande && demandeId && accesId) {
     // La demande, par son identifiant ET le dossier de la requête ; une lecture en erreur n'est pas une demande absente.
     const { data: demandeLue, error: erreurDemande } = await admin.from("demandes_cabinet")

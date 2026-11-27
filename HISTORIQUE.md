@@ -55310,3 +55310,17 @@ ni l'import avec choix du compte, ni les paiements de l'assurance maladie et le 
 (`.btn` ne passe pas à la ligne : classe `.btn-qui-passe-a-la-ligne`), et le choix du compte de « Mon année » coupait le nom à 220 px
 (`.annee-banque-choix-compte`). Piège du banc : `SAISIES_2035_EXPORTEES` baissé fait échouer `cloture/saisies-du-cabinet` sans
 `BANC_DRAPEAUX=SAISIES_2035_EXPORTEES` ; `DU_CONTRE_PAYE_PREVU` levé de même pour voir BOR5. `index.css` change : banc à rejouer.
+### 27/11/2026 — FACT-Q1 À Q3 ET DEUX DURCISSEMENTS DES EDGE FUNCTIONS
+
+(Agent architecte ; aucune migration ; `send-email`, `extract-piece` et `superpdp-sync` à redéployer.) Chaque point prouvé
+rouge sur la source d'avant. **FACT-Q1 (B)** : la mention proposée à un particulier ne garde que la TVA, paramètres lus ou non
+(`sansPhraseDeRetard` ; C. com., art. L441-10 et D441-5, des professionnels) ; le devis ne la proposait jamais ; l'avoir recopie
+la mention de sa facture, inchangé. **FACT-Q2 (B)** : l'objet, la signature et l'expéditeur de l'e-mail d'une facture figée, et
+de sa relance, nomment la dénomination figée, sinon `emetteur_nom` (`lib/nomDeLEmetteur.ts`, que `ceQueLaFactureImprime` emploie,
+copié dans `send-email`, nomDeLEmetteurCopie.test.ts) ; un drapeau `mentions_figees` non rendu refuse (503) ; le devis portait
+déjà la dénomination à son émission. **FACT-Q3 (B)** : l'e-mail de tout avoir cite « sur la facture F… », le numéro relu par
+`facture_origine_id` ET le dossier (503 sinon) ; la marque d'acompte reste dans sa lecture gardée. **extract-piece** : le corps
+se lit sous `TAILLE_MAX_LECTURE` (10 Mio, sous les 20 de `TAILLE_MAX_PIECE`) — `Content-Length` d'abord, puis le flux abandonné à
+la borne —, 413 en français, avant AWS. **superpdp-sync** : un `item.id` qui n'est pas `Number.isSafeInteger` s'écarte et se
+compte (réponse `ecartees`, une ligne d'`erreurs`), jamais recopié ; la pagination s'arrête sur un dernier identifiant illisible.
+Seize défauts plantés gardent le tout (edgeFunctionsHttp, relancesHttp).

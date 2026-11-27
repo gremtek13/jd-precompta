@@ -406,13 +406,16 @@ const PENALITES = 'Pénalités de retard : trois fois le taux d’intérêt lég
 
 for (const espace of ['cabinet', 'client'] as const) {
   describe(`la mention légale proposée suit les paramètres du dossier, A7B-Q2 (${espace})`, () => {
-    it('des paramètres en vigueur, un particulier : la phrase d’hier tant que la lecture n’est pas revenue, puis la TVA seule, et c’est elle qui part', async () => {
+    // FACT-Q1 (B), 27/11/2026 : un particulier n'attend pas la lecture des paramètres — les pénalités et les 40 € sont celles
+    // des professionnels (C. com., art. L441-10 et D441-5).
+    it('des paramètres en vigueur, un particulier : la TVA seule, avant même le retour de la lecture, et c’est elle qui part', async () => {
       faux.retenirDossier = true
       monter(espace)
       await remplirSansAttendre()
-      typeDuClient('non_assujetti')
       expect(PHRASE_D_HIER).toMatch(/trois fois le taux d'intérêt légal/)
       expect(mentionsLegales().value).toBe(PHRASE_D_HIER)
+      typeDuClient('non_assujetti')
+      expect(mentionsLegales().value).toBe('')
       await relacherLaLecture()
       await waitFor(() => expect(valider().disabled).toBe(false))
       // Un redevable n'a pas de mention de TVA : rien ne se propose.
@@ -504,6 +507,22 @@ for (const espace of ['cabinet', 'client'] as const) {
       expect(mentionsLegales().value).toBe(PHRASE_D_HIER)
       await act(async () => { brouillon().click() })
       expect((envoi().p_facture as Record<string, unknown>).mentions_legales).toBe(PHRASE_D_HIER)
+    })
+
+    it('aucun paramètre, un particulier : la mention de TVA seule, sans la phrase des pénalités, et c’est elle qui part (FACT-Q1)', async () => {
+      faux.versions = []
+      monter(espace, { statutTva: 'exonere', articleExoneration: 'cgi_261_4_1' })
+      await remplirSansAttendre()
+      await waitFor(() => expect(valider().disabled).toBe(false))
+      expect(mentionsLegales().value).toBe(mentionsLegalesParDefaut('exonere', 'cgi_261_4_1', false))
+      typeDuClient('non_assujetti')
+      expect(mentionsLegales().value).toBe('Exonération de TVA, art. 261, 4, 1° du CGI.')
+      // Un professionnel, puis un client « à préciser » : la phrase d'hier revient, la mention n'ayant pas été touchée.
+      typeDuClient('assujetti')
+      expect(mentionsLegales().value).toMatch(/trois fois le taux d'intérêt légal/)
+      typeDuClient('non_assujetti')
+      await act(async () => { brouillon().click() })
+      expect((envoi().p_facture as Record<string, unknown>).mentions_legales).toBe('Exonération de TVA, art. 261, 4, 1° du CGI.')
     })
 
     it('une mention saisie, ou vidée, avant le retour de la lecture reste la sienne', async () => {

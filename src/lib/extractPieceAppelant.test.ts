@@ -46,7 +46,7 @@ const SOURCE_TAUX = readFileSync(
 /** Les deux fonctions qui portent le bloc APPELANT, et ce que chacune dépense une fois l'appelant admis. */
 const COPIES: [string, string][] = [['extract-piece', SOURCE], ['taux-change-bce', SOURCE_TAUX]]
 const DEPENSES: Record<string, string[]> = {
-  'extract-piece': ['req.arrayBuffer()', 'new TextractClient(', 'citerChamps('],
+  'extract-piece': ['corpsSousSaBorne(req', 'new TextractClient(', 'citerChamps('],
   'taux-change-bce': ['req.json()', 'fetch(', '.upsert('],
 }
 

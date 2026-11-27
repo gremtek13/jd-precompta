@@ -94,6 +94,45 @@ const BUDGET_CITATION_MS = 30_000
 // réencode en JPEG de 2 400 pixels au plus avant de l'envoyer.
 const TAILLE_MAX_LECTURE = 10 * 1024 * 1024
 
+// LE CORPS LU SOUS SA BORNE (relecture adverse de sécurité des Edge Functions, 27/11/2026). Lire le corps d'un bloc gardait le
+// corps ENTIER en mémoire avant que la taille ne se juge : un appelant rattaché — ou la clé de receive-email — pouvait
+// envoyer des centaines de mégaoctets, tous lus, avant le refus. La borne se juge désormais AVANT la lecture : l'en-tête
+// `Content-Length` qui annonce plus que la borne refuse sans rien lire (RFC 9110, § 8.6 : la taille du contenu, en octets
+// décimaux) ; puis le flux se lit morceau par morceau, et s'abandonne dès que la somme dépasse la borne — un en-tête absent
+// (un envoi par morceaux) ou qui ment ne garde jamais plus que la borne et un morceau. La borne est celle de la lecture
+// (`TAILLE_MAX_LECTURE`, 10 Mio, que src/lib/extraction.ts dit avant l'envoi), sous celle d'une pièce du seau
+// (`TAILLE_MAX_PIECE`, 20 Mio, src/lib/bornesStockage.ts ; extractPieceBudget.test.ts les confronte). Le refus : 413 (RFC
+// 9110, § 15.5.14, « Content Too Large »), en français, avant toute dépense chez AWS.
+const REFUS_TROP_VOLUMINEUX = "Fichier trop volumineux pour l'extraction automatique (max 10 Mo)."
+
+/** Le corps lu sans jamais en garder plus que `borne` octets ; `null` dès qu'il la dépasse (annoncé ou lu). */
+async function corpsSousSaBorne(req: Request, borne: number): Promise<Uint8Array | null> {
+  const annonce = req.headers.get("Content-Length")?.trim() ?? ""
+  if (/^\d+$/.test(annonce) && Number(annonce) > borne) return null
+  if (req.body === null) return new Uint8Array(0)
+  const lecteur = req.body.getReader()
+  const morceaux: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await lecteur.read()
+    if (done) break
+    total += value.byteLength
+    if (total > borne) {
+      // Le reste ne se lit pas : le flux s'annule, et ce qui en est déjà lu se jette.
+      await lecteur.cancel().catch(() => {})
+      return null
+    }
+    morceaux.push(value)
+  }
+  const octets = new Uint8Array(total)
+  let position = 0
+  for (const morceau of morceaux) {
+    octets.set(morceau, position)
+    position += morceau.byteLength
+  }
+  return octets
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -1578,13 +1617,14 @@ Deno.serve(async (req: Request) => {
       if (refusDeuxFacteurs) return refusDeuxFacteurs
     }
 
-    const fileBytes = new Uint8Array(await req.arrayBuffer())
+    // Le corps, sous la borne de la lecture : au-delà, rien n'est gardé, et rien ne part chez AWS (`corpsSousSaBorne`).
+    const fileBytes = await corpsSousSaBorne(req, TAILLE_MAX_LECTURE)
+    if (fileBytes === null) {
+      return json({ error: REFUS_TROP_VOLUMINEUX }, 413)
+    }
 
     if (fileBytes.byteLength === 0) {
       return json({ error: "Fichier vide." }, 400)
-    }
-    if (fileBytes.byteLength > TAILLE_MAX_LECTURE) {
-      return json({ error: "Fichier trop volumineux pour l'extraction automatique (max 10 Mo)." }, 400)
     }
 
     // UNE SEULE région pour les trois clients AWS — Textract, le S3 du chemin asynchrone, et Bedrock.

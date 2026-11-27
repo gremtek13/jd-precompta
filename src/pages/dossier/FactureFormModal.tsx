@@ -215,8 +215,8 @@ export default function FactureFormModal(props: Props) {
   const [lectureValidation, setLectureValidation] = useState<{ cle: string; lu: LectureDeLaValidation } | null>(null)
   // LA MENTION LÉGALE PROPOSÉE (A7B-Q2, réponse du cabinet du 30/10/2026, relue le 31/10/2026) : tant qu'on n'y a pas touché,
   // elle se DÉDUIT — la TVA seule quand les paramètres en vigueur disent les conditions de retard (un professionnel, et leur
-  // texte des pénalités) ou que le client est un particulier ; la phrase d'hier sinon, et tant que leur lecture n'est pas
-  // revenue entière (drapeau baissé, elle ne part jamais). Une saisie, même vide, est la sienne : la lecture qui revient ne la
+  // texte des pénalités) ou que le client est un particulier (FACT-Q1 (B) : dès le premier rendu, avec ou sans paramètres) ;
+  // la phrase d'hier sinon, et tant que leur lecture n'est pas revenue entière (drapeau baissé, elle ne part jamais). Une saisie, même vide, est la sienne : la lecture qui revient ne la
   // remplace pas ; le type du client qui change, tant qu'on n'a pas touché au texte, la refait.
   const lectureDesParametres = lectureValidation?.cle === dossierId ? lectureValidation.lu : null
   // LE CLIENT ÉTABLI HORS DE FRANCE (ligne 28.5, étape e7b ; lib/factureInternationaleVue.ts, sous

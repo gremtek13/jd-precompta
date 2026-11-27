@@ -101,7 +101,15 @@ describe('budget mural d’extract-piece', () => {
     }
     expect(octets(SOURCE, 'extract-piece')).toBe(octets(application, 'src/lib/extraction.ts'))
     expect(octets(SOURCE, 'extract-piece')).toBe(10 * 1024 * 1024)
-    expect(SOURCE).toMatch(/if \(fileBytes\.byteLength > TAILLE_MAX_LECTURE\)/)
+    // Le corps se lit sous cette borne, jamais en entier avant elle (`corpsSousSaBorne`, relecture du 27/11/2026) ; plus de
+    // `arrayBuffer()` qui garderait tout en mémoire avant le refus.
+    expect(SOURCE).toMatch(/const fileBytes = await corpsSousSaBorne\(req, TAILLE_MAX_LECTURE\)/)
+    expect(SOURCE).not.toMatch(/req\.(arrayBuffer|text|json|blob|formData)\(\)/)
+    // Sous la borne d'une pièce du seau (src/lib/bornesStockage.ts) : un fichier que la lecture accepte se dépose.
+    const bornes = readFileSync(new URL('./bornesStockage.ts', import.meta.url), 'utf8')
+    const piece = bornes.match(/export const TAILLE_MAX_PIECE = (\d+) \* (\d+) \* (\d+)/)
+    expect(piece, 'TAILLE_MAX_PIECE introuvable dans src/lib/bornesStockage.ts').not.toBeNull()
+    expect(octets(SOURCE, 'extract-piece')).toBeLessThanOrEqual(Number(piece![1]) * Number(piece![2]) * Number(piece![3]))
   })
 
   it('journalise le COMPTE des rejets de citation, jamais leurs valeurs', () => {

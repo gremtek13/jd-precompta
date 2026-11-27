@@ -79,6 +79,23 @@ describe('les juges voient ce qu’ils gardent', () => {
     expect(await jugerScenario(contrat, scenario(/^relance_facture — .*« Ventes ».*: admis$/), contexte, mutee)).not.toEqual([])
   })
 
+  it('la relance d’une facture figée sous le nom interne recopié (FACT-Q2) : le scénario tombe', async () => {
+    const mutee = muter(levee(), [
+      ['    nomExpediteur = nomDeLEmetteur(facture) ?? dossierRow.nom', '    nomExpediteur = facture.emetteur_nom ?? dossierRow.nom'],
+    ])
+    expect(await jugerScenario(contrat, scenario(/relance d’une facture figée part sous sa dénomination/), contexte, mutee)).not.toEqual([])
+    const signature = muter(levee(), [['  const emetteur = nomDeLEmetteur(f) ?? "Le cabinet"', '  const emetteur = f.emetteur_nom ?? "Le cabinet"']])
+    expect(await jugerScenario(contrat, scenario(/relance d’une facture figée part sous sa dénomination/), contexte, signature)).not.toEqual([])
+  })
+
+  it('le drapeau des mentions figées de la facture relancée ignoré (FACT-Q2) : le refus tombe', async () => {
+    const mutee = muter(levee(), [[
+      '    const drapeauIllisible = drapeauDesMentionsIllisible(facture)\n    if (drapeauIllisible) {\n      return json({ error: drapeauIllisible }, 503)\n    }\n',
+      '',
+    ]])
+    expect(await jugerScenario(contrat, scenario(/drapeau des mentions figées n’est pas rendu/), contexte, mutee)).not.toEqual([])
+  })
+
   it('le journal qui ne cite pas la facture : « Relancée le … » ne se déduirait plus', async () => {
     const mutee = muter(levee(), [['    factureId = factureRelanceeId\n', '']])
     expect(await jugerScenario(contrat, scenario(/le cabinet n’est pas plafonné/), contexte, mutee)).not.toEqual([])

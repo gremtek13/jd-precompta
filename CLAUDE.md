@@ -129,12 +129,14 @@ L'expert-comptable ne se sollicite plus : ce qui manque se cherche dans les sour
     MODÈLE », « VF9CQ1B, LE DÉBIT QUI REND OU DÉFAIT L'ARGENT D'UN CLIENT, SOUS SA DATE ET SON MONTANT ».
   - `create-cabinet`, `delete-cabinet` (super-admin) ; `create-team-member`, `create-client-access`.
   - `extract-piece` — OCR (Textract) puis citation des champs ; réservée à un compte RATTACHÉ et à `receive-email` (clé
-    secrète en `apikey`).
+    secrète en `apikey`) ; le corps lu sous la borne de la lecture (10 Mio, 413), jamais en entier avant elle.
   - `receive-email` (webhook Resend, par dossier) ; `send-email` (facture : le cabinet et le client « Ventes », trente
     e-mails par dossier et par jour de Paris pour un client ; relance de pièces : le cabinet seul ; relance d'une
-    facture en retard : le cabinet et le client « Ventes » (MEG3-Q3), dans le même plafond).
+    facture en retard : le cabinet et le client « Ventes » (MEG3-Q3), dans le même plafond) ; une facture figée et sa
+    relance nomment la dénomination figée (`lib/nomDeLEmetteur.ts`, copié, FACT-Q2), l'e-mail d'un avoir cite sa facture,
+    lue en base (FACT-Q3) → « FACT-Q1 À Q3 ET DEUX DURCISSEMENTS DES EDGE FUNCTIONS ».
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — Super PDP ; le client « Ventes » relie et transmet, la
-    réception reste au cabinet.
+    réception reste au cabinet ; un identifiant de la liste qui n'est pas un entier exact s'écarte et se compte.
   - `proposer-categorie` (sur un clic, rien d'écrit) ; `evaluer-extraction` (harnais de MESURE, facturé dans une fenêtre
     datée seulement) ; `taux-change-bce`, réservée à un compte RATTACHÉ comme `extract-piece` (son bloc APPELANT
     recopié, ligne 23.4) → « TAUX-CHANGE-BCE CONTRÔLE SON APPELANT (LIGNE 23.4) ».
@@ -990,7 +992,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
     cabinet, puis `iban_hors_des_parametres` par l'outil —, A7b l'écran (le formulaire et l'avoir disent ses refus avant
     le clic et nomment ce qui se fige, l'aperçu n'imprime que ce qui est figé ; `lib/mentionsFigeesVue.ts`), en ligne le
     30/10/2026 ; A7B-Q1 et Q2 le même jour (rien sous le nom d'un entrepreneur individuel ; la mention légale proposée
-    ne garde que la TVA quand le dossier a ses paramètres) ; A7B-Q3, le bon de commande d'une entreprise, offert sur la
+    ne garde que la TVA quand le dossier a ses paramètres, et toujours pour un particulier, FACT-Q1) ; A7B-Q3, le bon de commande d'une entreprise, offert sur la
     facture seule le 06/11/2026 (`DocumentDeVente`, sans défaut) → « LE BON DE COMMANDE D'UNE ENTREPRISE, OFFERT DANS LA
     FACTURE », « LA FACTURE FIGE SES MENTIONS, EN BASE », « LA FACTURE FIGE SES MENTIONS, À L'ÉCRAN — ESPACE CLIENT, A7B
     (LIGNE 51.5) », « LA FACTURE FIGE SES MENTIONS : L'ÉMETTEUR DU DOSSIER ET L'IBAN HORS DES TEXTES LIBRES », « DEUX

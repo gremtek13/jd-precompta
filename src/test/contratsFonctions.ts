@@ -389,6 +389,34 @@ function lecture(
 }
 
 const sansSessionDemandee = (_r: Resultat, monde: Monde) => jamais(monde, 'session', 'le service d’authentification a été interrogé')
+
+// LE CORPS LU SOUS SA BORNE (relecture adverse de sécurité des Edge Functions, 27/11/2026) : la borne de la lecture, 10 Mio,
+// se juge avant de lire le corps en entier — l'en-tête `Content-Length` qui l'annonce plus gros refuse sans rien lire, et le
+// flux s'abandonne dès qu'il la dépasse, en-tête absent ou menteur. Le flux du harnais compte ce qui en est tiré.
+const BORNE_DE_LA_LECTURE = 10 * 1024 * 1024
+const MORCEAU_DU_FLUX = 1024 * 1024
+const fluxTire = { octets: 0 }
+/** Un flux de `total` octets (des zéros), tiré par morceaux d'un Mio ; `fluxTire.octets` dit ce que la fonction en a tiré. */
+function requeteAuFlux(slug: string, total: number, entetes: Record<string, string> = {}): Request {
+  fluxTire.octets = 0
+  let restant = total
+  const flux = new ReadableStream<Uint8Array>({
+    pull(controleur) {
+      if (restant <= 0) { controleur.close(); return }
+      const morceau = Math.min(MORCEAU_DU_FLUX, restant)
+      restant -= morceau
+      fluxTire.octets += morceau
+      controleur.enqueue(new Uint8Array(morceau))
+    },
+  }, { highWaterMark: 0 })
+  const base = requeteDe(slug, { personne: 'chef', entetes })
+  return new Request(base.url, { method: 'POST', headers: base.headers, body: flux, duplex: 'half' } as RequestInit)
+}
+/** Le refus d'un corps trop gros : 413, sa phrase, et jamais plus que la borne et un morceau tirés du flux. */
+const refusDuCorpsTropGros = (tireAuPlus: number) => (r: Resultat): string[] => [
+  ...(/Fichier trop volumineux pour l'extraction automatique \(max 10 Mo\)\./.test(String(corpsDe(r).error)) ? [] : [`refus : ${r.texte}`]),
+  ...(fluxTire.octets <= tireAuPlus ? [] : [`${fluxTire.octets} octets tirés du flux, au plus ${tireAuPlus} attendus`]),
+]
 const sansClientAws = (_r: Resultat, monde: Monde) => jamais(monde, 'client-aws', 'un client AWS a été construit')
 
 const EXTRACT_PIECE: ContratFonction = {
@@ -459,10 +487,46 @@ const EXTRACT_PIECE: ContratFonction = {
       attendu: { statut: 401, refusEnFrancais: true, aucuneDepense: true, corpsNonLu: true },
     },
     {
-      nom: 'plus de 10 Mo : refusé avant AWS',
+      nom: 'plus de 10 Mo : refusé avant AWS (413)',
       preparer: (m) => lecture(m),
-      requete: (s) => requeteDe(s, { personne: 'chef', corpsBrut: new Uint8Array(10 * 1024 * 1024 + 1) }),
-      attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true, verifier: sansClientAws },
+      requete: (s) => requeteDe(s, { personne: 'chef', corpsBrut: new Uint8Array(BORNE_DE_LA_LECTURE + 1) }),
+      attendu: { statut: 413, refusEnFrancais: true, aucuneDepense: true, verifier: sansClientAws },
+    },
+    {
+      nom: 'un Content-Length qui annonce plus de 10 Mo : 413, corps non lu, avant AWS',
+      preparer: (m) => lecture(m),
+      requete: (s) => requeteAuFlux(s, 64 * MORCEAU_DU_FLUX, { 'Content-Length': String(BORNE_DE_LA_LECTURE + 1) }),
+      attendu: {
+        statut: 413, refusEnFrancais: true, aucuneDepense: true, corpsNonLu: true,
+        verifier: (r, m) => [...sansClientAws(r, m), ...refusDuCorpsTropGros(0)(r)],
+      },
+    },
+    {
+      nom: 'un flux de 64 Mo sans Content-Length : abandonné à la borne, 413, avant AWS',
+      preparer: (m) => lecture(m),
+      requete: (s) => requeteAuFlux(s, 64 * MORCEAU_DU_FLUX),
+      attendu: {
+        statut: 413, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (r, m) => [...sansClientAws(r, m), ...refusDuCorpsTropGros(BORNE_DE_LA_LECTURE + 2 * MORCEAU_DU_FLUX)(r)],
+      },
+    },
+    {
+      nom: 'un Content-Length qui ment (1 octet annoncé, 64 Mo envoyés) : abandonné à la borne, 413, avant AWS',
+      preparer: (m) => lecture(m),
+      requete: (s) => requeteAuFlux(s, 64 * MORCEAU_DU_FLUX, { 'Content-Length': '1' }),
+      attendu: {
+        statut: 413, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (r, m) => [...sansClientAws(r, m), ...refusDuCorpsTropGros(BORNE_DE_LA_LECTURE + 2 * MORCEAU_DU_FLUX)(r)],
+      },
+    },
+    {
+      nom: 'exactement 10 Mo, par le flux : lu en entier, et la lecture part chez AWS',
+      preparer: (m) => lecture(m),
+      requete: (s) => requeteAuFlux(s, BORNE_DE_LA_LECTURE),
+      attendu: {
+        statut: 200, depenses: ['AWS textract DetectDocumentText', 'modèle'],
+        verifier: () => (fluxTire.octets === BORNE_DE_LA_LECTURE ? [] : [`${fluxTire.octets} octets tirés`]),
+      },
     },
     {
       nom: 'une image : Textract puis le modèle, et le tiers cité revient à l’écran',
@@ -4955,10 +5019,15 @@ function droitsEnPanne(corps: unknown, preparer: (m: Monde) => void): Scenario {
   }
 }
 
-/** Une facture VALIDÉE du dossier, émetteur figé et une ligne, et le statut de TVA de son dossier : de quoi la transmettre. */
+/**
+ * Une facture VALIDÉE du dossier, émetteur figé et une ligne, et le statut de TVA de son dossier : de quoi la transmettre.
+ * Une facture d'avant A7a, comme la base la rend (`mentions_figees` NOT NULL, faux ; la dénomination figée nulle).
+ */
 const FACTURE = 'fa000000-0000-4000-8000-00000000000a'
+/** Les colonnes d'A7a d'une facture d'avant, comme la base les rend. */
+const D_AVANT_A7A = Object.freeze({ mentions_figees: false, denomination_imprimee: null })
 function factureValidee(m: Monde, valeurs: Record<string, unknown> = {}) {
-  m.base.factures_emises = [{ ...factureEnBase([ligneDeFacture()], { id: FACTURE, dossier_id: D }), ...valeurs }]
+  m.base.factures_emises = [{ ...factureEnBase([ligneDeFacture()], { id: FACTURE, dossier_id: D }), ...D_AVANT_A7A, ...valeurs }]
   m.base.facture_lignes = [{ id: identifiantGenere(), facture_id: FACTURE, ...ligneDeFacture() }]
   const dossier = lignes(m, 'dossiers').find((d) => d.id === D)
   if (!dossier) throw new Error('le monde de référence a perdu son dossier')
@@ -5100,6 +5169,46 @@ const SUPERPDP_CREDENTIALS: ContratFonction = {
   ],
 }
 
+// L'IDENTIFIANT RENDU PAR SUPER PDP (relecture adverse de sécurité des Edge Functions, 27/11/2026) : la liste rend, à côté de la
+// facture 7, des identifiants qui ne sont pas des entiers exacts — un chemin, une requête, un décimal, un entier trop grand pour
+// se relire, rien. Ils ne partent ni dans une adresse ni dans un chemin du stockage : écartés et comptés, leur valeur jamais au
+// journal ni dans la réponse (les marqueurs, cherchés par morceaux de huit caractères).
+const ID_CHEMIN = '../../v1.beta/marqueur-chemin-vorquel'
+const ID_REQUETE = '7?marqueur-requete-vorquel=1'
+const IDENTIFIANTS_ILLISIBLES: readonly unknown[] = [ID_CHEMIN, ID_REQUETE, 1.5, 2 ** 53, null, '8']
+function superPdpQuiRendDesIdentifiantsIllisibles(m: Monde, options: { pageSuivante?: true } = {}) {
+  identifiantsSuperPdp(m); superPdp(m)
+  m.sensibles.push(ID_CHEMIN, ID_REQUETE)
+  const suite = m.hotes['api.superpdp.tech']
+  m.hotes['api.superpdp.tech'] = async (requete) => {
+    if (requete.method === 'GET' && new URL(requete.url).pathname === '/v1.beta/invoices') {
+      const data = [{ id: 7, direction: 'in' }, ...IDENTIFIANTS_ILLISIBLES.map((id) => ({ id, direction: 'in' }))]
+      // La page suivante demandée après le DERNIER identifiant de la page : illisible, elle ne se demande pas.
+      return Response.json({ data: options.pageSuivante ? [...data, { id: ID_CHEMIN, direction: 'out' }] : data, has_after: options.pageSuivante === true })
+    }
+    return suite(requete)
+  }
+}
+const DEPENSES_DE_LA_FACTURE_7 = [
+  'réseau POST api.superpdp.tech/oauth2/token', 'réseau GET api.superpdp.tech/v1.beta/invoices',
+  'réseau GET api.superpdp.tech/v1.beta/invoices/7', 'stockage upload pieces', 'écriture insert pieces',
+]
+/** La facture 7 importée seule, les autres écartées et comptées, au chemin de son seul identifiant. */
+const septSeuleImportee = (ecartees: number) => (r: Resultat, m: Monde): string[] => {
+  const corps = corpsDe(r)
+  const fautes: string[] = []
+  if (corps.importees !== 1) fautes.push(`importées : ${String(corps.importees)}`)
+  if (corps.ecartees !== ecartees) fautes.push(`écartées : ${String(corps.ecartees)}, attendu ${ecartees}`)
+  if (!(corps.erreurs as unknown[] | undefined)?.some((e) => String(e).startsWith(`${ecartees} facture(s) rendue(s) par Super PDP sans identifiant lisible`))) {
+    fautes.push(`l’écart ne se dit pas : ${r.texte}`)
+  }
+  const pieces = lignes(m, 'pieces')
+  if (pieces.length !== 1 || pieces[0].superpdp_invoice_id !== 7 || pieces[0].storage_path !== `${D}/superpdp-7.txt`) {
+    fautes.push(`pièces écrites : ${JSON.stringify(pieces.map((p) => [p.superpdp_invoice_id, p.storage_path]))}`)
+  }
+  return fautes
+}
+
 const SUPERPDP_SYNC: ContratFonction = {
   slug: 'superpdp-sync',
   navigateur: true,
@@ -5136,6 +5245,18 @@ const SUPERPDP_SYNC: ContratFonction = {
           return corpsDe(r).importees === 1 && piece?.statut === 'a_valider' && piece.superpdp_invoice_id === 7 ? [] : [r.texte]
         },
       },
+    },
+    {
+      nom: 'des identifiants illisibles dans la liste : écartés et comptés, ni adresse ni chemin, la facture 7 seule importée',
+      preparer: (m) => superPdpQuiRendDesIdentifiantsIllisibles(m),
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { dossierId: D } }),
+      attendu: { statut: 200, depenses: DEPENSES_DE_LA_FACTURE_7, verifier: septSeuleImportee(IDENTIFIANTS_ILLISIBLES.length) },
+    },
+    {
+      nom: 'un dernier identifiant illisible : la page suivante ne se demande pas',
+      preparer: (m) => superPdpQuiRendDesIdentifiantsIllisibles(m, { pageSuivante: true }),
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: { dossierId: D } }),
+      attendu: { statut: 200, depenses: DEPENSES_DE_LA_FACTURE_7, verifier: septSeuleImportee(IDENTIFIANTS_ILLISIBLES.length + 1) },
     },
     {
       nom: 'les factures déjà importées illisibles : 503, rien d’importé',
@@ -5316,6 +5437,144 @@ const expediteurEtObjetSains = (nomAttendu: string) => (_r: Resultat, m: Monde):
 }
 const ENVOI_JOURNALISE = ['Resend envoyer', 'écriture insert emails_envoyes', 'écriture update factures_emises']
 
+// LE NOM QUE LA FACTURE IMPRIME ET LA FACTURE QU'UN AVOIR CORRIGE (FACT-Q2 (B) et FACT-Q3 (B), réponses du cabinet du
+// 27/11/2026). L'e-mail d'une facture figée — objet, signature, expéditeur — dit la dénomination figée à sa validation, celle
+// que l'aperçu imprime (`ceQueLaFactureImprime`), jamais le nom interne du dossier qu'`emetteur_nom` recopie ; une facture
+// d'avant, son `emetteur_nom` ; un drapeau illisible, rien ne part. L'e-mail de tout avoir cite la facture qu'il corrige, lue
+// en base par l'identifiant que l'avoir porte ET le dossier de la requête.
+const NOM_INTERNE = 'kine-dossier-interne'
+const DENOMINATION_FIGEE = 'Cabinet de kinésithérapie Démo EI'
+
+/** L'e-mail parti sous `nom` : l'expéditeur (entre guillemets), l'objet, la signature ; jamais `interdit` nulle part. */
+const emailSousLeNom = (nom: string, objet: string, interdit: string) => (_r: Resultat, m: Monde): string[] => {
+  const envois = (m.notes.envois ?? []) as { from?: unknown; subject?: unknown; html?: unknown }[]
+  if (envois.length !== 1) return [`${envois.length} envoi(s)`]
+  const fautes: string[] = []
+  const attendu = `"${nom}" <contact@precompta.jdarnis.fr>`
+  if (envois[0].from !== attendu) fautes.push(`expéditeur : ${JSON.stringify(envois[0].from)} — attendu ${JSON.stringify(attendu)}`)
+  if (envois[0].subject !== objet) fautes.push(`objet : ${JSON.stringify(envois[0].subject)} — attendu ${JSON.stringify(objet)}`)
+  if (!String(envois[0].html).includes(`Cordialement,<br>${nom}</p>`)) fautes.push(`la signature ne dit pas « ${nom} »`)
+  if ([envois[0].from, envois[0].subject, envois[0].html].some((x) => String(x).includes(interdit))) fautes.push(`l’e-mail nomme « ${interdit} »`)
+  const journal = lignes(m, 'emails_envoyes')
+  if (journal.length !== 1 || journal[0].objet !== objet) fautes.push(`objet journalisé : ${JSON.stringify(journal.map((e) => e.objet))}`)
+  return fautes
+}
+
+/** La facture F2026-0001 que l'avoir corrige, en base sous cet identifiant. */
+const FACTURE_CORRIGEE = 'fa000000-0000-4000-8000-0000000000c1'
+/** L'avoir A2026-0001 qui crédite la facture F2026-0001 (une facture ordinaire, sans acompte), et elle en base. */
+function avoirDUneFacture(m: Monde, corrigee: Record<string, unknown> = {}) {
+  resendQuiGarde(m); factureValidee(m)
+  const credit = ligneDeFacture({ designation: 'Séance fictive annulée', quantite: -1 })
+  m.base.factures_emises = [
+    {
+      ...factureEnBase([credit], {
+        id: FACTURE, dossier_id: D, numero: 'A2026-0001', type: 'avoir', facture_origine_id: FACTURE_CORRIGEE, date_echeance: null,
+      }),
+      ...D_AVANT_A7A,
+    },
+    {
+      ...factureEnBase([ligneDeFacture()], { id: FACTURE_CORRIGEE, dossier_id: D, numero: 'F2026-0001', date_emission: '2026-09-01' }),
+      ...D_AVANT_A7A, ...corrigee,
+    },
+  ]
+  m.base.facture_lignes = [{ id: identifiantGenere(), facture_id: FACTURE, ...credit }]
+}
+
+const SCENARIOS_DU_NOM_ET_DE_L_AVOIR: readonly Scenario[] = [
+  ...(['chef', 'client'] as const).map((personne): Scenario => ({
+    nom: `${personne === 'chef' ? 'le cabinet' : 'client « Ventes »'} : l’e-mail d’une facture figée part sous sa dénomination figée — objet, signature, expéditeur (FACT-Q2)`,
+    preparer: (m) => {
+      resendQuiGarde(m)
+      factureValidee(m, { mentions_figees: true, denomination_imprimee: DENOMINATION_FIGEE, emetteur_nom: NOM_INTERNE })
+      if (personne === 'client') accesDuClient({ ventes: true })(m)
+    },
+    requete: (s) => requeteDe(s, { personne, corps: ENVOI_FACTURE }),
+    attendu: {
+      statut: 200, depenses: ENVOI_JOURNALISE,
+      verifier: emailSousLeNom(DENOMINATION_FIGEE, `Facture F2026-0001 — ${DENOMINATION_FIGEE}`, NOM_INTERNE),
+    },
+  })),
+  {
+    nom: 'une facture figée sans dénomination (blanche) : son emetteur_nom, comme l’aperçu l’imprime (FACT-Q2)',
+    preparer: (m) => { resendQuiGarde(m); factureValidee(m, { mentions_figees: true, denomination_imprimee: '  ', emetteur_nom: NOM_INTERNE }) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+    attendu: { statut: 200, depenses: ENVOI_JOURNALISE, verifier: emailSousLeNom(NOM_INTERNE, `Facture F2026-0001 — ${NOM_INTERNE}`, DENOMINATION_FIGEE) },
+  },
+  {
+    nom: 'une facture d’avant : son emetteur_nom, même si une dénomination traîne dans sa ligne (FACT-Q2)',
+    preparer: (m) => { resendQuiGarde(m); factureValidee(m, { mentions_figees: false, denomination_imprimee: DENOMINATION_FIGEE, emetteur_nom: NOM_INTERNE }) },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+    attendu: { statut: 200, depenses: ENVOI_JOURNALISE, verifier: emailSousLeNom(NOM_INTERNE, `Facture F2026-0001 — ${NOM_INTERNE}`, DENOMINATION_FIGEE) },
+  },
+  {
+    nom: 'client « Ventes » : une dénomination figée à virgule, guillemets, adresse et retour à la ligne part en UNE boîte (FACT-Q2)',
+    preparer: (m) => {
+      resendQuiGarde(m); factureValidee(m, { mentions_figees: true, denomination_imprimee: NOM_QUI_STRUCTURERAIT_L_EN_TETE }); accesDuClient({ ventes: true })(m)
+    },
+    requete: (s) => requeteDe(s, { personne: 'client', corps: ENVOI_FACTURE }),
+    attendu: { statut: 200, depenses: ENVOI_JOURNALISE, verifier: expediteurEtObjetSains(NOM_AFFICHE_ATTENDU) },
+  },
+  {
+    nom: 'le drapeau des mentions figées non rendu : 503 qui le dit, rien d’envoyé (FACT-Q2)',
+    preparer: (m) => { resendQuiGarde(m); factureValidee(m); for (const f of lignes(m, 'factures_emises')) delete f.mentions_figees },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+    attendu: {
+      statut: 503, refusEnFrancais: true, aucuneDepense: true,
+      verifier: (r) => (/Le nom que la facture imprime pour son émetteur n'a pas pu être lu/.test(String(corpsDe(r).error)) ? [] : [r.texte]),
+    },
+  },
+  {
+    nom: 'un avoir : il cite la facture qu’il corrige, dans l’objet et le corps (FACT-Q3)',
+    preparer: (m) => avoirDUneFacture(m),
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+    attendu: {
+      statut: 200, depenses: ENVOI_JOURNALISE,
+      verifier: (r, m) => {
+        const objet = 'Avoir A2026-0001 sur la facture F2026-0001 — Atelier Démo Conseil'
+        const envois = (m.notes.envois ?? []) as { subject?: unknown; html?: unknown }[]
+        const fautes: string[] = envois.length === 1 ? [] : [`${envois.length} envoi(s)`]
+        if (envois[0]?.subject !== objet) fautes.push(`objet : ${String(envois[0]?.subject)}`)
+        const phrase = "l'avoir <strong>A2026-0001</strong>, émis le 15/09/2026, qui crédite la facture <strong>F2026-0001</strong>."
+        if (!String(envois[0]?.html).includes(phrase)) fautes.push(`le corps ne dit pas « ${phrase} »`)
+        if (String(envois[0]?.html).includes("d'acompte")) fautes.push('le corps dit « d’acompte » d’une facture qui n’en est pas une')
+        const journal = lignes(m, 'emails_envoyes')
+        if (journal.length !== 1 || journal[0].objet !== objet) fautes.push(`objet journalisé : ${JSON.stringify(journal.map((e) => e.objet))}`)
+        return r.statut === 200 ? fautes : [r.texte, ...fautes]
+      },
+    },
+  },
+  {
+    nom: 'un avoir dont la facture corrigée est d’un autre dossier : 503, jamais le numéro d’une facture d’ailleurs (FACT-Q3)',
+    preparer: (m) => avoirDUneFacture(m, { dossier_id: ID.dossierVoisin, numero: 'F-VOISIN-0099' }),
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+    attendu: {
+      statut: 503, refusEnFrancais: true, aucuneDepense: true,
+      verifier: (r) => (/la facture que l'avoir corrige n'a pas pu être lue/.test(String(corpsDe(r).error)) && !r.texte.includes('F-VOISIN') ? [] : [r.texte]),
+    },
+  },
+  {
+    nom: 'un avoir dont la facture corrigée ne se lit pas (erreur de la base) : 503 qui le dit, rien d’envoyé (FACT-Q3)',
+    preparer: (m) => {
+      avoirDUneFacture(m)
+      // La quatrième lecture de la table : la facture, la marque d'acompte, celle de la facture corrigée (gardée), puis son
+      // numéro — celle de FACT-Q3.
+      m.pannes.push({ table: 'factures_emises', operation: 'select', sauter: 3, erreur: { message: 'délai dépassé' } })
+    },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+    attendu: {
+      statut: 503, refusEnFrancais: true, aucuneDepense: true,
+      verifier: (r) => (/^L'e-mail d'un avoir cite la facture qu'il corrige, et la facture que l'avoir corrige n'a pas pu être lue \(délai dépassé\)/.test(String(corpsDe(r).error)) ? [] : [r.texte]),
+    },
+  },
+  {
+    nom: 'un avoir dont la facture corrigée n’a pas de numéro lisible : 503, rien d’envoyé (FACT-Q3)',
+    preparer: (m) => avoirDUneFacture(m, { numero: null }),
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: ENVOI_FACTURE }),
+    attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true },
+  },
+]
+
 // L'ENVOI D'UN DEVIS (étape P6c2). `send-email` ne se déploie qu'APRÈS la migration préparée `envoi_des_devis` : chaque
 // monde des devis lève `schemaPrepare`, la base du jour de son application (la table `devis`, `emails_envoyes.devis_id`
 // et sa clé, tirés du texte préparé). Le devis porte ce que l'e-mail ne doit jamais montrer — ses notes, l'adresse du
@@ -5463,6 +5722,22 @@ const relanceRefusee = (nom: string, statut: number, preparer: (m: Monde) => voi
 })
 
 export const SCENARIOS_RELANCES: readonly Scenario[] = [
+  // FACT-Q2 (B) : la relance d'une facture figée nomme ce que la facture imprime, comme son e-mail.
+  {
+    nom: 'la relance d’une facture figée part sous sa dénomination figée — objet, signature, expéditeur (FACT-Q2)',
+    preparer: (m) => factureEnRetard(m, { mentions_figees: true, denomination_imprimee: DENOMINATION_FIGEE, emetteur_nom: NOM_INTERNE }),
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_FACTURE }),
+    attendu: {
+      statut: 200, depenses: ENVOI_RELANCE_JOURNALISE,
+      verifier: emailSousLeNom(DENOMINATION_FIGEE, `Relance — facture F2026-0001 — ${DENOMINATION_FIGEE}`, NOM_INTERNE),
+    },
+  },
+  {
+    nom: 'la relance d’une facture dont le drapeau des mentions figées n’est pas rendu : 503, rien d’envoyé (FACT-Q2)',
+    preparer: (m) => { factureEnRetard(m); for (const f of lignes(m, 'factures_emises')) delete f.mentions_figees },
+    requete: (s) => requeteDe(s, { personne: 'chef', corps: RELANCE_FACTURE }),
+    attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true },
+  },
   ...matriceDesDroits({ relance_facture: QUI_PEUT_QUOI_ATTENDU['send-email'].relance_facture }, {
     relance_facture: {
       corps: RELANCE_FACTURE, preparer: (m) => factureEnRetard(m),
@@ -5973,6 +6248,7 @@ const SEND_EMAIL: ContratFonction = {
         verifier: expediteurEtObjetSains('Votre cabinet comptable'),
       },
     },
+    ...SCENARIOS_DU_NOM_ET_DE_L_AVOIR,
     ...corpsMalFormes('chef', ['dossierId', 'type', 'destinataire', 'devisId']),
   ],
 }
@@ -6859,10 +7135,10 @@ function finaleEnBase(m: Monde, repris: Record<string, unknown> = {}) {
   const mission = ligneDeFacture({ ordre: 1, designation: 'Mission fictive', prix_unitaire_ht: 1000 })
   const reprise = ligneDeFacture({ ordre: 2, designation: 'Reprise de l’acompte F2026-0001 du 01/09/2026', quantite: -1, prix_unitaire_ht: 300 })
   m.base.factures_emises = [
-    { ...factureEnBase([mission, reprise], { id: FACTURE, dossier_id: D, numero: 'F2026-0002' }), acompte: false, date_versement_acompte: null },
+    { ...factureEnBase([mission, reprise], { id: FACTURE, dossier_id: D, numero: 'F2026-0002' }), acompte: false, date_versement_acompte: null, ...D_AVANT_A7A },
     {
       ...factureEnBase([ligneDeFacture({ prix_unitaire_ht: 300 })], { id: ACOMPTE_REPRIS, dossier_id: D, numero: 'F2026-0001', date_emission: '2026-09-01' }),
-      acompte: true, date_versement_acompte: null, ...repris,
+      acompte: true, date_versement_acompte: null, ...D_AVANT_A7A, ...repris,
     },
   ]
   m.base.facture_lignes = [
@@ -6880,11 +7156,11 @@ function avoirDUnAcompte(m: Monde) {
       ...factureEnBase([credit], {
         id: FACTURE, dossier_id: D, numero: 'A2026-0001', type: 'avoir', facture_origine_id: ACOMPTE_REPRIS, date_echeance: null,
       }),
-      acompte: false, date_versement_acompte: null,
+      acompte: false, date_versement_acompte: null, ...D_AVANT_A7A,
     },
     {
       ...factureEnBase([ligneDeFacture({ prix_unitaire_ht: 300 })], { id: ACOMPTE_REPRIS, dossier_id: D, numero: 'F2026-0001', date_emission: '2026-09-01' }),
-      acompte: true, date_versement_acompte: null,
+      acompte: true, date_versement_acompte: null, ...D_AVANT_A7A,
     },
   ]
   m.base.facture_lignes = [{ id: identifiantGenere(), facture_id: FACTURE, ...credit, reprise_facture_id: null }]

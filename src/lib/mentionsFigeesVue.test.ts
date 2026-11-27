@@ -260,6 +260,19 @@ describe('la phrase de retard de la mention proposée, et le refus d’une factu
     ({ etat: 'lu', identite: identiteDuDossier(), versions: [versionParametres({ id: 'v1', penalites })] })
   const PENALITES = 'Pénalités : trois fois le taux d’intérêt légal.'
 
+  // FACT-Q1 (B), 27/11/2026 : un particulier ne se voit jamais proposer les pénalités des professionnels (C. com., art. L441-10
+  // et D441-5), que les paramètres soient lus, illisibles, absents ou d'un autre dossier.
+  it('inutile pour un particulier, quelle que soit la lecture des paramètres (FACT-Q1)', () => {
+    expect(sansPhraseDeRetard(null, 'd1', 'non_assujetti')).toBe(true)
+    expect(sansPhraseDeRetard({ etat: 'illisible', motif: 'x' }, 'd1', 'non_assujetti')).toBe(true)
+    expect(sansPhraseDeRetard({ etat: 'lu', identite: identiteDuDossier(), versions: [] }, 'd1', 'non_assujetti')).toBe(true)
+    expect(sansPhraseDeRetard(avec(PENALITES), 'd2', 'non_assujetti')).toBe(true)
+    // Un professionnel ou un client « à préciser » sans paramètres : la phrase d'hier reste.
+    expect(sansPhraseDeRetard(null, 'd1', 'assujetti')).toBe(false)
+    expect(sansPhraseDeRetard(null, 'd1', '')).toBe(false)
+    expect(sansPhraseDeRetard({ etat: 'lu', identite: identiteDuDossier(), versions: [] }, 'd1', 'organisme_public')).toBe(false)
+  })
+
   it('inutile : des paramètres en vigueur, et un particulier, ou un professionnel avec leur texte des pénalités', () => {
     expect(sansPhraseDeRetard(avec(null), 'd1', 'non_assujetti')).toBe(true)
     expect(sansPhraseDeRetard(avec(PENALITES), 'd1', 'assujetti')).toBe(true)
@@ -271,8 +284,8 @@ describe('la phrase de retard de la mention proposée, et le refus d’une factu
     expect(sansPhraseDeRetard(avec('   '), 'd1', 'assujetti')).toBe(false)
     expect(sansPhraseDeRetard(avec(PENALITES), 'd1', '')).toBe(false)
     expect(sansPhraseDeRetard(avec(PENALITES), 'd1', 'etranger')).toBe(false)
-    expect(sansPhraseDeRetard(null, 'd1', 'non_assujetti')).toBe(false)
-    expect(sansPhraseDeRetard({ etat: 'illisible', motif: 'x' }, 'd1', 'non_assujetti')).toBe(false)
+    expect(sansPhraseDeRetard(null, 'd1', 'assujetti')).toBe(false)
+    expect(sansPhraseDeRetard({ etat: 'illisible', motif: 'x' }, 'd1', 'assujetti')).toBe(false)
     expect(sansPhraseDeRetard(avec(PENALITES), 'd2', 'assujetti')).toBe(false)
     const rompue: LectureDeLaValidation = { etat: 'lu', identite: identiteDuDossier(), versions: [versionParametres({ id: 'v1', penalites: PENALITES }), versionParametres({ id: 'v2', penalites: PENALITES })] }
     expect(sansPhraseDeRetard(rompue, 'd1', 'assujetti')).toBe(false)
