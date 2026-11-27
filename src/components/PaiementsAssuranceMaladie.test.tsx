@@ -4,7 +4,7 @@ import PaiementsAssuranceMaladie from './PaiementsAssuranceMaladie'
 import { REFUS_DE_LA_FONCTION, refusDuConflit } from '../lib/paiementsAssuranceMaladie'
 import { phraseApresLImport } from '../lib/paiementsAssuranceMaladieVue'
 import { refusDuRetraitDImportDit } from '../lib/associationsAssuranceMaladieVue'
-import { refusDeLaJourneeAssocieeDit } from '../lib/remplacementDesJourneesAssuranceMaladie'
+import { REFUS_DU_REMPLACEMENT, refusDeLaJourneeAssocieeDit } from '../lib/remplacementDesJourneesAssuranceMaladie'
 import type { PaiementsLus } from '../lib/paiementsAssuranceMaladieLecture'
 import type { ImportAssuranceMaladie, PaiementAssuranceMaladie, RemplacementAssuranceMaladie } from '../lib/types'
 
@@ -21,6 +21,8 @@ const faux = vi.hoisted(() => ({
   lectures: 0,
   appels: [] as { nom: string; args: Record<string, unknown> }[],
   retenir: [] as (() => void)[],
+  // La réponse que rend la base au prochain appel (un refus, pour l'éprouver).
+  erreur: null as { message: string; code: string } | null,
 }))
 
 vi.mock('../lib/paiementsAssuranceMaladie', async (original) => ({
@@ -38,14 +40,15 @@ vi.mock('../lib/supabase', () => ({
   supabase: {
     rpc: (nom: string, args: Record<string, unknown>) => {
       faux.appels.push({ nom, args })
-      return new Promise((r) => { faux.retenir.push(() => r({ data: {}, error: null })) })
+      const erreur = faux.erreur
+      return new Promise((r) => { faux.retenir.push(() => r(erreur ? { data: null, error: erreur } : { data: {}, error: null })) })
     },
   },
 }))
 
 beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-17T10:00:00Z')) })
 afterAll(() => { vi.useRealTimers() })
-afterEach(() => { faux.drapeau = true; faux.remplacement = false; faux.lecture = null; faux.lectures = 0; faux.appels = []; faux.retenir = [] })
+afterEach(() => { faux.drapeau = true; faux.remplacement = false; faux.lecture = null; faux.lectures = 0; faux.appels = []; faux.retenir = []; faux.erreur = null })
 
 const lue = <T,>(lignes: T[], complete = true) => ({ lignes, complete, motif: complete ? null : 'lecture interrompue' })
 const lus = (paiements: PaiementAssuranceMaladie[] = [], complete = true): PaiementsLus =>
@@ -249,8 +252,8 @@ describe('le remplacement d’une journée, à l’écran (NOE4R-Q2)', () => {
     caisse: 691, organisme_complementaire: null, part: 'obligatoire', montant_centimes: 9999, regularisations_centimes: 0, nombre_de_factures: 2 }
   const IMPORT_EN_BASE: ImportAssuranceMaladie = { id: 'i1', dossier_id: 'd1', periode_du: '2026-11-02', periode_au: '2026-11-02',
     nombre_de_rejets: 0, montant_rejete_centimes: 0, importe_par: 'u1', importe_le: '2026-11-04T09:00:00Z' }
-  const avecLaBase = (associes: string[] = [], remplacements: RemplacementAssuranceMaladie[] = [], completes = true): PaiementsLus => ({
-    dossierId: 'd1', etat: 'lus', imports: lue([IMPORT_EN_BASE]), paiements: lue([EN_BASE]),
+  const avecLaBase = (associes: string[] = [], remplacements: RemplacementAssuranceMaladie[] = [], completes = true, montant = 9999): PaiementsLus => ({
+    dossierId: 'd1', etat: 'lus', imports: lue([IMPORT_EN_BASE]), paiements: lue([{ ...EN_BASE, montant_centimes: montant }]),
     associations: lue(associes.map((p, i) => ({ id: `a${i}`, dossier_id: 'd1', paiement_id: p, ligne_bancaire_id: `m${i}`, associe_par: 'u1', associe_le: '2026-11-05T09:00:00Z' }))),
     remplacements: lue(remplacements, completes),
   })
@@ -284,6 +287,27 @@ describe('le remplacement d’une journée, à l’écran (NOE4R-Q2)', () => {
     }])
     await act(async () => { faux.retenir.forEach((r) => r()) })
     expect(await screen.findByText(phraseApresLImport('client'))).toBeTruthy()
+  })
+
+  it('un refus de la base au clic (la version a changé) : il se dit, la section relit, et la confirmation donnée sur l’ancien aperçu tombe', async () => {
+    faux.remplacement = true
+    faux.lecture = avecLaBase()
+    render(<PaiementsAssuranceMaladie espace="cabinet" dossierId="d1" codeNaf="86.90D" />)
+    await ouvrirEtDeposer()
+    regler()
+    fireEvent.click(screen.getByRole('button', { name: 'Remplacer la journée et importer' }))
+    faux.erreur = { message: REFUS_DU_REMPLACEMENT.change, code: '22023' }
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Confirmer le remplacement' })) })
+    // Entre la lecture et le clic, un autre geste a changé la journée : la base en porte désormais un autre montant.
+    faux.lecture = avecLaBase([], [], true, 8888)
+    const avant = faux.lectures
+    await act(async () => { faux.retenir.forEach((r) => r()) })
+    expect(await within(fenetre()).findByText(REFUS_DU_REMPLACEMENT.change)).toBeTruthy()
+    expect(faux.lectures).toBe(avant + 1)
+    expect(lisible(within(fenetre()).getByRole('list', { name: 'Journées à remplacer' }).textContent)).toContain('88,88 € en base')
+    expect(within(fenetre()).queryByRole('status')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Confirmer le remplacement' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Remplacer la journée et importer' })).toBeTruthy()
   })
 
   it('une journée associée à un crédit du relevé : le refus se dit avant le clic, dans les deux espaces, et rien ne part', async () => {

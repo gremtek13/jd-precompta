@@ -364,7 +364,10 @@ préparées, à coller dans cet ordre ; le récit : HISTORIQUE.md, « 27/11/2026
   paiement ». La base ne connaît pas l'étendue de l'export, seulement les journées de ses paiements : la nouvelle période dit ce qui
   est su.
 - **Les imports d'avant** gardent la période qu'ils ont reçue (la garde de NOE3 refuse toute réécriture) ; aucun import réel n'est fait
-  au 27/11/2026. Avant le collage, une lecture les compte (le récit en donne la requête).
+  au 27/11/2026. Avant le collage, une lecture les compte — un nombre, rien d'autre :
+  `select count(*) from imports_assurance_maladie i where i.periode_du is distinct from (select min(p.date_journee_comptable) from
+  paiements_assurance_maladie p where p.import_id = i.id) or i.periode_au is distinct from (select max(p.date_journee_comptable) from
+  paiements_assurance_maladie p where p.import_id = i.id)` ; non nul, chacun se retire et se refait sous la règle nouvelle.
 - **La base et le module.** Un `create or replace` du corps, sa garde de tête vérifiant l'empreinte d'hier (`62b9f0f6…`,
   `remplacementsDesPreparees.test.ts`) ; même signature, mêmes droits, mêmes refus sous les mêmes mots. Le module :
   `paiementsInseres`, `periodeDeLImport` (`lib/paiementsAssuranceMaladie.ts`), confrontés au texte de la migration par

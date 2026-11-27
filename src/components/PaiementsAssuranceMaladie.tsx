@@ -132,6 +132,9 @@ function Section({ espace, dossierId, lecture, children }: {
         : await supabase.rpc('remplacer_journees_assurance_maladie', { p_dossier_id: dossierId, p_import: imp, p_paiements_lus: [...paiementsLus] })
       if (error) {
         setErreur(pourLEspace(espace, messageErreur(error, 'L’import n’a pas pu se faire.')))
+        // Un refus du remplacement dit souvent que la base a bougé depuis la lecture (la version, une association) : la
+        // relecture refait l'aperçu sur ce qu'elle porte, et une confirmation donnée sur l'ancien ne vaut plus (sa signature).
+        if (paiementsLus !== null) await relire()
         return
       }
       setFenetre(false)
@@ -386,7 +389,9 @@ function FenetreDImport({ espace, enBase, associes, occupe, erreur, onImporter, 
   const [separateur, setSeparateur] = useState<Separateur>(';')
   const [enTete, setEnTete] = useState(true)
   const [reglage, setReglage] = useState<ReglageRetenu | null>(null)
-  const [aConfirmer, setAConfirmer] = useState(false)
+  // La confirmation, retenue avec la signature de ce qu'elle a nommé : un aperçu qui change ensuite (une relecture après un
+  // refus, NOE4R-Q2) la fait tomber, et rien ne part sur des chiffres que la confirmation n'a pas dits.
+  const [aConfirmer, setAConfirmer] = useState<string | null>(null)
   const dernierChoix = useRef(0)
 
   async function choisir(e: ChangeEvent<HTMLInputElement>) {
@@ -395,7 +400,7 @@ function FenetreDImport({ espace, enBase, associes, occupe, erreur, onImporter, 
     const jeton = ++dernierChoix.current
     setFichier(null)
     setReglage(null)
-    setAConfirmer(false)
+    setAConfirmer(null)
     if (!f) return
     const refus = refusDeLaTailleDesPaiements(f.size, espace)
     if (refus) {
@@ -433,7 +438,7 @@ function FenetreDImport({ espace, enBase, associes, occupe, erreur, onImporter, 
   const parts = reglage?.cle === cle ? reglage.parts : reglageVide()
 
   function changer(index: number, change: Partial<ReglageDUnePartALEcran>) {
-    setAConfirmer(false)
+    setAConfirmer(null)
     setReglage({ cle, parts: parts.map((p, i) => (i === index ? { ...p, ...change } : p)) })
   }
   function choisirColonne(index: number, usage: UsageDUneColonne, valeur: string) {
@@ -457,6 +462,10 @@ function FenetreDImport({ espace, enBase, associes, occupe, erreur, onImporter, 
   const journeeAssociee = remplacement?.journees.find((j) => j.associee) ?? null
   const dejaImportes = confrontation?.dejaImportes ?? 0
   const pret = imp !== null && refus === null
+  // Ce que la confirmation nomme : l'import qui part, et, pour un remplacement, la version des journées et leurs totaux.
+  const signature = imp === null ? null : JSON.stringify([imp, remplacement?.paiementsLus ?? null,
+    remplacement?.journees.map((j) => [j.totalEnBase, j.totalApres]) ?? null])
+  const confirme = aConfirmer !== null && aConfirmer === signature
 
   return (
     <div style={overlayStyle}>
@@ -490,14 +499,14 @@ function FenetreDImport({ espace, enBase, associes, occupe, erreur, onImporter, 
                 <label htmlFor="paiements-am-separateur">Séparateur des colonnes</label>
                 <select
                   id="paiements-am-separateur" value={separateur} disabled={occupe}
-                  onChange={(e) => { setAConfirmer(false); setSeparateur(e.target.value as Separateur) }}
+                  onChange={(e) => { setAConfirmer(null); setSeparateur(e.target.value as Separateur) }}
                 >
                   {SEPARATEURS.map((s) => <option key={s} value={s}>{LIBELLES_SEPARATEUR[s]}</option>)}
                 </select>
               </div>
               <div className="field">
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <input type="checkbox" checked={enTete} disabled={occupe} onChange={(e) => { setAConfirmer(false); setEnTete(e.target.checked) }} />
+                  <input type="checkbox" checked={enTete} disabled={occupe} onChange={(e) => { setAConfirmer(null); setEnTete(e.target.checked) }} />
                   La première ligne est un en-tête (les noms des colonnes)
                 </label>
               </div>
@@ -605,7 +614,7 @@ function FenetreDImport({ espace, enBase, associes, occupe, erreur, onImporter, 
           </>
         )}
 
-        {aConfirmer && imp && pret && (
+        {confirme && imp && pret && (
           <p role="status" style={{ marginBottom: 0 }}>
             {remplacement
               ? `${confirmationDuRemplacement(remplacement, espace)} ${confirmationDeLImport(imp, enBase, espace)}`
@@ -616,7 +625,7 @@ function FenetreDImport({ espace, enBase, associes, occupe, erreur, onImporter, 
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12, flexWrap: 'wrap' }}>
           <button type="button" className="btn btn-outline" onClick={onClose} disabled={occupe}>Annuler</button>
-          {aConfirmer && imp && pret ? (
+          {confirme && imp && pret ? (
             <button
               type="button" className="btn btn-primary" disabled={occupe}
               onClick={() => onImporter(imp, remplacement ? remplacement.paiementsLus : null)}
@@ -624,7 +633,7 @@ function FenetreDImport({ espace, enBase, associes, occupe, erreur, onImporter, 
               {occupe ? 'Import…' : remplacement ? 'Confirmer le remplacement' : 'Confirmer l’import'}
             </button>
           ) : (
-            <button type="button" className="btn btn-primary" disabled={occupe || !pret} onClick={() => setAConfirmer(true)}>
+            <button type="button" className="btn btn-primary" disabled={occupe || !pret} onClick={() => setAConfirmer(signature)}>
               {imp && pret
                 ? remplacement
                   ? boutonDuRemplacement(remplacement.journees.length)
