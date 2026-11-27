@@ -634,8 +634,10 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   sources neuves sœurs la tolèrent, `stocks.test.ts`) → « EL2 EN PRODUCTION » ; éprouvée au banc (`ecritures-libres/*`), la pièce citée
   choisie parmi toutes les pièces du dossier lues en entier, « à valider » comprises, comme l'inventaire, l'état et la piste d'audit la
   désignant quel que soit son statut (ELQ8-Q1 (B), 25/11/2026), et la suppression d'une pièce citée dite avant le clic, sous la
-  référence de l'écriture, dans la fiche et la sélection (`lib/pieceCiteeParUneEcritureLibre.ts`, ELQ8Q1-Q1 (A)) → « L'ÉCRITURE LIBRE
-  ÉPROUVÉE DANS UN NAVIGATEUR », « ELQ8Q1-Q1 : LA PIÈCE CITÉE PAR UNE ÉCRITURE LIBRE DITE AVANT LE CLIC » ; EL6 (24/11/2026) : le détail de la Balance et du Bilan marque « écriture libre n° EL… » (`lib/ecrituresLibresDuDetail.ts`), la preuve d'un compte dit leur part et propose leur pièce citée, l'ensemble propose leur relecture, l'assistant nomme leurs lignes par leur numéro et les décrit (`lister_ecritures_libres`, au jeton de l'appelant), jamais libellé, motif ni `compte_lib` ; `agent-comptable` redéployée le 24/11/2026 (v63, au commit `c9912ce3`) → « EL6 : L'ÉCRITURE LIBRE DANS LE DÉTAIL DES COMPTES » ; EL8 (22/11/2026) : la table au plan de sauvegarde, dans `restauration.sql`
+  référence de l'écriture, dans la fiche et la sélection (`lib/pieceCiteeParUneEcritureLibre.ts`, ELQ8Q1-Q1 (A)), toutes les citations
+  d'une pièce dites à la suite (ELQ8Q1-Q2 (A)), et son fichier ne se remplace plus à l'écran, la phrase le disant, côté fermé tant
+  que les citations ne sont pas lues en entier (`remplacementDuFichierRetenu`, RA253-Q3 (A)) → « L'ÉCRITURE LIBRE
+  ÉPROUVÉE DANS UN NAVIGATEUR », « ELQ8Q1-Q1 : LA PIÈCE CITÉE PAR UNE ÉCRITURE LIBRE DITE AVANT LE CLIC », « RA253-Q3, ELQ8Q1-Q2 ET L3-Q3 » ; EL6 (24/11/2026) : le détail de la Balance et du Bilan marque « écriture libre n° EL… » (`lib/ecrituresLibresDuDetail.ts`), la preuve d'un compte dit leur part et propose leur pièce citée, l'ensemble propose leur relecture, l'assistant nomme leurs lignes par leur numéro et les décrit (`lister_ecritures_libres`, au jeton de l'appelant), jamais libellé, motif ni `compte_lib` ; `agent-comptable` redéployée le 24/11/2026 (v63, au commit `c9912ce3`) → « EL6 : L'ÉCRITURE LIBRE DANS LE DÉTAIL DES COMPTES » ; EL8 (22/11/2026) : la table au plan de sauvegarde, dans `restauration.sql`
   et `rls.sql` (LI), derrière le drapeau ; la porte posée en clair (md5 `55ffe78c…`), le tout prouvé sur une réplique égale à la
   production → « EL8 :
   L'ÉCRITURE LIBRE PRÊTE À COLLER » ; EL3 (22/11/2026) en module,
@@ -1286,8 +1288,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   ancien rapprochement se dit en attention (`notes-de-frais-rapprochees`). Une note de B7 approuvée ou remboursée : la section
   du cabinet dit le type de son justificatif (l'exploitant en « Note de frais », un salarié en « Achat », compté à son
   remboursement), proposé d'après la case « Achats » pour une note saisie pour soi, et signale une pièce rangée autrement, sans
-  rien écrire (`lib/notesDeFraisEnComptabilite.ts`, lot L3 ; L3-Q1 à Q3 ouvertes) → « L3 : LA NOTE DU DIRIGEANT AU COMPTE DE
-  L'EXPLOITANT ». **Un compte de charge ou de produit alimente une
+  rien écrire (`lib/notesDeFraisEnComptabilite.ts`, lot L3 ; L3-Q1 à Q3 tranchées (A) le 27/11/2026 : une pièce rangée autrement est
+  aussi une attention de la Vue d'ensemble et des préalables, `justificatifs-de-notes-a-ranger`, par le même calcul, la correction
+  dans la fiche de la pièce) → « L3 : LA NOTE DU DIRIGEANT AU COMPTE DE L'EXPLOITANT », « RA253-Q3, ELQ8Q1-Q2 ET L3-Q3 ». **Un compte de charge ou de produit alimente une
   seule ligne de la 2035 par exercice** : sinon une attention (`comptes-sur-plusieurs-postes`, `lib/unCompteUnPoste.ts`) → « L1 :
   LA NOTE DE FRAIS REMBOURSÉE EN VIREMENT PERSONNEL, ET UN COMPTE POUR UN SEUL POSTE ».
 - **La caisse d'un BNC** (ligne 26.6, MVP-D2) : `lib/caisse.ts` juge les saisies, une caisse bornée par son ouverture ;
