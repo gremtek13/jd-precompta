@@ -83,7 +83,7 @@ export function composition(sources: SourcesDesEcrituresDeVente, mode: ModeCompt
       .filter((e) => e.compte_contrepartie != null).map((e) => [e.id, e.compte_contrepartie as string])),
     exemplaires: sources.exemplaires,
     // Un seul compte bancaire, la banque du rôle (MCB5) : l'écriture d'hier.
-    mode, plan, banques: { cas: 'role', compte: plan.banque },
+    mode, plan, banques: { cas: 'role', compte: plan.banque, connus: null },
   })
 }
 

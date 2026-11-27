@@ -213,7 +213,9 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
   // juste un chiffre de synthèse avec un renvoi.
   // Toute la banque du dossier (MCB5, quatrième partie) : le rôle et le 512 propre de chaque compte bancaire. Des comptes
   // qui ne se savent pas : aucune tendance (elle tairait un compte), et l'écran dit pourquoi.
-  const { banques } = useBanquesDuDossier(dossierId, plan)
+  const { banques, relireLesComptes } = useBanquesDuDossier(dossierId, plan)
+  // Les comptes se relisent avec le brouillon, après lui (relecture adverse du 27/11/2026, lib/useBanquesDuDossier.ts).
+  useEffect(() => { relireLesComptes() }, [ecritures, relireLesComptes])
   const evolutionMensuelle = useMemo(() => {
     const banque = banqueDesLecteurs(plan, banques)
     return banque === null ? null : calculerEvolutionMensuelle(ecritures, NB_MOIS_EVOLUTION, banque)

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ecritureDuMouvement, type MouvementBancaire } from './affectationBanque'
-import { banqueDuMouvement, banquesDuDossier, modeleDuMouvement, planDuMouvement } from './banqueDuMouvement'
+import { banqueDuMouvement, banquesDuDossier, modeleDuMouvement, planDuMouvement, refusDesBanquesDesPaiements } from './banqueDuMouvement'
 import { COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
 import type { CompteDuReleve, LectureDesComptes } from './importParCompte'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT } from './planComptable'
@@ -31,7 +31,7 @@ const mouvement = (m: Partial<MouvementBancaire & { compte_bancaire_id: string |
 describe('les banques du dossier : drapeau baissé ou aucun 512 propre, le plan lui-même', () => {
   it('drapeau baissé (sans_objet) : la banque du rôle, et le même objet plan — l’écriture d’hier, à l’octet près', () => {
     const banques = banquesDuDossier({ etat: 'sans_objet' }, PLAN_DECALE)
-    expect(banques).toEqual({ cas: 'role', compte: '512100' })
+    expect(banques).toEqual({ cas: 'role', compte: '512100', connus: null })
     const p = planDuMouvement(PLAN_DECALE, mouvement({}), banques)
     expect('plan' in p && p.plan).toBe(PLAN_DECALE)
     const t = modeleDeTest('tresorerie')
@@ -43,9 +43,38 @@ describe('les banques du dossier : drapeau baissé ou aucun 512 propre, le plan 
     for (const lecture of [{ etat: 'lus', comptes: [PRINCIPAL] }, { etat: 'lus', comptes: [] },
       { etat: 'lus', comptes: [PRINCIPAL, compte({ id: 'X' })] }] as LectureDesComptes[]) {
       const banques = banquesDuDossier(lecture, PLAN_PAR_DEFAUT)
-      expect(banques).toEqual({ cas: 'role', compte: '512000' })
+      expect(banques).toEqual({ cas: 'role', compte: '512000', connus: new Set(lecture.etat === 'lus' ? lecture.comptes.map((c) => c.id) : []) })
       expect(banqueDuMouvement(mouvement({ compte_bancaire_id: null }), banques)).toEqual({ compte: '512000' })
     }
+  })
+})
+
+// LA BANQUE D'UN COMPTE QUE LA LECTURE NE CONNAÎT PAS (relecture adverse du 27/11/2026) : les écrans lisaient les comptes une
+// fois au montage et le relevé à chaque relecture. Un compte créé ailleurs entre-temps (un relevé importé sous un second compte,
+// dans une autre session) portait déjà des mouvements que la lecture des comptes ne rendait pas ; quand aucun compte lu ne
+// tenait son 512, le mode `role` les écrivait au 512 du rôle — et la contrepartie d'une pièce, que la base ne vérifie pas,
+// partait au mauvais 512 si ce compte inconnu tenait le sien. Une banque inconnue ne se juge pas, et ne s'écrit pas.
+describe('un mouvement d’un compte que la lecture ne rend pas, sous la banque du rôle : refusé', () => {
+  const NEUF = 'compte-cree-dans-une-autre-session'
+  for (const lecture of [{ etat: 'lus', comptes: [PRINCIPAL] }, { etat: 'lus', comptes: [] },
+    { etat: 'lus', comptes: [PRINCIPAL, compte({ id: 'X' })] }] as LectureDesComptes[]) {
+    it(`${lecture.etat === 'lus' ? lecture.comptes.length : 0} compte(s) lu(s), aucun 512 propre`, () => {
+      const banques = banquesDuDossier(lecture, PLAN_PAR_DEFAUT)
+      expect(banques.cas).toBe('role')
+      expect(banqueDuMouvement(mouvement({ compte_bancaire_id: NEUF }), banques)).toHaveProperty('refus')
+      expect(planDuMouvement(PLAN_PAR_DEFAUT, mouvement({ compte_bancaire_id: NEUF }), banques)).toHaveProperty('refus')
+      expect(refusDesBanquesDesPaiements([{ origine: 'rapprochement', id: 'm', date: '2026-03-03', compte_bancaire_id: NEUF }], banques))
+        .not.toBeNull()
+      // Un compte que la lecture rend reste à la banque du rôle, comme hier.
+      for (const c of lecture.etat === 'lus' ? lecture.comptes : []) {
+        expect(banqueDuMouvement(mouvement({ compte_bancaire_id: c.id }), banques)).toEqual({ compte: '512000' })
+      }
+    })
+  }
+
+  it('drapeau baissé (sans_objet) : aucun compte ne se lit, tout mouvement à la banque du rôle — hier', () => {
+    const banques = banquesDuDossier({ etat: 'sans_objet' }, PLAN_PAR_DEFAUT)
+    expect(banqueDuMouvement(mouvement({ compte_bancaire_id: NEUF }), banques)).toEqual({ compte: '512000' })
   })
 })
 

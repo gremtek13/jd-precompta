@@ -62,7 +62,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
   dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable; plan: PlanComptable; ventesParLesFactures: boolean
 }) {
   // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
-  const { banques } = useBanquesDuDossier(dossierId, plan)
+  const { banques, relireLesComptes } = useBanquesDuDossier(dossierId, plan)
   const [emprunts, setEmprunts] = useState<Emprunt[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
@@ -241,6 +241,8 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable,
       ].find((l) => !l.complete)?.motif ?? null,
     )
     setOuvertureIncomplete(lectureANouveaux.motif)
+    // Les comptes bancaires se relisent avec le relevé, après lui (relecture adverse du 27/11/2026, lib/useBanquesDuDossier.ts).
+    relireLesComptes()
     setLoading(false)
   }
   // Un dossier qui bascule relit ses ventes facturées, et les sources de leurs écritures.

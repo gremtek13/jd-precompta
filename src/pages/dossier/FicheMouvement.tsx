@@ -292,6 +292,10 @@ interface FicheMouvementProps {
   // — le proposé en tête quand chacun est le seul de l'autre. `absent` (le drapeau baissé, ou un seul compte) : la fiche d'hier.
   // Confirmer écrit chaque mouvement libre de la paire au compte des virements internes, par la base.
   compteBancaire: CompteDeLaFiche
+  // La banque de ce mouvement qui ne se sait pas (lib/banqueDuMouvement.ts) : des comptes en cours de lecture, illisibles, ou
+  // qui ne rendent pas son compte — créé ailleurs depuis la dernière lecture (relecture adverse du 27/11/2026). Dit AVANT le
+  // clic ; l'onglet refuse alors tout geste qui écrirait sa jambe de banque ou la contrepartie d'une pièce. Nul : elle se sait.
+  refusDeLaBanque: string | null
   onConfirmerVirementInterne: (autreId: string) => void
   // Les déclarations de TVA du dossier, chacune avec ce que le relevé lui a déjà payé ou remboursé (`suiviDesDeclarations`,
   // calculé une fois par l'onglet) : de quoi rapprocher un prélèvement de la déclaration qu'il paie, ou le virement du
@@ -677,7 +681,8 @@ export default function FicheMouvement({
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
   reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe, restesAPayer, payeesEnTrop,
-  restesARegler, paiementsDeLaCaisseIncomplets, caisse, onEcrireCompteBilan, onRetirerCompteBilan, compteBancaire, onConfirmerVirementInterne,
+  restesARegler, paiementsDeLaCaisseIncomplets, caisse, onEcrireCompteBilan, onRetirerCompteBilan, compteBancaire, refusDeLaBanque,
+  onConfirmerVirementInterne,
   suivisTva, declarationsTvaIncompletes, releveIncomplet, onRapprocherDeclarationTva, onRetirerDeclarationTva,
   dossierId, envoisDuClient, accesDuReleve, piecesIncompletes, onDemanderAuClient,
   onEcarterProposition, onSupprimerMessage, assuranceMaladie, modeDeReglement,
@@ -1455,6 +1460,9 @@ export default function FicheMouvement({
             Les comptes bancaires du dossier n’ont pas été lus en entier ({compteBancaire.motif}) : le compte de ce mouvement ne se
             dit pas, et aucun virement entre comptes ne se propose.
           </p>
+        )}
+        {refusDeLaBanque !== null && compteBancaire.etat !== 'illisible' && (
+          <p className="fiche-mouvement-note" role="status">{refusDeLaBanque}</p>
         )}
 
         <div className="fiche-mouvement-etat">

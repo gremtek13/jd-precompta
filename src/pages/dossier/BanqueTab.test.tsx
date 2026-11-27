@@ -116,6 +116,8 @@ const faux = vi.hoisted(() => ({
   controlesReleves: [] as ControleReleveBancaire[] | null,
   comptesBancaires: [] as { id: string; libelle: string; principal: boolean; fin_d_identifiant: string | null; compte: string | null;
     compte_propre_depuis: string | null; ouvert_le: string | null; clos_le: string | null }[],
+  // Lecture après lecture, ce que rendent les comptes (le premier rendu, puis le suivant…) ; vide : `comptesBancaires`.
+  comptesParLecture: [] as unknown[][],
   updatesComptes: [] as { valeur: Record<string, unknown>; filtres: string[] }[],
 }))
 
@@ -377,7 +379,8 @@ vi.mock('../../lib/supabase', async () => {
           return Promise.resolve({ data: null, error: { message: faux.erreurReleves }, count: null }).then(suite)
         }
         if (table === 'comptes_bancaires' && operation === 'select') {
-          return Promise.resolve({ data: faux.comptesBancaires, error: null, count: faux.comptesBancaires.length }).then(suite)
+          const comptes = faux.comptesParLecture.length > 0 ? faux.comptesParLecture.shift()! : faux.comptesBancaires
+          return Promise.resolve({ data: comptes, error: null, count: comptes.length }).then(suite)
         }
         if (table === 'controles_releves_bancaires') {
           if (faux.controlesReleves === null) return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
@@ -553,6 +556,7 @@ function reinitialiser() {
   faux.updatesPieces = []
   faux.insertions = []
   faux.comptesBancaires = []
+  faux.comptesParLecture = []
   faux.updatesComptes = []
   drapeauDesComptes.leve = false
   drapeauDateDeValeur.leve = false
@@ -7074,6 +7078,30 @@ describe('BanqueTab — le virement entre deux comptes du dossier (MCB3)', () =>
     expect(completer.textContent).toBe('Écrire ce mouvement au 580000')
     await act(async () => { completer.click() })
     await waitFor(() => expect(ecrits().map((r) => r.args.p_ligne_bancaire_id)).toEqual(['deb', 'cre', 'cre']))
+  })
+
+  // UN COMPTE CRÉÉ AILLEURS (relecture adverse du 27/11/2026) : le relevé rend un mouvement d'un compte que la lecture des
+  // comptes ne rend pas. Sous la banque du rôle (aucun compte lu ne tient son 512), il s'écrivait au 512 du rôle ; il se refuse,
+  // et la fiche le dit avant le clic. Puis les comptes se relisent avec le relevé : le compte est connu, la note se tait.
+  it('un mouvement d’un compte que la lecture ne rend pas : la fiche le dit avant le clic', async () => {
+    preparer(true)
+    faux.comptesBancaires = [PRINCIPAL]
+    rendre()
+    await ouvrir('VIR DE COMPTE PRINCIPAL')
+    await waitFor(() => expect(within(volet()).getByText(/n’est pas dans la lecture des comptes du dossier/)).toBeTruthy())
+    expect(within(volet()).getByRole('status').textContent).toMatch(/Recharge la page/)
+  })
+
+  it('les comptes se relisent avec le relevé : un compte paru entre la lecture du montage et celle du relevé est connu', async () => {
+    preparer(true)
+    // Les lectures du montage (celle de l'onglet, celle de la carte d'import) ne rendent que le principal ; le second compte
+    // paraît avant que le relevé soit lu (une autre session). Sans la relecture qui suit le relevé, la fiche le refuserait.
+    faux.comptesParLecture = [[PRINCIPAL], [PRINCIPAL]]
+    faux.comptesBancaires = [PRINCIPAL, SECOND]
+    rendre()
+    await ouvrir('VIR DE COMPTE PRINCIPAL')
+    await waitFor(() => expect(within(volet()).getByText('Compte pro bis')).toBeTruthy())
+    expect(within(volet()).queryByText(/n’est pas dans la lecture des comptes du dossier/)).toBeNull()
   })
 })
 

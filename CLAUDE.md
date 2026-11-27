@@ -805,7 +805,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   validation par compte (`lib/releveParCompte.ts`), `couverture_du_releve` par compte ; MCB5 (première partie), la jambe
   de banque au 512 du compte du mouvement : les dix fonctions du relevé (`jambe_de_banque_par_compte`), la
   composition par `lib/banqueDuMouvement.ts` dans la fiche Banque, puis (seconde partie) dans Écritures, Virements,
-  Cotisations, le lot des règles et les sept détecteurs (`banques`, paramètre obligatoire ; une banque inconnue ne se juge pas) ; MCB6, la carte « Comptes bancaires » (Informations) et la
+  Cotisations, le lot des règles et les sept détecteurs (`banques`, paramètre obligatoire ; une banque inconnue ne se juge pas, ni ne s'écrit, sous la banque du rôle comme par compte ; les comptes se relisent avec le relevé, `useBanquesDuDossier().relireLesComptes`, 27/11/2026) ; MCB6, la carte « Comptes bancaires » (Informations) et la
   preuve du relevé par compte ; MCB6-Q1 et Q2 (« Retirer ce compte », une suppression directe que l'écran n'offre que là où la base l'accepte ; le 512
   propre refusé depuis une année validée, par l'écran et, depuis le 27/11/2026 (256), par la base, MCB6Q2-Q1), relus et finis le 13/11/2026
   (`lib/ficheDesComptesBancaires.ts`) → « MCB6-Q1 ET MCB6-Q2 : RETIRER UN COMPTE » ; MCB7, « Ma banque » compte par compte (`lib/banqueClientParCompte.ts`, sans nouvelle fonction)

@@ -30,6 +30,22 @@ export type LectureDesComptes =
   | { etat: 'illisible'; motif: string }
   | { etat: 'lus'; comptes: readonly CompteDuReleve[] }
 
+const CHAMPS_DU_COMPTE = [
+  'id', 'libelle', 'principal', 'fin_d_identifiant', 'compte', 'compte_propre_depuis', 'ouvert_le', 'clos_le',
+] as const satisfies readonly (keyof CompteDuReleve)[]
+
+/** Deux lectures des comptes disent-elles la même chose ? Le même état, le même motif, les mêmes comptes dans le même ordre
+ *  (la lecture les trie), champ par champ. Une relecture égale garde l'objet d'hier (lib/useBanquesDuDossier.ts). */
+export function memeLectureDesComptes(a: LectureDesComptes, b: LectureDesComptes): boolean {
+  if (a.etat !== b.etat) return false
+  if (a.etat === 'illisible' && b.etat === 'illisible') return a.motif === b.motif
+  if (a.etat === 'lus' && b.etat === 'lus') {
+    return a.comptes.length === b.comptes.length
+      && a.comptes.every((c, i) => CHAMPS_DU_COMPTE.every((k) => c[k] === b.comptes[i][k]))
+  }
+  return true
+}
+
 /** Le compte sous lequel le relevé entre. `tout_le_dossier` : le drapeau baissé, comme avant MCB ; `premier` : le dossier ne
  *  tient encore aucun compte, la base crée le principal au premier mouvement ; `compte` : le seul compte, ou celui choisi ;
  *  `a_choisir` : deux ou plus, aucun choisi ; `retenu` : les comptes ne sont pas lus en entier, l'import attend. */
@@ -125,4 +141,31 @@ export function refusDeLIdentifiant(fin: string | null, c: CompteDeLImport, lect
  *  encore aucun ; nul sinon (rien à écrire). */
 export function finAPoser(fin: string | null, c: CompteDeLImport): string | null {
   return fin !== null && c.cas === 'compte' && c.compte.fin_d_identifiant === null ? fin : null
+}
+
+/** L'import par la connexion bancaire (ligne 24), devant les comptes du dossier : `offert`, en `attente` des comptes, ou
+ *  `refuse`. La connexion n'écrit aucun compte bancaire sur ses mouvements ; la base pose le seul compte d'un dossier qui
+ *  n'en tient qu'un (ou crée le principal), et refuse dès deux un mouvement sans compte (23502 : `compte_bancaire_id` non
+ *  nul, MCB1) — elle ne devine jamais sous quel compte il entre. L'écran le dit donc AVANT le clic, sur des comptes lus en
+ *  entier (relecture adverse du 27/11/2026), au lieu de laisser la base refuser le lot. Drapeau baissé (`sans_objet`) :
+ *  offert, comme hier. */
+export type ImportDeLaConnexion =
+  | { cas: 'offert' }
+  | { cas: 'attente'; raison: string }
+  | { cas: 'refuse'; raison: string }
+
+export function importDeLaConnexion(lecture: LectureDesComptes): ImportDeLaConnexion {
+  if (lecture.etat === 'sans_objet') return { cas: 'offert' }
+  if (lecture.etat === 'en_cours') {
+    return { cas: 'attente', raison: 'Les comptes bancaires du dossier sont en cours de lecture : l’import attend de savoir combien le '
+      + 'dossier en tient.' }
+  }
+  if (lecture.etat === 'illisible') {
+    return { cas: 'refuse', raison: `Les comptes bancaires du dossier n’ont pas été lus en entier (${lecture.motif}) : l’import par la `
+      + 'connexion ne sait pas si le dossier en tient plusieurs. Recharge la page.' }
+  }
+  if (lecture.comptes.length < 2) return { cas: 'offert' }
+  return { cas: 'refuse', raison: `Le dossier tient ${lecture.comptes.length} comptes bancaires : la connexion bancaire ne dit pas sous `
+    + 'lequel ses mouvements entrent, et la base refuse un mouvement sans compte. Importe le relevé de chaque compte par fichier, '
+    + 'en choisissant son compte.' }
 }

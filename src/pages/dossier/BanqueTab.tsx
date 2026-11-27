@@ -44,6 +44,7 @@ import {
   type LectureDesComptes,
 } from '../../lib/importParCompte'
 import { lireLesComptesDuDossier } from '../../lib/comptesBancairesLecture'
+import { useComptesDuDossier } from '../../lib/useBanquesDuDossier'
 import { banquesDuDossier, modeleDuMouvement, planDuMouvement } from '../../lib/banqueDuMouvement'
 import { jonctionsParCompte, releveParCompte } from '../../lib/releveParCompte'
 import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
@@ -336,6 +337,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     facture: FactureDesGestes; mouvementImpose: string | null; contrePassationImposee: ContrePassationImposee | null
   } | null>(null)
 
+  // Les comptes bancaires du dossier (MCB3, ci-dessous), relus par `load` avec le relevé.
+  const { lecture: lectureDesComptesDuReleve, relire: relireLesComptesDuReleve } = useComptesDuDossier(dossierId)
   async function load() {
     setLoading(true)
     setEnvoisDuClient(ENVOIS_EN_COURS)
@@ -455,6 +458,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     })
 
     setLignes(lignesData)
+    // Les comptes bancaires se relisent avec le relevé, après lui (relecture adverse du 27/11/2026, lib/useBanquesDuDossier.ts).
+    relireLesComptesDuReleve()
     setPieces(piecesData ?? [])
     setCotisations(lectureCotisations.lignes)
     setCategories(lectureCategories.lignes)
@@ -511,20 +516,21 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
   // mouvement dise le sien, et le virement entre deux comptes du praticien — un débit sur l'un, le crédit du même montant sur
   // l'autre, à trois jours au plus —, reconnu au relevé SEUL, proposé dans la fiche et écarté de tout lot tant qu'il n'est pas
   // confirmé. Drapeau `COMPTES_BANCAIRES_PREVUS` baissé : `sans_objet`, rien ne se lit, aucune paire, la fiche d'hier. La
-  // lecture est gardée avec le dossier qu'elle lit.
-  const [comptesDuDossierLus, setComptesDuDossierLus] = useState<{ dossierId: string; lecture: LectureDesComptes } | null>(null)
-  useEffect(() => {
-    let annule = false
-    lireLesComptesDuDossier(dossierId).then((lecture) => { if (!annule) setComptesDuDossierLus({ dossierId, lecture }) })
-    return () => { annule = true }
-  }, [dossierId])
-  const lectureDesComptesDuReleve = useMemo<LectureDesComptes>(() => (!COMPTES_BANCAIRES_PREVUS ? { etat: 'sans_objet' }
-    : comptesDuDossierLus && comptesDuDossierLus.dossierId === dossierId ? comptesDuDossierLus.lecture : { etat: 'en_cours' }),
-  [comptesDuDossierLus, dossierId])
+  // lecture est gardée avec le dossier qu'elle lit, et se refait à chaque relecture du relevé, après lui (`load`, plus haut,
+  // où le hook est appelé) — lue une fois au montage, elle ne connaissait pas un compte créé ailleurs ensuite (relecture
+  // adverse du 27/11/2026).
   // La jambe de banque d'un mouvement (MCB5, lib/banqueDuMouvement.ts) : celle de son compte bancaire quand il tient son
   // propre 512 à sa date, celle du rôle sinon. Drapeau baissé, ou aucun compte qui tienne le sien : le modèle lui-même,
   // l'écriture d'hier. Des comptes illisibles retiennent l'écriture, dite avant l'appel.
   const banquesDesMouvements = useMemo(() => banquesDuDossier(lectureDesComptesDuReleve, modele.plan), [lectureDesComptesDuReleve, modele.plan])
+  // Le refus que la fiche d'un mouvement dit avant le clic quand sa banque ne se sait pas (nul : elle se sait) — un compte que
+  // la lecture ne rend pas, ou des comptes illisibles. Tus pendant la première lecture des comptes, l'affaire d'un instant :
+  // un geste s'y refuse encore au clic.
+  function refusDeLaBanqueDe(ligne: LigneBancaire): string | null {
+    if (lectureDesComptesDuReleve.etat === 'en_cours') return null
+    const p = planDuMouvement(modele.plan, ligne, banquesDesMouvements)
+    return 'refus' in p ? p.refus : null
+  }
   function modeleDe(ligne: LigneBancaire): ModeleComptable | null {
     const m = modeleDuMouvement(modele, ligne, banquesDesMouvements)
     if ('refus' in m) { window.alert(m.refus); return null }
@@ -2067,6 +2073,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         suspension={lignesIncompletes ?? referencesIncompletes}
         lectureEnCours={loading}
         frontiere={frontiere}
+        lectureDesComptes={lectureDesComptesDuReleve}
         onImported={load}
       />}
 
@@ -2777,6 +2784,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
             onEcrireCompteBilan={(compte) => agirSurMouvement(() => ecrireCompteBilan(ligneOuverte, compte))}
             onRetirerCompteBilan={() => agirSurMouvement(() => retirerCompteBilan(ligneOuverte.id))}
             compteBancaire={compteDeLaFiche(ligneOuverte, lectureDesComptesDuReleve, virements)}
+            refusDeLaBanque={refusDeLaBanqueDe(ligneOuverte)}
             onConfirmerVirementInterne={(autreId) => agirSurMouvement(() => ecrireVirementInterne(ligneOuverte, autreId))}
             suivisTva={suivisTva}
             declarationsTvaIncompletes={declarationsTvaIncompletes}

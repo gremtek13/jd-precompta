@@ -65,7 +65,7 @@ export function avecLePlanEtLaBanqueDuRole<T extends object>(copie: T, plan: Pla
       if (rangBanques >= 0 && complets[rangBanques] === undefined) {
         while (complets.length <= rangBanques) complets.push(undefined)
         const modele = rangModele >= 0 ? (complets[rangModele] as { plan?: PlanComptable } | undefined) : undefined
-        complets[rangBanques] = { cas: 'role', compte: (modele?.plan ?? plan).banque }
+        complets[rangBanques] = { cas: 'role', compte: (modele?.plan ?? plan).banque, connus: null }
       }
       return f(...complets)
     }

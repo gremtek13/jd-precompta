@@ -36,7 +36,7 @@ const PRINCIPAL = compte({ id: 'P', libelle: 'Compte principal', principal: true
 const SECOND = compte({ id: 'S', libelle: 'Compte bis fictif', compte: '512200', compte_propre_depuis: '2025-01-01' })
 const CLOS = compte({ id: 'C', libelle: 'Livret fictif', compte: '512300', compte_propre_depuis: '2027-01-01', clos_le: '2025-06-30' })
 const LUS: LectureDesComptes = { etat: 'lus', comptes: [PRINCIPAL, SECOND, CLOS] }
-const role = (plan: PlanComptable): BanquesDuDossier => ({ cas: 'role', compte: plan.banque })
+const role = (plan: PlanComptable): BanquesDuDossier => ({ cas: 'role', compte: plan.banque, connus: null })
 
 const mvt = (o: Partial<MouvementDesEncaissements> & Pick<MouvementDesEncaissements, 'id' | 'date' | 'montant'>): MouvementDesEncaissements => ({
   dossier_id: D, libelle: 'VIREMENT FICTIF', source_fichier: 'releve-fictif.csv', encaissements_de_factures: true, ...o,

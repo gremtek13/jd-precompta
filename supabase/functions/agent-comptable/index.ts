@@ -443,7 +443,7 @@ type LectureDesComptes =
   | { etat: "lus"; comptes: readonly CompteDeBanqueRow[] }
 
 type BanquesDuDossier =
-  | { cas: "role"; compte: string }
+  | { cas: "role"; compte: string; connus: ReadonlySet<string> | null }
   | { cas: "par_compte"; role: string; comptes: ReadonlyMap<string, Pick<CompteDeBanqueRow, "principal" | "compte" | "compte_propre_depuis">> }
   | { cas: "retenu"; raison: string }
 
@@ -456,7 +456,7 @@ function compteDeBanqueDuMouvement(
 }
 
 function banquesDuDossier(lecture: LectureDesComptes, plan: PlanComptable): BanquesDuDossier {
-  if (lecture.etat === "sans_objet") return { cas: "role", compte: plan.banque }
+  if (lecture.etat === "sans_objet") return { cas: "role", compte: plan.banque, connus: null }
   if (lecture.etat === "en_cours") {
     return { cas: "retenu", raison: "Les comptes bancaires du dossier sont en cours de lecture : l’écriture attend de savoir sur quel compte de banque elle s’écrit." }
   }
@@ -464,21 +464,29 @@ function banquesDuDossier(lecture: LectureDesComptes, plan: PlanComptable): Banq
     return { cas: "retenu", raison: `Les comptes bancaires du dossier n’ont pas été lus en entier (${lecture.motif}) : l’écriture ne sait pas `
       + "sur quel compte de banque elle s’écrit. Recharge la page." }
   }
-  if (lecture.comptes.every((c) => c.compte === null)) return { cas: "role", compte: plan.banque }
+  if (lecture.comptes.every((c) => c.compte === null)) {
+    return { cas: "role", compte: plan.banque, connus: new Set(lecture.comptes.map((c) => c.id)) }
+  }
   return { cas: "par_compte", role: plan.banque, comptes: new Map(lecture.comptes.map((c) => [c.id, c])) }
 }
 
 interface MouvementDUnCompte { date: string; compte_bancaire_id?: string | null }
 type BanqueDuMouvement = { compte: string } | { refus: string }
 
+const REFUS_COMPTE_INCONNU = "Le compte bancaire de ce mouvement n’est pas dans la lecture des comptes du dossier : son écriture ne "
+  + "sait pas sur quel compte de banque elle s’écrit. Recharge la page."
+
+// Sous la banque du rôle aussi, un mouvement d'un compte que la lecture ne rend pas ne se juge pas (relecture adverse du
+// 27/11/2026) : ce compte peut tenir son 512, et la contrepartie d'une pièce se dirait conforme au 512 du rôle.
 function banqueDuMouvement(ligne: MouvementDUnCompte, banques: BanquesDuDossier): BanqueDuMouvement {
-  if (banques.cas === "role") return { compte: banques.compte }
+  if (banques.cas === "role") {
+    const id = ligne.compte_bancaire_id
+    if (banques.connus !== null && id != null && !banques.connus.has(id)) return { refus: REFUS_COMPTE_INCONNU }
+    return { compte: banques.compte }
+  }
   if (banques.cas === "retenu") return { refus: banques.raison }
   const compte = ligne.compte_bancaire_id ? banques.comptes.get(ligne.compte_bancaire_id) : undefined
-  if (!compte) {
-    return { refus: "Le compte bancaire de ce mouvement n’est pas dans la lecture des comptes du dossier : son écriture ne sait pas sur "
-      + "quel compte de banque elle s’écrit. Recharge la page." }
-  }
+  if (!compte) return { refus: REFUS_COMPTE_INCONNU }
   return { compte: compteDeBanqueDuMouvement(compte, ligne.date, banques.role) }
 }
 

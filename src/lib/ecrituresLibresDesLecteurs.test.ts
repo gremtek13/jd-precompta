@@ -90,7 +90,7 @@ const LUES: EcrituresLibresDesExports = { etat: 'lues', ecritures: [EL3, EL4], a
 
 const TRESORERIE = modeleDeTest('tresorerie')
 const ENGAGEMENT = modeleDeTest('engagement')
-const ROLE: BanquesDuDossier = { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }
+const ROLE: BanquesDuDossier = { cas: 'role', compte: PLAN_PAR_DEFAUT.banque, connus: null }
 const DATE_DE_L_ECRITURE: ChoixChampsBnc = { sansReglement: 'date_de_l_ecriture' }
 const entrees = (): EntreesDesChampsBnc => ({
   choix: DATE_DE_L_ECRITURE, paiements: new Map(), registre: [], factures: [], cotisations: [], ventilations: [], acquisitions: new Map(),

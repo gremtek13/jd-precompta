@@ -334,7 +334,7 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
   onNavigate: (tab: DossierTab) => void
 }) {
   // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
-  const { banques } = useBanquesDuDossier(dossierId, modele.plan)
+  const { banques, relireLesComptes } = useBanquesDuDossier(dossierId, modele.plan)
   const { annee, setAnnee } = useAnnee()
   // LES PRÉALABLES DE LA VALIDATION (ligne 41) : la lecture et les calculs mêmes de Clôture (useClotureDuDossier), jamais une
   // seconde lecture ni une règle recopiée — la section « Avant de valider l'exercice » dit ce que la carte de Clôture juge.
@@ -429,6 +429,9 @@ export default function RevisionTab({ dossierId, modele, assujettiTva, periodici
     return () => { annule = true }
     // Un dossier qui bascule relit les sources de ses ventes facturées.
   }, [dossierId, ventesParLesFactures, modele.plan])
+  // Les comptes bancaires se relisent avec la révision et son relevé, après eux (relecture adverse du 27/11/2026,
+  // lib/useBanquesDuDossier.ts).
+  useEffect(() => { if (lecture !== null) relireLesComptes() }, [lecture, relireLesComptes])
 
   async function decider(decision: DecisionComposee) {
     if (decisionEnCours.current || cycleEnCours.current || revueEnCours.current || permanentEnCours.current || typeof annee !== 'number') return

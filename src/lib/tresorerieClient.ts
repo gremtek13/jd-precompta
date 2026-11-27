@@ -77,19 +77,40 @@ export function dernierJourDeLHorizon(aujourdHui: string): string {
 export type ControleDeLaTresorerie = Pick<ControleReleveBancaire, 'id' | 'solde_final' | 'coherent' | 'periode_fin' | 'created_at'>
   & { compte_bancaire_id?: string | null }
 
+/** Un compte clos que la projection laisse de côté : son nom (que le client lit) et le jour de sa clôture. */
+export interface CompteClos { libelle: string; closLe: string }
+
 /**
  * Les soldes lus, un par compte : un seul tant que le dossier ne tient qu'un compte (ou que `COMPTES_BANCAIRES_PREVUS` est
  * baissé, `comptes` à `sans_objet`) ; un par compte sinon. Les comptes retenus par `banqueParCompte` (un relevé d'un compte
  * que la lecture n'a pas rendu) : muet, avec sa raison.
+ *
+ * UN COMPTE CLOS AU PLUS TARD AUJOURD'HUI N'ENTRE PAS DANS LA PROJECTION (relecture adverse du 27/11/2026) : il ne tient plus
+ * d'argent et ne recevra rien. Compté, il la faussait des deux côtés — sans relevé contrôlé, il la rendait muette (« un de
+ * tes comptes n'a pas de solde contrôlé ») ; avec un, son dernier solde, souvent ancien, s'ajoutait et reculait le départ à
+ * sa date, taisant tout ce qui a bougé depuis sur les autres. Il se dit à part (`clos`). Tous clos, rien ne s'écarte : la
+ * projection d'hier, plutôt qu'aucun départ. Une clôture à venir ne compte pas : le compte tient encore son solde.
  */
 export function soldesDeLaBanque(
-  comptes: ComptesDuClient, controles: LectureComplete<ControleDeLaTresorerie>,
-): { etat: 'retenus'; raison: string } | { etat: 'lus'; soldes: SoldeLu[] } {
+  comptes: ComptesDuClient, controles: LectureComplete<ControleDeLaTresorerie>, aujourdHui: string,
+): { etat: 'retenus'; raison: string } | { etat: 'lus'; soldes: SoldeLu[]; clos: CompteClos[] } {
   // Les mouvements ne servent qu'aux mois manquants, que la trésorerie ne dit pas : une liste vide et entière.
   const banque = banqueParCompte(comptes, { lignes: [], complete: true, motif: null }, controles)
   if (banque.etat === 'retenue') return { etat: 'retenus', raison: banque.raison }
-  if (banque.etat === 'un') return { etat: 'lus', soldes: [soldeAuReleve(controles)] }
-  return { etat: 'lus', soldes: banque.comptes.map((c) => c.solde) }
+  if (banque.etat === 'un') return { etat: 'lus', soldes: [soldeAuReleve(controles)], clos: [] }
+  const estClos = (c: (typeof banque.comptes)[number]) => c.compte.clos_le !== null && c.compte.clos_le <= aujourdHui
+  const ouverts = banque.comptes.filter((c) => !estClos(c))
+  if (ouverts.length === 0) return { etat: 'lus', soldes: banque.comptes.map((c) => c.solde), clos: [] }
+  return {
+    etat: 'lus',
+    soldes: ouverts.map((c) => c.solde),
+    clos: banque.comptes.filter(estClos).map((c) => ({ libelle: c.compte.libelle, closLe: c.compte.clos_le! })),
+  }
+}
+
+/** Ce que l'écran dit d'un compte clos laissé hors de la projection. */
+export function phraseDuCompteClos(c: CompteClos): string {
+  return `Ton compte « ${c.libelle} », clos le ${enLettres(c.closLe)}, n’entre pas dans la projection : un compte clos ne tient plus d’argent.`
 }
 
 export type Depart =

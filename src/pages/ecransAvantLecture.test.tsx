@@ -445,7 +445,7 @@ const ECRANS: Ecran[] = [
     <Dossier1><ClotureTab dossierId="d1" assujettiTva={false} periodiciteTva="trimestrielle" ventesParLesFactures modele={TRESORERIE} onNavigate={rien} /></Dossier1>
   ) },
   { nom: 'ConnexionBancaireCard', fichier: 'pages/dossier/ConnexionBancaireCard.tsx', rendre: () => (
-    <Dossier1><ConnexionBancaireCard dossierId="d1" lignes={[]} regles={[]} suspension={null} lectureEnCours={false} frontiere={null} onImported={rien} /></Dossier1>
+    <Dossier1><ConnexionBancaireCard dossierId="d1" lignes={[]} regles={[]} suspension={null} lectureEnCours={false} frontiere={null} lectureDesComptes={{ etat: 'lus', comptes: [] }} onImported={rien} /></Dossier1>
   ) },
   { nom: 'CotisationsTab', fichier: 'pages/dossier/CotisationsTab.tsx', rendre: () => <Dossier1><CotisationsTab dossierId="d1" modele={{ mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN_PAR_DEFAUT, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }} /></Dossier1> },
   { nom: 'DocumentsTab', fichier: 'pages/dossier/DocumentsTab.tsx', rendre: () => <Dossier1><DocumentsTab dossierId="d1" /></Dossier1> },

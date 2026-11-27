@@ -8,6 +8,7 @@ import {
   type BanqueProposee, type EnvironnementBancaire, type Recuperation, type StatutConnexion, type TypeAcces,
 } from '../../lib/connexionBancaire'
 import { statutPourMouvement } from '../../lib/reglesIgnorees'
+import { importDeLaConnexion, type LectureDesComptes } from '../../lib/importParCompte'
 import type { LigneBancaire, RegleBancaireIgnoree } from '../../lib/types'
 
 // LA CONNEXION BANCAIRE D'UN DOSSIER (ligne 24 de la feuille de route), en preuve de concept sur le bac à
@@ -71,7 +72,9 @@ const lireStatut = (dossierId: string) =>
 const lectureDe = (r: Reponse<StatutConnexion>): Lecture =>
   r.erreur !== null ? { etat: 'erreur', message: r.erreur } : { etat: 'lue', statut: r.donnees }
 
-export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspension, lectureEnCours, frontiere, onImported }: {
+export default function ConnexionBancaireCard({
+  dossierId, lignes, regles, suspension, lectureEnCours, frontiere, lectureDesComptes, onImported,
+}: {
   dossierId: string
   // Le relevé du dossier : la période proposée en part, et ce qui y est déjà ne se réimporte pas.
   lignes: LigneBancaire[]
@@ -89,8 +92,12 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
   // La frontière de validation (lib/validationExercice.ts) : un mouvement daté au plus tard ce jour-là ne s'importe
   // plus — la base refuserait le lot entier. `planImport` l'écarte, et l'aperçu le dit.
   frontiere: string | null
+  // Les comptes bancaires du dossier, relus avec le relevé (lib/importParCompte.ts, `importDeLaConnexion`) : dès deux, la
+  // connexion, qui n'écrit aucun compte, ne s'importe pas — la base le refuserait après le clic (23502).
+  lectureDesComptes: LectureDesComptes
   onImported: () => void
 }) {
+  const importDesComptes = importDeLaConnexion(lectureDesComptes)
   const [lecture, setLecture] = useState<Lecture>({ etat: 'chargement' })
   // Un seul verrou pour toutes les actions : chacune parle au prestataire ou écrit, et deux qui se
   // croiseraient laisseraient la connexion dans un état qu'aucune des deux n'a voulu — deux demandes
@@ -207,7 +214,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
   })
 
   const importer = () => sousVerrou(async () => {
-    if (!recuperation || !recuperation.complete || suspension !== null || lectureEnCours) return
+    if (!recuperation || !recuperation.complete || suspension !== null || lectureEnCours || importDesComptes.cas !== 'offert') return
     const aImporter = planImport(recuperation.mouvements, lignes, frontiere).aImporter
     if (aImporter.length === 0) return
     if (recuperation.environnement === 'SANDBOX' && !window.confirm(
@@ -456,6 +463,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
                   </>
                 )}
               </p>
+              {importDesComptes.cas === 'refuse' && <p className="error-text">{importDesComptes.raison}</p>}
               <div className="field-row aligne-bas">
                 <div className="field">
                   <label htmlFor="recuperation-du">Du</label>
@@ -468,7 +476,8 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
                     onChange={(e) => setPeriode({ ...periodeAffichee, au: e.target.value })} />
                 </div>
                 <div className="field">
-                  <button type="button" className="btn btn-primary btn-sm" disabled={bloque || expire} onClick={recuperer}>
+                  <button type="button" className="btn btn-primary btn-sm" disabled={bloque || expire || importDesComptes.cas === 'refuse'}
+                    onClick={recuperer}>
                     Récupérer les mouvements
                   </button>
                 </div>
@@ -529,6 +538,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
                   deux fois un mouvement déjà au relevé, ni passer à côté d'une règle « toujours ignorer ».
                 </p>
               )}
+              {importDesComptes.cas === 'attente' && <p className="muted">{importDesComptes.raison}</p>}
               {suspension !== null && (
                 <p className="error-text">
                   Import suspendu : une lecture de l'onglet est incomplète ({suspension}). Un mouvement déjà dans le relevé ne se
@@ -554,12 +564,13 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
               {plan.aImporter.length > APERCU_MAX && (
                 <p className="muted">… et {plan.aImporter.length - APERCU_MAX} autre(s).</p>
               )}
-              {plan.aImporter.length > 0 && (
+              {importDesComptes.cas === 'refuse' && <p className="error-text">{importDesComptes.raison}</p>}
+              {plan.aImporter.length > 0 && importDesComptes.cas !== 'refuse' && (
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
                   style={{ marginTop: 8 }}
-                  disabled={bloque || !recuperation.complete || suspension !== null || lectureEnCours}
+                  disabled={bloque || !recuperation.complete || suspension !== null || lectureEnCours || importDesComptes.cas !== 'offert'}
                   onClick={importer}
                 >
                   Importer les {plan.aImporter.length} mouvement(s)
