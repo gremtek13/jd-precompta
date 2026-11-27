@@ -107,7 +107,9 @@ export type EtatDUnMouvement =
 
 export type ControleDuRapprochement =
   | { readonly genre: 'credit_sans_paiement'; readonly mouvementId: string; readonly date: string; readonly montantCentimes: number; readonly paiementsCesJoursLa: boolean }
-  | { readonly genre: 'ecart'; readonly mouvementId: string; readonly date: string; readonly montantCentimes: number; readonly journee: string; readonly paiementsCentimes: number }
+  | { readonly genre: 'ecart'; readonly mouvementId: string; readonly date: string; readonly montantCentimes: number; readonly journee: string; readonly paiementsCentimes: number
+    /** Les organismes (régime et caisse) des paiements libres de la journée désignée : plus d'un, l'écart ne se chiffre pas. */
+    readonly organismes: number }
   | { readonly genre: 'paiement_sans_credit'; readonly paiementId: string; readonly journee: string; readonly montantCentimes: number; readonly ancienneteJours: number; readonly releveCouvre: boolean }
   | { readonly genre: 'association_incoherente'; readonly mouvementId: string; readonly date: string; readonly montantCentimes: number; readonly paiementsCentimes: number }
   | { readonly genre: 'association_contredite'; readonly mouvementId: string; readonly date: string; readonly raison: Exclude<RaisonHorsDeLAssociation, 'fige'> }
@@ -381,8 +383,12 @@ export function rapprocherLesPaiements(entree: EntreeDuRapprochement): Rapproche
       return d >= 0 && d <= JOURS_DE_L_ECART && journeesLibres.has(j)
     })
     if (designee) {
-      const paiementsCentimes = (journeesLibres.get(designee) ?? []).reduce((s, p) => s + p.montant_centimes, 0)
-      controles.push({ genre: 'ecart', mouvementId: m.id, date: m.date, montantCentimes: centimes, journee: designee, paiementsCentimes })
+      const libres = journeesLibres.get(designee) ?? []
+      const paiementsCentimes = libres.reduce((s, p) => s + p.montant_centimes, 0)
+      // La référence désigne une journée, jamais un organisme : quand plusieurs organismes ont payé ce jour-là, leur somme
+      // n'est pas ce que ce crédit aurait dû faire, et l'écart ne se chiffre pas (relecture du 27/11/2026).
+      const organismes = new Set(libres.map((p) => `${p.regime ?? 'nul'}|${p.caisse ?? 'nul'}`)).size
+      controles.push({ genre: 'ecart', mouvementId: m.id, date: m.date, montantCentimes: centimes, journee: designee, paiementsCentimes, organismes })
       continue
     }
     const paiementsCesJoursLa = entree.paiements.lignes.some((p) => {
@@ -501,6 +507,9 @@ export function controleDit(c: ControleDuRapprochement, paiementsParId: Readonly
         + (c.paiementsCesJoursLa ? 'ceux de ces jours-là ne font pas son montant.' : 'aucun paiement importé de ces jours-là.')
         + ' S’il rembourse le praticien comme assuré, c’est un virement personnel.'
     case 'ecart':
+      if (c.organismes > 1 && c.paiementsCentimes !== c.montantCentimes) {
+        return `Crédit de l’assurance maladie du ${formatDate(c.date)} (${montantDit(c.montantCentimes)}) : la référence du virement désigne la journée comptable du ${formatDate(c.journee)}, dont les paiements importés de ${c.organismes} organismes font ensemble ${montantDit(c.paiementsCentimes)} — aucun ne fait son montant, et la référence ne dit pas lequel a versé : l’écart ne se chiffre pas.`
+      }
       return c.paiementsCentimes === c.montantCentimes
         ? `Crédit de l’assurance maladie du ${formatDate(c.date)} (${montantDit(c.montantCentimes)}) : la référence du virement désigne la journée comptable du ${formatDate(c.journee)}, dont les paiements importés font ensemble son montant, sous une forme que la proposition ne fait pas.`
         : `Crédit de l’assurance maladie du ${formatDate(c.date)} (${montantDit(c.montantCentimes)}) : la référence du virement désigne la journée comptable du ${formatDate(c.journee)}, dont les paiements importés font ${montantDit(c.paiementsCentimes)} — un écart de ${montantDit(c.montantCentimes - c.paiementsCentimes)}.`

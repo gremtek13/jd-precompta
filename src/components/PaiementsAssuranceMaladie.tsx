@@ -524,7 +524,7 @@ function FenetreDImport({ espace, enBase, occupe, erreur, onImporter, onClose }:
         )}
 
         {aConfirmer && imp && pret && (
-          <p role="status" style={{ marginBottom: 0 }}>{confirmationDeLImport(imp, dejaImportes, espace)}</p>
+          <p role="status" style={{ marginBottom: 0 }}>{confirmationDeLImport(imp, enBase, espace)}</p>
         )}
         {erreur && <p className="error-text" role="alert">{erreur}</p>}
 

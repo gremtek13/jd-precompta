@@ -180,13 +180,16 @@ export function factureDesBordereaux(bordereaux: readonly BordereauLu[], paramet
   if (bordereaux.length === 0) return refus('aucun bordereau dans l’envoi')
 
   // 1. Chaque bordereau, sa forme ; puis le même numéro de lot deux fois.
-  const numerosVus = new Map<number, number>()
+  // Le même lot : un même numéro, une même date de création et une même caisse — la clé du registre de la base (BOR3,
+  // `doublonLot`), jamais le numéro seul (relecture du 27/11/2026 : un envoi que la base aurait accepté se refusait ici).
+  const lotsVus = new Map<string, number>()
   for (const [i, b] of bordereaux.entries()) {
     const raison = doute(b, i + 1, aujourdHui)
     if (raison !== null) return refus(raison)
-    const premier = numerosVus.get(b.lot)
+    const cle = `${b.lot}|${b.creeLe}|${Number(b.organisme.code)}`
+    const premier = lotsVus.get(cle)
     if (premier !== undefined) return refus(`bordereaux ${premier} et ${i + 1} de l’envoi : le même lot deux fois`)
-    numerosVus.set(b.lot, i + 1)
+    lotsVus.set(cle, i + 1)
   }
 
   // 2. Les régimes : lus sur le libellé, sinon choisis ; un choix qui ne répond à rien de l'envoi se refuse.

@@ -176,7 +176,7 @@ describe('les paiements de l’assurance maladie, à l’écran', () => {
     regler()
     fireEvent.click(screen.getByRole('button', { name: 'Importer 1 paiement' }))
     expect(lisible(within(fenetre()).getByRole('status').textContent))
-      .toMatch(/^1 paiement de l’assurance maladie part en base, journées comptables du 02\/11\/2026 au 02\/11\/2026, pour 45,50 € au total ; 1 rejet, 12,00 €\. Rien d’autre ne part/)
+      .toMatch(/^1 paiement de l’assurance maladie part en base, journée comptable du 02\/11\/2026, pour 45,50 € au total ; 1 rejet, 12,00 €\. Rien d’autre ne part/)
     const confirmer = screen.getByRole('button', { name: 'Confirmer l’import' })
     act(() => { fireEvent.click(confirmer); fireEvent.click(confirmer) })
     expect(faux.appels).toEqual([{
