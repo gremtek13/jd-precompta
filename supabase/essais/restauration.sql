@@ -402,6 +402,12 @@
 -- clés) ; avec elle et deux fiches semées dans `test` (leurs codes posés par la garde), IDENTIQUE (109 tables, 23 lignes dont
 -- les deux fiches et le compteur, 217 clés) ; les préparées d'EL7 et d'EXP-Q4 appliquées avant elle, IDENTIQUE (110 tables, 23
 -- lignes, 219 clés).
+--
+-- 27/11/2026, NOE4R-Q2 : `remplacements_assurance_maladie` (préparée `remplacement_des_journees_assurance_maladie`, après
+-- `periode_des_imports_assurance_maladie`) entre au plan quand sa table existe (le bloc « La trace des paiements de l'assurance
+-- maladie remplacés », ci-dessous), juste après `paiements_assurance_maladie`. Sur une copie de `replique_227` portée à 259 :
+-- sans les préparées, IDENTIQUE (110 tables, 20 lignes) ; avec elles, IDENTIQUE (111 tables, 20 lignes) ; une trace semée dans
+-- `test` sous le réglage de sa fonction, nommant deux imports absents, IDENTIQUE (111 tables, 21 lignes dont la trace).
 \set ON_ERROR_STOP on
 drop schema if exists essai_restauration cascade;
 create schema essai_restauration;

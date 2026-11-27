@@ -176,11 +176,12 @@ export function confirmationDuRemplacement(r: RemplacementCalcule, espace: Espac
   const journees = r.journees.map((j) => `le ${formatDate(j.journee)}, ${montantDit(j.totalEnBase)} en base, `
     + `${montantDit(j.totalApres)} après`).join(' ; ')
   const tete = `Remplacer ${n > 1 ? `${n} journées comptables` : 'une journée comptable'} — ${journees}. `
-  const suite = `${pluriel(r.remplaces.length, 'paiement')} en base ${r.remplaces.length > 1 ? 'quittent' : 'quitte'} l’import `
-    + 'qui les avait apportés pour celui-ci ; leurs anciens chiffres restent dans la trace des remplacements. '
-  return tete + suite + (espace === 'client'
-    ? 'Retirer ce nouvel import ne les rendra pas : il faudrait réimporter ton ancien fichier.'
-    : 'Retirer ce nouvel import ne les rendra pas : il faudrait réimporter l’ancien fichier.')
+  const plusieurs = r.remplaces.length > 1
+  const suite = `${pluriel(r.remplaces.length, 'paiement')} en base `
+    + (plusieurs ? 'quittent l’import qui les avait apportés pour celui-ci ; leurs anciens chiffres restent'
+      : 'quitte l’import qui l’avait apporté pour celui-ci ; ses anciens chiffres restent')
+    + ` dans la trace des remplacements. Retirer ce nouvel import ne ${plusieurs ? 'les' : 'le'} rendra pas : `
+  return tete + suite + (espace === 'client' ? 'il faudrait réimporter ton ancien fichier.' : 'il faudrait réimporter l’ancien fichier.')
 }
 
 /** Le bouton du remplacement, avec son compte de journées. */

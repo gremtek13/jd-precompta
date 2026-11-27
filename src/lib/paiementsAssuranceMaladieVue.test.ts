@@ -4,6 +4,7 @@ import type { ImportAEnvoyer, LectureDesPaiements } from './paiementsAssuranceMa
 import {
   PRESENTATION_AU_CLIENT, SANS_LA_CASE_BANQUE, VIDE_DIT, confirmationDeLImport, confirmationDuRetrait, ecartsDits, genreDit,
   organismeDit, organismeDuPaiementDit, phraseApresLImport, refusDeLaTailleDesPaiements, reglageChoisi, reglageVide, rejetsDits,
+  rejetsDuFichierDits,
 } from './paiementsAssuranceMaladieVue'
 
 // Les mots et les règles de l'écran d'import (NOE4) : rien n'est deviné (le réglage part vide, ce qui manque se dit) ; une
@@ -57,6 +58,10 @@ describe('les mots de l’aperçu', () => {
     expect(rejetsDits(null)).toBe('les rejets ne sont pas dits par le fichier')
     expect(rejetsDits({ nombre: null, montant_centimes: null })).toBe('les rejets ne sont pas dits par le fichier')
     expect(rejetsDits({ nombre: 0, montant_centimes: 0 })).toBe('aucun rejet')
+    // NOE4R-Q1 (A) : la confirmation dit les rejets DU FICHIER, comme la base les garde.
+    expect(rejetsDuFichierDits(null)).toBe('les rejets ne sont pas dits par le fichier')
+    expect(rejetsDuFichierDits({ nombre: 0, montant_centimes: 0 })).toBe('aucun rejet dans le fichier')
+    expect(rejetsDuFichierDits({ nombre: 2, montant_centimes: 1500 })).toMatch(/^rejets du fichier : 2 rejets, 15,00\s€$/)
   })
 
   it('les écarts se comptent par raison et par ligne, jamais avec une valeur', () => {

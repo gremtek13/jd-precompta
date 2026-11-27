@@ -572,7 +572,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   du PDF des paiements (attend une page, BOR6-Q2), un premier import réel** → « NOE3, NOE5 ET BOR3 EN PRODUCTION ». Le rangement de
   l'état des paiements (27/11/2026, `lib/etatDesPaiementsAssuranceMaladie.ts`, pur, sans appelant) : un état par journée et par
   organisme, rangé ou écarté ENTIER (total imprimé confronté ; aide en `forfait`, indu en régularisation ; versement sans facture
-  d'une complémentaire écarté), sa sortie admise par `refusDeLImport` → « LE RANGEMENT DE L'ÉTAT DES PAIEMENTS ». NOE3 (`paiements_assurance_maladie`) ; NOE4, l'écran (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
+  d'une complémentaire écarté), sa sortie admise par `refusDeLImport` → « LE RANGEMENT DE L'ÉTAT DES PAIEMENTS ». Préparées le 27/11/2026 : la
+  période d'un import sur ses seuls paiements insérés, les rejets ceux du fichier (NOE4R-Q1 (A), par l'outil) ; le remplacement d'une journée non
+  associée et sa trace, après elle (NOE4R-Q2 (B), à coller, `REMPLACEMENT_DES_JOURNEES_PREVU` baissé, NOE4RQ2-Q1 à Q4) → « NOE4R-Q1 ET NOE4R-Q2 ». NOE3 (`paiements_assurance_maladie`) ; NOE4, l'écran (17/11/2026 ; `components/PaiementsAssuranceMaladie.tsx`,
   section de l'onglet Banque et de « Ma banque » : en-têtes et genres seuls, réglage vide, agrégats avant le clic, la phrase de
   NOE3-Q1 ; offerte, avec l'association de NOE5b, sur un code NAF de la division 86 ou de la liste fermée
   (47.73Z, 47.74Z, 47.78A, 49.32Z ; NOE4Q1-Q1 (B)), et, gestes compris, dès qu'un import du dossier est lu, quel que soit

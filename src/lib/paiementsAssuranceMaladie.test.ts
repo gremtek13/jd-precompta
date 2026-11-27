@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { decoderLeFichier, decouperLeFichier, tableauDuFichier } from './contactsImportFichier'
@@ -7,6 +7,8 @@ import {
   genresDesColonnes,
   importAEnvoyer,
   lireLesPaiements,
+  paiementsInseres,
+  periodeDeLImport,
   PAIEMENTS_ASSURANCE_MALADIE_PREVUS,
   REFUS_DE_LA_FONCTION,
   REFUS_DE_L_IMPORT,
@@ -206,6 +208,66 @@ describe('le conflit et « rien de neuf », avant le clic (les étapes 23 à 25 
     expect(refusAvantLEnvoi(importDe([{ ...nomme, montant_centimes: 791 }]), JOUR, [nonDit, nomme])).toBe(refusDuConflit('2026-11-02'))
     expect(refusAvantLEnvoi(importDe([nonDit, nomme, { ...nomme, organisme_complementaire: 1234567891, montant_centimes: 999 }]), JOUR, [nonDit, nomme]))
       .toBeNull()
+  })
+})
+
+describe('la période d’un import : ses seuls paiements insérés (NOE4R-Q1 (A), la migration `periode_des_imports_assurance_maladie`)', () => {
+  // La migration se lit là où elle est : préparée, ou rangée dans l'export le jour de son application.
+  const q1 = ['preparees', 'schema'].map((d) => resolve(process.cwd(), `supabase/${d}`))
+    .flatMap((d) => readdirSync(d).filter((n) => /^\d{14}_periode_des_imports_assurance_maladie\.sql$/.test(n)).map((n) => `${d}/${n}`))
+  const texteQ1 = q1.length === 1 ? readFileSync(q1[0], 'utf8') : ''
+  const corpsDe = (texte: string) => {
+    const debut = texte.indexOf('function public.importer_paiements_assurance_maladie(p_dossier_id uuid, p_import jsonb)')
+    const ouverture = texte.indexOf('$$', debut) + 2
+    return texte.slice(ouverture, texte.indexOf('$$', ouverture))
+  }
+  const insertionDe = (corps: string) => corps.slice(corps.indexOf('insert into public.imports_assurance_maladie'),
+    corps.indexOf('returning * into v_import'))
+
+  it('la migration est à un seul endroit ; elle écrit la période sur les seuls paiements que l’import insère, ses rejets ceux du fichier', () => {
+    expect(q1).toHaveLength(1)
+    const insertion = insertionDe(corpsDe(texteQ1))
+    expect(insertion).toContain('min((e ->> \'date_journee_comptable\')::date), max((e ->> \'date_journee_comptable\')::date)')
+    // Le filtre de la période est celui de l'insertion des paiements : les clés qu'aucun paiement en base ne porte.
+    const filtre = insertion.slice(insertion.indexOf('where not exists (')).trimEnd()
+    expect(filtre.length).toBeGreaterThan(100)
+    const insertionDesPaiements = corpsDe(texteQ1).slice(corpsDe(texteQ1).indexOf('insert into public.paiements_assurance_maladie'))
+    expect(insertionDesPaiements).toContain(filtre)
+    expect(insertion).toContain('(p_import #>> \'{rejets,nombre}\')::numeric::integer, (p_import #>> \'{rejets,montant_centimes}\')::numeric::bigint')
+    // Hier (l'export de NOE3), la période se prenait sur tout le fichier : l'insertion de l'import n'avait aucun filtre.
+    expect(insertionDe(corpsDe(texteDeLaMigration))).not.toContain('where not exists')
+  })
+
+  it('un import qui n’insère rien se refuse toujours, AVANT l’écriture de l’import ; les refus d’hier sont les mêmes, sous les mêmes mots', () => {
+    const corps = corpsDe(texteQ1)
+    expect(corps.indexOf(`'${REFUS_DE_LA_FONCTION.rienDeNeuf.replace(/'/g, '\'\'')}'`)).toBeGreaterThan(0)
+    expect(corps.indexOf(`'${REFUS_DE_LA_FONCTION.rienDeNeuf.replace(/'/g, '\'\'')}'`)).toBeLessThan(corps.indexOf('insert into public.imports_assurance_maladie'))
+    for (const mots of [REFUS_DE_LA_FONCTION.acces, REFUS_DE_LA_FONCTION.exerciceValide]) {
+      expect(corps).toContain(`'${mots.replace(/'/g, '\'\'')}'`)
+    }
+    expect(corps).toContain('\'Un paiement de l\'\'import est déjà en base avec d\'\'autres chiffres (la journée comptable du %) : retirer d\'\'abord l\'\'import qui le porte.\'')
+    // Hors de la période, le corps est celui d'hier, à l'octet : ses commentaires ôtés, et le filtre de la période ôté, il
+    // redonne celui de l'export de NOE3.
+    const sansCommentaires = (c: string) => c.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')
+    const insertion = insertionDe(corps)
+    const filtre = insertion.slice(insertion.lastIndexOf('\n', insertion.indexOf('where not exists ('))).trimEnd()
+    // Le filtre ôté de l'insertion de l'IMPORT seulement : le même texte filtre aussi le compte des nouveaux et l'insertion des
+    // paiements, qui restent.
+    const nouveau = sansCommentaires(corps)
+    const ici = nouveau.indexOf('insert into public.imports_assurance_maladie')
+    expect(nouveau.slice(0, ici) + nouveau.slice(ici).replace(filtre, '')).toBe(sansCommentaires(corpsDe(texteDeLaMigration)))
+  })
+
+  it('`periodeDeLImport` redit la règle : les journées des seuls paiements insérés, nulle quand il n’y en a aucun', () => {
+    const premier = importDe([paiement(), paiement({ date_journee_comptable: '2026-11-03' }), paiement({ date_journee_comptable: '2026-11-04' })])
+    expect(periodeDeLImport(premier, [])).toEqual({ du: '2026-11-02', au: '2026-11-04' })
+    // Les extrêmes déjà en base, une journée neuve au milieu : la journée neuve seule (la période d'hier : du 02 au 04).
+    const milieu = importDe([paiement(), paiement({ date_journee_comptable: '2026-11-03' }), paiement({ date_journee_comptable: '2026-11-04' })])
+    expect(periodeDeLImport(milieu, [paiement(), paiement({ date_journee_comptable: '2026-11-04' })])).toEqual({ du: '2026-11-03', au: '2026-11-03' })
+    expect(paiementsInseres(milieu, [paiement(), paiement({ date_journee_comptable: '2026-11-04' })]).map((p) => p.date_journee_comptable)).toEqual(['2026-11-03'])
+    // Tout déjà en base : aucune période — la base refuse (« rien de neuf ») au lieu d'écrire un import sans période.
+    expect(periodeDeLImport(premier, premier.paiements)).toBeNull()
+    expect(refusAvantLEnvoi(premier, JOUR, premier.paiements)).toBe(REFUS_DE_LA_FONCTION.rienDeNeuf)
   })
 })
 

@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest'
 // commentaires ôtés : une sortie (le réseau, un journal, le stockage du navigateur, l'horloge, un import dynamique) ou un
 // import d'un autre module que `./csv` (les types exceptés) est une faute. Éprouvé par trois défauts plantés.
 //
-// ET AUCUN MOTEUR NE LIT LES DEUX TABLES (conception 53, §8 : la recette entrerait deux fois) : leurs noms ne paraissent dans
+// ET AUCUN MOTEUR NE LIT LES DEUX TABLES — NI LA TRACE DE LEURS REMPLACEMENTS (NOE4R-Q2, préparée) — (conception 53, §8 : la
+// recette entrerait deux fois) : leurs noms ne paraissent dans
 // `src/` que là où la liste ci-dessous le dit, chaque fichier sous sa raison ; un lecteur nouveau se range ici, sa raison
 // avec lui, ou il est une faute. Le plancher : les fichiers de la liste existent et nomment bien une des tables. Le même
 // relevé pour les quatre tables du FACTURÉ (conception 59, § 5.1, BOR3) : le facturé n'est pas une recette, aucun moteur ne
@@ -104,6 +105,14 @@ const LECTEURS_PERMIS: Readonly<Record<string, string>> = {
   'src/pages/OptionsDesCabinets.test.tsx': 'les essais de l’écran des modules, dont le faux client rend les associations',
   'src/pages/dossier/RevisionTab.test.tsx': 'les essais de la Révision (NOE6), dont le faux client REFUSE chacune des trois tables : '
     + 'leurs points se taisent seuls, la révision demeure',
+  // La trace des remplacements (NOE4R-Q2, préparée) : la même règle, ses lecteurs nommés.
+  'src/lib/remplacementDesJourneesAssuranceMaladie.ts': 'le module du remplacement d’une journée (NOE4R-Q2), qui redit les refus de sa '
+    + 'fonction et dit ce que l’écran nomme ; il ne compte rien des paiements dans aucun moteur, et nomme sa table pour le plan',
+  'src/lib/remplacementDesJourneesAssuranceMaladie.test.ts': 'les essais du module du remplacement, qui relisent les mots de sa migration',
+  'src/lib/sauvegardeRemplacementsAssuranceMaladie.test.ts': 'les essais du plan de sauvegarde de la trace des remplacements',
+  'src/lib/creationsDansLesBlocs.test.ts': 'le relevé des créations dans les blocs, qui compte la restrictive de la trace des remplacements',
+  'src/lib/essaisEnProduction.test.ts': 'le classement des essais de la base, qui nomme les migrations de NOE4R-Q1 et NOE4R-Q2 (le nom de la '
+    + 'première porte celui de la table des imports)',
 }
 
 function fichiers(dossier: string): string[] {
@@ -116,7 +125,7 @@ function fichiers(dossier: string): string[] {
 describe('aucun moteur ne lit les tables des paiements de l’assurance maladie', () => {
   const racine = process.cwd()
   const nommant = fichiers(resolve(racine, 'src'))
-    .filter((f) => /(imports|paiements)_assurance_maladie/.test(readFileSync(f, 'utf8')))
+    .filter((f) => /(imports|paiements|remplacements)_assurance_maladie/.test(readFileSync(f, 'utf8')))
     .map((f) => relative(racine, f).split('\\').join('/'))
     .sort()
 

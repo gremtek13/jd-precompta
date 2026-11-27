@@ -356,13 +356,17 @@ describe('les essais de la base, rejoués en production', () => {
     // préparée) : il crée des dossiers, des comptes, des relevés et des exercices validés fictifs, rend les contraintes immédiates
     // pour simuler la fin de la transaction, et mute la fonction et le déclencheur du filet. Son catalogue se relit partout
     // (signature.sql, familles des fonctions et des déclencheurs) ; il ne touche à aucune policy.
+    // Le quarante-troisième, remplacementDesJourneesAssuranceMaladieSuppression, le 27/11/2026 (NOE4R-Q2, migration
+    // `remplacement_des_journees_assurance_maladie`, préparée) : il retire en direct une trace, un import et un dossier jetable, sous
+    // la garde ESSAI_HORS_REPLIQUE ; son compagnon, remplacementDesJourneesAssuranceMaladie.sql, se joue en production (aucune
+    // suppression), et la lecture de la trace se rejoue partout : le bloc RJ de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'associationPaiementsAssuranceMaladieSuppression (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'contrePassationDesEcrituresLibres (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'ecrituresLibres (son en-tête)', 'exercicesDuDossier (son en-tête)', 'facturesAssuranceMaladieSuppression (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)', 'fichierCiteParUneEcritureLibre (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'hausseDuChiffreDAffairesSuppression (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'optionsDesCabinetsEnCours (son en-tête)', 'originalDUnImport (son en-tête)', 'ouvertureSuivanteALaValidation (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'provisions (son en-tête)',
-      'recompositionDesVentes (son en-tête)', 'reglagesDExport (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
+      'recompositionDesVentes (son en-tête)', 'reglagesDExport (son en-tête)', 'remplacementDesJourneesAssuranceMaladieSuppression (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',
       'situationsPublieesMutations (une méta-commande de psql)', 'stocks (son en-tête)', 'traceDesDroitsSuppression (son en-tête)',
       'validationDeLInventaire (son en-tête)',
     ])
@@ -543,7 +547,11 @@ describe('les essais de la base, rejoués en production', () => {
     // ne cherche aucun semis, il se joue comme un essai de la production). Vingt-cinq le même jour :
     // `pieceDUneEcritureLibreDansSonDossier` (SECU4-Q1, `piece_d_une_ecriture_libre_dans_son_dossier`) entré dans la famille
     // « apres », après sa migration préparée ; SÛR au banc, sur une copie de la réplique portée à 259.
-    expect(cas.length).toBe(25)
+    // Vingt-sept le même jour : `periodeDesImportsAssuranceMaladie` (NOE4R-Q1, `periode_des_imports_assurance_maladie`) et
+    // `remplacementDesJourneesAssuranceMaladie` (NOE4R-Q2, `remplacement_des_journees_assurance_maladie`, après la première)
+    // entrés dans la famille « apres », après leurs migrations préparées : un seul modèle « apres » porte les deux ; joués sur
+    // une copie de la réplique à 259 (11 et 35 verdicts justes), SÛRS au banc.
+    expect(cas.length).toBe(27)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

@@ -337,3 +337,90 @@ retrait d'un import associé.
 - **NOE8** : la migration, les drapeaux et les trois contrôles sont faits (20/11/2026) ; restent les essais
   `paiementsAssuranceMaladie.sql`, `associationPaiementsAssuranceMaladie.sql`, `facturesAssuranceMaladie.sql` et les blocs AM, FM et
   P7 de `rls.sql` rejoués en production, et un premier import réel.
+
+## 14. Le 27/11/2026 : la période d'un import sur ses seuls paiements insérés (NOE4R-Q1) et le remplacement d'une journée (NOE4R-Q2)
+
+Deux réponses du cabinet du 27/11/2026 à la relecture adverse du même jour (« la période et les rejets d'un import couvrent les
+paiements passés » ; « une journée exportée incomplète ne se complète qu'en retirant tout l'import qui la porte »). Deux migrations
+préparées, à coller dans cet ordre ; le récit : HISTORIQUE.md, « 27/11/2026 — NOE4R-Q1 ET NOE4R-Q2 ».
+
+### 14.1 NOE4R-Q1 (A) : la période d'un import, celle de ses seuls paiements insérés
+
+- **La règle.** `importer_paiements_assurance_maladie` écrit `periode_du` et `periode_au` sur les seuls paiements qu'elle INSÈRE —
+  ceux qu'aucun paiement en base ne porte sous leur clé — et non plus sur tout le fichier : un fichier qui en recouvre un autre ne
+  dit plus une période plus large que ce qu'il apporte, et la confirmation de son retrait ne nomme plus des journées qui ne partent
+  pas avec lui. **Les rejets restent ceux du fichier** (le nombre et le montant qu'il dit) : un rejet ne porte aucune clé que la base
+  saurait passer. L'écran le dit : « rejets du fichier : … », et, quand des journées du fichier sont déjà en base, « les rejets
+  comptés restent ceux du fichier entier, ces journées comprises » (`rejetsDuFichierDits`, `confirmationDeLImport`) ; la colonne de
+  la liste s'intitule « Rejets du fichier ».
+- **Un import qui n'insère rien se refuse, comme hier** (« rien de neuf », 22023), plutôt que de s'écrire sans période. Retenu parce
+  qu'il n'apporte aucun paiement à justifier ni à contrôler (NOE5, NOE6 ne lisent que des paiements) ; que ses rejets sont ceux d'un
+  fichier dont chaque paiement est déjà en base, donc déjà comptés par l'import qui les a apportés — rien ne les rattache à une clé,
+  et les écrire les compterait deux fois ; qu'une période nulle romprait le contrat de la table (`not null`, sa contrainte) et chaque
+  lecteur (la liste, NOE6, BOR5). Écarté : l'import « sans période », pour garder des rejets — il double les rejets et change la table.
+- **Ce que ça change aux lecteurs.** NOE6 (`creditsSansPaiement` contre `creditsHorsDesImports`) et BOR5 (l'étendue du payé) lisent la
+  réunion des périodes. Elle ne rétrécit que dans un cas : entre une journée du fichier déjà en base et la plus proche des journées
+  insérées, sans paiement d'aucun import ; un crédit tombé là se dit « hors des imports » (importer ce qui le couvre) au lieu de « sans
+  paiement ». La base ne connaît pas l'étendue de l'export, seulement les journées de ses paiements : la nouvelle période dit ce qui
+  est su.
+- **Les imports d'avant** gardent la période qu'ils ont reçue (la garde de NOE3 refuse toute réécriture) ; aucun import réel n'est fait
+  au 27/11/2026. Avant le collage, une lecture les compte (le récit en donne la requête).
+- **La base et le module.** Un `create or replace` du corps, sa garde de tête vérifiant l'empreinte d'hier (`62b9f0f6…`,
+  `remplacementsDesPreparees.test.ts`) ; même signature, mêmes droits, mêmes refus sous les mêmes mots. Le module :
+  `paiementsInseres`, `periodeDeLImport` (`lib/paiementsAssuranceMaladie.ts`), confrontés au texte de la migration par
+  `paiementsAssuranceMaladie.test.ts` (le corps est celui d'hier, à l'octet, son filtre et son commentaire ôtés). Aucun drapeau :
+  l'écran ne dit rien que la règle de la base décide (la confirmation nomme les journées de ce qui part, vraies sous l'une comme
+  sous l'autre). L'essai : `periodeDesImportsAssuranceMaladie.sql` ; les étapes 24 et 72 de `paiementsAssuranceMaladie.sql` suivent
+  la règle que la base porte.
+
+### 14.2 NOE4R-Q2 (B, contre la recommandation) : remplacer une journée comptable non associée
+
+- **Ce qui est remplacé : la journée TELLE QUE L'EXPORT LA PORTE.** Pour chaque journée comptable du fichier où un paiement diffère de
+  la base (même clé — journée, régime, caisse, part, organisme complémentaire —, d'autres chiffres — net, régularisations, factures) :
+  le paiement qui diffère REMPLACE celui de la base ; un paiement d'une clé neuve ENTRE ; un paiement égal est PASSÉ ; un paiement en
+  base que le fichier ne porte pas RESTE. Retenu, plutôt que de remplacer la journée entière : un fichier lu sur une seule part (le
+  réglage de l'écran), ou un export sans les forfaits qu'un état des paiements a portés, ne dit pas que les autres paiements sont
+  partis — les retirer serait perdre en silence (NOE4RQ2-Q2).
+- **Jamais en silence.** Sous `REMPLACEMENT_DES_JOURNEES_PREVU` (baissé), là où un conflit refuse l'import, l'aperçu nomme chaque
+  journée, son total en base et son total après, et ce qui change (« 1 paiement remplacé, 1 ajouté, 1 gardé ») ; « Remplacer … et
+  importer » ; une confirmation qui nomme les journées et ce que le geste ne défera pas ; puis l'appel. L'import seul refuse toujours
+  le conflit sous ses mots d'hier : le remplacement est un autre geste, nommé, confirmé.
+- **La version, par journée.** L'écran envoie les identifiants de TOUS les paiements en base des journées qu'il a nommées (et non des
+  seuls remplacés) : un import, un retrait ou un autre remplacement entre la lecture et le clic change cette liste, et la base refuse
+  (« les journées à remplacer ont changé depuis leur lecture ») — les totaux que la confirmation a nommés sont ceux que le geste
+  produit (CLAUDE.md : une saisie retient la version qu'elle remplace).
+- **Jamais une journée associée.** Une journée dont UN paiement est associé à un crédit du relevé (NOE5) ne se remplace pas, même
+  si le paiement associé n'est pas celui qui diffère : le cabinet défait d'abord l'association (il est seul à le faire), remplace, puis
+  associe de nouveau sur les nouveaux chiffres ; l'écran le dit avant le clic, au praticien « ton cabinet doit d'abord défaire cette
+  association ». Une association d'une AUTRE journée ne retient rien.
+- **La trace.** `remplacements_assurance_maladie` : une ligne par paiement remplacé — son dossier, sa clé, ses chiffres d'avant et
+  ceux qui les remplacent, l'import qui l'avait apporté et celui qui le remplace, qui et quand (posés par la base). Des dates, des
+  entiers, la part (la liste fermée de NOE3) : aucune colonne de texte, aucune donnée de patient. Les deux imports sont nommés SANS
+  clé étrangère : la trace survit au retrait de l'un comme de l'autre. Elle ne se modifie jamais et ne part qu'avec son dossier (sa
+  garde, aux droits de l'appelant). Au plan de sauvegarde derrière le drapeau ; l'écran la montre (« Les journées remplacées »).
+- **Qui possède quoi.** Les paiements qui remplacent, et ceux qui entrent, sont au NOUVEL import (sa période : NOE4R-Q1) ; ceux qui
+  sont remplacés quittent l'ancien, qui garde sa période et ses rejets d'alors (un import dont tout a été remplacé reste, vide, et se
+  retire). **Retirer le nouvel import ne rend pas les paiements remplacés** : leurs chiffres restent dans la trace, et l'ancien fichier
+  se réimporte ; la confirmation du retrait le dit (NOE4RQ2-Q4).
+- **Tout ou rien.** `remplacer_journees_assurance_maladie(dossier, import, paiements_lus)`, aux droits du propriétaire, sous le verrou
+  des paiements du dossier, pour qui importe — le cabinet du dossier et l'accès « Banque » (NOE4RQ2-Q3) : refus dans l'ordre — l'appelant
+  (42501), la forme de l'import (les mots de NOE3), celle des paiements lus, un exercice validé (les mots de l'import), rien à remplacer,
+  la version changée, une journée associée nommée (22023) ; puis les paiements qui diffèrent, relus pour la trace, retirés import par
+  import sous le réglage de la garde de NOE3 ; l'import par `importer_paiements_assurance_maladie` elle-même ; la trace. Une seule
+  transaction : un refus, à toute étape, ne laisse rien.
+- **La lecture du client.** Le client « Banque » lit la trace de son dossier, comme les imports et les paiements qu'elle relie —
+  CETTE LECTURE SE PRÉSENTE AU CABINET AVANT D'ÊTRE APPLIQUÉE (NOE4RQ2-Q1) ; rls.sql la juge (bloc RJ, section P7).
+- **Ce qui reste fermé.** Aucun moteur ne lit la trace (`paiementsAssuranceMaladieSansSortie.test.ts` la range avec les paiements) ;
+  ni la 2035, ni la CA3, ni le FEC, ni NOE6 ne changent : ils lisent les paiements, qui sont les nouveaux.
+
+### 14.3 L'ordre, les retours, les questions
+
+- **Collage** : `periode_des_imports_assurance_maladie` (par l'outil : aucun mot de retrait), puis
+  `remplacement_des_journees_assurance_maladie` (à coller : le retrait des paiements remplacés est un `delete` dans le corps de sa
+  fonction ; sa garde de tête exige le corps de la première). Puis `REMPLACEMENT_DES_JOURNEES_PREVU` levé, les deux fichiers rangés
+  dans l'export, les essais et `rls.sql` rejoués en production, les trois contrôles.
+- **Retours**, à rebours : celui du remplacement (à coller ; il se refuse tant que la trace porte une ligne), puis celui de la période
+  (par l'outil ; il se refuse tant que le remplacement est en base).
+- **Questions** : NOE4RQ2-Q1 (la lecture de la trace par le client « Banque »), NOE4RQ2-Q2 (les paiements de la journée que le
+  nouvel export ne porte pas : gardés), NOE4RQ2-Q3 (qui remplace : le cabinet et le praticien), NOE4RQ2-Q4 (le retrait du nouvel
+  import ne rend pas les paiements remplacés) ; leurs fiches sont dans la page « Arbitrages du cabinet ».
