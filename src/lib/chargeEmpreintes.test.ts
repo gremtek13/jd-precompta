@@ -154,7 +154,7 @@ function releve(): Record<keyof typeof ATTENDUES, string> {
       facturesSources: ventes.sources, info: null, infoInconnue: null, anneesCloturees: [], ouverture: null, ouvertureIncomplete: null,
       aNouveaux: [], soldesReportes: [], entreesDeLOuvertureIncompletes: null, ventesFacturees: lectureDuReleve, caisse: a.caisseLue,
       entreesDeLaCaisseIncompletes: null, entreesDeLaRepriseDesBiensIncompletes: null, inventaire: { etat: 'sans_objet' },
-      assuranceMaladie: { lu: luControles, releveComplet: true },
+      assuranceMaladie: { lu: luControles, releveComplet: true }, bordereauxDeposes: null,
     }, {
       assujettiTva: false, periodiciteTva: 'mensuelle', statutTva: null, modele: MODELE, frontiere: null, anneesValidees: [],
       aujourdHui: `${ANNEE}-12-31`, anneeCourante: ANNEE, moisEcoules: 11, premierJourDuMois: `${ANNEE}-12-01`,
