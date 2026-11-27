@@ -1040,6 +1040,21 @@ qu'avec la table du socle) et la contrainte de paire, que 258 crée dans un bloc
 s'y comptent que par le rendu du catalogue. Leurs retours restent dans `supabase/preparees/retour/` (HISTORIQUE.md, « MCB5G EN
 PRODUCTION (258, 259) »).
 
+**En production le 27/11/2026 au soir, `20261127213748_piece_d_une_ecriture_libre_dans_son_dossier` (260) et
+`20261127214813_ouverture_suivante_a_la_validation` (261), par l'outil, sur l'accord du cabinet (SECU4-Q1 (A), MCBR-Q2 (A))** :
+la garde qui tient dans son dossier la pièce qu'une écriture libre cite (une fonction, un déclencheur sur `ecritures_libres` et
+un sur `pieces`), puis le filet différé de `exercices_valides` qui refuse la validation dont l'ouverture suivante ne
+s'éclaterait pas (une fonction, un déclencheur de contrainte). Préparés sous `20261127200000` et `20261127190000`, les fichiers
+entrent ici sous leur version, texte inchangé : `d64d3aa00c7f49f421ca475cba83f596` (13 604 caractères) et
+`30ebb2cd445a528859f0787fbc4f9b28` (10 667 caractères), sans le saut de ligne final, ceux des lignes d'historique. Aucune ne
+touche le socle : ni `ecritures_libres` ni `exercices_valides` n'en sont, et de `pieces`, dont deux colonnes sont du complément,
+le socle ne porte que ces deux colonnes, leurs contraintes et leurs index, aucun de ses déclencheurs. Les trois contrôles, égaux dans le
+dépôt, sur une copie de `replique_227` portée à 261 par les fichiers de l'export et sur l'export rejoué dans une base vide : la
+dérive, 261 fichiers, `84978ecbcc00e808a9953b09ce3c5dad` ; l'inventaire, 3 548 objets, `c69af6cf57de4a878285b732538d99f2` (six
+de plus : deux fonctions, trois déclencheurs, et la contrainte que le catalogue range pour le déclencheur de contrainte) ; le
+socle, 85 instructions, `585debf740c5f74f4e2669a0d4ebcc9c` (inchangé) — les trois à relever en production. Leurs retours restent
+dans `supabase/preparees/retour/` (HISTORIQUE.md, « SECU4-Q1 ET MCBR-Q2 EN PRODUCTION (260, 261) »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

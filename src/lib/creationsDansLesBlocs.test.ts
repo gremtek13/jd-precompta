@@ -321,9 +321,10 @@ describe('aucun objet ne se crée dans un bloc do, que l’inventaire de l’exp
   it('le plancher : l’export et les préparées se lisent entiers, et chaque cas nommé compte ses créations', () => {
     // Le 27/11/2026 : trois préparées rangées dans l'export (255 à 257, OPT6, MCB6Q2-Q1, DOCF-Q1-B), puis les deux de MCB5g
     // (258, 259) ; le plancher des préparées descend à 17, celui de l'export monte à 259 — leur somme ne baisse pas, ni les
-    // blocs réunis.
-    expect(PREPAREES.length).toBeGreaterThanOrEqual(17)
-    expect(SCHEMA.length).toBeGreaterThanOrEqual(259)
+    // blocs réunis. Le même soir, quatre préparées de plus (SECU4-Q1, MCBR-Q2, NOE4R-Q1, NOE4R-Q2), puis deux rangées dans
+    // l'export (260, 261 : SECU4-Q1 et MCBR-Q2) : 19 préparées, l'export à 261.
+    expect(PREPAREES.length).toBeGreaterThanOrEqual(19)
+    expect(SCHEMA.length).toBeGreaterThanOrEqual(261)
     // Relevé le 22/11/2026, l'export et les préparées RÉUNIS (une préparée rangée dans l'export au collage ne change rien) :
     // 220 blocs ; quarante-quatre restrictives sous condition (vingt-six dans l'export, dix-huit dans onze préparées), vingt
     // contraintes de paire (MCB5g, INV2, LIA2, AFF2, EL2 : quatre chacune), la boucle de la double authentification, le bloc
@@ -331,18 +332,19 @@ describe('aucun objet ne se crée dans un bloc do, que l’inventaire de l’exp
     // dans INV3 et DOCF-Q1-B). Un nombre qui change est un cas à relire, puis à épingler ici avec sa raison. Le 24/11/2026,
     // quarante-six restrictives : celle de `reglages_d_export` (EXP-Q4, préparée), et celle de `codes_des_clients` (EXP58-Q2,
     // préparée) sur son compteur, chacune sous sa condition, sur la table qu'elle crée. Le 27/11/2026, vingt-quatre rendus
-    // comparés : les deux déclencheurs de `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1, préparée), relus par sa
-    // garde de fin, et celui du déclencheur différé de MCBR-Q2 (`ouverture_suivante_a_la_validation`, préparée), sa condition
-    // sur le rôle comprise ; et quarante-sept restrictives : celle de `remplacements_assurance_maladie` (NOE4R-Q2, préparée),
-    // sous sa condition, sur la table qu'elle crée.
+    // comparés : les deux déclencheurs de `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1, en production depuis le
+    // 27/11/2026, 260), relus par sa garde de fin, et celui du déclencheur différé de MCBR-Q2 (`ouverture_suivante_a_la_validation`,
+    // en production depuis le 27/11/2026, 261), sa condition sur le rôle comprise ; et quarante-sept restrictives : celle de
+    // `remplacements_assurance_maladie` (NOE4R-Q2, préparée), sous sa condition, sur la table qu'elle crée.
     const tout = releve([...SCHEMA, ...PREPAREES])
     expect(tout.cas).toEqual({ restrictive: 47, paire: 20, balayage: 1, porteDesPreparees: 10 })
     expect(tout.verifications).toBe(24)
     expect(tout.blocs).toBeGreaterThanOrEqual(220)
     // 37 blocs dans les préparées le 27/11/2026, trois préparées rangées dans l'export (255 à 257) : le plancher à 35 ; puis
     // 32, les cinq blocs de MCB5g (258 : sa garde, la paire de ses sœurs, sa garde de fin ; 259 : sa garde et sa garde de fin)
-    // rangés dans l'export : le plancher à 32.
-    expect(releve(PREPAREES).blocs).toBeGreaterThanOrEqual(32)
+    // rangés dans l'export : le plancher à 32. Le même soir, 41 (les neuf blocs des quatre préparées de plus), puis 37 : les
+    // quatre de SECU4-Q1 et MCBR-Q2 (260, 261 : chacune sa garde de tête et sa garde de fin) rangés dans l'export.
+    expect(releve(PREPAREES).blocs).toBeGreaterThanOrEqual(37)
   })
 
   it('aucune préparée ne crée dans un bloc un objet hors des cas nommés', () => {

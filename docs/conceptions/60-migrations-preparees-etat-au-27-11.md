@@ -27,7 +27,11 @@ sont en production et sorties du tableau, rangées dans `supabase/schema/` sous 
 dans l'ordre du tableau (275 migrations, les dix contraintes de paire des cinq sources neuves du brouillon posées) ; sur la
 chaîne, `rls.sql` 346 lignes, 1 692 vérifications, 0 en faute, 220 mutations sur 220, aucune EN ATTENTE, et les essais
 d'INV2, LIA2, AFF2, INV4, INV3, EXD2, INAL5, PC6, de la double authentification et de MCB5g justes. Les numéros d'ordre
-ci-dessous restent ceux de la répétition.
+ci-dessous restent ceux de la répétition. Le 27/11/2026 au soir, deux préparées d'après elle sont en production à leur tour, par
+l'outil, et sorties du tableau (les lignes 19 bis et 21), rangées de même : `piece_d_une_ecriture_libre_dans_son_dossier` (260,
+`20261127213748`, SECU4-Q1 (A)) et `ouverture_suivante_a_la_validation` (261, `20261127214813`, MCBR-Q2 (A)) ; la production à 261,
+dérive `84978ecb…`, inventaire 3 548 `c69af6cf…`, socle 85 `585debf7…` (HISTORIQUE.md, « SECU4-Q1 ET MCBR-Q2 EN PRODUCTION (260,
+261) »).
 
 | Ordre | Préparée | Chantier | Drapeau(x) | Mode | Après | Ce qu'elle attend | Seule, sur 255 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -46,14 +50,12 @@ ci-dessous restent ceux de la répétition.
 | 17 | `20261112235000_validation_de_l_inventaire` | INV3, la validation connaît l'inventaire (hors BNC) | `INVENTAIRE_PREVU`, `INVENTAIRE_EXPORTE` | par l'outil | 13 ; avant tout autre remplaçant de `valider_exercice` | INV8 | 71/0, 25 sur 25 |
 | 18 | `20261112210000_exercices_du_dossier` | EXD2, les exercices du dossier | `EXERCICES_DECALES_PREVUS` | par l'outil (aucun retrait ; l'en-tête ne le dit pas) | — | EXD3 (à écrire), EXD-Q1 à Q8 ; hors de REPET-Q3 | 63/0 ; son retour garde `btree_gist` (voulu) |
 | 19 | `20261111241000_plan_depuis_la_balance` | PC6, la reprise propose le plan | `PLAN_DEPUIS_LA_BALANCE_PREVU` | à coller | la levée de son drapeau et le déploiement | hors de REPET-Q3 | 26/0 |
-| 19 bis | `20261127200000_piece_d_une_ecriture_libre_dans_son_dossier` | SECU4-Q1, la pièce qu'une écriture libre cite tenue dans son dossier (relecture de sécurité du 27/11/2026) | aucun (l'application ne déplace jamais une pièce) | par l'outil | — (EL2 et EL7, en production) | SECU4-Q1 (et SECU4-Q2, plus large) | sur 259 : 12/12, 4 mutations sur 4 ; `rls.sql` 295/1 357/0/178 |
 | 19 ter | `20261127215000_periode_des_imports_assurance_maladie` | NOE4R-Q1 (A), la période d'un import sur ses seuls paiements insérés | aucun (l'écran ne dit rien que la règle décide) | par l'outil | — (NOE3, en production) | rien : prête | sur 259 : 11/11, la seconde application refusée, le retour rend la signature |
 | 19 quater | `20261127215500_remplacement_des_journees_assurance_maladie` | NOE4R-Q2 (B), le remplacement d'une journée non associée, sa trace | `REMPLACEMENT_DES_JOURNEES_PREVU` | à coller (un `delete` dans le corps de sa fonction) | 19 ter (sa garde en exige le corps) | NOE4RQ2-Q1 à Q4 ; la lecture du client présentée au cabinet | sur 259 et 19 ter : 35/35, cinq mutations sur cinq ; refusée sans 19 ter |
 | 20 | `20261107160000_deux_facteurs_exiges` | C7, la double authentification exigée | `DEUX_FACTEURS_EXIGES_EXPORTE` ; `DEUX_FACTEURS_EXIGES_EN_BASE` (quatorze Edge Functions) | à coller ; retour en deux temps | en dernier | SEC2-Q1 : après le MVP | 42/0, 15 sur 15 |
 | — | `20261107120000_facture_internationale` | e7a, la facture à un client hors de France | `FACTURE_INTERNATIONALE_EXPORTEE` | à coller | — | REPET-Q1 (B) : rebasée à son collage, après le MVP | REFUSE (sa garde vise le corps d'`enregistrer_facture` d'`acomptes_des_devis`) |
-| 21 | `20261127190000_ouverture_suivante_a_la_validation` | MCBR-Q2 (A), la validation refuse l'ouverture suivante qu'elle figerait sans remède | aucun (le préalable `ouverture-suivante-retenue` part seul) | par l'outil | — (258 et 259, en production) ; avant ou après les autres | l'accord | sur 259 : 13/13, 5 sur 5 ; puis sous et sur la chaîne (276) |
 
-**La 21, le 27/11/2026 au soir** (MCBR-Q2, HISTORIQUE.md, « MCBR-Q2 : LA VALIDATION REFUSE L'OUVERTURE SUIVANTE ») : sur une copie
+**La 21, le 27/11/2026 au soir** (en production depuis, 261 ; MCBR-Q2, HISTORIQUE.md, « MCBR-Q2 : LA VALIDATION REFUSE L'OUVERTURE SUIVANTE ») : sur une copie
 portée à 259 (dérive `a540bcd9…`), son essai `ouvertureSuivanteALaValidation` 13/13 et cinq mutations sur cinq, sa seconde
 application refusée, son retour rendant la signature d'avant ; `ouvertureEclatee` 41/41 et `validationExercice` 250/250 avant et
 après elle. Les 16 autres par-dessus, dans l'ordre du tableau (276) : les trois essais justes ; puis elle retirée et collée après
@@ -81,7 +83,8 @@ d'`enregistrer_facture` de LM1 (`a5e2f40e…`), toujours celui de la production 
 rend la base d'avant.
 
 **Préparée depuis** (27/11/2026, la relecture adverse de sécurité des migrations 218 à 259 ; HISTORIQUE.md, « 27/11/2026 — LA
-RELECTURE ADVERSE DE SÉCURITÉ DES MIGRATIONS 218 À 259 ») : `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1, ligne 19 bis),
+RELECTURE ADVERSE DE SÉCURITÉ DES MIGRATIONS 218 À 259 ») : `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1, ligne 19 bis,
+en production depuis, 260),
 indépendante des autres, par l'outil, son retour à coller. Sur une copie de `replique_227` portée à 259 : seule, son essai 12/12,
 quatre mutations sur quatre, `rls.sql` 295 lignes, 1 357 vérifications, 0 en faute, 178 mutations sur 178, une seconde
 application refusée, son retour rend la signature de 259 ; les 173 essais, avant et après elle, rendent les mêmes verdicts hors

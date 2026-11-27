@@ -902,8 +902,8 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // soldes reportés, ceux de `report`. Pour tout autre dossier, le 512 confronté au relevé reste un avertissement
   // (`banque-au-releve`, MVPD7-Q2). Comme `ouverture-a-eclater` : rien drapeau baissé (aucun compte lu), rien sur des contrôles
   // illisibles (`releves-inconnus` retient la validation), et une lecture partielle s'est arrêtée plus haut ; rien pour un
-  // exercice que la reprise précède (`avant-ouverture` le retient). La base le refuse aussi, aux mêmes mots, une fois sa
-  // migration en base : supabase/preparees/20261127190000_ouverture_suivante_a_la_validation.sql.
+  // exercice que la reprise précède (`avant-ouverture` le retient). La base le refuse aussi, aux mêmes mots, depuis le
+  // 27/11/2026 (261) : supabase/schema/20261127214813_ouverture_suivante_a_la_validation.sql.
   if (d.comptesBancaires.etat === 'lus' && d.controlesReleves !== null && !(anneeOuverture !== null && d.annee < anneeOuverture)) {
     const refus = refusDeLOuvertureSuivante({
       annee: d.annee, role: d.modele.plan.banque, parts: partsDuReleve, reprise: d.aNouveaux, reportes: d.soldesReportes,

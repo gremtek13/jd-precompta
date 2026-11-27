@@ -1,10 +1,11 @@
--- LE RETOUR DE `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1, ligne 26.9 ; supabase/preparees/
--- 20261127200000_piece_d_une_ecriture_libre_dans_son_dossier.sql) — À COLLER (ses trois retraits retiennent l'outil), dans une
--- transaction, sur l'accord du cabinet. Il retire la garde et ses deux déclencheurs, rien d'autre ; aucune donnée. C'est un
--- RELÂCHEMENT : la base n'oppose plus rien à une pièce citée par une écriture libre qui changerait de dossier, ni à une
--- écriture libre restaurée qui citerait la pièce d'un autre dossier — `enregistrer_ecriture_libre` seule tient de nouveau la
--- règle, à l'écriture, comme avant la migration. Il se refuse si la fonction n'est plus celle que la migration a posée, ou si
--- ses déclencheurs ne sont plus les siens : rien à défaire sans les relire.
+-- LE RETOUR DE `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1, ligne 26.9 ; supabase/schema/
+-- 20261127213748_piece_d_une_ecriture_libre_dans_son_dossier.sql, en production depuis le 27/11/2026, 260, par l'outil ; préparée
+-- sous 20261127200000) — À COLLER (ses trois retraits retiennent l'outil), dans une transaction, sur l'accord du cabinet. Il
+-- retire la garde et ses deux déclencheurs, rien d'autre ; aucune donnée. C'est un RELÂCHEMENT : la base n'oppose plus rien à
+-- une pièce citée par une écriture libre qui changerait de dossier, ni à une écriture libre restaurée qui citerait la pièce d'un
+-- autre dossier — `enregistrer_ecriture_libre` seule tient de nouveau la règle, à l'écriture, comme avant la migration. Il se
+-- refuse si la fonction n'est plus celle que la migration a posée, ou si ses déclencheurs ne sont plus les siens : rien à
+-- défaire sans les relire.
 
 do $garde$
 begin

@@ -288,7 +288,10 @@ incompréhensible trois étapes plus loin.
    neuf contre une copie de réplique portée à 254, dérive 254 `8727d024…`, socle 84 `e54200f4…`, inventaire 3 518
    `a6475fb0…`. Rejoué le 27/11/2026, MCB5g rangée (son socle régénéré) : « 259 migrations rejouées, 102 objets du socle
    intercalés, 6 forme(s) provisoire(s), 0 reprise(s) » ; neuf familles sur neuf contre une copie portée à 259, dérive 259
-   `a540bcd9…`, socle 85 `585debf7…`, inventaire 3 542 `58b4a599…`.
+   `a540bcd9…`, socle 85 `585debf7…`, inventaire 3 542 `58b4a599…`. Rejoué le même soir, SECU4-Q1 et MCBR-Q2 rangées (260,
+   261) : « 261 migrations rejouées, 102 objets du socle intercalés, 6 forme(s) provisoire(s), 0 reprise(s) » en dix-sept
+   secondes ; neuf familles sur neuf contre une copie portée à 261, dérive 261 `84978ecb…`, socle 85 `585debf7…`, inventaire
+   3 548 `c69af6cf…`.
 
    **Les pièges.**
    - **pg_net** n'existe pas dans une grappe nue, et `20260918111836` l'installe : `--doublure-pg-net` copie

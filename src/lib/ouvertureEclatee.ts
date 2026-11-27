@@ -274,7 +274,7 @@ export function phraseDeLEclatement(etat: EtatDeLEclatement, annee: number): str
 // l'éclatement : le MÊME calcul (`ouvertureEclateeAttendue`), sur l'exercice suivant tel que la validation le laissera —
 // l'exercice parmi les validés, ses soldes à reporter (lib/reportDesSoldes.ts) devenus les soldes reportés du 1er janvier
 // suivant. Le préalable `ouverture-suivante-retenue` (lib/prealablesValidation.ts) le dit avant le clic ; la base le refuse
-// aussi, au même calcul, une fois sa migration en base (supabase/preparees/20261127190000_ouverture_suivante_a_la_validation.sql,
+// aussi, au même calcul, depuis le 27/11/2026 (261 : supabase/schema/20261127214813_ouverture_suivante_a_la_validation.sql,
 // `ouverture_eclatee_attendue` appelée sur l'exercice suivant à la fin de la transaction de `valider_exercice`).
 
 /** Le report que la validation de l'exercice écrira (`soldesAReporter`) : le 1er janvier suivant, et ses soldes. */

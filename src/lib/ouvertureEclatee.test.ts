@@ -246,11 +246,12 @@ describe('les exercices dont l’éclatement appelle un clic', () => {
 })
 
 // ── L'ouverture de l'exercice SUIVANT, à la validation (MCBR-Q2 (A)) ─────────────────────────────────────────────────────
-// `refusDeLOuvertureSuivante` sur les cas de l'essai de la migration préparée `ouverture_suivante_a_la_validation`
+// `refusDeLOuvertureSuivante` sur les cas de l'essai de la migration `ouverture_suivante_a_la_validation` (en production depuis
+// le 27/11/2026, 261, par l'outil ; rangée dans l'export sous sa version d'historique, texte inchangé)
 // (supabase/essais/ouvertureSuivanteALaValidation.sql) : 2025 se valide, 2024 validé, les relevés de décembre 2025 du principal
 // (1 000 €) et du second compte (250 €), le report de 2025 portant 1 250 € au 512000 ; et la migration confrontée à son texte.
 describe('le refus de l’ouverture suivante, à la validation (MCBR-Q2)', () => {
-  const PREPAREE = readFileSync('supabase/preparees/20261127190000_ouverture_suivante_a_la_validation.sql', 'utf8')
+  const FILET_261 = readFileSync('supabase/schema/20261127214813_ouverture_suivante_a_la_validation.sql', 'utf8')
   const RETOUR = readFileSync('supabase/preparees/retour/20261127190100_retour_ouverture_suivante_a_la_validation.sql', 'utf8')
   const RETOUR_OUVERTURE = readFileSync('supabase/preparees/retour/20261111235100_retour_ouverture_eclatee_par_compte.sql', 'utf8')
   const ESSAI = readFileSync('supabase/essais/ouvertureSuivanteALaValidation.sql', 'utf8')
@@ -296,19 +297,19 @@ describe('le refus de l’ouverture suivante, à la validation (MCBR-Q2)', () =>
   })
 
   it('la migration : un déclencheur de contrainte différé, sa condition sur le rôle, la recomposition de l’exercice suivant', () => {
-    const definitions = definitionsSql('garder_ouverture_suivante_a_la_validation', [{ chemin: 'la préparée', texte: PREPAREE }])
+    const definitions = definitionsSql('garder_ouverture_suivante_a_la_validation', [{ chemin: '261', texte: FILET_261 }])
     expect(definitions).toHaveLength(1)
     const corps = definitions[0].definition
     expect(corps).toContain('security definer\nset search_path = public')
     expect(corps).toContain('perform 1 from public.ouverture_eclatee_attendue(new.dossier_id, new.annee + 1);')
     expect(corps).not.toMatch(/is_super_admin/i)
-    expect(PREPAREE).toContain('create constraint trigger exercices_valides_ouverture_suivante\n  after insert on public.exercices_valides\n'
+    expect(FILET_261).toContain('create constraint trigger exercices_valides_ouverture_suivante\n  after insert on public.exercices_valides\n'
       + "  deferrable initially deferred\n  for each row when (current_user <> 'authenticated')\n"
       + '  execute function public.garder_ouverture_suivante_a_la_validation();')
-    expect(PREPAREE).toContain('revoke all on function public.garder_ouverture_suivante_a_la_validation() from public, anon, authenticated;')
+    expect(FILET_261).toContain('revoke all on function public.garder_ouverture_suivante_a_la_validation() from public, anon, authenticated;')
     // Ni retrait ni vidage : par l'outil.
-    expect(PREPAREE).not.toMatch(/\b(drop|delete|truncate)\b/i)
-    expect(PREPAREE).not.toContain('\\')
+    expect(FILET_261).not.toMatch(/\b(drop|delete|truncate)\b/i)
+    expect(FILET_261).not.toContain('\\')
   })
 
   it('sa garde de tête attend le corps de `ouverture_eclatee_attendue` que porte l’export (258)', () => {
@@ -317,7 +318,15 @@ describe('le refus de l’ouverture suivante, à la validation (MCBR-Q2)', () =>
     const ouverture = /\$(\w*)\$/.exec(definition) as RegExpExecArray
     const corps = definition.slice(ouverture.index + ouverture[0].length)
     const empreinte = createHash('md5').update(corps).digest('hex')
-    expect(PREPAREE).toContain(`is distinct from '${empreinte}' then`)
+    expect(FILET_261).toContain(`is distinct from '${empreinte}' then`)
+  })
+
+  it('la migration est rangée sous sa version d’historique, texte inchangé (261, par l’outil)', () => {
+    // L'empreinte de la ligne d'historique, sans le saut de ligne final : celle que la production rend.
+    const sansFin = FILET_261.replace(/\n$/, '')
+    expect(sansFin.length).toBe(10667)
+    expect(createHash('md5').update(sansFin).digest('hex')).toBe('30ebb2cd445a528859f0787fbc4f9b28')
+    expect(readdirSync('supabase/preparees').some((f) => /_ouverture_suivante_a_la_validation\.sql$/.test(f))).toBe(false)
   })
 
   it('les retours : le sien retire le déclencheur et la fonction ; celui de l’ouverture éclatée l’attend', () => {

@@ -1,8 +1,9 @@
 -- LA PIÈCE QU'UNE ÉCRITURE LIBRE CITE, TENUE DANS SON DOSSIER (ligne 26.9, SECU4-Q1 ; la migration
--- `piece_d_une_ecriture_libre_dans_son_dossier`, préparée le 27/11/2026, PAS APPLIQUÉE :
--- supabase/preparees/20261127200000_piece_d_une_ecriture_libre_dans_son_dossier.sql). Le récit : HISTORIQUE.md, « 27/11/2026 —
--- LA RELECTURE ADVERSE DE SÉCURITÉ DES MIGRATIONS 218 À 259 ». À rejouer après toute migration qui touche
--- `garder_piece_d_une_ecriture_libre`, les gardes BEFORE de `ecritures_libres` ou de `pieces`, ou `enregistrer_ecriture_libre`.
+-- `piece_d_une_ecriture_libre_dans_son_dossier`, en production depuis le 27/11/2026, 260, par l'outil :
+-- supabase/schema/20261127213748_piece_d_une_ecriture_libre_dans_son_dossier.sql). Le récit : HISTORIQUE.md, « 27/11/2026 —
+-- LA RELECTURE ADVERSE DE SÉCURITÉ DES MIGRATIONS 218 À 259 », puis « SECU4-Q1 ET MCBR-Q2 EN PRODUCTION (260, 261) ». À rejouer
+-- après toute migration qui touche `garder_piece_d_une_ecriture_libre`, les gardes BEFORE de `ecritures_libres` ou de `pieces`,
+-- ou `enregistrer_ecriture_libre`.
 -- SANS LA MIGRATION (la garde absente du catalogue), il se dit EN ATTENTE.
 --
 -- Ce qui se prouve ici, et ne se relit pas :
