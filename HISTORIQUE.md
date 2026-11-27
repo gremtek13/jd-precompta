@@ -55175,3 +55175,17 @@ Plausibles, posés au cabinet sans code (FACT-Q1 à Q3) : la phrase des pénalit
 paramètres ; l'e-mail d'une facture figée signé et intitulé du nom interne du dossier, non du nom légal figé ; l'e-mail d'un
 avoir qui ne cite pas la facture qu'il corrige. Écartés : le calcul au centime (`calculerLigne` en entiers), le verrou de
 l'envoi, les dates de Paris, les mots de `send-email` au client.
+
+### 27/11/2026 — SEIZE RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE À 18 H 14 UTC)
+
+Toutes à la recommandation, sauf NOE4R-Q2. Sans changement de code : EXP4-Q1 à Q5 (A) — tout à saisir sans défaut, les choix
+du profil TRA gardés jusqu'à l'essai d'import, un montant négatif refusé, une migration commune à Quadra et au TRA après l'essai
+réel ; MCBR-Q1 (A) — le compte se choisit pour chaque relevé (en place) ; NOE7-Q1 (A) — attendre la forme réelle de l'export
+et de l'état des paiements (une page rendue anonyme de chacun) ; BOR6T-Q1 (A) — la photo d'un bordereau passe par la lecture
+avant d'être refusée, et la consigne aux clients dit qu'un bordereau ne se photographie pas. À écrire : MCBR-Q2 (A) — la
+validation de 2025 bloque quand un compte qui ouvre son 512 au 1er janvier n'a pas son solde du 31 décembre ; MCBR-Q3 (A) — le
+refus de la connexion bancaire à deux comptes dit avant le clic ; BOR6T-Q2 (A) — une attention de la Vue d'ensemble liste les
+bordereaux déjà déposés, la suppression au clic du cabinet ; FACT-Q1 (B) — pour un particulier, la mention de TVA seule ;
+FACT-Q2 (B) — l'e-mail d'une facture figée sous son nom légal figé ; FACT-Q3 (B) — l'e-mail de tout avoir cite la facture
+qu'il corrige ; NOE4R-Q1 (A) — une migration, la période d'un import sur ses seuls paiements insérés ; NOE4R-Q2 (B), contre la
+recommandation — concevoir maintenant le remplacement d'une journée comptable non associée. NOE6R-Q1 et B1-Q1 restent ouvertes.
