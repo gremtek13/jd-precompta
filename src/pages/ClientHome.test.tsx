@@ -42,46 +42,51 @@ vi.mock('../lib/depot', async (importOriginal) => {
   }
 })
 
-vi.mock('../lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      const chaine: Record<string, unknown> = {}
-      let debut = 0
-      let fin = Number.MAX_SAFE_INTEGER
-      Object.assign(chaine, {
-        select: () => chaine,
-        eq: () => chaine,
-        or: () => chaine,
-        order: () => chaine,
-        range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        maybeSingle: () => Promise.resolve({ data: (faux.parTable[table] ?? [])[0] ?? null, error: null }),
-        then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number }) => unknown) => {
-          if (faux.refusees.has(table)) {
-            return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: 0 }).then(suite)
-          }
-          const toutes = faux.parTable[table] ?? []
-          return Promise.resolve({
-            data: toutes.slice(debut, debut + (fin - debut + 1)),
-            error: null,
-            count: toutes.length,
-          }).then(suite)
-        },
-      })
-      return chaine
+// La couverture se charge DANS la fabrique, une fois, au montage du faux client : chargée dans `rpc`, elle se transformait
+// pendant le premier test qui la demandait, et sous la charge de la barrière ce chargement mangeait l'attente des
+// `findByText` jusqu'au délai du test.
+vi.mock('../lib/supabase', async () => {
+  const { couvertureDe } = await import('../test/couvertureDuReleve')
+  return {
+    supabase: {
+      from: (table: string) => {
+        const chaine: Record<string, unknown> = {}
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        Object.assign(chaine, {
+          select: () => chaine,
+          eq: () => chaine,
+          or: () => chaine,
+          order: () => chaine,
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+          maybeSingle: () => Promise.resolve({ data: (faux.parTable[table] ?? [])[0] ?? null, error: null }),
+          then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number }) => unknown) => {
+            if (faux.refusees.has(table)) {
+              return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: 0 }).then(suite)
+            }
+            const toutes = faux.parTable[table] ?? []
+            return Promise.resolve({
+              data: toutes.slice(debut, debut + (fin - debut + 1)),
+              error: null,
+              count: toutes.length,
+            }).then(suite)
+          },
+        })
+        return chaine
+      },
+      // La couverture du relevé (espace client, étape P7) : déduite des mêmes mouvements, refusée avec eux — ce fichier vaut
+      // drapeau levé comme baissé (`COUVERTURE_EXPORTEE`, voir src/test/couvertureDuReleve.ts).
+      // Et les pièces jointes écartées (ligne 22.94), que l'accueil lit à part : aucune, lue en entier — ce fichier n'est pas celui de
+      // la ligne qui les signale (ClientHome.ecartees.test.tsx), et rien d'autre ne dépend de cette lecture.
+      rpc: async (nom: string) => {
+        if (nom === 'pieces_jointes_ecartees_du_client') return { data: [], error: null }
+        if (nom !== 'couverture_du_releve') return { data: null, error: { message: `fonction inattendue : ${nom}` } }
+        if (faux.refusees.has('lignes_bancaires')) return { data: null, error: { message: 'permission denied' } }
+        return { data: couvertureDe(faux.parTable.lignes_bancaires ?? []), error: null }
+      },
     },
-    // La couverture du relevé (espace client, étape P7) : déduite des mêmes mouvements, refusée avec eux — ce fichier vaut
-    // drapeau levé comme baissé (`COUVERTURE_EXPORTEE`, voir src/test/couvertureDuReleve.ts).
-    // Et les pièces jointes écartées (ligne 22.94), que l'accueil lit à part : aucune, lue en entier — ce fichier n'est pas celui de
-    // la ligne qui les signale (ClientHome.ecartees.test.tsx), et rien d'autre ne dépend de cette lecture.
-    rpc: async (nom: string) => {
-      const { couvertureDe } = await import('../test/couvertureDuReleve')
-      if (nom === 'pieces_jointes_ecartees_du_client') return { data: [], error: null }
-      if (nom !== 'couverture_du_releve') return { data: null, error: { message: `fonction inattendue : ${nom}` } }
-      if (faux.refusees.has('lignes_bancaires')) return { data: null, error: { message: 'permission denied' } }
-      return { data: couvertureDe(faux.parTable.lignes_bancaires ?? []), error: null }
-    },
-  },
-}))
+  }
+})
 
 // Monter un `AuthProvider` complet ferait dépendre ce test d'une session Supabase — même doublure
 // que `PiecesTab` (voir CLAUDE.md, « deux doublures à connaître »).

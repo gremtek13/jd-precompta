@@ -99,6 +99,18 @@ function sourceBaissee(): string {
   return source.replace(/^const ECARTS_DE_REGLEMENT_PREVUS = (true|false)$/m, 'const ECARTS_DE_REGLEMENT_PREVUS = false')
 }
 
+// Le JavaScript d'un bloc, transpilé une fois par texte : chaque appel d'`extraire` rejoue ses ancres et reconstruit ses
+// fonctions (`new Function`), seule la traduction du TypeScript, identique pour un même texte, se garde.
+const transpiles = new Map<string, string>()
+function transpiler(bloc: string): string {
+  let js = transpiles.get(bloc)
+  if (js === undefined) {
+    js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+    transpiles.set(bloc, js)
+  }
+  return js
+}
+
 // Prend la SOURCE en paramètre plutôt que de la lire elle-même : c'est ce qui permet de lui donner
 // une source où une dérive a été PLANTÉE, et donc de prouver que ce garde-fou sait encore échouer.
 function extraire(source: string, plan: PlanComptable) {
@@ -141,7 +153,8 @@ function extraire(source: string, plan: PlanComptable) {
   // Le bloc est du TypeScript (interfaces, `Pick`, types de retour) : on le transpile avec le
   // compilateur du projet plutôt que d'en retirer les types à la main — une traduction écrite à la
   // main mentirait au premier cas tordu.
-  const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  // La transpilation d'un même bloc se paie une fois (`transpiles`) : une trentaine de copies extraites de la même source.
+  const js = transpiler(bloc)
   return avecLePlanEtLaBanqueDuRole(new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, paiementsParLaCaisse, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu, facturesSourcesDe, exemplairesDesSources, partsEncaissees, marquerLesPiecesCitees }`)(), plan) as {
     marquerLesPiecesCitees: typeof marquerLesPiecesCitees
     piecesAComptabiliser: (
@@ -1108,9 +1121,32 @@ const projeter = (lignes: readonly LigneComparee[]) =>
 // notes de frais, pièces sans date datées par leur dépôt), sur chaque cible, payées de chaque façon (rien, en entier
 // le jour même ou plus tard, à moitié, en trois fois — l'arrondi du dernier morceau —, sous l'écart d'alignement, par
 // la part d'un virement groupé, à zéro euro, au-delà du montant), dans chaque modèle et chaque statut de TVA.
-function batterieDuGenerateur(copie: typeof deployee, plan: PlanComptable): string[][] {
+//
+// CE QUE SRC/LIB EN REND SE PAIE UNE FOIS par plan et par état des deux drapeaux qu'il lit (la génération répartie, le change) :
+// la batterie revient une vingtaine de fois — chaque plan, chaque état, chaque dérive plantée dans la copie —, et ses neuf mille
+// lignes de src/lib sont les mêmes à chaque fois. Seule la copie, qui change d'un appel à l'autre, se recalcule ; ses entrées
+// se refabriquent à chaque appel, pour qu'une copie dérivée qui les modifierait ne fausse pas l'appel suivant. Avec
+// `copie: null`, la batterie ne fait que payer src/lib (`prechaufferLaBatterie`, dans un `beforeAll`).
+const lignesDeSrcLib = new WeakMap<PlanComptable, Map<string, string[][]>>()
+function lignesDeSrcLibSous(plan: PlanComptable): string[][] | null {
+  const etat = `${JSON.stringify(drapeauDesChamps.choix)}|${String(drapeauDuChange.leve)}`
+  return lignesDeSrcLib.get(plan)?.get(etat) ?? null
+}
+function retenirLesLignesDeSrcLib(plan: PlanComptable, lignes: string[][]) {
+  const etat = `${JSON.stringify(drapeauDesChamps.choix)}|${String(drapeauDuChange.leve)}`
+  const parEtat = lignesDeSrcLib.get(plan) ?? new Map<string, string[][]>()
+  parEtat.set(etat, lignes)
+  lignesDeSrcLib.set(plan, parEtat)
+}
+/** src/lib payé d'avance sur la batterie, sous le plan et l'état des drapeaux du moment. */
+function prechaufferLaBatterie(plan: PlanComptable) {
+  if (lignesDeSrcLibSous(plan) === null) batterieDuGenerateur(null, plan)
+}
+
+function batterieDuGenerateur(copie: typeof deployee | null, plan: PlanComptable): string[][] {
   // Sous le plan donné (ligne 43, étape PC3b) : src/lib, ses entrées portées sous lui, comme celles de la copie de la garde.
   const { lignesPourPiece } = entreesSous(lib_ecritures, plan)
+  const dejaPayees = lignesDeSrcLibSous(plan)
   const paiementsDesPieces = entreesSous(paiementsDesPiecesDeSrcLib, plan)
   const pieces: Piece[] = [
     piece({}),
@@ -1179,10 +1215,14 @@ function batterieDuGenerateur(copie: typeof deployee, plan: PlanComptable): stri
       for (const [mouvements, parts, encaissees, parLaCaisse = []] of reglements) {
         const paiementsPiece = paiementsDesPieces(mouvements, parts, encaissees, parLaCaisse).get(p.id) ?? []
         // Les paiements de la pièce, chaque copie les tirant du même relevé : ils datent tout ce qui suit.
-        expect(copie.paiementsDesPieces(mouvements, parts, encaissees, parLaCaisse).get(p.id) ?? [], 'paiementsDesPieces a dérivé').toEqual(paiementsPiece)
+        if (copie !== null) {
+          expect(copie.paiementsDesPieces(mouvements, parts, encaissees, parLaCaisse).get(p.id) ?? [], 'paiementsDesPieces a dérivé').toEqual(paiementsPiece)
+        }
         for (const modele of modeles) {
           for (const assujettiTva of [true, false]) {
-            const ici = projeter(lignesPourPiece('d1', p, c, assujettiTva, paiementsPiece, modele, banquesDuDossier({ etat: 'sans_objet' }, modele.plan)))
+            const ici = dejaPayees?.[sorties.length]
+              ?? projeter(lignesPourPiece('d1', p, c, assujettiTva, paiementsPiece, modele, banquesDuDossier({ etat: 'sans_objet' }, modele.plan)))
+            if (copie === null) { sorties.push(ici); continue }
             const la = projeter(copie.lignesPourPiece(p, c, assujettiTva, paiementsPiece, modele))
             expect(la, `lignesPourPiece a dérivé : ${JSON.stringify({ piece: p, cible: c, paiementsPiece, modele, assujettiTva })}`).toEqual(ici)
             sorties.push(ici)
@@ -1191,12 +1231,15 @@ function batterieDuGenerateur(copie: typeof deployee, plan: PlanComptable): stri
       }
     }
   }
+  if (dejaPayees === null) retenirLesLignesDeSrcLib(plan, sorties)
+  else expect(sorties.length, 'la batterie n’a plus la forme des lignes de src/lib payées d’avance').toBe(dejaPayees.length)
   return sorties
 }
 
 describe.each(PLANS_DES_GARDES)('agent-comptable / le générateur (copie déployée), sous le %s', (_plan, plan) => {
   // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
   const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
+  beforeAll(() => prechaufferLaBatterie(plan))
   it('produit les mêmes lignes que src/lib, au centime, sur toute la batterie', () => {
     const sorties = batterieDuGenerateur(deployee, plan)
     // La batterie exerce bien ce qui décide : chaque compte de tiers et de contrepartie, la TVA d'un bien, une pièce
@@ -1487,6 +1530,11 @@ describe.each(PLANS_DES_GARDES)('le garde-fou sait encore échouer, sous le %s',
   const sourceDeployee = sourceBaissee
   beforeEach(() => { drapeauDuChange.leve = false })
   afterEach(() => { drapeauDuChange.leve = undefined })
+  // src/lib payé d'avance sur la batterie, sous le drapeau du change que `beforeEach` posera.
+  beforeAll(() => {
+    drapeauDuChange.leve = false
+    try { prechaufferLaBatterie(plan) } finally { drapeauDuChange.leve = undefined }
+  })
   // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
   const deployee = entreesSous(extraire(sourceDeployee(), plan), plan)
   const { lignesPourPiece } = entreesSous(lib_ecritures, plan)
@@ -2155,6 +2203,11 @@ describe.each(PLANS_DES_GARDES)('le garde-fou du paiement par la caisse sait enc
   const sourceDeployee = sourceBaissee
   beforeEach(() => { drapeauDuChange.leve = false })
   afterEach(() => { drapeauDuChange.leve = undefined })
+  // src/lib payé d'avance sur la batterie, sous le drapeau du change que `beforeEach` posera.
+  beforeAll(() => {
+    drapeauDuChange.leve = false
+    try { prechaufferLaBatterie(plan) } finally { drapeauDuChange.leve = undefined }
+  })
   // Sous chaque plan : la copie extraite sous lui, et ses entrées comme celles de src/lib portées sous lui (`entreesSous`).
   const memeResultat = memeResultatSous(plan, entreesSous(extraire(sourceDeployee(), plan), plan))
   function planter(source: string, avant: string, apres: string, quoi: string): string {
@@ -2291,8 +2344,38 @@ function accordDesDrapeaux(source: string, choixDeLApplication: ChoixChampsBnc |
 
 /** Les deux copies d'une source, dans les deux états. */
 interface CopiesDesDeuxEtats { baissee: typeof deployee; levee: typeof deployee }
-const copiesDesDeuxEtats = (source: string = sourceDeployee()): CopiesDesDeuxEtats =>
-  ({ baissee: copieSelon(false, source), levee: copieSelon(true, source) })
+//
+// UNE FOIS PAR SOURCE, ET CHAQUE COMPARAISON UNE FOIS PAR PAIRE DE COPIES. Les gardes de la génération répartie comparent
+// la copie déployée à src/lib en trois morceaux (la batterie, les cas écrits, le tirage), puis « ne crie pas au loup »
+// rejoue les trois ensemble, par le chemin des dérives plantées (`comparerLaGenerationRepartie`) : sur la même source, les
+// mêmes copies (`COPIES_PAR_SOURCE`), et un morceau déjà comparé sans faute ne se refait pas (`uneFoisPourLesCopies`). Les
+// copies sont pures : une même source rend les mêmes lignes et le même jugement. Une comparaison qui échoue ne se retient
+// pas, et se refait ; une source plantée, d'un autre texte, a ses propres copies et refait tout.
+const COPIES_PAR_SOURCE = new Map<string, CopiesDesDeuxEtats>()
+const copiesDesDeuxEtats = (source: string = sourceDeployee()): CopiesDesDeuxEtats => {
+  let copies = COPIES_PAR_SOURCE.get(source)
+  if (copies === undefined) {
+    copies = { baissee: copieSelon(false, source), levee: copieSelon(true, source) }
+    COPIES_PAR_SOURCE.set(source, copies)
+  }
+  return copies
+}
+const COMPAREES = new WeakMap<CopiesDesDeuxEtats, Map<string, unknown>>()
+function uneFoisPourLesCopies<T>(copies: CopiesDesDeuxEtats, morceau: string, comparer: () => T): T {
+  // L'état du drapeau du change fait partie de ce qui est comparé : src/lib le lit.
+  const cle = `${morceau}|${String(drapeauDuChange.leve)}`
+  const faites = COMPAREES.get(copies) ?? new Map<string, unknown>()
+  if (faites.has(cle)) return faites.get(cle) as T
+  const resultat = comparer()
+  faites.set(cle, resultat)
+  COMPAREES.set(copies, faites)
+  return resultat
+}
+/** La batterie du générateur, la copie de chaque état sous son drapeau, sous le plan par défaut. */
+function batterieDesDeuxEtats(copies: CopiesDesDeuxEtats): string[][][] {
+  return uneFoisPourLesCopies(copies, 'batterie', () =>
+    [false, true].map((levee) => avecLaGeneration(levee, () => batterieDuGenerateur(levee ? copies.levee : copies.baissee, PLAN_PAR_DEFAUT))))
+}
 
 /** Un cas écrit : une pièce, ses paiements, et ce que la génération levée en fait. */
 interface CasReparti {
@@ -2446,6 +2529,9 @@ const CAS_REPARTIS: CasReparti[] = [
 
 /** Les cas écrits, dans les deux états, les deux copies d'une source comparées à src/lib. */
 function comparerLesCasRepartis(copies: CopiesDesDeuxEtats) {
+  uneFoisPourLesCopies(copies, 'cas', () => comparerLesCasRepartisUneFois(copies))
+}
+function comparerLesCasRepartisUneFois(copies: CopiesDesDeuxEtats) {
   for (const c of CAS_REPARTIS) {
     const baissees = memesLignesDuCas(c, false, copies.baissee)
     const levees = memesLignesDuCas(c, true, copies.levee)
@@ -2578,19 +2664,22 @@ function calculerLeTirage(): TirageCalcule {
 
 /** Le tirage, les deux copies d'une source comparées à src/lib dans les deux états. */
 function comparerLeTirage(t: TirageCalcule, copies: CopiesDesDeuxEtats) {
-  for (const etat of ['baissee', 'levee'] as const) {
-    t.cas.forEach((c, i) => {
-      const la = sortieDuTirage(c, copies[etat], t.brouillons[i])
-      expect(la, `cas tiré ${c.piece.id} (drapeau ${etat === 'levee' ? 'levé' : 'baissé'}) : ${JSON.stringify(c)}`).toEqual(t.attendus[etat][i])
-    })
-  }
+  // Le tirage du fichier est un (le `beforeAll` du describe) ; sa graine le nomme dans la clé.
+  uneFoisPourLesCopies(copies, `tirage|${t.cas.length}|${t.cas[0]?.piece.id ?? ''}`, () => {
+    for (const etat of ['baissee', 'levee'] as const) {
+      t.cas.forEach((c, i) => {
+        const la = sortieDuTirage(c, copies[etat], t.brouillons[i])
+        expect(la, `cas tiré ${c.piece.id} (drapeau ${etat === 'levee' ? 'levé' : 'baissé'}) : ${JSON.stringify(c)}`).toEqual(t.attendus[etat][i])
+      })
+    }
+  })
 }
 
 /** Tout ce que la génération répartie compare, pour les deux copies d'une source. */
 function comparerLaGenerationRepartie(t: TirageCalcule, copies: CopiesDesDeuxEtats) {
   comparerLesCasRepartis(copies)
   comparerLeTirage(t, copies)
-  for (const levee of [false, true]) avecLaGeneration(levee, () => batterieDuGenerateur(levee ? copies.levee : copies.baissee, PLAN_PAR_DEFAUT))
+  batterieDesDeuxEtats(copies)
 }
 
 describe('agent-comptable / la génération répartie par règlement (copie déployée, lot FEC22c3)', () => {
@@ -2598,7 +2687,10 @@ describe('agent-comptable / la génération répartie par règlement (copie dép
   // de la copie), que le plan ne touche pas ; le générateur, lui, se joue sous les deux plans plus haut.
   const plan = PLAN_PAR_DEFAUT
   let t: TirageCalcule
-  beforeAll(() => { t = calculerLeTirage() })
+  beforeAll(() => {
+    t = calculerLeTirage()
+    for (const levee of [false, true]) avecLaGeneration(levee, () => prechaufferLaBatterie(plan))
+  })
 
   it('garde la constante de l’assistant dans l’état du drapeau de l’application', async () => {
     const vrai = await vi.importActual<typeof import('./champsBncExportes')>('./champsBncExportes')
@@ -2606,8 +2698,8 @@ describe('agent-comptable / la génération répartie par règlement (copie dép
   })
 
   it('produit les mêmes lignes que src/lib dans les deux états, sur toute la batterie — levé, plus de lignes à une même date', () => {
-    const copies = copiesDesDeuxEtats()
-    const sorties = [false, true].map((levee) => avecLaGeneration(levee, () => batterieDuGenerateur(levee ? copies.levee : copies.baissee, plan)))
+    expect(plan).toBe(PLAN_PAR_DEFAUT)
+    const sorties = batterieDesDeuxEtats(copiesDesDeuxEtats())
     // Le témoin : levé, des lignes de charge ou de TVA (sans mouvement ni opération) partagent leur date et leur compte.
     const partagees = (lignes: string[]) => {
       const cles = lignes.filter((l) => l.endsWith('||')).map((l) => l.split('|').slice(0, 2).join('|'))

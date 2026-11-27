@@ -129,7 +129,22 @@ function zones(texte: string): Morceau[] {
 // Le texte réduit au code et à ses chaînes, les commentaires effacés : chaque chaîne y est récrite entre apostrophes, les
 // siennes doublées (une chaîne `$…$` ou `E'…'` comprise) — l'expression d'une policy en contient (`'packs'`), et la fin
 // d'une instruction se cherche hors d'elles. Pour chaque position du texte réduit, sa zone.
+//
+// Réduit une fois par TEXTE (`REDUITS`) : la réduction est pure, et les gardes relèvent les policies d'un même export des
+// dizaines de fois — l'export seul, sans une migration, avec les préparées, avec une source plantée —, ce qui, refait à
+// chaque relevé, passait les 5 s de Vitest sous la charge de la barrière. Une source plantée, d'un autre texte, se
+// réduit à part ; une forme qui lève ne se garde pas, et lève de nouveau.
+const REDUITS = new Map<string, { texte: string; zoneEn: (i: number) => Morceau | null }>()
 function sansCommentaires(texte: string): { texte: string; zoneEn: (i: number) => Morceau | null } {
+  let reduit = REDUITS.get(texte)
+  if (reduit === undefined) {
+    reduit = reduire(texte)
+    REDUITS.set(texte, reduit)
+  }
+  return reduit
+}
+
+function reduire(texte: string): { texte: string; zoneEn: (i: number) => Morceau | null } {
   let propre = ''
   const reperes: Morceau[] = []
   for (const m of zones(texte)) {

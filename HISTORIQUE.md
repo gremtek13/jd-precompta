@@ -55374,3 +55374,22 @@ Trois défauts établis, corrigés, chacun par un test qui échouait :
 - `EcrivainZip.depasserait` recomptait le répertoire central à chaque appel : 42 s pour 65 535 fichiers vides, le temps carré du nombre de fichiers (négligeable à 3 000, des minutes pour un gros cabinet). Tenu au fil des ajouts (zipEnFlux.test.ts : 65 535 fichiers sous 4 s, le 65 536e refusé, la borne d'octets au plus juste).
 Gardé : copieDesFichiersCouverture.test.ts — toute colonne de l'export dont le nom dit un chemin de stockage est portée par la copie (et LUE par elle), par la sauvegarde, ou écartée avec sa raison ; onze aujourd'hui, zéro faute, un défaut planté vu.
 PLAN_DE_REPRISE.md était périmé : il renvoyait au pack pour reverser les fichiers, qui ne porte que les pièces validées et datées ; c'est la copie des fichiers, reversée par l'empreinte de chaque ligne restaurée (le ZIP ne nomme jamais un chemin de stockage). Il dit aussi ce qu'aucune sauvegarde de l'application ne porte (les modules, l'équipe, les règles apprises, le modèle de plan, au cabinet). Plausibles, posés au cabinet : « Exporter avant suppression » se refuse au-delà de 50 Mio en proposant une période qui n'existe pas dans ce geste (SAUV-Q1) ; les données du cabinet hors de toute sauvegarde de l'application (SAUV-Q2). Écartés : un format plus récent est refusé à la lecture et à la restauration ; le pack et l'export d'un cabinet disent leurs fichiers manquants ; le paquet d'archive s'arrête au premier original illisible ; la copie relit chaque fichier à son SHA-256 et dit écarts et manquants.
+### 27/11/2026 — ONZE FICHIERS DE TEST QUI PASSAIENT LEUR DÉLAI SOUS LA CHARGE
+
+(Agent dev ; ni délai relevé, ni assertion ni défaut planté changés ; tests et `src/test/` seuls.) Chaque fichier refaisait dans ses tests un calcul commun, pur, sur les mêmes textes ; il se paie désormais une fois, dans un `beforeAll` ou un cache clé par TEXTE (une source plantée, d'un autre texte, se recalcule ; un calcul qui lève ne se garde pas). agentComptableAnalyse : la transpilation d'un bloc, les lignes de src/lib de la batterie (par plan et état des deux drapeaux), les copies d'une source et chaque comparaison déjà faite sans faute de la génération répartie ; motifsSql : le lexeur recopiait tous ses jetons à chaque `${` (quadratique, 305 ms pour contratsFonctions.ts, 18 aujourd'hui) ; policiesDuSchema : la réduction d'un fichier SQL ; lecturesSignalees, encaissementsEcritures : le relevé de chaque source ; stockageSansMiseAJour : le relevé du stockage dans un `beforeAll` ; recuperationMotDePasse : l'arbre ne se bâtit que pour un fichier qui écrit `resetPasswordForEmail` (ou un `\u`) ; schema.test : `definitionsSql` ne lit que les fichiers qui définissent le nom ; cdarRecuCopie : la lecture du module des 4 000 messages ; ClientHome : la couverture importée dans la fabrique du faux client, plus dans `rpc`. Les caches mordent : décalé d'une ligne, celui de la batterie fait tomber 4 tests ; partagé entre copies, celui des comparaisons laisse passer 15 dérives, qui le font échouer.
+
+| Fichier | seul avant → après | sous charge avant → après (test le plus long) |
+|---|---|---|
+| agentComptableAnalyse | 17,8 s (1 323 ms) → 9,2–12,9 s (722 ms) | 25,8 s (2 092 ms) → 19,2 s (1 514 ms) |
+| cdarRecuCopie | 4,3 s (871) → 2,0 s (302) | 5,2 s (932) → 4,9 s (671) |
+| motifsSqlSensiblesALaCasse | 3,4 s (1 693) → 2,4 s (1 085) | 4,1 s (1 953) → 3,1 s (1 636) |
+| lecturesSignalees | 2,5 s (785) → 1,1 s (2) | 4,1 s (1 531) → 1,5 s (4) |
+| policiesDeMiseAJour | 3,0 s (1 042) → 0,9 s (191) | 4,0 s (1 249) → 1,6 s (228) |
+| stockageSansMiseAJour | 5,0 s (904) → 2,1 s (190) | 7,2 s (1 263) → 3,9 s (274) |
+| recuperationMotDePasse | 2,2 s → 1,0 s | 5,1 s → 1,7 s |
+| schema.test | 2,0 s → 0,5 s | 3,4 s → 0,8 s |
+| encaissementsEcritures | 5,8 s (293) → 2,4 s (30) | 8,0 s (516) → 4,1 s (44) |
+| ClientHome | 3,1 s (151) → 3,9 s (204) | 5,8 s (327) → 4,7 s (253) |
+| FicheHorsDeFrance | 3,3 s (409) → inchangé | 5,3 s (924) → 7,2 s (1 404), le bruit de la machine |
+
+Reste lent : la batterie de la copie déployée elle-même (agentComptableAnalyse, ~0,7 s, c'est l'assertion), le lexage des 21 Mo de tests (motifsSql, ~0,7 s par passe, deux gardes), et FicheHorsDeFrance, dont les 400 ms sont treize gestes et leurs requêtes par rôle de Testing Library, sans calcul commun à sortir. La charge : la suite entière bouclée à côté, sur quatre cœurs déjà partagés.

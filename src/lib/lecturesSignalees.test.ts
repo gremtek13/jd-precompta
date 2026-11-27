@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // UN ÉCRAN QUI SIGNALE UNE LECTURE PARTIELLE LES SIGNALE TOUTES.
 //
@@ -376,9 +376,22 @@ export function liaisonsLireTout(source: string): Liaison[] {
   return liaisons
 }
 
+// Les liaisons d'un TEXTE, calculées une fois : quatre gardes parcourent les mêmes sources du dépôt, et refaire l'analyse
+// dans chacun (près d'une seconde) passait les 5 s de Vitest sous la charge de la barrière. `liaisonsLireTout` est pure :
+// un même texte rend les mêmes liaisons, et une source plantée, d'un autre texte, se calcule à part.
+const LIAISONS = new Map<string, Liaison[]>()
+function liaisonsDe(source: string): Liaison[] {
+  let liaisons = LIAISONS.get(source)
+  if (liaisons === undefined) {
+    liaisons = liaisonsLireTout(source)
+    LIAISONS.set(source, liaisons)
+  }
+  return liaisons
+}
+
 /** Toute lecture dont le drapeau de complétude n'est lu nulle part. */
 export function lecturesNonSignalees(chemin: string, source: string): string[] {
-  const jetees = liaisonsLireTout(source)
+  const jetees = liaisonsDe(source)
     .filter((l) => !l.couverte)
     .map((l) => `${chemin} — ${l.nom} [${l.table}]`)
   return jetees.slice(EXCEPTIONS[chemin]?.nombre ?? 0)
@@ -387,12 +400,15 @@ export function lecturesNonSignalees(chemin: string, source: string): string[] {
 const TOUTES = sourcesDeProduction()
 
 describe('toute lecture de collection dit si elle est partielle', () => {
+  // L'analyse des sources du dépôt se paie ici, une fois ; les gardes qui suivent la lisent.
+  beforeAll(() => { for (const f of TOUTES) liaisonsDe(f.texte) })
+
   it('parcourt bien les sources des deux côtés', () => {
     // Sans cette borne, un scanner qui ne lirait plus rien annoncerait « zéro faute » — la panne qui
     // ressemble exactement au succès, et que ce dépôt a déjà payée sous six autres noms.
     expect(TOUTES.length).toBeGreaterThan(80)
     expect(TOUTES.some((f) => f.chemin.startsWith('supabase/functions/'))).toBe(true)
-    expect(TOUTES.filter((f) => liaisonsLireTout(f.texte).length > 0).length).toBeGreaterThanOrEqual(30)
+    expect(TOUTES.filter((f) => liaisonsDe(f.texte).length > 0).length).toBeGreaterThanOrEqual(30)
   })
 
   it('ne trouve aucune lecture jetée sur un fichier qui en signale une', () => {
@@ -411,7 +427,7 @@ describe('toute lecture de collection dit si elle est partielle', () => {
     // AUCUNE lecture — la panne qui ressemble exactement au succès, et que ce dépôt a déjà payée
     // sous six autres noms. Mesuré le 22/09/2026 : 110 sites dans 35 fichiers — les formes connues
     // seulement. 118 le 25/09/2026, TOUS les appels du dépôt, les deux formes `.then` comprises.
-    const liaisons = TOUTES.flatMap((f) => liaisonsLireTout(f.texte))
+    const liaisons = TOUTES.flatMap((f) => liaisonsDe(f.texte))
     expect(liaisons.length).toBeGreaterThanOrEqual(118)
     expect(liaisons.every((l) => l.couverte)).toBe(true)
     expect(liaisons.filter((l) => l.nom === FORME_NON_RECONNUE)).toEqual([])
@@ -421,7 +437,7 @@ describe('toute lecture de collection dit si elle est partielle', () => {
     for (const [chemin, { nombre, raison }] of Object.entries(EXCEPTIONS)) {
       const fichier = TOUTES.find((f) => f.chemin === chemin)
       expect(fichier, `exception inventée : ${chemin}`).toBeDefined()
-      const liaisons = liaisonsLireTout(fichier!.texte)
+      const liaisons = liaisonsDe(fichier!.texte)
       expect(liaisons.filter((l) => !l.couverte).length, `${chemin} — ${raison}`).toBe(nombre)
       expect(raison.length).toBeGreaterThan(20)
     }

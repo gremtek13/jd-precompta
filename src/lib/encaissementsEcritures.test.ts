@@ -175,8 +175,15 @@ function sourcesDeProduction(): Source[] {
 
 /** Les lignes entièrement en commentaire ne comptent pas : ce dépôt CITE ses défauts dans ses commentaires. */
 function sansCommentairesPleins(texte: string): string {
-  return texte.split('\n').map((l) => (/^\s*(\/\/|\*|\/\*)/.test(l) ? '' : l)).join('\n')
+  // Une fois par texte (`SANS_COMMENTAIRES`) : chaque garde des appelants la refait sur chaque source, pour chaque fonction.
+  let code = SANS_COMMENTAIRES.get(texte)
+  if (code === undefined) {
+    code = texte.split('\n').map((l) => (/^\s*(\/\/|\*|\/\*)/.test(l) ? '' : l)).join('\n')
+    SANS_COMMENTAIRES.set(texte, code)
+  }
+  return code
 }
+const SANS_COMMENTAIRES = new Map<string, string>()
 
 /**
  * Les tables qu'un identifiant peut désigner, lues dans son fichier : un paramètre ou une variable typés par une union de
@@ -206,7 +213,23 @@ export interface SiteFrom {
  * chaîne s'arrête au `.from(` SUIVANT, quel qu'il soit (la borne de `lecturesPaginees`), et les `\s*` traversent les
  * retours à la ligne.
  */
+//
+// Relevés une fois par source (`SITES`) : une vingtaine de gardes relisent les mêmes sources de production, et refaire le
+// relevé dans chacun (près de 300 ms) passait les 5 s de Vitest sous la charge de la barrière. Le relevé est pur : une même
+// source rend les mêmes sites, et une source plantée, d'un autre texte, se relève à part. Chaque appel rend sa copie des
+// sites, qu'un appelant peut trier ou filtrer sans toucher à celle des autres.
+const SITES = new Map<string, SiteFrom[]>()
 export function sitesFrom(source: Source): SiteFrom[] {
+  const cle = `${source.chemin}\u0000${source.texte}`
+  let sites = SITES.get(cle)
+  if (sites === undefined) {
+    sites = releverLesSites(source)
+    SITES.set(cle, sites)
+  }
+  return sites.map((s) => ({ ...s, tables: s.tables === null ? null : [...s.tables] }))
+}
+
+function releverLesSites(source: Source): SiteFrom[] {
   const code = sansCommentairesPleins(source.texte)
   const tous = [...code.matchAll(/([\w$)\]]+)\s*\.\s*from\s*\(/g)]
   const sites: SiteFrom[] = []

@@ -138,8 +138,12 @@ describe('la copie de cdarRecu dans plateforme-agreee', () => {
   // chaque test elle approchait les 5 s de Vitest sous la charge de la barrière. Son délai est déclaré pour elle seule,
   // comme celui du garde du code mort des Edge Functions ; celui des tests ne change pas.
   let compiles: Record<keyof typeof COMPILES, string[]>
+  // Ce que le MODULE lit des 4 000 messages abîmés, payé ici une fois : deux gardes le confrontent à la copie, et sous la
+  // charge de la barrière le refaire dans chacun approchait les 5 s. La copie, elle, se lit dans chaque test.
+  let attendusAbimes: ReturnType<typeof lectures>
   beforeAll(() => {
     compiles = diagnostics(COMPILES)
+    attendusAbimes = lectures(module, ABIMES)
   }, 60_000)
 
   it('est au caractère près le bloc de src/lib/cdarRecu.ts', () => {
@@ -164,7 +168,7 @@ describe('la copie de cdarRecu dans plateforme-agreee', () => {
 
   it('exécutée seule, lit 4 000 messages abîmés comme le module — lisibles ou non', () => {
     const copie = executer(COPIE)
-    const attendus = lectures(module, ABIMES)
+    const attendus = attendusAbimes
     expect(lectures(copie, ABIMES)).toEqual(attendus)
     // Le tirage abîme pour de bon, sans tout rendre illisible : une épreuve qui ne lirait plus rien ne prouverait rien.
     const lisibles = attendus.filter((l) => 'lu' in l).length
@@ -175,7 +179,7 @@ describe('la copie de cdarRecu dans plateforme-agreee', () => {
 
   it('exécutée seule, rattache comme le module sur une grille de factures et de SIREN', () => {
     const copie = executer(COPIE)
-    const lus = [...LUS, ...lectures(module, ABIMES).flatMap((l) => ('lu' in l ? [l.lu] : [])).slice(0, 300)]
+    const lus = [...LUS, ...attendusAbimes.flatMap((l) => ('lu' in l ? [l.lu] : [])).slice(0, 300)]
     const attendus = rattachements(module, lus)
     expect(rattachements(copie, lus)).toEqual(attendus)
     expect(new Set(attendus.map((r) => ('ecart' in r ? r.ecart : 'rattache')))).toEqual(new Set([
