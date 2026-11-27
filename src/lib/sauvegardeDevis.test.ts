@@ -42,6 +42,7 @@ import { CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationD
 import { REGLAGES_D_EXPORT_PREVUS } from './reglagesDExport'
 import { CODES_DES_CLIENTS_PREVUS } from './codesDesClients'
 import { REMPLACEMENT_DES_JOURNEES_PREVU } from './remplacementDesJourneesAssuranceMaladie'
+import { CONSOMMATION_TENUE_PAR_LA_FONCTION } from './consommationDeLAssistant'
 import { PARAMETRES_DES_COTISATIONS_EXPORTES } from './parametresDesCotisations'
 import {
   auGrapheDeLaCaisse,
@@ -95,7 +96,7 @@ import {
   violationsOrdre, auPlanDesLettresDeMission, auPlanDesHonorairesFactures, auPlanDesHonorairesDeposes,
   auPlanDesDocumentsEtDemandes, auPlanDesAchatsDuClient, auPlanDesNotesDeFrais, auPlanDesSaisies2035E, auPlanDuModeleDuCabinet, auPlanDesCopiesDesFichiers, auPlanDesExercices, auPlanDuDepart, TABLES_DU_DEPART,
   auPlanDesOptionsDesCabinets, auPlanDesEcrituresLibres, auGrapheDesEcrituresLibres, auPlanDesReglagesDExport,
-  auPlanDesCodesDesClients, auPlanDesRemplacementsAssuranceMaladie,
+  auPlanDesCodesDesClients, auPlanDesRemplacementsAssuranceMaladie, auPlanDesConsommations,
 } from './sauvegarde'
 
 // LES DEVIS AU PLAN DE SAUVEGARDE (espace client, étape P5). Leurs migrations attendent l'accord du cabinet : tant que
@@ -143,7 +144,8 @@ describe('le filtre du plan', () => {
     // contre-passation d'une écriture libre tant que sa migration n'est pas exportée (sauvegardeContrePassation.test.ts) ;
     // depuis EXP-Q4, celui des réglages de l'export vers un logiciel comptable (sauvegardeReglagesDExport.test.ts) ; depuis
     // EXP58-Q2, celui du compteur des codes des fiches clients (sauvegardeCodesDesClients.test.ts) ; depuis NOE4R-Q2, celui de la
-    // trace des paiements de l'assurance maladie remplacés (sauvegardeRemplacementsAssuranceMaladie.test.ts).
+    // trace des paiements de l'assurance maladie remplacés (sauvegardeRemplacementsAssuranceMaladie.test.ts) ; depuis ASSIST-Q1,
+    // celui du journal de consommation de l'assistant (sauvegardeConsommationsDeLAssistant.test.ts).
     for (const table of ORDRE_RESTAURATION_PREVU) {
       expect(auPlanAujourdHui(table), table).toBe(auPlan(table, DEVIS_EXPORTES) && auPlanDesArticles(table, ARTICLES_EXPORTES)
         && auPlanDesAdressesReception(table, ADRESSES_RECEPTION_EXPORTEES) && auPlanDesContacts(table, CONTACTS_EXPORTES)
@@ -181,7 +183,8 @@ describe('le filtre du plan', () => {
         && auPlanDesEcrituresLibres(table, ECRITURES_LIBRES_PREVUES)
         && auPlanDesReglagesDExport(table, REGLAGES_D_EXPORT_PREVUS)
         && auPlanDesCodesDesClients(table, CODES_DES_CLIENTS_PREVUS)
-        && auPlanDesRemplacementsAssuranceMaladie(table, REMPLACEMENT_DES_JOURNEES_PREVU))
+        && auPlanDesRemplacementsAssuranceMaladie(table, REMPLACEMENT_DES_JOURNEES_PREVU)
+        && auPlanDesConsommations(table, CONSOMMATION_TENUE_PAR_LA_FONCTION))
     }
     expect(RELATIONS).toEqual(RELATIONS_PREVUES
       .filter((r) => auPlanAujourdHui(r.enfant) && auGrapheDesExemplaires(r, EXEMPLAIRES_DES_FACTURES_EXPORTES)

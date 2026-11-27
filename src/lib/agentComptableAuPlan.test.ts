@@ -16,9 +16,10 @@ const contexte: Contexte = { entetesDuNavigateur: [] }
 const contrat = CONTRATS.find((c) => c.slug === 'agent-comptable')!
 // Les scénarios de l'inventaire (INV7) posent leur propre mode, que `bnc` et `societe` écraseraient : le contrat et
 // agentComptableInventaire.test.ts les jugent. Les autres rendent, le drapeau de l'inventaire baissé, ce qu'ils rendaient.
-// Ni ceux de l'inventaire (INV7), ni ceux des écritures libres (EL6), qui rejouent leur monde à eux, ni ceux du compteur du
-// plafond (ASSIST-Q1, relecture adverse de sécurité du 27/11/2026), venus après l'empreinte et qui posent la même question
-// deux fois : un défaut connu, jugé par le contrat.
+// Ni ceux de l'inventaire (INV7), ni ceux des écritures libres (EL6), qui rejouent leur monde à eux, ni ceux du plafond qui ne
+// valent que dans un état de `CONSOMMATION_TENUE_PAR_LA_FONCTION` (ASSIST-Q1 : le compteur que le navigateur tient, défaut
+// connu la constante baissée ; la lecture des dossiers du cabinet ; le journal que la fonction tient), jugés par le contrat et
+// par agentComptableConsommation.test.ts.
 const SCENARIOS = contrat.scenarios.map((s) => s.nom)
   .filter((nom) => !nom.endsWith('(INV7)') && !nom.endsWith('(EL6)') && !nom.endsWith('(ASSIST-Q1)'))
 
@@ -89,9 +90,15 @@ const consigneDe = (x: Rendu) => {
 // 146 descriptions dans 80 des 126 rendus ; aucun statut, aucune réponse, aucun résultat d'outil, aucune consigne : le monde
 // fictif ne porte aucun compte bancaire, et la sélection qui lit la source de l'ouverture n'y change rien. La copie du drapeau
 // se garde dans agentComptableBanques.test.ts.
+// Les deux premières relevées de nouveau le 27/11/2026 (ASSIST-Q1, le journal de consommation de l'assistant, derrière
+// `CONSOMMATION_TENUE_PAR_LA_FONCTION` baissée) : le scénario « les dossiers du cabinet lus en partie », qui ne vaut que la
+// constante baissée, porte désormais la marque « (ASSIST-Q1) » et sort de la liste — d'où le seul changement (761a6d44… et
+// 7463002b… avant). La liste neuve rejouée sur la source d'avant le journal, extraite hors du dépôt, rend ces deux empreintes à
+// l'identique : la constante baissée ne change rien de ce que l'assistant rend ni envoie. Levée, chaque scénario commun aux
+// deux états rend la même chose (agentComptableConsommation.test.ts) : l'empreinte ne change pas à la levée.
 const EMPREINTES = {
-  bnc: '761a6d44782a591be040902f561c54911fe4f5b0a86750fc42cf25a4d94cae45',
-  societe: '7463002b2779e52578757f09476cb9c01ca40577f3efa1e0e040dca201ffc989',
+  bnc: 'dc4f72c4897350dc249974cfb0636b79803da3a0ddccf4811e123fab1a837ace',
+  societe: 'cfb70aa9c02f46741818922758e90e2f17049e94fd0e05bb29e26c502ee8fa9e',
   consigneBnc: '5fb275bc1979ab48726661e8cf177425894d8c8197a1500186e1e80dbe036819',
   consigneSociete: 'eb07415bede4b25958941f6db6d96f668e3fe37fc66e97800be8845e6bdcbfc6',
 }

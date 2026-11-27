@@ -220,6 +220,10 @@
 --      `remplacement_des_journees_assurance_maladie`, NOE4R-Q2, préparée) : le client « Banque » lit la trace de son dossier, le
 --      chef aussi, rien sans la case ; il ne l'écrit pas en direct (la garde) ; le catalogue. Deux mutations ; la section P7 la
 --      compte parmi les tables de la banque ; avant la migration, une ligne « EN ATTENTE ».
+--  23. Le journal de consommation de l'assistant (bloc CO, en fin de fichier ; migration `consommations_de_l_assistant`,
+--      ASSIST-Q1 (A), préparée) : ni l'anonyme, ni le client, ni le chef, ni le super-administrateur sous sa session ne lisent
+--      ni n'écrivent le journal (le droit) ; les sommes au super-administrateur seul ; le catalogue (et HR5, qui le met à part :
+--      aucun droit des rôles de l'API, voulu). Deux mutations ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -7059,7 +7063,9 @@ end $$;
 --   HR4. anon et authenticated ne sont membres d'aucun rôle (pg_maintain, à lui seul, donnerait MAINTAIN partout).
 --   HR5. Le contrôle POSITIF : sur chaque relation, anon et authenticated gardent SELECT (de la table, ou, sur `cabinets`
 --        après `plafonds_hors_du_client`, de chaque colonne hors des deux plafonds), INSERT, DELETE et une mise à jour
---        (de la table, ou d'une colonne : cabinet_admins.role), service_role et le propriétaire chaque privilège d'une
+--        (de la table, ou d'une colonne : cabinet_admins.role) — hors du journal de consommation de l'assistant
+--        (`consommations_de_l_assistant`, ASSIST-Q1), qu'aucun rôle de l'API ne touche, voulu, et que le bloc CO juge —,
+--        service_role et le propriétaire chaque privilège d'une
 --        relation ; le défaut du propriétaire leur donne toujours le DML, et tout à service_role. Sans lui, un retrait trop
 --        large passerait HR1 à HR3. Et un plancher : au moins les 85 relations du relevé, toutes examinées.
 -- Six mutations, qui doivent mordre : M-HR1 (MAINTAIN rendu à authenticated sur cabinet_admins : HR1), M-HR2 (TRIGGER donné
@@ -7125,6 +7131,9 @@ declare
               from (values ('anon'), ('authenticated')) r(n)
              cross join (values ('SELECT'), ('INSERT'), ('DELETE')) p(p)
              where not has_table_privilege(r.n, $1, p.p)
+               -- Le journal de consommation de l'assistant (ASSIST-Q1) : AUCUN droit aux rôles de l'API, voulu — la fonction
+               -- l'écrit et le lit sous la clé du service (le bloc CO juge qu'ils n'en ont aucun). La seule relation mise à part.
+               and $1 is distinct from to_regclass('public.consommations_de_l_assistant')::oid
                -- La lecture de `cabinets`, colonne par colonne, telle que `plafonds_hors_du_client` la pose (OPT1-Q3) :
                -- chaque colonne hors des deux plafonds de l'assistant. Une colonne de plus qui ne se lirait pas reste ici.
                and not (p.p = 'SELECT' and $1 = 'public.cabinets'::regclass::oid
@@ -7136,6 +7145,7 @@ declare
             select r.n || ' sans mise à jour'
               from (values ('anon'), ('authenticated')) r(n)
              where not has_any_column_privilege(r.n, $1, 'UPDATE')
+               and $1 is distinct from to_regclass('public.consommations_de_l_assistant')::oid
             union
             select r.lib || ' sans ' || p.privilege_type
               from (select 'service_role' as lib, to_regrole('service_role')::oid as qui
@@ -13570,6 +13580,179 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $rj$;
+
+-- ══ CO. Le journal de consommation de l'assistant (ASSIST-Q1 (A) ; migration `consommations_de_l_assistant`, PRÉPARÉE) ══════
+-- Une table que la fonction `agent-comptable` écrit et lit seule, sous la clé du service : sous RLS, sans policy permissive, et
+-- AUCUN droit aux rôles de l'API — le contrôle positif de HR5 la met à part, sous sa raison. Ce bloc juge ce qui lui est propre
+-- (supabase/essais/consommationsDeLAssistant.sql en dit davantage).
+--   CO1. Une ligne du cabinet du client, écrite par le rôle du service : ni l'anonyme, ni le client, ni le chef du cabinet, ni le
+--        super-administrateur sous sa session ne la lisent ni n'en écrivent une (42501, le droit, avant la RLS).
+--   CO2. Les sommes : l'anonyme n'exécute pas leur lecture (42501, le droit) ; le client et le chef se la voient refuser par la
+--        fonction (42501, sous ses mots) ; le super-administrateur y voit la ligne de l'essai s'ajouter, à l'unité.
+--   CO3. Le catalogue : la RLS active, aucune policy hors de la restrictive `deux_facteurs` (C7) ; aucun droit d'anon,
+--        d'authenticated ni de PUBLIC sur la table ou une colonne ; la garde avant les trois écritures, aux droits de l'appelant ;
+--        la lecture aux droits du propriétaire, exécutée par authenticated, ni par l'anonyme ni par PUBLIC.
+-- Deux mutations, qui doivent mordre : M-CO1 (la lecture rendue à authenticated et une policy permissive : le client lit la
+-- ligne), M-CO2 (la lecture des sommes sans son contrôle : le chef la lit). Avant la migration, une ligne dit que le bloc attend.
+do $co$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  super  uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  v_cab uuid; ligne_essai uuid; profil text; lu text; ecrit text; observes text := ''; fautes text := '';
+  de_l_anon text; du_client text; du_chef text; avant bigint; apres bigint; ouverte bigint; sans_controle text;
+  n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.consommations_de_l_assistant') is null then
+    insert into rls_verdict values ('CO. le journal de consommation de l''assistant : EN ATTENTE de la migration consommations_de_l_assistant',
+      'consommations_de_l_assistant', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : la somme du cabinet avant, puis une ligne du cabinet du client, écrite par le rôle du service ; le client
+    -- rattaché à l'équipe le temps de la sous-transaction, chef du cabinet ──
+    perform set_config('request.jwt.claims', '', true);
+    select d.cabinet_id into v_cab from dossiers d where d.id = dossier_du_client;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', super, 'role', 'authenticated')::text, true);
+    select coalesce(sum(c.tokens_entree + c.tokens_sortie), 0) into avant from consommation_de_l_assistant(now() - interval '1 day') c where c.cabinet_id = v_cab;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    set local role service_role;
+    insert into consommations_de_l_assistant (cabinet_id, dossier_id, compte, tokens_entree, tokens_sortie)
+    values (v_cab, dossier_du_client, super, 4321, 123) returning id into ligne_essai;
+    reset role;
+    construit := true;
+
+    -- CO1 : les profils de l'API, ni lecture ni écriture.
+    for profil in select x from unnest(array['anon', 'client', 'chef', 'super']) x loop
+      if profil = 'chef' then
+        insert into cabinet_admins (user_id, cabinet_id, role) values (client, v_cab, 'comptable_en_chef');
+      end if;
+      if profil = 'anon' then
+        set local role anon;
+        perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      else
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', case when profil = 'super' then super else client end,
+          'role', 'authenticated')::text, true);
+      end if;
+      begin perform count(*) from consommations_de_l_assistant where id = ligne_essai; lu := 'LU'; exception when others then lu := sqlstate; end;
+      begin
+        insert into consommations_de_l_assistant (cabinet_id, dossier_id, compte, tokens_entree, tokens_sortie) values (v_cab, dossier_du_client, client, 1, 1);
+        ecrit := 'ÉCRIT';
+      exception when others then ecrit := sqlstate;
+      end;
+      if profil = 'chef' then
+        begin perform count(*) from consommation_de_l_assistant(now()); du_chef := 'LU'; exception when others then du_chef := sqlstate || ' ' || sqlerrm; end;
+      elsif profil = 'client' then
+        begin perform count(*) from consommation_de_l_assistant(now()); du_client := 'LU'; exception when others then du_client := sqlstate || ' ' || sqlerrm; end;
+      elsif profil = 'anon' then
+        begin perform count(*) from consommation_de_l_assistant(now()); de_l_anon := 'LU'; exception when others then de_l_anon := sqlstate || ' ' || sqlerrm; end;
+      else
+        select coalesce(sum(c.tokens_entree + c.tokens_sortie), 0) into apres from consommation_de_l_assistant(now() - interval '1 day') c where c.cabinet_id = v_cab;
+      end if;
+      reset role;
+      perform set_config('request.jwt.claims', '', true);
+      observes := observes || profil || ' ' || lu || '/' || ecrit || ' ; ';
+      fautes := fautes || case when lu = '42501' and ecrit = '42501' then '' else 'x' end;
+    end loop;
+    verdicts := verdicts || jsonb_build_object('controle', 'CO1. ni l''anonyme, ni le client, ni le chef du cabinet, ni le super-administrateur sous sa session ne lisent ni n''écrivent le journal (42501, le droit)',
+      'cible', 'consommations_de_l_assistant', 'observe', observes, 'ok', fautes = '');
+
+    -- CO2 : les sommes.
+    verdicts := verdicts || jsonb_build_object('controle', 'CO2. les sommes : l''anonyme n''exécute pas leur lecture (le droit), le client et le chef se la voient refuser (la fonction), le super-administrateur y voit la ligne de l''essai, à l''unité',
+      'cible', 'consommation_de_l_assistant',
+      'observe', coalesce(left(de_l_anon, 40), '?') || ' | ' || coalesce(left(du_client, 40), '?') || ' | ' || coalesce(left(du_chef, 40), '?')
+        || ' | écart ' || coalesce((apres - avant)::text, '?'),
+      'ok', de_l_anon like '42501 permission denied%' and du_client like '42501 Seul le super-administrateur%'
+        and du_chef like '42501 Seul le super-administrateur%' and apres - avant = 4444);
+
+    -- M-CO1 : la lecture rendue à authenticated, et une policy permissive — le client lit la ligne.
+    begin
+      grant select on public.consommations_de_l_assistant to authenticated;
+      create policy rls_essai_consommations_ouvertes on public.consommations_de_l_assistant for select to authenticated using (true);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into ouverte from consommations_de_l_assistant where id = ligne_essai;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CO1 — la lecture du journal rendue à authenticated, sous une policy permissive',
+      'attendu', 'le client lit la ligne de l''essai', 'observe', coalesce(ouverte::text, '?') || ' lue(s)', 'mord', coalesce(ouverte = 1, false));
+
+    -- M-CO2 : la lecture des sommes sans son contrôle — le chef la lit.
+    begin
+      create or replace function public.consommation_de_l_assistant(p_depuis timestamptz)
+        returns table (cabinet_id uuid, tokens_entree bigint, tokens_sortie bigint, tokens_entree_depuis bigint, tokens_sortie_depuis bigint)
+        language plpgsql stable security definer set search_path = public
+      as $mco2$
+      begin
+        return query select c.cabinet_id, sum(c.tokens_entree)::bigint, sum(c.tokens_sortie)::bigint, 0::bigint, 0::bigint
+          from public.consommations_de_l_assistant c group by c.cabinet_id;
+      end
+      $mco2$;
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      begin perform count(*) from consommation_de_l_assistant(now()); sans_controle := 'LU'; exception when others then sans_controle := sqlstate; end;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-CO2 — la lecture des sommes sans son contrôle',
+      'attendu', 'le chef lit les sommes', 'observe', coalesce(sans_controle, '?'), 'mord', coalesce(sans_controle = 'LU', false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- CO3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'consommations_de_l_assistant'
+     and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE');
+  verdicts := verdicts || jsonb_build_object('controle', 'CO3. le catalogue : la RLS, aucune policy (hors la restrictive), aucun droit des rôles de l''API ni de PUBLIC, la garde aux droits de l''appelant, la lecture des sommes',
+    'cible', 'consommations_de_l_assistant',
+    'observe', n || ' policy(ies), RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.consommations_de_l_assistant'::regclass)
+      || ', droits de l''API ' || (select count(*) from (values ('anon'), ('authenticated'), ('public')) r(x)
+           cross join (select distinct d.privilege_type from aclexplode(acldefault('r', to_regrole('anon'))) d) p
+           where has_table_privilege(r.x, 'public.consommations_de_l_assistant', p.privilege_type))
+      || ', garde ' || (select count(*) from pg_trigger t join pg_proc f on f.oid = t.tgfoid
+           where t.tgrelid = 'public.consommations_de_l_assistant'::regclass and not t.tgisinternal and t.tgtype = 31 and not f.prosecdef
+             and f.oid = to_regprocedure('public.garder_consommations_de_l_assistant()')),
+    'ok', n = 0
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.consommations_de_l_assistant'::regclass)
+      and not exists (select 1 from (values ('anon'), ('authenticated'), ('public')) r(x)
+           cross join (select distinct d.privilege_type from aclexplode(acldefault('r', to_regrole('anon'))) d) p
+           where has_table_privilege(r.x, 'public.consommations_de_l_assistant', p.privilege_type))
+      and not exists (select 1 from (values ('anon'), ('authenticated'), ('public')) r(x)
+           cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('REFERENCES')) p(p)
+           where has_any_column_privilege(r.x, 'public.consommations_de_l_assistant', p.p))
+      and (select count(*) from pg_trigger t join pg_proc f on f.oid = t.tgfoid
+           where t.tgrelid = 'public.consommations_de_l_assistant'::regclass and not t.tgisinternal and t.tgtype = 31 and not f.prosecdef
+             and f.oid = to_regprocedure('public.garder_consommations_de_l_assistant()')) = 1
+      and (select p.prosecdef and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+                  and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+             from pg_proc p where p.oid = to_regprocedure('public.consommation_de_l_assistant(timestamptz)')));
+  verdicts := verdicts || jsonb_build_object('controle', 'CO. le jeu d''essai du journal de consommation s''est construit', 'cible', 'le cabinet du dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $co$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

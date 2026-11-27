@@ -13,7 +13,10 @@ import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { OPTIONS_DES_CABINETS_PREVUES } from '../lib/modulesDuCabinet'
 import OptionsDesCabinets from './OptionsDesCabinets'
 import { plafondsParCabinet, type LignePlafonds } from '../lib/plafondsDeLAssistant'
-import type { TrancheLue } from '../lib/lectureComplete'
+import {
+  CONSOMMATION_TENUE_PAR_LA_FONCTION, consommationsParCabinet, debutDuMoisUtc, type LigneConsommation,
+} from '../lib/consommationDeLAssistant'
+import type { LectureComplete, TrancheLue } from '../lib/lectureComplete'
 
 interface CabinetApercu {
   id: string
@@ -26,7 +29,8 @@ interface CabinetApercu {
   created_at: string
   // Consommation de l'agent comptable (Claude/Bedrock, voir lib/coutsApi.ts) cumulée sur tous les
   // dossiers du cabinet — 0 tant qu'aucune conversation n'a été enregistrée depuis l'ajout de ce
-  // suivi (voir migration agent_conversations_tokens), jamais une facture AWS exacte.
+  // suivi (voir migration agent_conversations_tokens), jamais une facture AWS exacte. Le drapeau de la consommation levé
+  // (ASSIST-Q1), c'est la somme du journal que la fonction tient, depuis sa mise en service.
   tokens_entree: number
   tokens_sortie: number
   // Même calcul que tokens_entree/tokens_sortie, mais restreint au mois calendaire en cours (UTC) —
@@ -97,7 +101,15 @@ export default function SuperAdminPage() {
     // LES PLAFONDS DE L'ASSISTANT (OPT1-Q3, en production depuis le 20/11/2026) : les rôles de l'API ne lisent plus ces deux
     // colonnes de la table ; `plafonds_de_l_assistant()` les rend au super-administrateur, cabinet par cabinet, lue en entier
     // comme le reste.
-    const [lectureCabinets, lectureDossiers, lectureAdmins, lectureMemberships, lectureUsage, lecturePlafonds] = await Promise.all([
+    // LE JOURNAL DE CONSOMMATION DE L'ASSISTANT (ASSIST-Q1, `CONSOMMATION_TENUE_PAR_LA_FONCTION`) : le drapeau levé, la
+    // consommation ne se lit plus dans les lignes que l'assistant recopie (`agent_conversations`), mais dans le journal que la
+    // fonction tient, par `consommation_de_l_assistant(p_depuis)` — des sommes par cabinet, depuis toujours et depuis le premier
+    // instant du mois UTC, la frontière même du plafond. Baissé, la lecture d'hier.
+    // Mois calendaire UTC en cours — même frontière que verifierPlafondCabinet côté agent-comptable,
+    // pour que le total affiché ici corresponde exactement à ce que le plafond compare.
+    const debutMoisIso = debutDuMoisUtc(new Date())
+    const nonLue = <T,>(): Promise<LectureComplete<T>> => Promise.resolve({ lignes: [], complete: true, motif: null })
+    const [lectureCabinets, lectureDossiers, lectureAdmins, lectureMemberships, lectureUsage, lecturePlafonds, lectureConsommations] = await Promise.all([
       lireTout<{ id: string; nom: string; couleur_primaire: string | null; logo_storage_path: string | null; created_at: string }>((debut, fin) =>
         supabase.from('cabinets').select('id, nom, couleur_primaire, logo_storage_path, created_at', { count: 'exact' })
           .order('created_at').order('id').range(debut, fin),
@@ -115,18 +127,30 @@ export default function SuperAdminPage() {
       // appel Bedrock facturé, un message user n'a jamais de tokens_entree/tokens_sortie renseignés.
       // created_at sert à isoler le mois calendaire en cours (voir tokensEntreeMois plus bas), en plus
       // du cumul depuis toujours déjà affiché.
-      lireTout<{ dossier_id: string; tokens_entree: number | null; tokens_sortie: number | null; created_at: string }>((debut, fin) =>
-        supabase.from('agent_conversations').select('dossier_id, tokens_entree, tokens_sortie, created_at, id', { count: 'exact' })
-          .eq('role', 'assistant').order('id').range(debut, fin),
-      ),
+      CONSOMMATION_TENUE_PAR_LA_FONCTION
+        ? nonLue<{ dossier_id: string; tokens_entree: number | null; tokens_sortie: number | null; created_at: string }>()
+        : lireTout<{ dossier_id: string; tokens_entree: number | null; tokens_sortie: number | null; created_at: string }>((debut, fin) =>
+          supabase.from('agent_conversations').select('dossier_id, tokens_entree, tokens_sortie, created_at, id', { count: 'exact' })
+            .eq('role', 'assistant').order('id').range(debut, fin),
+        ),
       lireTout<LignePlafonds>(async (debut, fin) => {
         const r: TrancheLue<LignePlafonds> = await supabase.rpc('plafonds_de_l_assistant', undefined, { count: 'exact' })
           .order('cabinet_id').range(debut, fin)
         if (r.error) return { data: null, error: r.error, count: r.count }
         return { data: r.data ?? [], error: null, count: r.count }
       }),
+      CONSOMMATION_TENUE_PAR_LA_FONCTION
+        ? lireTout<LigneConsommation>(async (debut, fin) => {
+          // Le nom en toutes lettres : les gardes du dépôt (verrous, tri total) lisent la porte qu'un appel emprunte.
+          const r: TrancheLue<LigneConsommation> = await supabase.rpc('consommation_de_l_assistant', { p_depuis: debutMoisIso }, { count: 'exact' })
+            .order('cabinet_id').range(debut, fin)
+          if (r.error) return { data: null, error: r.error, count: r.count }
+          return { data: r.data ?? [], error: null, count: r.count }
+        })
+        : nonLue<LigneConsommation>(),
     ])
     const plafonds = plafondsParCabinet(lecturePlafonds.lignes)
+    const consommations = consommationsParCabinet(lectureConsommations.lignes)
 
     const cabinetParDossier = new Map((lectureDossiers.lignes as { id: string; cabinet_id: string }[]).map((d) => [d.id, d.cabinet_id]))
 
@@ -145,10 +169,6 @@ export default function SuperAdminPage() {
       const cabinetId = cabinetParDossier.get(m.dossier_id)
       if (cabinetId) nbClients.set(cabinetId, (nbClients.get(cabinetId) ?? 0) + 1)
     }
-    // Mois calendaire UTC en cours — même frontière que verifierPlafondCabinet côté agent-comptable,
-    // pour que le total affiché ici corresponde exactement à ce que le plafond compare.
-    const maintenant = new Date()
-    const debutMoisIso = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1)).toISOString()
     // Même logique que nbClients : un message d'agent est rattaché à un dossier, agrégé ici au
     // niveau du cabinet auquel ce dossier appartient — une fois pour le cumul depuis toujours, une
     // fois restreint au mois en cours (celui que compare le plafond).
@@ -165,6 +185,13 @@ export default function SuperAdminPage() {
         tokensEntreeMois.set(cabinetId, (tokensEntreeMois.get(cabinetId) ?? 0) + (u.tokens_entree ?? 0))
         tokensSortieMois.set(cabinetId, (tokensSortieMois.get(cabinetId) ?? 0) + (u.tokens_sortie ?? 0))
       }
+    }
+    // Le journal de la fonction (drapeau levé) : ses sommes telles qu'elle les rend, cabinet par cabinet.
+    for (const [cabinetId, c] of consommations.carte) {
+      tokensEntree.set(cabinetId, c.tokensEntree)
+      tokensSortie.set(cabinetId, c.tokensSortie)
+      tokensEntreeMois.set(cabinetId, c.tokensEntreeDuMois)
+      tokensSortieMois.set(cabinetId, c.tokensSortieDuMois)
     }
 
     setCabinets((lectureCabinets.lignes as {
@@ -183,9 +210,13 @@ export default function SuperAdminPage() {
     })))
     // `agent_conversations` grandit d'une ligne par message, donc plus vite que tout le reste :
     // tronquée, elle ne VIDE pas le compteur de coût, elle le sous-estime.
+    // Une somme du journal qui ne se lit pas rend la lecture partielle : jamais un zéro deviné.
     setLectureIncomplete(
-      [lectureCabinets, lectureDossiers, lectureAdmins, lectureMemberships, lectureUsage, lecturePlafonds]
-        .find((l) => !l.complete)?.motif ?? null,
+      [lectureCabinets, lectureDossiers, lectureAdmins, lectureMemberships, lectureUsage, lecturePlafonds, lectureConsommations]
+        .find((l) => !l.complete)?.motif
+        ?? (consommations.illisibles.length > 0
+          ? `la consommation de ${consommations.illisibles.length} cabinet(s) ne se lit pas`
+          : null),
     )
     setLoading(false)
   }
