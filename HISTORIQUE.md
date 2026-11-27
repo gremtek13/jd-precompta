@@ -54981,3 +54981,20 @@ mordent (la devise à blanc, le justificatif sur chaque ligne, le sens inversé)
 ## 26/11/2026 — DEUX RETOUCHES : LES CALCULS LOURDS DANS UN `beforeAll`, LES EN-TÊTES D'ESSAIS À JOUR
 `ecrituresLibresAppelants.test.ts` (lecture et analyse de tout `src/`) et `refusDesBordereauxAuDepot.test.ts` (analyse de toute la source, deux fois) paient désormais ce calcul dans un `beforeAll` à délai propre, les `it` ne gardent que leurs assertions ; `caisseDuClient`, `agentComptableAnalyse`, `recuperationMotDePasse` et `acompteDevis` (sa batterie est déjà dans un `beforeAll`) restent tels quels, leur plus long `it` tenant sous une seconde. Une mutation par fichier mord (plancher relevé, compte attendu faussé), annulée.
 Six essais (`hausseDuChiffreDAffaires`, `pieceDUnPaiementDansSonDossier`, `plancherALEcartDAlignement`, `especesDuClientHorsDesReprises`, `auteurDesOuvertures`, `modeDeReglementDesMouvements`) disent en en-tête, en commentaire seulement, « en production depuis le … (n°) » et le chemin réel dans `supabase/schema/` ; aucun SQL exécutable touché.
+
+### 27/11/2026 — LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 254 (RIEN EN PRODUCTION)
+
+(Agent architecte.) Une copie de `replique_227` portée à 254 par l'export (dérive `8727d024…`, socle 84 `e54200f4…`, inventaire 3 518
+`a6475fb0…`, égaux aux fichiers). **Seules**, après leurs dépendances déclarées : 21 des 22 préparées s'appliquent, leur garde refuse
+une seconde application, leurs essais sont justes, `rls.sql` sans faute, leur retour rend la signature étendue d'avant (neuf familles,
+stockage, auth, rôles, commentaires, données ; EXD2 garde `btree_gist`, voulu). e7a refuse toujours (REPET-Q1 (B) : rebasée à son
+collage, après le MVP) ; le candidat du 14/11, hors du dépôt, vise encore le corps du jour : sur 254, 44/0 et 12 mutations, seize
+essais des factures inchangés, retour égal. **La chaîne**, dans l'ordre de la conception 60 : 275 migrations, `rls.sql` 346 lignes,
+1 692 vérifications, 0 en faute, 220 mutations sur 220, aucune EN ATTENTE ; les retours à rebours rendent 254 ; un second ordre (la
+double authentification d'abord, les sœurs du brouillon à rebours) : la même base, à l'ordre des colonnes et à la date d'un seau près.
+**Aucune préparée n'a dérivé ; trois essais, si** : `sousDossierDansSonDossier`, écrit avant CFCS-Q1 (238), déplaçait une ligne sans
+son chemin (2g, 2h, 3g ; 27/27, SÛR au banc) ; `ecrituresLibres` (EL-F1) et `contrePassationDesEcrituresLibres` (CP-F2) fermaient la
+liste des déclencheurs d'`ecritures_libres` sans ceux d'OPT6, admis sous sa garde. L'en-tête d'`exercicesDuDossier` dit `-1`. Les 167
+autres essais (207 jeux, avec leurs semis) : identiques sur 254 et sur la chaîne, hors des EN ATTENTE qui se lèvent ; les huit de la
+famille « apres » SÛRS au banc. **Au collage** : le socle se régénère (84 → 100 : chaque sœur du brouillon, douze restrictives), dont
+l'inventaire dépend (26 objets). Le tableau : `docs/conceptions/60-migrations-preparees-etat-au-27-11.md`. Question : REPET2-Q1.
