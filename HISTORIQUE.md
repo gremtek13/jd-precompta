@@ -55076,3 +55076,16 @@ scanner « sans sortie » couvre le module (trois défauts plantés) ; cinq muta
 gabarit de la page (ancres, colonnes, forme de l'organisme) attend une page rendue anonyme (BOR6-Q2 (A)) ; NOE7 attend la forme de
 l'export CSV (NOE1) et de l'état — les reconnaître sans elle serait deviner (NOE-Q6), d'où NOE7-Q1 ; NOE8 n'a plus que les essais
 des trois migrations et `rls.sql` rejoués en production (déjà justes sur une réplique à 259, ce même jour), le geste de la session.
+### 27/11/2026 — EXP4 : LE PROFIL TRA (DERRIÈRE SON DRAPEAU BAISSÉ)
+
+(Agent dev ; rien en production, aucune migration.) Après Quadra, le TRA de Cegid Expert, que lisent aussi Loop et MyUnisoft. Source
+la plus récente : la description « Cegid Business Comptabilité – Descriptif du fichier de mouvement "TRA" », version '11', que MyUnisoft
+publie avec son API (`github.com/MyUnisoft/api-partenaires`, `docs/MAD/TRA.pdf`, SHA-256 `2fd4c0ed…e99067`), confrontée aux versions 010
+(LD Système) et 7 (Logilys) : mêmes positions pour l'écriture (1 à 222) et le document GED. Elle dit qu'un fichier « de type journal » ne
+porte que l'en-tête et les JAL, et que STD suffit sans les informations complémentaires. `lib/profilTra.ts` relit le FEC et n'en récrit que
+la forme, chaque zone citant sa page : en-tête JRL/STD/011, un JAL par journal, une écriture de 222 par ligne (date JJMMAAAA, compte
+complété de « 0 », TYPE CPTE à blanc d'après l'exemple de la p. 42, montant à virgule aligné à droite, « N », « E-- »), le justificatif en
+enregistrement « G » après la dernière ligne de son écriture, l'archive par `fabriquerLArchiveNommee` (généralisée depuis Quadra). Ce que
+la description ne fixe pas reste « à saisir » : encodage, fin d'enregistrement, longueur (6 à 17), produit, origine, SO_NEWANALYTIQUE,
+numéro de pièce, et par journal son code, son libellé, sa nature (sa contrepartie pour BQE/CAI) et la nature du mouvement ; le chemin des
+justificatifs. Un montant négatif se refuse (signe non décrit). Quatre mutations mordent. Non éprouvé : tout import réel ; EXP4-Q1 à Q5.

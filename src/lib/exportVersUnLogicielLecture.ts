@@ -117,18 +117,20 @@ async function telechargerUnJustificatif(dossierId: string, j: JustificatifAJoin
   return { ok: true, octets, extension }
 }
 
-export type FichierComposeQuadra = { ok: true; nom: string; octets: Uint8Array } | { ok: false; message: string }
+export type FichierCompose = { ok: true; nom: string; octets: Uint8Array } | { ok: false; message: string }
 
 /**
- * L'archive du profil Quadra (lib/profilQuadra.ts) : le fichier ASCII NOMME chaque justificatif en position 182, et ce nom
- * porte l'extension que son type décide — on télécharge donc d'abord les justificatifs, on compose le fichier avec les noms
- * de ceux qui sont VRAIMENT là (`composer`), puis on écrit l'archive : le fichier, et chaque justificatif à côté de lui, à la
- * racine (« les fichiers sont à localiser au même endroit que le fichier ASCII », KB0014530). Un fichier absent n'est pas
- * nommé ; le plafond en mémoire est celui de l'archive ACD.
+ * L'archive d'un profil dont le fichier d'écritures NOMME chaque justificatif — Quadra en position 182 (lib/profilQuadra.ts),
+ * le TRA dans son enregistrement « G » (lib/profilTra.ts) — et dont ce nom porte l'extension que son type décide : on
+ * télécharge donc d'abord les justificatifs, on compose le fichier avec les noms de ceux qui sont VRAIMENT là (`composer`),
+ * puis on écrit l'archive : le fichier, et chaque justificatif à côté de lui, à la racine (« les fichiers sont à localiser au
+ * même endroit que le fichier ASCII », KB0014530 ; « un fichier .TRA et optionnellement des pièces jointes (à la racine de
+ * l'archive) », MyUnisoft). Un fichier absent n'est pas nommé ; `nomRefuse` dit, sans nom de fichier, un nom que le profil ne
+ * sait pas composer ; le plafond en mémoire est celui de l'archive ACD.
  */
-export async function fabriquerLArchiveQuadra(
+export async function fabriquerLArchiveNommee(
   dossierId: string, justificatifs: readonly JustificatifAJoindre[], nommer: (reference: string, extension: string) => string | null,
-  composer: (noms: ReadonlyMap<string, string>) => FichierComposeQuadra, maintenant: Date,
+  composer: (noms: ReadonlyMap<string, string>) => FichierCompose, maintenant: Date, nomRefuse: string,
 ): Promise<IssueDeLArchive> {
   const manquants: string[] = []
   const lus: { nom: string; octets: Uint8Array }[] = []
@@ -139,7 +141,7 @@ export async function fabriquerLArchiveQuadra(
     const lu = await telechargerUnJustificatif(dossierId, j)
     if (!lu.ok) { manquants.push(lu.manquant); continue }
     const nom = nommer(j.reference, lu.extension)
-    if (nom === null) { manquants.push(`${j.reference} : son nom ne tient pas en huit caractères et une extension de trois.`); continue }
+    if (nom === null) { manquants.push(`${j.reference} : ${nomRefuse}`); continue }
     poids += lu.octets.length
     if (poids > PLAFOND_EN_MEMOIRE) {
       return { ok: false, message: 'Aucune archive : les justificatifs passent la taille qu’un navigateur garde en mémoire (500 Mio).' }

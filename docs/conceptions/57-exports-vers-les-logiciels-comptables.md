@@ -738,3 +738,19 @@ Pour valider le profil ACD — et la même liste vaudra pour tout autre logiciel
 
 **Hors des sources** : le relevé de forme du § 3.1 vient d'un FEC réel remis par l'expert-comptable le 17/11/2026, qui
 n'est ni au dépôt ni cité.
+
+## 10. EXP4, le TRA : la description version 11 (ajout du 27/11/2026)
+
+Une description plus récente que les deux du § 3.4 est publique : Cegid, « Cegid Business Comptabilité – Descriptif du fichier de
+mouvement "TRA" », version '11', 89 pages, publiée par MyUnisoft avec la documentation de son API
+(`https://github.com/MyUnisoft/api-partenaires/blob/main/docs/MAD/TRA.pdf`, citée par `docs/accounting/folder/import/tra.md`).
+Confiance : **éditeur**, redistribué. Ce qu'elle tranche du § 3.4 et du § 8 :
+
+- **Un fichier « de type journal »** (`JRL`) ne porte que l'en-tête (`***`) et les journaux (`***JAL`), puis les écritures ; les autres
+  enregistrements « obligatoires » ne le sont qu'en création de dossier complet (p. 2).
+- **`STD` suffit** quand on n'écrit pas les « Informations complémentaires sur les écritures (#1) » (p. 10) : l'écriture s'arrête en 222.
+- Les positions de l'écriture et du document GED sont les mêmes que dans les versions 010 et 7.
+- Une ligne sans auxiliaire ni section a TYPE CPTE à blanc (l'exemple de la p. 42).
+- Restent non dits : l'encodage, la fin d'enregistrement, le signe d'un montant négatif, la place de l'enregistrement « G » et le compte
+  qu'il cite pour une pièce à plusieurs lignes, le code « produit » d'une application tierce, l'effet d'un `JAL` sur un journal existant.
+  Le profil (`src/lib/profilTra.ts`) en fait des réglages « à saisir » ou des refus ; les questions EXP4-Q1 à Q5 les portent.
