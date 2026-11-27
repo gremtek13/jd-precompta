@@ -8,6 +8,7 @@ import type {
 } from '../lib/types'
 import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from './ecritures'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from './modeles'
+import { COMPTE_BANCAIRE_D_ESSAI } from './compteBancaireDEssai'
 
 // LES FABRIQUES DES TESTS DE LA RÉVISION (ligne 41, étape R2) : une ligne de chaque table que le module lit, entière —
 // colonnes NOT NULL comprises —, que chaque cas complète de ce qui le distingue. Des jeux FICTIFS : aucun libellé, aucun
@@ -46,7 +47,7 @@ export function soldeReporte(o: Partial<SoldeReporte>): SoldeReporte {
 
 export function ligne(o: Partial<LigneBancaire>): LigneBancaire {
   return {
-    id: 'l', dossier_id: DOSSIER, compte_bancaire_id: 'cb-essai', date: '2025-01-01', libelle: `${MARQUE_SAISIE} mouvement`, montant: 1, statut: 'rapprochee',
+    id: 'l', dossier_id: DOSSIER, compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, date: '2025-01-01', libelle: `${MARQUE_SAISIE} mouvement`, montant: 1, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, emprunt_id: null, emprunt_echeance: null,
     emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
     declaration_tva_id: null, prelevement_personnel: false, source_fichier: `${MARQUE_SAISIE}-releve.pdf`,
@@ -56,7 +57,7 @@ export function ligne(o: Partial<LigneBancaire>): LigneBancaire {
 
 export function controleReleve(o: Partial<ControleReleveBancaire>): ControleReleveBancaire {
   return {
-    id: 'c', dossier_id: DOSSIER, compte_bancaire_id: 'cb-essai', source_fichier: `${MARQUE_SAISIE}-releve.pdf`, solde_initial: 0, solde_final: 0,
+    id: 'c', dossier_id: DOSSIER, compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, source_fichier: `${MARQUE_SAISIE}-releve.pdf`, solde_initial: 0, solde_final: 0,
     somme_mouvements: 0, ecart: 0, coherent: true, periode_debut: '2025-12-01', periode_fin: '2025-12-31',
     created_at: '2026-01-05T10:00:00Z', ...o,
   }

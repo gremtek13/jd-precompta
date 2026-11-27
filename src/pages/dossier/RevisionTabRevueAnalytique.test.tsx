@@ -7,6 +7,7 @@ import { AnneeProvider } from '../../context/AnneeContext'
 import { ExercicesValidesProvider } from '../../context/ExercicesValidesContext'
 import { exerciceValide } from '../../test/exerciceValide'
 import { DOSSIER, AUTEUR, ecritureEquilibree, ligne } from '../../test/revision'
+import { compteBancaireDEssai } from '../../test/compteBancaireDEssai'
 import { explication, seuil } from '../../test/revueAnalytique'
 import { conclusion } from '../../test/revisionRevue'
 import { titreDeLaLigne } from '../../lib/revueAnalytiqueEcran'
@@ -163,6 +164,8 @@ function rpcCommeLaBase(nom: string, args: Record<string, unknown>) {
 //  - deux frais de banque rapprochés, sans pièce : 300 € et 20 €.
 function dossier2025() {
   faux.tables = {
+    // Le compte que portent les mouvements, présent dans le dossier comme en base.
+    comptes_bancaires: [compteBancaireDEssai(DOSSIER)],
     ecritures_brouillon: [
       ...ecritureEquilibree('e1', '2025-06-01', '512000', '706000', 1000),
       ...ecritureEquilibree('e0', '2024-06-01', '512000', '706000', 600),

@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
+import { COMPTE_BANCAIRE_D_ESSAI, compteBancaireDEssai } from '../../test/compteBancaireDEssai'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type { LigneBancaire } from '../../lib/types'
@@ -100,7 +101,7 @@ vi.mock('../../lib/supabase', async () => {
 
 function mouvement(o: Partial<LigneBancaire> & Pick<LigneBancaire, 'id'>): LigneBancaire {
   return {
-    dossier_id: D, compte_bancaire_id: 'cb-essai', date: '2026-03-05', montant: 123.45, libelle: 'VIR CPAM 0012345678260303', libelle_brut: null,
+    dossier_id: D, compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, date: '2026-03-05', montant: 123.45, libelle: 'VIR CPAM 0012345678260303', libelle_brut: null,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-03-05T09:00:00Z',
@@ -127,6 +128,7 @@ function poser(o: {
   faux.tables = []
   faux.rpcs = []
   faux.parTable = {
+    comptes_bancaires: [{ ...compteBancaireDEssai(D) }],
     lignes_bancaires: (o.releve ?? [CREDIT]) as unknown as Record<string, unknown>[],
     pieces: [],
     categories: [{ id: 'c-hon', dossier_id: D, code: 'honoraires', libelle: 'Honoraires', ordre: 1, compte_comptable: '706000', poste_2035: 'Recettes' }],

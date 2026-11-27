@@ -58,6 +58,7 @@ import {
 import type { Manifeste, SauvegardeDossier } from '../lib/sauvegardeDonnees'
 import { VERSION_SAUVEGARDE } from '../lib/sauvegardeLogos'
 import { relevesIncoherentsDe } from '../lib/suiteDesReleves'
+import { COMPTE_BANCAIRE_D_ESSAI } from './compteBancaireDEssai'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire,
   NatureImmobilisation, OperationCaisse, Piece, ReglementGroupe, VehiculeDossier,
@@ -291,14 +292,14 @@ export function composerLeDossier(): DossierDeDemonstration {
     const fichier = nomDuReleve(a, mois)
     const importeLe = `${mois === 12 ? a + 1 : a}-${deux(mois === 12 ? 1 : mois + 1)}-05T10:00:00Z`
     controles.push({
-      id: id(12, controles.length), dossier_id: D, compte_bancaire_id: 'cb-essai', source_fichier: fichier, solde_initial: initial / 100, solde_final: solde / 100,
+      id: id(12, controles.length), dossier_id: D, compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, source_fichier: fichier, solde_initial: initial / 100, solde_final: solde / 100,
       somme_mouvements: somme / 100, ecart: 0, coherent: true, periode_debut: jour(a, mois, 1), periode_fin: jour(a, mois, dernierJour(a, mois)),
       created_at: importeLe,
     })
     for (const x of duMois) {
       const k = x.classement
       const ligne: LigneBancaire = {
-        id: id(2, rangLigne++), dossier_id: D, compte_bancaire_id: 'cb-essai', date: x.date, libelle: x.libelle, montant: x.montant,
+        id: id(2, rangLigne++), dossier_id: D, compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, date: x.date, libelle: x.libelle, montant: x.montant,
         statut: k.type === 'personnel' ? 'ignoree' : k.type === 'a_rapprocher' ? 'non_rapprochee' : 'rapprochee',
         piece_id: k.type === 'piece' ? k.pieceId : null, cotisation_id: k.type === 'cotisation' ? k.cotisationId : null,
         categorie_id: k.type === 'categorie' ? k.categorie.id : null, taux_tva: null, prelevement_personnel: k.type === 'personnel',

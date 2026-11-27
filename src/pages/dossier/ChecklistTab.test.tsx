@@ -11,6 +11,7 @@ import type { Emprunt } from '../../lib/emprunts'
 import type { DossierTab } from '../../components/DossierParcours'
 import { NON_VALIDEE, A_NOUVEAU_NON_VALIDE } from '../../test/ecritures'
 import { AvecExercicesValides } from '../../test/exercicesValides'
+import { COMPTE_BANCAIRE_D_ESSAI, compteBancaireDEssai } from '../../test/compteBancaireDEssai'
 import type { FacturePourJumelle } from '../../lib/ventesJumelles'
 import { PLAN_PAR_DEFAUT } from '../../lib/planComptable'
 import { ETAT_FICTIF, ETAT_NEUF, adresseFictive, etatFictif } from '../../test/etatFactureElectronique'
@@ -207,7 +208,7 @@ function piece(o: Partial<Piece> = {}): Piece {
 // le jeu d'essai à la table.
 function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
-    id: 'l1', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
+    id: 'l1', dossier_id: 'dossier-de-test', compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
     montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     prelevement_personnel: false, source_fichier: null, libelle_brut: null,
@@ -252,6 +253,8 @@ function poser(pieces: {
   transmissions?: TransmissionLue[]
 }) {
   faux.parTable = {
+    // Le compte que portent les mouvements, présent dans le dossier comme en base.
+    comptes_bancaires: [compteBancaireDEssai('dossier-de-test')],
     'pieces:validee': pieces.validees ?? [],
     'pieces:a_valider': pieces.aValider ?? [],
     pieces: [...(pieces.validees ?? []), ...(pieces.aValider ?? [])],

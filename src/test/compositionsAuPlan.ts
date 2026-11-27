@@ -44,6 +44,7 @@ import { SANS_ACOMPTE, ventesFacturees } from '../lib/ventesFacturees'
 import { CAISSE_ABSENTE } from '../lib/recettesDeCaisse'
 import { planLuDe } from './modeles'
 import { ECRITURES_LIBRES_ABSENTES } from '../lib/ecrituresLibresDesExports'
+import { COMPTE_BANCAIRE_D_ESSAI } from './compteBancaireDEssai'
 
 // LES COMPOSITIONS SOUS UN PLAN (ligne 43, étape PC3 ; conception, § 5.1 et § 5.2) : chaque écriture que l'application
 // compose — et chaque contrôle qui la recompose pour juger le brouillon — joué sur des jeux d'essai FICTIFS tirés du
@@ -79,7 +80,7 @@ export const piece = (o: Partial<Piece> = {}): Piece => ({
 })
 
 export const mouvement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-  id: 'l-1', dossier_id: D, compte_bancaire_id: 'cb-essai', date: '2026-03-10', libelle: 'MOUVEMENT FICTIF', montant: -120, statut: 'rapprochee', piece_id: null,
+  id: 'l-1', dossier_id: D, compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, date: '2026-03-10', libelle: 'MOUVEMENT FICTIF', montant: -120, statut: 'rapprochee', piece_id: null,
   cotisation_id: null, categorie_id: null, taux_tva: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
   emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null, id_externe: null, created_at: '2026-03-11T08:00:00Z', encaissements_de_factures: false, ...o,

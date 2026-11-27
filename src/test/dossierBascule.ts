@@ -10,6 +10,7 @@ import type { PartVendue } from '../lib/ventesFacturees'
 import type { VentesFactureesDesExports } from '../lib/ventesFactureesDesExports'
 import { NON_VALIDEE } from './ecritures'
 import { encaissementVendu, factureVendue, ligneVendue } from './ventesFacturees'
+import { COMPTE_BANCAIRE_D_ESSAI } from './compteBancaireDEssai'
 
 // UN DOSSIER QUI A BASCULÉ, DE BOUT EN BOUT (chantier EC-Q3, étape VF4c2) : les lignes de la base telles que la lecture des
 // ventes facturées les rend, la composition de VF4a sur elles, et le brouillon que la fonction de VF4b aurait écrit pour
@@ -105,7 +106,7 @@ export function exportsDesVentes(sources: SourcesDesEcrituresDeVente, c: Ecritur
  *  base), celui du mouvement quand sa lecture l'a demandé, sinon le compte d'essai. */
 export function ligneBancaire(m: MouvementDesEcritures): LigneBancaire {
   return {
-    compte_bancaire_id: 'cb-essai', ...m, taux_tva: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, libelle_brut: null,
+    compte_bancaire_id: COMPTE_BANCAIRE_D_ESSAI, ...m, taux_tva: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, libelle_brut: null,
     id_externe: null, created_at: `${m.date}T08:00:00Z`,
   }
 }
