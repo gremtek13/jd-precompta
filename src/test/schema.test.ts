@@ -89,10 +89,18 @@ describe('la dernière définition d’une fonction, capitales comprises', () =>
     const dernieres = new Map<string, string>()
     beforeAll(() => {
       const fichiers = fichiersDuSchema()
-      noms = new Set(fichiers.flatMap((f) =>
-        [...f.texte.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)\(/gi)].map((m) => m[1])))
+      // Les noms que chaque fichier définit, relevés d'un seul passage : `definitionsSql` ne lit, pour un nom, que les
+      // fichiers qui le définissent — aucune autre ne peut porter sa définition, et l'ordre des fichiers est gardé. Relire
+      // les 5 Mo de l'export pour chacune des 300 fonctions passait le délai du `beforeAll` sous la charge de la barrière.
+      const definisPar = fichiers.map((f) =>
+        [...f.texte.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)\(/gi)].map((m) => m[1]))
+      noms = new Set(definisPar.flat())
+      const fichiersDe = new Map<string, typeof fichiers>()
+      definisPar.forEach((definis, i) => {
+        for (const nom of new Set(definis.map((n) => n.toLowerCase()))) fichiersDe.set(nom, [...(fichiersDe.get(nom) ?? []), fichiers[i]])
+      })
       for (const nom of noms) {
-        const definitions = definitionsSql(nom, fichiers)
+        const definitions = definitionsSql(nom, fichiersDe.get(nom.toLowerCase()) ?? [])
         if (definitions.length > 0) dernieres.set(nom, definitions[definitions.length - 1].definition)
       }
     })

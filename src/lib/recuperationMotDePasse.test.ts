@@ -432,6 +432,10 @@ interface AppelDuLien { chemin: string; faute: string | null }
 function appelsDuLien(sources: { chemin: string; texte: string }[]): AppelDuLien[] {
   const sortie: AppelDuLien[] = []
   for (const { chemin, texte } of sources) {
+    // Un fichier qui n'écrit nulle part le nom de la méthode ne peut pas l'appeler : l'arbre ne se bâtit que pour les autres
+    // (bâtir celui des trois cents fichiers de la source passait le délai du `beforeAll` sous la charge de la barrière).
+    // Un échappement `\u` peut écrire un identifiant sans ses lettres : un fichier qui en porte un s'analyse toujours.
+    if (!texte.includes('resetPasswordForEmail') && !texte.includes('\\u')) continue
     const sf = ts.createSourceFile(chemin, texte, ts.ScriptTarget.Latest, true, chemin.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
     // L'adresse de retour doit venir de ce module, sous son nom (un alias pourrait nommer n'importe quoi).
     const importee = sf.statements.some((s) => ts.isImportDeclaration(s) && ts.isStringLiteral(s.moduleSpecifier)

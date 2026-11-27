@@ -20,7 +20,8 @@ const MOTS_AVANT_UNE_REGEX = new Set(['return', 'typeof', 'case', 'in', 'of', 'd
 
 /** Le texte lu en jetons, commentaires écartés. Lève `LecturePerdue` sur une chaîne, un gabarit ou un littéral ouvert. */
 export function lire(source: string, jsx = false): Jeton[] {
-  const jetons: Jeton[] = []
+  // `let` : un `${…}` lit ses jetons dans un tableau à lui, puis rend la main au tableau d'avant (`lireExpression`).
+  let jetons: Jeton[] = []
   let i = 0
   let ligne = 1
 
@@ -56,7 +57,10 @@ export function lire(source: string, jsx = false): Jeton[] {
     const sousJetons: Jeton[] = []
     const sauveI = i
     i = debut
-    const sauveJetons = jetons.splice(0, jetons.length)
+    // Les jetons d'avant mis de côté par ÉCHANGE de tableau, jamais recopiés : les retirer puis les remettre à chaque `${`
+    // coûtait tout le fichier lu jusque-là, et un fichier de 500 Ko aux milliers de gabarits se lisait en 300 ms.
+    const sauveJetons = jetons
+    jetons = []
     try {
       while (i < source.length) {
         const c = source[i]
@@ -68,7 +72,7 @@ export function lire(source: string, jsx = false): Jeton[] {
         pas()
       }
     } finally {
-      jetons.splice(0, jetons.length, ...sauveJetons)
+      jetons = sauveJetons
       i = sauveI
     }
     throw new LecturePerdue(`ligne ${ligne} : un « \${ » ne se ferme pas (${reste.slice(0, 30)})`)

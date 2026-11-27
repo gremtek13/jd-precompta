@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { FormeInconnue, fichiersDuSchema, fichiersPrepares } from '../test/schema'
 import { policiesDuSchema, vautPour, type ReleveDesPolicies } from '../test/policiesDuSchema'
 
@@ -247,15 +247,20 @@ const SOURCES = () => [
 ].map((chemin) => ({ chemin, texte: lire(chemin) }))
 
 describe('aucun appel du stockage ne réécrit, ne déplace ni n’écrase un objet', () => {
+  // Le relevé de toute la source (chaque fichier qui nomme le stockage analysé par le compilateur) se paie ici, une fois :
+  // refait dans chacun des deux gardes qui le lisent, il approchait les 5 s de Vitest sous la charge de la barrière.
+  let releve: Releve
+  beforeAll(() => { releve = appelsDuStockage(SOURCES()) })
+
   it('ni update, ni move, ni copy ; un seul dépôt qui écrase, hors de la RLS, nommé et compté', () => {
-    const r = appelsDuStockage(SOURCES())
+    const r = releve
     expect(r.fautes).toEqual([])
     expect(Object.fromEntries(r.ecrasent)).toEqual(Object.fromEntries(Object.entries(ECRASEMENTS_ADMIS).map(([c, e]) => [c, e.nombre])))
     for (const e of Object.values(ECRASEMENTS_ADMIS)) expect(e.raison.length).toBeGreaterThan(40)
   })
 
   it('le plancher : toute la source lue (655 fichiers le 13/11/2026), ses dépôts comptés (17)', () => {
-    const r = appelsDuStockage(SOURCES())
+    const r = releve
     expect(r.fichiers).toBeGreaterThanOrEqual(655)
     expect(r.depots).toBeGreaterThanOrEqual(17)
   })
