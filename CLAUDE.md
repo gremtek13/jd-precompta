@@ -501,12 +501,14 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 ## Fonctionnalités actuellement en cours
 
 - **Proposition de catégorie** : à éprouver par un premier clic réel du cabinet.
-- **La répétition générale des migrations préparées**, refaite le 27/11/2026 à 254 : 21 des 22 s'appliquent, seules et en
-  chaîne, retours compris ; e7a refuse (REPET-Q1) ; cinq sont en production depuis (255 à 259, MCB5g compris), les 16 autres
-  s'appliquent encore sur 259, seules et en chaîne ; deux préparées d'après elle, SECU4-Q1 et MCBR-Q2, en production le même soir
-  (260, 261, par l'outil) ; le tableau et l'ordre de collage dans `docs/conceptions/60-…` → « LA
-  RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 254 », « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES », « MCB5G EN PRODUCTION (258, 259) »,
-  « SECU4-Q1 ET MCBR-Q2 EN PRODUCTION (260, 261) ».
+- **La répétition générale des migrations préparées**, refaite le 27/11/2026 à 259 puis à 261 (SECU4-Q1 et MCBR-Q2 passées en
+  production pendant elle) : les 18 qui restent s'appliquent seules et en chaîne, dans cinq ordres (NOE4R-Q1 et Q2 d'abord,
+  NOE4R-Q1 sans Q2, la double authentification d'abord ou en dernier), retours compris, la même base au bout ; e7a refuse
+  (REPET-Q1) ; le contrôle 141 de `validationExercice.sql` attend la garde de NOE4R-Q2, et toute garde de suppression
+  (`gardesDeSuppressionAttendues.test.ts`) ; le tableau et l'ordre de collage (NOE4R-Q1 d'abord) dans `docs/conceptions/60-…`
+  → « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 261 », « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 254 »,
+  « MCB5G EN PRODUCTION (258, 259) », « SECU4-Q1 ET MCBR-Q2 EN PRODUCTION (260, 261) » ; trois préparées d'après elle (SECU4-Q2,
+  MCBR2-Q2, ASSIST-Q1) n'y sont pas jouées en chaîne.
 - **En production le 15/11/2026, neuf migrations (218 → 227)**, leurs drapeaux levés : le 468 sur le relevé (PC4Q2-Q1), une
   reprise retient la trésorerie (A8B-Q3), le registre d'une facture reprise part de ce que sa pièce citée a reçu
   (A8Q5Q3-Q2), l'auteur d'une connexion de plateforme (B4RS-Q1 ; `plateforme-agreee` déployée, v14), le

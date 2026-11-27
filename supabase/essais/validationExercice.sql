@@ -808,6 +808,10 @@ begin
       -- `ecritures_libres_garde_de_la_contre_passation`, de la forme `dossier`), comptée quand sa fonction existe — relevée le
       -- 24/11/2026 sur une copie de la réplique à 250 munie des préparées d'EL7, d'EXP-Q4 et d'EXP58-Q2, où ce contrôle était faux
       -- (83 gardes observées, 82 attendues).
+      -- Et la garde de la trace des paiements remplacés (NOE4R-Q2, `remplacement_des_journees_assurance_maladie`, préparée :
+      -- `remplacements_assurance_maladie_garde`, de la forme `dossier` — une trace ne part qu'avec son dossier), comptée quand sa
+      -- table existe — relevée le 27/11/2026 par la répétition des préparées, sur une copie de la réplique à 259 munie de NOE4R-Q1
+      -- et de NOE4R-Q2, où ce contrôle était faux (85 gardes observées, 84 attendues ; 107 contre 106 au bout de la chaîne).
       (select case when to_regclass('public.operations_inventaire') is null and to_regclass('public.inventaires_declares') is null and to_regclass('public.provisions') is null and to_regclass('public.stocks_de_cloture') is null and to_regclass('public.affectations_du_resultat') is null and to_regclass('public.exercices') is null and to_regclass('public.previsions_publiees') is null and to_regclass('public.ecritures_libres') is null and to_regclass('public.hausses_vues_avec_le_client') is null and to_regclass('public.auteurs_des_ouvertures') is null and to_regclass('public.paiements_assurance_maladie') is null and to_regclass('public.paiements_assurance_maladie_mouvements') is null and to_regclass('public.factures_assurance_maladie') is null then iv
          else (select count(*) || ' ' || string_agg(g, ',' order by g collate "C")
                  from unnest(string_to_array(substr(iv, strpos(iv, ' ') + 1), ',')
@@ -824,7 +828,8 @@ begin
            || case when to_regclass('public.paiements_assurance_maladie') is null then array[]::text[] else array['imports_assurance_maladie.imports_assurance_maladie_garde:garder_paiements_assurance_maladie:dossier:O', 'paiements_assurance_maladie.paiements_assurance_maladie_garde:garder_paiements_assurance_maladie:dossier:O'] end
            || case when to_regclass('public.paiements_assurance_maladie_mouvements') is null then array[]::text[] else array['imports_assurance_maladie.imports_assurance_maladie_associes:retenir_import_associe:?:O', 'paiements_assurance_maladie_mouvements.paiements_assurance_maladie_mouvements_garde:garder_paiements_assurance_maladie_mouvements:dossier:O'] end
            || case when to_regclass('public.factures_assurance_maladie') is null then array[]::text[] else array['cles_des_lots_teletransmission.cles_des_lots_teletransmission_garde:garder_factures_assurance_maladie:dossier:O', 'factures_assurance_maladie.factures_assurance_maladie_garde:garder_factures_assurance_maladie:dossier:O', 'imports_factures_assurance_maladie.imports_factures_assurance_maladie_garde:garder_factures_assurance_maladie:dossier:O', 'lots_teletransmission_importes.lots_teletransmission_importes_garde:garder_factures_assurance_maladie:dossier:O'] end
-           || case when to_regprocedure('public.garder_contre_passation_des_ecritures_libres()') is null then array[]::text[] else array['ecritures_libres.ecritures_libres_garde_de_la_contre_passation:garder_contre_passation_des_ecritures_libres:dossier:O'] end) as u(g)) end
+           || case when to_regprocedure('public.garder_contre_passation_des_ecritures_libres()') is null then array[]::text[] else array['ecritures_libres.ecritures_libres_garde_de_la_contre_passation:garder_contre_passation_des_ecritures_libres:dossier:O'] end
+           || case when to_regclass('public.remplacements_assurance_maladie') is null then array[]::text[] else array['remplacements_assurance_maladie.remplacements_assurance_maladie_garde:garder_remplacements_assurance_maladie:dossier:O'] end) as u(g)) end
        from (values ((select case when to_regprocedure('public.garder_categorie_du_dossier()') is null then pa
          else (split_part(pa, ' ', 1)::int + 1)::text || substr(replace(pa,
            ',adresses_reception.adresses_reception_gardes:garder_adresse_reception:dossier:O,',

@@ -113,6 +113,8 @@ const LECTEURS_PERMIS: Readonly<Record<string, string>> = {
   'src/lib/creationsDansLesBlocs.test.ts': 'le relevé des créations dans les blocs, qui compte la restrictive de la trace des remplacements',
   'src/lib/essaisEnProduction.test.ts': 'le classement des essais de la base, qui nomme les migrations de NOE4R-Q1 et NOE4R-Q2 (le nom de la '
     + 'première porte celui de la table des imports)',
+  'src/lib/gardesDeSuppressionAttendues.test.ts': 'le relevé des gardes de suppression que le contrôle 141 de validationExercice.sql '
+    + 'attend, qui nomme la garde de la trace des remplacements dans son défaut planté ; il ne lit aucune ligne',
 }
 
 function fichiers(dossier: string): string[] {

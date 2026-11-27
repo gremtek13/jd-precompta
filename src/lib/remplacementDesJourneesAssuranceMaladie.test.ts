@@ -72,6 +72,17 @@ describe('la migration, préparée ou rangée, et le drapeau', () => {
     expect(empreinte).toMatch(/^[0-9a-f]{32}$/)
     expect(MIGRATION).toContain(`('importer_paiements_assurance_maladie', 'public.importer_paiements_assurance_maladie(uuid,jsonb)', '${empreinte}')`)
   })
+
+  it('sa garde laisse passer la cascade d’un dossier qu’on supprime, et le contrôle 141 de validationExercice.sql l’attend quand sa table existe', () => {
+    // La répétition des préparées du 27/11/2026 : sans la ligne de l'essai, le contrôle 141 (« tout déclencheur qui garde une
+    // suppression laisse passer la cascade d'un dossier qu'on supprime »), joué en production, virait au rouge au collage de cette
+    // migration — 85 gardes observées, 84 attendues. La garde est de la forme « dossier » que le contrôle reconnaît.
+    expect(MIGRATION).toContain('create trigger remplacements_assurance_maladie_garde\n  before insert or update or delete on public.remplacements_assurance_maladie\n  for each row execute function public.garder_remplacements_assurance_maladie();')
+    expect(MIGRATION).toContain('    if not exists (select 1 from public.dossiers d where d.id = old.dossier_id) then\n      return old;')
+    const validation = readFileSync(resolve(process.cwd(), 'supabase/essais/validationExercice.sql'), 'utf8')
+    expect(validation).toContain('|| case when to_regclass(\'public.remplacements_assurance_maladie\') is null then array[]::text[] else '
+      + 'array[\'remplacements_assurance_maladie.remplacements_assurance_maladie_garde:garder_remplacements_assurance_maladie:dossier:O\'] end')
+  })
 })
 
 describe('les mots de la base, au caractère près', () => {
