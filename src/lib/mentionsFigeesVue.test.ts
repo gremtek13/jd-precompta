@@ -3,10 +3,12 @@ import {
   AUCUN_RIB_CONFIRME, AVIS_SANS_FORME, FACTURE_D_AVANT, INDEMNITE_DE_RECOUVREMENT, PROVENANCE_VIDE, RETENUE_CHAINE_ROMPUE,
   RETENUE_EN_LECTURE, RETENUE_MANDATAIRE_EN_LECTURE, RETENUE_MANDATAIRE_VIDE, avisSansDenomination, mentionDuMandat, retenueMandataireIllisible, ceQueLaFactureImprime, ceQueLaValidationFigera, confirmationDesMentions, formeEtCapital,
   jugementDesMentions, logoNonImprime, parametresEnVigueur, provenanceDeLArticle, provenanceDeLaLigneLue, provenanceQuiPart, retenueIllisible,
-  REFUS_SANS_PENALITES, refusSansPenalites, sansPhraseDeRetard, serieDeQuiValide, uniteImprimee, type LectureDeLaValidation, type LectureDuMandataire, type SaisieAJuger,
+  REFUS_SANS_PENALITES, mentionDeLAvoirProposee, refusSansPenalites, sansPhraseDeRetard, serieDeQuiValide, uniteImprimee, type LectureDeLaValidation, type LectureDuMandataire, type SaisieAJuger,
 } from './mentionsFigeesVue'
 import { REFUS_DE_LA_PROVENANCE, REFUS_DE_LA_VALIDATION_FIGEE, mentionsAFiger } from './mentionsFigees'
 import { MODELE_IBAN_DANS_UN_TEXTE } from './parametresFacturation'
+import { PHRASE_DE_RETARD } from './mentionsFacture'
+import { MENTION_FRANCHISE } from './statutTva'
 import { motsDuCabinet } from './espaceVentes'
 import { formatMoney } from './format'
 import { article } from '../test/articles'
@@ -432,5 +434,30 @@ describe('ce que l’aperçu d’une facture figée imprime, de ses seules colon
     expect(logoNonImprime({ etat: 'absent' })).toMatch(/n’est pas \(ou plus\) rendu/)
     expect(logoNonImprime({ etat: 'refuse', motif: 'm' })).toMatch(/\(m\)/)
     expect(logoNonImprime({ etat: 'illisible' })).toMatch(/PNG ou JPEG/)
+  })
+})
+
+describe('FACT-Q4 : la mention proposée à l’avoir d’un particulier, sans la phrase des pénalités', () => {
+  // La mention que la facture d'un particulier portait avant FACT-Q1 : la mention de TVA, puis la phrase proposée.
+  const mention = `${MENTION_FRANCHISE}\n${PHRASE_DE_RETARD}`
+
+  it('la mention de la facture d’un particulier, sans la phrase ; la mention de TVA intacte, au caractère près', () => {
+    expect(mentionDeLAvoirProposee(mention, 'non_assujetti', 'd1')).toBe(MENTION_FRANCHISE)
+    // La phrase seule : il ne reste rien.
+    expect(mentionDeLAvoirProposee(PHRASE_DE_RETARD, 'non_assujetti', 'd1')).toBe('')
+    // Ce que le cabinet a écrit à la main reste, sur sa ligne comme autour de la phrase.
+    expect(mentionDeLAvoirProposee(`${MENTION_FRANCHISE}\nPaiement à réception. ${PHRASE_DE_RETARD}\nMerci.`, 'non_assujetti', 'd1'))
+      .toBe(`${MENTION_FRANCHISE}\nPaiement à réception.\nMerci.`)
+  })
+
+  it('un professionnel, un client « à préciser » ou hors de France, une facture d’avant sans type : la mention de la facture, inchangée', () => {
+    for (const type of ['assujetti', 'organisme_public', 'etranger', '', null] as const) {
+      expect(mentionDeLAvoirProposee(mention, type, 'd1')).toBe(mention)
+    }
+    expect(mentionDeLAvoirProposee(null, 'non_assujetti', 'd1')).toBe('')
+    expect(mentionDeLAvoirProposee(null, 'assujetti', 'd1')).toBe('')
+    // Une phrase réécrite à la main n'est pas celle que l'application propose : elle reste.
+    const reecrite = `${MENTION_FRANCHISE}\nEn cas de retard, pénalités au taux légal.`
+    expect(mentionDeLAvoirProposee(reecrite, 'non_assujetti', 'd1')).toBe(reecrite)
   })
 })

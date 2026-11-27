@@ -10,7 +10,7 @@ import { jugementDeLaValidation, type ReglageDesVentes } from '../../lib/sourceD
 import { MENTIONS_FIGEES_EXPORTEES } from '../../lib/mentionsFigees'
 import {
   PROVENANCE_VIDE, confirmationDesMentions, jugementDesMentions, provenanceDeLaLigneLue, provenanceQuiPart,
-  emetteurDeLAvoir, serieDeQuiValide, type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
+  emetteurDeLAvoir, mentionDeLAvoirProposee, serieDeQuiValide, type LectureDeLaValidation, type LectureDuMandataire, type ProvenanceDeLigne,
 } from '../../lib/mentionsFigeesVue'
 import { lireCeQueLaValidationFige } from '../../lib/mentionsFigeesLecture'
 import { lireLesContacts } from '../../lib/contactsLecture'
@@ -92,7 +92,9 @@ export default function FactureAvoirModal(props: Props) {
   // Le jour de PARIS, celui que la base juge (rang 17) : le jour local d'un navigateur en avance sur Paris serait « à venir ».
   const [dateEmission, setDateEmission] = useState(aujourdHuiAParis())
   const [motif, setMotif] = useState('')
-  const [mentionsLegales, setMentionsLegales] = useState(factureOrigine.mentions_legales ?? '')
+  // La mention de la facture, sans la phrase des pénalités quand son client est un particulier (FACT-Q4 (A)) ; modifiable.
+  const [mentionsLegales, setMentionsLegales] = useState(
+    () => mentionDeLAvoirProposee(factureOrigine.mentions_legales, factureOrigine.type_client, dossierId))
   const [lignes, setLignes] = useState<LigneAvoirEdit[]>([])
   const [chargement, setChargement] = useState(true)
   // Non nul = on ne SAIT PAS ce que la facture d'origine porte. Distinct d'un tableau vide, qui

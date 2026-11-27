@@ -12,6 +12,7 @@ import {
 import type { EspaceVentes } from '../../lib/espaceVentes'
 import type { FactureEmise } from '../../lib/types'
 import { LIBELLE_MOTIF_AVOIR } from '../../lib/droitsAcces'
+import { PHRASE_DE_RETARD } from '../../lib/mentionsFacture'
 
 // L'ÉTAT D'AVANT L'ÉTAPE A7B, éprouvé tant que son code existe (CLAUDE.md, « Tests ») : le drapeau `MENTIONS_FIGEES_EXPORTEES`
 // baissé, la fenêtre n'envoie ni ne lit rien de neuf. Ce que le drapeau levé change se joue dans
@@ -373,5 +374,34 @@ describe('FactureAvoirModal — l’avoir d’un dossier basculé', () => {
     const bouton = await monter({ reglage: reglageDesVentes(null, [2026]) })
     screen.getByText(phraseDuReglageIllisible('cabinet', 'rien n’en a été lu'))
     expect(bouton.disabled).toBe(true)
+  })
+})
+
+// FACT-Q4 (A), réponse du cabinet du 27/11/2026 : l'avoir d'un particulier propose la mention de sa facture sans la phrase des
+// pénalités et de l'indemnité de 40 € (la règle de FACT-Q1) ; elle reste modifiable ; un professionnel garde la mention telle quelle.
+describe('FactureAvoirModal — la mention proposée à l’avoir d’un particulier (FACT-Q4)', () => {
+  const AVEC_LA_PHRASE = `Paiement à réception.\n${PHRASE_DE_RETARD}`
+  const champ = () => document.querySelector('#avoir-mentions') as HTMLTextAreaElement
+
+  for (const espace of ['cabinet', 'client'] as const) {
+    it(`${espace} : un particulier, sans la phrase ; la mention se modifie et part telle que saisie`, async () => {
+      const bouton = await monter({ espace, origine: { ...factureOrigine, type_client: 'non_assujetti', mentions_legales: AVEC_LA_PHRASE } })
+      expect(champ().value).toBe('Paiement à réception.')
+      fireEvent.change(document.querySelector('#avoir-motif')!, { target: { value: 'Remise accordée' } })
+      fireEvent.change(champ(), { target: { value: `Paiement à réception.\nMerci.` } })
+      await act(async () => { bouton.click() })
+      expect(faux.appelsRpc).toHaveLength(1)
+      expect((faux.appelsRpc[0].params.p_facture as { mentions_legales: string }).mentions_legales).toBe('Paiement à réception.\nMerci.')
+    })
+  }
+
+  it('un professionnel : la mention de la facture, inchangée', async () => {
+    await monter({ origine: { ...factureOrigine, type_client: 'assujetti', mentions_legales: AVEC_LA_PHRASE } })
+    expect(champ().value).toBe(AVEC_LA_PHRASE)
+  })
+
+  it('une facture d’avant, sans type de client, garde aussi sa phrase', async () => {
+    await monter({ origine: { ...factureOrigine, type_client: null, mentions_legales: AVEC_LA_PHRASE } })
+    expect(champ().value).toBe(AVEC_LA_PHRASE)
   })
 })

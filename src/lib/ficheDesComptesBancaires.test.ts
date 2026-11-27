@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  ceQuiResteModifiable, changements, comptesDesRolesDuPlan, confirmationDeLaCreation, confirmationDeLaModification, jugerLaCreation,
+  avertissementDuSoldeHorsDesComptes, ceQuiResteModifiable, changements, comptesDesRolesDuPlan, confirmationDeLaCreation, confirmationDeLaModification, jugerLaCreation,
   jugerLaModification, PREMIERE_ANNEE_DU_COMPTE_PROPRE, premiereAnneeOuverte, RAISON_OUVERTURE_ECLATEE, REFUS_ANNEE_DU_COMPTE_PROPRE,
   REFUS_ANNEE_VALIDEE, REFUS_EXERCICES_ILLISIBLES, REFUS_FIN_D_IDENTIFIANT, REFUS_OUVERTURE_A_LA_CREATION, REFUS_OUVERTURE_EFFACEE,
   retraitDuCompte, saisieDuCompte, saisieNeuve, usageDesComptes, type ExercicesValidesLus, type SaisieDeLaFiche, type UsageDUnCompte,
@@ -275,5 +275,47 @@ describe('MCB6-Q1 : retirer un compte créé par erreur, seulement quand la base
     expect(corps.match(/exists \(select 1 from public\.\w+/g)).toEqual([
       'exists (select 1 from public.dossiers', 'exists (select 1 from public.lignes_bancaires', 'exists (select 1 from public.controles_releves_bancaires',
     ])
+  })
+})
+
+describe('MCBR2-Q1 : le solde du 31 décembre d’un exercice validé, dans aucun compte, dit avant le clic', () => {
+  const valide2025: ExercicesValidesLus = { etat: 'lus', annees: [2024, 2025] }
+  const ligne = (o: Partial<SaisieDeLaFiche>) => {
+    const l = jugerLaCreation(saisie({ ouvertLe: '2025-06-01', ...o }), [PRINCIPAL], ROLES, valide2025).ligne
+    if (l === null) throw new Error('la saisie devait partir')
+    return l
+  }
+
+  it('ouvert au plus tard le 31/12 du dernier exercice validé, son 512 propre au lendemain : l’avertissement nomme tout', () => {
+    expect(avertissementDuSoldeHorsDesComptes(ligne({}), valide2025)).toBe('Ce compte est ouvert le 01/06/2025, avant la fin de '
+      + 'l’exercice 2025, déjà validé, et tient son 512200 dès le 01/01/2026 : son solde du 31/12/2025 n’est dans aucun compte, '
+      + 'l’exercice 2025 s’étant validé sans lui. L’exercice 2026 ne se validera que si ce solde était nul — son relevé du '
+      + '31/12/2025 le dira.')
+    // La borne : ouvert le 31 décembre même, encore dit ; le 1er janvier suivant, rien.
+    expect(avertissementDuSoldeHorsDesComptes(ligne({ ouvertLe: '2025-12-31' }), valide2025)).not.toBeNull()
+    expect(avertissementDuSoldeHorsDesComptes(ligne({ ouvertLe: '2026-01-01' }), valide2025)).toBeNull()
+    // Ce n'est pas un refus : la saisie part.
+    expect(jugerLaCreation(saisie({ ouvertLe: '2025-06-01' }), [PRINCIPAL], ROLES, valide2025).refus).toBeNull()
+  })
+
+  it('muet : un 512 propre plus tard, un compte clos au plus tard ce 31/12, le principal, aucun exercice validé, des exercices illisibles', () => {
+    expect(avertissementDuSoldeHorsDesComptes(ligne({ depuis: '2027' }), valide2025)).toBeNull()
+    expect(avertissementDuSoldeHorsDesComptes(ligne({ closLe: '2025-12-31' }), valide2025)).toBeNull()
+    expect(avertissementDuSoldeHorsDesComptes(ligne({ closLe: '2026-01-15' }), valide2025)).not.toBeNull()
+    const principal = jugerLaCreation({ ...saisieNeuve([], ROLES, valide2025), ouvertLe: '2024-06-01' }, [], ROLES, valide2025).ligne
+    expect(principal).not.toBeNull()
+    if (principal) expect(avertissementDuSoldeHorsDesComptes(principal, valide2025)).toBeNull()
+    expect(avertissementDuSoldeHorsDesComptes(ligne({}), AUCUN)).toBeNull()
+    expect(avertissementDuSoldeHorsDesComptes(ligne({}), { etat: 'illisibles', motif: 'coupée' })).toBeNull()
+    // Une ouverture non datée (un compte d'avant MCB4-Q2, corrigé) ne se juge pas.
+    expect(avertissementDuSoldeHorsDesComptes({ ...ligne({}), ouvert_le: null }, valide2025)).toBeNull()
+  })
+
+  it('à la correction aussi : le compte tel qu’il part ; le dernier exercice validé seul compte', () => {
+    const j = jugerLaModification(SECOND, { ...saisieDuCompte(SECOND), libelle: 'Autre nom' }, [PRINCIPAL, SECOND], ROLES, PORTE, valide2025)
+    expect(j.refus).toBeNull()
+    if (j.ligne === null) throw new Error('la correction devait partir')
+    expect(avertissementDuSoldeHorsDesComptes(j.ligne, valide2025)).toMatch(/^Ce compte est ouvert le 01\/03\/2025/)
+    expect(avertissementDuSoldeHorsDesComptes(j.ligne, { etat: 'lus', annees: [2024] })).toBeNull()
   })
 })

@@ -235,3 +235,31 @@ describe('MCB6-Q2 : le compte propre ne part pas d’un exercice validé', () =>
     expect(bouton('Enregistrer la correction').disabled).toBe(false)
   })
 })
+
+describe('MCBR2-Q1 : le solde du 31 décembre du dernier exercice validé, dans aucun compte', () => {
+  it('la création le dit avant le clic, la confirmation le reprend, et le bouton reste offert ; muet ouvert après', async () => {
+    appels.lire.mockResolvedValue(lue([PRINCIPAL, SECOND], 'd1', { etat: 'lus', annees: [2026] }))
+    monter()
+    fireEvent.click(await within(carte()).findByRole('button', { name: 'Ajouter un compte bancaire' }))
+    fireEvent.change(screen.getByLabelText(/^Nom du compte/), { target: { value: 'Compte pro 3' } })
+    expect((screen.getByLabelText(/^Qu’il tient depuis/) as HTMLInputElement).value).toBe('2027')
+    fireEvent.change(screen.getByLabelText('Ouvert le'), { target: { value: '2027-01-01' } })
+    expect(within(carte()).queryByRole('note')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Ouvert le'), { target: { value: '2026-09-01' } })
+    const note = within(carte()).getByRole('note')
+    expect(note.textContent).toMatch(/^Ce compte est ouvert le 01\/09\/2026, avant la fin de l’exercice 2026, déjà validé/)
+    expect(note.textContent).toContain('L’exercice 2027 ne se validera que si ce solde était nul')
+    expect(bouton('Créer le compte').disabled).toBe(false)
+    await act(async () => { fireEvent.click(bouton('Créer le compte')) })
+    expect(vi.mocked(window.confirm).mock.calls[0][0]).toMatch(/n’est dans aucun compte, l’exercice 2026 s’étant validé sans lui/)
+    expect(appels.creer).toHaveBeenCalledWith('d1', expect.objectContaining({ ouvert_le: '2026-09-01', compte_propre_depuis: '2027-01-01' }))
+  })
+
+  it('des exercices validés illisibles ne disent rien de ce solde', async () => {
+    appels.lire.mockResolvedValue(lue([PRINCIPAL, SECOND], 'd1', { etat: 'illisibles', motif: 'coupée' }))
+    monter()
+    fireEvent.click(await within(carte()).findByRole('button', { name: 'Corriger « Compte pro 2 »' }))
+    fireEvent.change(screen.getByLabelText(/^Nom du compte/), { target: { value: 'Compte pro B' } })
+    expect(within(carte()).queryByRole('note')).toBeNull()
+  })
+})

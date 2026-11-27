@@ -237,6 +237,31 @@ export function jugerLaModification(
   }, exercices)
 }
 
+/**
+ * LE SOLDE D'UN COMPTE AU 31 DÉCEMBRE D'UN EXERCICE VALIDÉ, DANS AUCUN COMPTE (MCBR2-Q1 (A), réponse du cabinet du 27/11/2026 ;
+ * la suite de MCBR-Q2, lib/ouvertureEclatee.ts). Un compte ouvert au plus tard le 31 décembre du dernier exercice validé, et
+ * qui tient son propre 512 dès le 1er janvier suivant, est tenu dans cet exercice (`tenuDansLExercice`) : l'ouverture de
+ * l'exercice suivant passera son solde au relevé de ce 31 décembre à son 512, face au 512 du rôle tel que la validation l'a
+ * reporté — sans cet argent, puisque l'exercice s'est validé sans ce compte. Ce solde n'est donc dans aucun compte, et
+ * l'éclatement de l'ouverture (puis la validation de l'exercice suivant, le filet de MCB5G-Q2) ne passera que s'il était nul.
+ * Un AVERTISSEMENT, jamais un refus : la base n'en refuse rien, et un compte ouvert vide (ou vidé avant le 31 décembre) est
+ * juste. Muet pour le principal, pour un compte clos au plus tard ce 31 décembre (son solde compte pour zéro), sur une
+ * ouverture non datée, et sur des exercices validés qui ne sont pas lus en entier (rien ne s'en affirme). `ligne` : la saisie
+ * telle qu'elle part (le jugement de la fiche). Sans défaut.
+ */
+export function avertissementDuSoldeHorsDesComptes(ligne: LigneDeLaFiche, exercices: ExercicesValidesLus): string | null {
+  if (exercices.etat !== 'lus' || exercices.annees.length === 0) return null
+  if (ligne.principal || ligne.compte === null || ligne.compte_propre_depuis === null || ligne.ouvert_le === null) return null
+  const validee = Math.max(...exercices.annees)
+  const fin = `${validee}-12-31`
+  if (ligne.compte_propre_depuis !== `${validee + 1}-01-01` || ligne.ouvert_le > fin) return null
+  if (ligne.clos_le !== null && ligne.clos_le <= fin) return null
+  return `Ce compte est ouvert le ${dateDite(ligne.ouvert_le)}, avant la fin de l’exercice ${validee}, déjà validé, et tient son `
+    + `${ligne.compte} dès le 01/01/${validee + 1} : son solde du 31/12/${validee} n’est dans aucun compte, l’exercice ${validee} `
+    + `s’étant validé sans lui. L’exercice ${validee + 1} ne se validera que si ce solde était nul — son relevé du 31/12/${validee} `
+    + 'le dira.'
+}
+
 /** Ce que la saisie change, colonne par colonne : rien, et le bouton reste éteint. */
 export function changements(avant: CompteDuReleve, ligne: LigneDeLaFiche): (keyof LigneDeLaFiche)[] {
   return (['libelle', 'compte', 'compte_propre_depuis', 'ouvert_le', 'clos_le', 'fin_d_identifiant'] as const)

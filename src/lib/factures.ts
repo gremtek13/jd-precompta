@@ -6,6 +6,7 @@ import { estUneVente } from './facturesReprises'
 
 export { dejaCredite }
 import { mentionTva } from './statutTva'
+import { PHRASE_DE_RETARD } from './mentionsFacture'
 import type { ArticleExoneration, FactureEmise, FactureLigne, NatureArticle, StatutTva, UniteArticle } from './types'
 
 // Mentions légales par défaut, proposées à la création d'une facture puis librement modifiables avant
@@ -27,12 +28,7 @@ export function mentionsLegalesParDefaut(statut: StatutTva | null, article: Arti
   const lignes: string[] = []
   const mention = mentionTva(statut, article)
   if (mention) lignes.push(mention)
-  if (!sansPhraseDeRetard) {
-    lignes.push(
-      "En cas de retard de paiement, une pénalité égale à trois fois le taux d'intérêt légal sera exigible, " +
-      'ainsi qu\'une indemnité forfaitaire pour frais de recouvrement de 40 €.',
-    )
-  }
+  if (!sansPhraseDeRetard) lignes.push(PHRASE_DE_RETARD)
   return lignes.join('\n')
 }
 
