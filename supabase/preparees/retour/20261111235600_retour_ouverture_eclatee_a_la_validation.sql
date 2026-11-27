@@ -1,4 +1,5 @@
--- LE RETOUR de la migration `ouverture_eclatee_a_la_validation` (supabase/preparees/20261111235500_…, ligne 26.6, MCB5G-Q2).
+-- LE RETOUR de la migration `ouverture_eclatee_a_la_validation` (supabase/schema/20261127142727_…, en production depuis le
+-- 27/11/2026, 259 ; ligne 26.6, MCB5G-Q2).
 -- Il retire le déclencheur de `exercices_valides` et sa fonction : la validation redevient celle d'hier, que seul le préalable
 -- `ouverture-a-eclater` de l'application retient. DESTRUCTIF par sa forme (des `drop`), il ne perd aucune donnée : la
 -- migration n'en pose aucune. À coller par le cabinet, AVANT le retour de `ouverture_eclatee_par_compte`, qui se refuse tant

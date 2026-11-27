@@ -55042,3 +55042,21 @@ SÛR au banc) ; `ecrituresLibres` et `contrePassationDesEcrituresLibres` ignorai
 — en faute sur la production depuis 255 —, admis sous sa garde ; l'en-tête d'`exercicesDuDossier` dit `-1`. Les 167 autres essais :
 identiques avant et après la chaîne, hors des EN ATTENTE qui se lèvent ; la famille « apres » et l'essai d'OPT6 SÛRS au banc. Au
 collage, le socle se régénère (84 → 100 ; 26 objets de l'inventaire en dépendent). Le tableau : la conception 60 ; question REPET2-Q1.
+
+### 27/11/2026 — MCB5G EN PRODUCTION (258, 259)
+
+(Agent architecte, rangement.) `ouverture_eclatee_par_compte` collée par le cabinet (258, `20261127055700`, `872afe92…`, 29 265
+caractères, REPET2-Q1 (A)), `ouverture_eclatee_a_la_validation` par l'outil (259, `20261127142727`, `ef9e47e0…`, 9 348, MCB5G-Q2) :
+rangées dans `supabase/schema/`, textes inchangés ; leurs retours restent préparés. 258 touche `ecritures_brouillon` : sa ligne du socle
+et un index régénérés du catalogue d'une copie de `replique_227` portée à 259 par l'export. Dérive 259 `a540bcd9…` et inventaire 3 542
+`58b4a599…`, égaux à la production ; socle 85 `585debf7…`, à relever en production (sans lui, 3 540 : la colonne, et la paire avec
+l'écriture libre que 258 pose dans un bloc `do`). `rejouer.py` : 259 migrations, 102 objets du socle, 0 reprise, neuf familles égales.
+**Défaut du banc de test** : `relationsDuSchema` ignorait le nom d'une contrainte de colonne nommée, et comptait la clé de 258 deux
+fois avec le socle (le faux PostgREST refusait l'embarquement de l'assistant) ; corrigé, la RLS de `comptes_bancaires` au faux, la
+lecture des comptes au jeton de l'appelant admise par les juges. `COMPTES_BANCAIRES_PREVUS` levé, dans src et dans la copie de
+l'assistant, à redéployer (six défauts plantés réancrés, empreintes d'`agentComptableAuPlan` relevées : une phrase de la description
+de `lister_ecritures`, rien d'autre) ; treize fichiers d'écran gardent l'état d'avant par `vi.mock`. Les 166 essais et leurs semis
+rendent les mêmes verdicts sur 259 et sur 257 refait par les deux retours, sauf `ouvertureEclatee` (EN ATTENTE → 41/41, SÛR au banc
+avec `validationExercice`) ; `rls.sql` 0 en faute sur 1 357, 178 mutations. Les 16 préparées restantes s'appliquent seules et en chaîne
+sur 259 (275 ; `rls.sql` 346/1 692/0/220). Le banc des captures (`debordements.mjs`, le drapeau levé) : 0 débordement à 1 440, 1 280, 1 024, 390 et 720 px, à la
+passe du client « Banque » et aux volets extrêmes. Non fait : `compte_bancaire_id` reste facultatif dans `types.ts` (138 erreurs).

@@ -78,9 +78,17 @@ const consigneDe = (x: Rendu) => {
 // libre, celle de la description de `lister_ecritures` — rendait les quatre empreintes d'avant (eec4bec7…, 0d1cecda…, ac601d1b…,
 // 07f8093d…), à l'identique : la clé et l'écriture embarquées que `lister_ecritures` lit de plus, et le bloc PIÈCES DE VENTE qui
 // les juge, ne changent aucun rendu d'un monde sans écriture libre. Les deux états se jouent dans agentComptableEcrituresLibres.test.ts.
+// Les deux premières relevées de nouveau le 27/11/2026 (MCB5g en production, 258 et 259 : `COMPTES_BANCAIRES_PREVUS` levé dans
+// l'assistant) : chaque scénario rejoué, la constante de l'assistant à `false` puis à `true`, le faux PostgREST tenant la lecture
+// de `comptes_bancaires` au jeton de l'appelant. À `false`, les quatre empreintes d'avant (f5ca6b6b…, fa609955…, 5fb275bc…,
+// eb07415b…), à l'identique. À `true`, une seule différence, voulue : la phrase de la description de `lister_ecritures` sur la
+// ligne qui éclate l'ouverture de la banque (« Celui d'une ligne qui éclate au 1er janvier l'ouverture … n'est pas transmis. »),
+// 146 descriptions dans 80 des 126 rendus ; aucun statut, aucune réponse, aucun résultat d'outil, aucune consigne : le monde
+// fictif ne porte aucun compte bancaire, et la sélection qui lit la source de l'ouverture n'y change rien. La copie du drapeau
+// se garde dans agentComptableBanques.test.ts.
 const EMPREINTES = {
-  bnc: 'f5ca6b6bccc0ac42cbc8d4e869ceff4a282e246e121d84cef64420714fe871ae',
-  societe: 'fa6099550faffce2b723ba03317f5b9f295e5a3754600f44b4891bc588ba73d8',
+  bnc: '761a6d44782a591be040902f561c54911fe4f5b0a86750fc42cf25a4d94cae45',
+  societe: '7463002b2779e52578757f09476cb9c01ca40577f3efa1e0e040dca201ffc989',
   consigneBnc: '5fb275bc1979ab48726661e8cf177425894d8c8197a1500186e1e80dbe036819',
   consigneSociete: 'eb07415bede4b25958941f6db6d96f668e3fe37fc66e97800be8845e6bdcbfc6',
 }

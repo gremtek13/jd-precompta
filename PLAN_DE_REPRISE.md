@@ -285,7 +285,9 @@ incompréhensible trois étapes plus loin.
    relevé complet des droits (MAINTAIN, colonnes, défauts, schéma public) égal à celui de la mère. Rejoué le 26/11/2026 :
    « 254 migrations rejouées, 102 objets du socle intercalés, 6 forme(s) provisoire(s), 0 reprise(s) » ; neuf familles sur
    neuf contre une copie de réplique portée à 254, dérive 254 `8727d024…`, socle 84 `e54200f4…`, inventaire 3 518
-   `a6475fb0…`.
+   `a6475fb0…`. Rejoué le 27/11/2026, MCB5g rangée (son socle régénéré) : « 259 migrations rejouées, 102 objets du socle
+   intercalés, 6 forme(s) provisoire(s), 0 reprise(s) » ; neuf familles sur neuf contre une copie portée à 259, dérive 259
+   `a540bcd9…`, socle 85 `585debf7…`, inventaire 3 542 `58b4a599…`.
 
    **Les pièges.**
    - **pg_net** n'existe pas dans une grappe nue, et `20260918111836` l'installe : `--doublure-pg-net` copie

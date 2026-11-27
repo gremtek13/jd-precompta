@@ -230,7 +230,8 @@ describe('les sources neuves du brouillon, dans n’importe quel ordre', () => {
   const MIGRATIONS = {
     operation_inventaire_id: lire('supabase/preparees/20261112190000_operations_d_inventaire.sql'),
     stock_de_cloture_id: MIGRATION,
-    ouverture_compte_bancaire_id: lire('supabase/preparees/20261111235000_ouverture_eclatee_par_compte.sql'),
+    // MCB5g rangée dans l'export le 27/11/2026 (258, collée), texte inchangé ; son retour reste préparé.
+    ouverture_compte_bancaire_id: lire('supabase/schema/20261127055700_ouverture_eclatee_par_compte.sql'),
     affectation_id: lire('supabase/preparees/20261112233000_affectation_du_resultat.sql'),
     ecriture_libre_id: lire(rangee ? `supabase/schema/${rangee}` : 'supabase/preparees/20261117120000_ecritures_libres.sql'),
   }

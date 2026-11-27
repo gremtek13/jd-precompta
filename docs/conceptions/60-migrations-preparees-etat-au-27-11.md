@@ -1,4 +1,4 @@
-# Les migrations préparées : leur état au 27/11/2026, la production à 255
+# Les migrations préparées : leur état au 27/11/2026, la production à 259
 
 La répétition générale du 14/11/2026 (218 migrations) rejouée sur la base d'aujourd'hui : une copie de la réplique portée à
 254 par les fichiers de l'export, chacun avec sa ligne d'historique, puis à 255 par `frontiere_de_la_tenue` (OPT6), appliquée
@@ -17,14 +17,20 @@ mention. « Mode » : ce que dit l'en-tête de la migration — « à coller » 
 `truncate`), même dans un corps de fonction ou un commentaire ; « par l'outil », à coller si l'outil la retient quand même.
 Tous les retours se collent.
 
-**Depuis la répétition** (27/11/2026, par l'outil, sur l'accord du cabinet, REPET2-Q1 (A)) : les lignes 3 et 4 du tableau sont aussi en production — `compte_propre_hors_des_exercices_valides` (256, version `20261127055505`) et `sous_dossier_dans_son_dossier` (257, `20261127055603`) —, rangées dans `supabase/schema/` ; la ligne 1 est donnée à coller au cabinet, la 2 suit par l'outil.
+**Depuis la répétition** (27/11/2026, sur l'accord du cabinet, REPET2-Q1 (A)) : les quatre premières lignes du tableau d'alors
+sont en production et sorties du tableau, rangées dans `supabase/schema/` sous leur version d'historique, textes inchangés —
+`compte_propre_hors_des_exercices_valides` (256, `20261127055505`, par l'outil) et `sous_dossier_dans_son_dossier` (257,
+`20261127055603`, par l'outil), puis MCB5g : `ouverture_eclatee_par_compte` (258, `20261127055700`, collée par le cabinet) et
+`ouverture_eclatee_a_la_validation` (259, `20261127142727`, par l'outil) ; `COMPTES_BANCAIRES_PREVUS` levé. Sur une copie de
+`replique_227` portée à 259 par l'export (dérive `a540bcd9…`, inventaire 3 542 `58b4a599…`, égaux à la production ; socle 85
+`585debf7…`) : les 16 autres s'appliquent encore SEULES, après leurs dépendances déclarées (e7a refuse, REPET-Q1), et EN CHAÎNE
+dans l'ordre du tableau (275 migrations, les dix contraintes de paire des cinq sources neuves du brouillon posées) ; sur la
+chaîne, `rls.sql` 346 lignes, 1 692 vérifications, 0 en faute, 220 mutations sur 220, aucune EN ATTENTE, et les essais
+d'INV2, LIA2, AFF2, INV4, INV3, EXD2, INAL5, PC6, de la double authentification et de MCB5g justes. Les numéros d'ordre
+ci-dessous restent ceux de la répétition.
 
 | Ordre | Préparée | Chantier | Drapeau(x) | Mode | Après | Ce qu'elle attend | Seule, sur 255 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `20261111235000_ouverture_eclatee_par_compte` | MCB5g, l'ouverture éclatée par compte (ligne 26.6, MVP) | `COMPTES_BANCAIRES_PREVUS` (levé après 1 à 3) | à coller | MCB1 à MCB5 (en production) | l'accord | `ouvertureEclatee` 30/0, 1 EN ATTENTE (la 2) |
-| 2 | `20261111235500_ouverture_eclatee_a_la_validation` | MCB5g-Q2, le filet de la validation | le même | par l'outil | 1 | l'accord | 41/0 |
-| 3 | `20261111235700_compte_propre_hors_des_exercices_valides` | MCB6Q2-Q1, le 512 propre hors d'une année validée | le même | par l'outil | — (avec 1 et 2) | l'accord | 20/0, 7 mutations sur 7 |
-| 4 | `20261117150000_sous_dossier_dans_son_dossier` | DOCF-Q1-B, le sous-dossier dans son dossier | `DRAPEAU_DU_SOUS_DOSSIER` | par l'outil | — | l'accord | 27/27 (essai repris le 27/11) |
 | 5 | `20261107140000_trois_cases_de_l_acces` | B1, trois cases de plus d'un accès | `TROIS_CASES_EXPORTEES` | par l'outil | — (P1-trace et C4a, en production) | B1-Q1, sans réponse | 16/16 |
 | 6 | `20261111234000_documents_et_demandes` | B2, les documents et les demandes | `DOCUMENTS_ET_DEMANDES_PREVUS` | par l'outil | 5 | 5, puis l'accord | 81/0 ; la suppression 17/0 |
 | 7 | `20261111237000_achats_du_client` | B4, les achats du client | `ACHATS_DU_CLIENT_PREVUS` | par l'outil | 5 | 5, puis l'accord | 63/0 |
@@ -56,9 +62,10 @@ la famille « apres » et celui d'OPT6 SÛRS au banc du leurre.
 CP-F2) fermaient la liste des déclencheurs d'`ecritures_libres` sans ceux de la frontière ; depuis 255, ils tombaient sur la
 production elle-même, et non plus au seul collage. Repris, ils admettent ces déclencheurs quand la garde d'OPT6 est au catalogue.
 
-**Au collage** : le socle se régénère au collage de 1, 13, 14 et 15 (une colonne, des contraintes et un index du brouillon) et
-de 20 (douze restrictives) — 84 instructions à 255, 100 au bout de la chaîne ; tant qu'il ne l'est pas, l'inventaire de la base
-compte, sur ses seules tables, 26 objets de plus que les fichiers. e7a : le candidat du 14/11/2026 (hors du dépôt) vise le corps
+**Au collage** : le socle s'est régénéré au collage de 1 (MCB5g, 258 : 85 instructions à 259, `585debf7…`) ; il se régénère
+encore au collage de 13, 14 et 15 (une colonne, des contraintes et un index du brouillon) et de 20 (douze restrictives) — 100 au
+bout de la chaîne ; tant qu'il ne l'est pas, l'inventaire de la base compte, sur ses seules tables, plus d'objets que les fichiers
+(à 259, sans le socle régénéré : deux de plus, la colonne et la paire de 258). e7a : le candidat du 14/11/2026 (hors du dépôt) vise le corps
 d'`enregistrer_facture` de LM1 (`a5e2f40e…`), toujours celui de la production ; à 254 puis à 255, il s'applique, son essai rend
 44/0 et 12 mutations sur 12 (SÛR au banc, au bout de la chaîne), seize essais des factures sont inchangés (à 254), et son retour
 rend la base d'avant.

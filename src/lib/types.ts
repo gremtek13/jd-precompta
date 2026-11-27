@@ -212,9 +212,10 @@ export interface ControleReleveBancaire {
   coherent: boolean
   periode_debut: string | null
   periode_fin: string | null
-  // Le compte bancaire du relevé (MCB1, migration `comptes_bancaires` PRÉPARÉE, pas appliquée) : NOT NULL en base une fois
-  // appliquée. Facultatif ici tant qu'elle ne l'est pas — une lecture d'avant la migration ne le rend pas, et un absent n'est
-  // pas un nul ; il devient obligatoire le jour où `COMPTES_BANCAIRES_PREVUS` se lève (lib/comptesBancaires.ts).
+  // Le compte bancaire du relevé (MCB1, migration `comptes_bancaires`, en production depuis le 12/11/2026) : NOT NULL en base.
+  // Encore FACULTATIF ici, `COMPTES_BANCAIRES_PREVUS` levé le 27/11/2026 : les lectures par liste de colonnes ne le demandent
+  // pas toutes, et un absent n'est pas un nul. Le rendre obligatoire, comme ce commentaire l'annonçait pour la levée, est un lot
+  // à part (mesuré le 27/11/2026 : 138 erreurs de type, dont quatre lectures de l'application et des dizaines de jeux d'essai).
   compte_bancaire_id?: string
   created_at: string
 }
@@ -222,8 +223,8 @@ export interface ControleReleveBancaire {
 export interface LigneBancaire {
   id: string
   dossier_id: string
-  // Le compte bancaire du mouvement (MCB1, PRÉPARÉE) : NOT NULL en base une fois la migration appliquée, facultatif ici
-  // jusque-là, comme sur `ControleReleveBancaire`.
+  // Le compte bancaire du mouvement (MCB1, en production depuis le 12/11/2026) : NOT NULL en base, encore facultatif ici, comme
+  // sur `ControleReleveBancaire` (sa raison là-haut).
   compte_bancaire_id?: string
   date: string
   libelle: string
@@ -555,7 +556,7 @@ export interface EcritureBrouillon {
   // devenue avec le premier écran qui la lisait (VF1b).
   operation_caisse_id?: string | null
   // LE COMPTE BANCAIRE DONT CETTE ÉCRITURE OUVRE LE 512 PROPRE, au 1er janvier, d'après son relevé de la veille (ligne 26.6,
-  // MCB5, sixième partie ; MCB-Q7 ; migration `ouverture_eclatee_par_compte`, préparée, pas appliquée — lib/ouvertureEclatee.ts) :
+  // MCB5, sixième partie ; MCB-Q7 ; migration `ouverture_eclatee_par_compte`, en production depuis le 27/11/2026 — lib/ouvertureEclatee.ts) :
   // écrite par `ecrire_ouverture_eclatee` seule, sans autre source, datée d'un 1er janvier. FACULTATIVE, et c'est la vérité
   // des deux côtés de la migration : avant elle, `select('*')` ne rend pas la colonne ; après, il la rend, nulle sur toute
   // autre écriture. Une écriture qui ne la porte pas se lit comme hier, au caractère près.

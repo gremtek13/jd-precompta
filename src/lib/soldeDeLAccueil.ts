@@ -16,7 +16,7 @@ import type { ControleReleveBancaire } from './types'
 //     point est donc le montant affiché. Moins de deux points : pas de courbe — une ligne ne se tire pas d'un point.
 //  3. MUET sur une lecture partielle : ni montant ni courbe (jamais « 0,00 € »), et l'écran le dit. Aucun relevé contrôlé :
 //     l'écran le dit aussi — un compte sans relevé n'est pas un compte vide.
-//  4. PLUSIEURS COMPTES BANCAIRES (derrière `COMPTES_BANCAIRES_PREVUS`, baissé) : le partage de « Ma banque »
+//  4. PLUSIEURS COMPTES BANCAIRES (derrière `COMPTES_BANCAIRES_PREVUS`, levé le 27/11/2026) : le partage de « Ma banque »
 //     (`partageDesComptes`, lib/banqueClientParCompte.ts). Chaque compte dit SON solde et SA courbe ; des soldes de dates
 //     différentes ne s'additionnent jamais, et aucun total ne se montre.
 

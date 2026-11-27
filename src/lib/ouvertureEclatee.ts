@@ -6,8 +6,8 @@ import type { ANouveau, ControleReleveBancaire, LigneBancaire, SensEcriture, Sol
 
 // L'OUVERTURE DE LA BANQUE ÉCLATÉE ENTRE LES COMPTES BANCAIRES (ligne 26.6, lot MCB5, sixième partie ; MCB-Q7, tranchée le
 // 11/11/2026). Le récit : HISTORIQUE.md, « LA JAMBE DE BANQUE PAR COMPTE BANCAIRE : LES À-NOUVEAUX DE 2026 ÉCLATÉS (MCB5,
-// SIXIÈME PARTIE) ». Le module pur de la migration `ouverture_eclatee_par_compte` (supabase/preparees/20261111235000_…,
-// préparée, pas appliquée), qui écrit l'éclatement par `ecrire_ouverture_eclatee` après l'avoir RECOMPOSÉ en base
+// SIXIÈME PARTIE) ». Le module pur de la migration `ouverture_eclatee_par_compte` (supabase/schema/20261127055700_…, en
+// production depuis le 27/11/2026, 258, collée), qui écrit l'éclatement par `ecrire_ouverture_eclatee` après l'avoir RECOMPOSÉ en base
 // (`ouverture_eclatee_attendue`) : ce module compose la même écriture, dit les mêmes refus dans le même ordre, et juge l'état
 // de ce que le brouillon porte. ouvertureEclatee.test.ts le confronte au texte de la migration.
 //
@@ -40,7 +40,7 @@ export const REFUS_DU_CLIC: readonly RefusDeLaBase[] = [
 ]
 
 /** Les refus du filet de la validation (MCB5G-Q2) : `garder_ouverture_eclatee_a_la_validation`, le déclencheur que la migration
- *  `ouverture_eclatee_a_la_validation` (supabase/preparees/20261111235500_…, préparée, pas appliquée) pose sur `exercices_valides`,
+ *  `ouverture_eclatee_a_la_validation` (supabase/schema/20261127142727_…, en production depuis le 27/11/2026, 259, par l'outil) pose sur `exercices_valides`,
  *  dans l'ordre de son corps. La validation d'un exercice s'y refuse quand l'écriture qui éclate son ouverture manque, n'est plus
  *  à jour ou n'a plus rien à éclater ; les refus de la recomposition (`REFUS_DE_L_ECLATEMENT`) y passent tels quels. Ce sont
  *  aussi les mots de la carte de l'onglet Écritures et du préalable `ouverture-a-eclater` (`phraseDeLEclatement`). */

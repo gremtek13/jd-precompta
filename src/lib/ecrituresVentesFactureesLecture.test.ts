@@ -25,8 +25,14 @@ const faux = vi.hoisted(() => ({
 
 // Le drapeau des factures reprises (étape A8c3), joué dans ses deux états par un accesseur : baissé par défaut, les six
 // collections d'hier ; levé, les reprises en plus (le bloc à part, plus bas).
-const drapeau = vi.hoisted(() => ({ reprises: false }))
+const drapeau = vi.hoisted(() => ({ reprises: false, comptes: true }))
 vi.mock('./facturesImportees', () => ({ get FACTURES_IMPORTEES_PREVUES() { return drapeau.reprises } }))
+// Le drapeau des comptes bancaires (MCB), LEVÉ depuis le 27/11/2026 (MCB5g en production) : levé par défaut, les mouvements se
+// lisent avec leur compte bancaire ; baissé, l'état d'avant, que le premier contrôle rejoue aussi.
+vi.mock('./comptesBancaires', async (importOriginal) => {
+  const reel = await importOriginal<typeof import('./comptesBancaires')>()
+  return { ...reel, get COMPTES_BANCAIRES_PREVUS() { return drapeau.comptes } }
+})
 
 vi.mock('./supabase', async () => {
   const { filtrer, predicatEq, predicatNot } = await import('../test/filtresPostgrest')
@@ -115,6 +121,7 @@ const TABLES = [
 
 beforeEach(() => {
   drapeau.reprises = false
+  drapeau.comptes = true
   faux.plafond = Infinity
   faux.muetApres = {}
   faux.refus = {}
@@ -165,7 +172,8 @@ const lue = (l: LectureSourcesDesEcrituresDeVente) => {
 }
 
 describe('lireLesSourcesDesEcrituresDeVente', () => {
-  it('lit les six collections du dossier, réduites à leurs colonnes : toutes ses factures, tout son registre, tout son relevé', async () => {
+  it.each([true, false])('lit les six collections du dossier, réduites à leurs colonnes : toutes ses factures, tout son registre, tout son relevé (drapeau des comptes bancaires levé : %s)', async (comptes) => {
+    drapeau.comptes = comptes
     const s = lue(await lireLesSourcesDesEcrituresDeVente('d1'))
     expect(s.dossierId).toBe('d1')
     expect(s.factures.map((f) => f.id)).toEqual(['f1', 'f-hier', 'f-brouillon'])
@@ -186,7 +194,8 @@ describe('lireLesSourcesDesEcrituresDeVente', () => {
       'facture_lignes: id, facture_id, ordre, designation, quantite, prix_unitaire_ht, taux_tva, factures_emises!facture_lignes_facture_id_fkey!inner(dossier_id, source_de_la_vente)',
       'encaissements_factures: id, dossier_id, facture_id, date_encaissement, montant, moyen, ligne_bancaire_id, annule_id, cree_le, retire_le, compte_contrepartie, cree_par',
       'encaissements_factures_taux: encaissement_id, dossier_id, taux, montant',
-      'lignes_bancaires: id, dossier_id, date, montant, libelle, source_fichier, encaissements_de_factures, statut, piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, ventilee, reglement_groupe, prelevement_personnel',
+      // Le compte bancaire de chaque mouvement, le drapeau levé seulement (MCB5 : la jambe de banque au 512 de son compte).
+      `lignes_bancaires: id, dossier_id, date, montant, libelle, source_fichier, encaissements_de_factures, statut, piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, ventilee, reglement_groupe, prelevement_personnel${comptes ? ', compte_bancaire_id' : ''}`,
       'pieces: id, dossier_id, facture_id, statut, type_piece',
     ])
   })

@@ -367,6 +367,7 @@ create table public.ecritures_brouillon (
   poste_rattache text,
   identification_client text,
   ecriture_libre_id uuid,
+  ouverture_compte_bancaire_id uuid,
   constraint ecritures_brouillon_pkey PRIMARY KEY (id),
   constraint ecritures_brouillon_cotisation_id_fkey FOREIGN KEY (cotisation_id) REFERENCES cotisations_declarees(id) ON DELETE CASCADE,
   constraint ecritures_brouillon_declaration_tva_id_fkey FOREIGN KEY (declaration_tva_id) REFERENCES declarations_tva(id),
@@ -377,6 +378,7 @@ create table public.ecritures_brouillon (
   constraint ecritures_brouillon_immobilisation_id_fkey FOREIGN KEY (immobilisation_id) REFERENCES immobilisations(id),
   constraint ecritures_brouillon_ligne_bancaire_id_fkey FOREIGN KEY (ligne_bancaire_id) REFERENCES lignes_bancaires(id) ON DELETE SET NULL,
   constraint ecritures_brouillon_operation_caisse_id_fkey FOREIGN KEY (operation_caisse_id) REFERENCES operations_caisse(id) ON DELETE CASCADE,
+  constraint ecritures_brouillon_ouverture_compte_bancaire FOREIGN KEY (ouverture_compte_bancaire_id) REFERENCES comptes_bancaires(id),
   constraint ecritures_brouillon_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
   constraint ecritures_brouillon_vehicule_id_fkey FOREIGN KEY (vehicule_id) REFERENCES vehicules(id),
   constraint ecritures_brouillon_caisse_sans_autre_source CHECK (((operation_caisse_id IS NULL) OR ((ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL) AND (vehicule_id IS NULL) AND (declaration_tva_id IS NULL) AND (cotisation_id IS NULL) AND (encaissement_id IS NULL) AND (facture_id IS NULL)))),
@@ -386,9 +388,11 @@ create table public.ecritures_brouillon (
   constraint ecritures_brouillon_dotation_sans_piece_ni_mouvement CHECK (((immobilisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL)))),
   constraint ecritures_brouillon_forfait_au_31_decembre CHECK (((vehicule_id IS NULL) OR ((EXTRACT(month FROM date) = (12)::numeric) AND (EXTRACT(day FROM date) = (31)::numeric)))),
   constraint ecritures_brouillon_forfait_sans_piece_ni_mouvement CHECK (((vehicule_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL)))),
+  constraint ecritures_brouillon_libre_hors_de_l_ouverture CHECK (((ecriture_libre_id IS NULL) OR (ouverture_compte_bancaire_id IS NULL))),
   constraint ecritures_brouillon_libre_sans_autre_source CHECK (((ecriture_libre_id IS NULL) OR (num_nonnulls(piece_id, ligne_bancaire_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, encaissement_id, facture_id, operation_caisse_id) = 0))),
   constraint ecritures_brouillon_liquidation_sans_autre_source CHECK (((declaration_tva_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL) AND (vehicule_id IS NULL)))),
   constraint ecritures_brouillon_montant_positif CHECK ((montant > (0)::numeric)),
+  constraint ecritures_brouillon_ouverture_eclatee CHECK (((ouverture_compte_bancaire_id IS NULL) OR ((num_nonnulls(piece_id, ligne_bancaire_id, immobilisation_id, vehicule_id, declaration_tva_id, cotisation_id, encaissement_id, facture_id, operation_caisse_id) = 0) AND (EXTRACT(month FROM date) = (1)::numeric) AND (EXTRACT(day FROM date) = (1)::numeric)))),
   constraint ecritures_brouillon_sens_check CHECK ((sens = ANY (ARRAY['debit'::text, 'credit'::text]))),
   constraint ecritures_brouillon_statut_check CHECK ((statut = ANY (ARRAY['proposee'::text, 'validee'::text]))),
   constraint ecritures_brouillon_validation_complete CHECK ((((statut = 'proposee'::text) AND (valide_le IS NULL) AND (journal_code IS NULL) AND (numero_ecriture IS NULL) AND (piece_ref IS NULL) AND (piece_date IS NULL) AND (compte_lib IS NULL) AND (comp_aux_num IS NULL) AND (comp_aux_lib IS NULL)) OR ((statut = 'validee'::text) AND (valide_le IS NOT NULL) AND (journal_code = ANY (ARRAY['AC'::text, 'VE'::text, 'BQ'::text, 'OD'::text])) AND (numero_ecriture >= 1) AND (btrim(piece_ref) <> ''::text) AND (piece_date IS NOT NULL) AND (btrim(compte_lib) <> ''::text) AND ((comp_aux_num IS NULL) = (comp_aux_lib IS NULL)) AND ((comp_aux_num IS NULL) OR ((btrim(comp_aux_num) <> ''::text) AND (btrim(comp_aux_lib) <> ''::text))))))
@@ -414,6 +418,7 @@ CREATE INDEX ecritures_brouillon_cotisation_id_idx ON public.ecritures_brouillon
 CREATE INDEX ecritures_brouillon_encaissement_id_idx ON public.ecritures_brouillon USING btree (encaissement_id) WHERE (encaissement_id IS NOT NULL);
 CREATE INDEX ecritures_brouillon_facture_id_idx ON public.ecritures_brouillon USING btree (facture_id) WHERE (facture_id IS NOT NULL);
 CREATE INDEX ecritures_brouillon_ecriture_libre ON public.ecritures_brouillon USING btree (ecriture_libre_id) WHERE (ecriture_libre_id IS NOT NULL);
+CREATE INDEX ecritures_brouillon_ouverture_compte_bancaire_id_idx ON public.ecritures_brouillon USING btree (ouverture_compte_bancaire_id);
 CREATE INDEX ecritures_brouillon_dossier_date_idx ON public.ecritures_brouillon USING btree (dossier_id, date);
 CREATE INDEX ecritures_brouillon_piece_validee_idx ON public.ecritures_brouillon USING btree (piece_id) WHERE (statut = 'validee'::text);
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPTES_BANCAIRES_EN_BASE, COMPTES_BANCAIRES_PREVUS, TABLES_DES_COMPTES_BANCAIRES } from './comptesBancaires'
-import { fichiersPrepares, relationsDuSchema } from '../test/schema'
+import { fichiersDuSchema, relationsDuSchema } from '../test/schema'
 import {
   auGrapheDesComptesBancaires,
   auPlanAujourdHui,
@@ -34,8 +34,9 @@ import {
 // LES COMPTES BANCAIRES D'UN DOSSIER AU PLAN DE SAUVEGARDE (ligne 26.6, lot MCB1). Leur migration, `comptes_bancaires`, est en
 // production depuis le 12/11/2026 : la table et les clés des mouvements et des contrôles vers elle sont au plan effectif
 // (`COMPTES_BANCAIRES_EN_BASE`, levé) — un mouvement sauvegardé porte son compte, et une sauvegarde sans la table ne se
-// restaurerait plus —, alors que les écrans attendent l'ouverture éclatée (`COMPTES_BANCAIRES_PREVUS`, baissé), dont la clé
-// suit leur drapeau. Baissé, l'état d'avant le collage : le plan effectif ne dit RIEN de la table. Le plan PRÉVU porte tout.
+// restaurerait plus —, et les écrans, avec l'ouverture éclatée (`COMPTES_BANCAIRES_PREVUS`, levé le 27/11/2026 : MCB5g en
+// production, 258 et 259), dont la clé suit leur drapeau. Baissé, l'état d'avant le collage : le plan effectif ne dit RIEN de
+// la table ; les deux drapeaux se jouent dans leurs quatre états ci-dessous. Le plan PRÉVU porte tout.
 
 const TABLE = 'comptes_bancaires'
 const versLeCompte = (r: { enfant: string; parent: string; colonne: string }) =>
@@ -104,8 +105,9 @@ describe('le plan prévu, comptes bancaires compris', () => {
       'ecritures_brouillon.ouverture_compte_bancaire_id → comptes_bancaires (bloque)',
       'lignes_bancaires.compte_bancaire_id → comptes_bancaires (bloque)',
     ])
-    // Chacune est une clé que la migration préparée déclare, vers cette table.
-    const declarees = relationsDuSchema(fichiersPrepares()).filter((r) => r.parent === TABLE).map((r) => `${r.enfant}.${r.colonne}`)
+    // Chacune est une clé que les migrations déclarent vers cette table — celle de l'ouverture éclatée (MCB5g), rangée dans
+    // l'export le 27/11/2026 (258), comprise.
+    const declarees = relationsDuSchema(fichiersDuSchema()).filter((r) => r.parent === TABLE).map((r) => `${r.enfant}.${r.colonne}`)
     expect(declarees).toContain('ecritures_brouillon.ouverture_compte_bancaire_id')
     expect(LIENS_GARDES.some((r) => r.enfant === TABLE || r.parent === TABLE)).toBe(false)
   })

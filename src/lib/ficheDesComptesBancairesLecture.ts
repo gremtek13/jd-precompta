@@ -9,7 +9,7 @@ import type { CompteDuReleve } from './importParCompte'
 // La lecture et les écritures de la fiche des comptes bancaires (ligne 26.6, MCB6 ; pages/dossier/ComptesBancairesCard.tsx).
 // La lecture ne rejette jamais : les comptes (lib/comptesBancairesLecture.ts, la lecture écrite une fois), puis ce que la base
 // porte sous chacun — les dates et le compte de TOUS les mouvements, le compte de tous les contrôles, le compte des lignes du
-// brouillon qui éclatent l'ouverture (MCB5g, en base quand le drapeau se lève) —, chacun lu en entier ; une erreur ou une
+// brouillon qui éclatent l'ouverture (MCB5g, en base depuis le 27/11/2026, le drapeau levé avec elle) —, chacun lu en entier ; une erreur ou une
 // lecture partielle rendent `illisible`, et la carte n'offre alors aucun geste. Les exercices validés (MCB6-Q2) se lisent à
 // part : illisibles, ils ne retiennent que la date d'un compte propre (`ExercicesValidesLus`), pas le reste de la fiche. Les
 // écritures passent la table seule, sous sa policy du cabinet (`admin_du_dossier`) et sa garde (`garder_comptes_bancaires`) :

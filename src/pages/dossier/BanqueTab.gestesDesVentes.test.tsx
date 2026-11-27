@@ -45,6 +45,12 @@ const faux = vi.hoisted(() => ({
   misesAJour: [] as { table: string; valeurs: Record<string, unknown> }[],
 }))
 
+// L'état d'avant les comptes bancaires, que ces cas éprouvent : `COMPTES_BANCAIRES_PREVUS` est LEVÉ depuis le 27/11/2026
+// (MCB5g en production, 258 et 259) ; ici forcé baissé — un drapeau levé garde son état d'avant éprouvé. L'écran sous le
+// drapeau levé (un seul compte : celui d'hier ; plusieurs : chacun le sien) se joue dans les tests de MCB2 à MCB7.
+vi.mock('../../lib/comptesBancaires', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/comptesBancaires')>()), COMPTES_BANCAIRES_PREVUS: false,
+}))
 vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => [] }))
 vi.mock('../../lib/depot', () => ({ ouvrirJustificatif: async () => {} }))
 

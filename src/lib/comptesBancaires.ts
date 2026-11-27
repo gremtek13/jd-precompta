@@ -17,17 +17,18 @@
 // Les lots suivants s'en serviront : l'import (le compte choisi, le dédoublonnage par compte), le contrôle des soldes et la
 // validation par compte, les compositions et le FEC (`compteDeBanqueDuMouvement`), les écrans, l'espace client.
 
-/** Les ÉCRANS des comptes bancaires (MCB2 à MCB7) : BAISSÉ. Les migrations `comptes_bancaires`,
+/** Les ÉCRANS des comptes bancaires (MCB2 à MCB7) : LEVÉ le 27/11/2026. Les migrations `comptes_bancaires`,
  *  `fin_d_identifiant_des_comptes_bancaires`, `couverture_du_releve_par_compte` et `jambe_de_banque_par_compte` sont en
- *  production depuis le 12/11/2026, mais pas l'ouverture éclatée (MCB5g : `ouverture_eclatee_par_compte` et
- *  `ouverture_eclatee_a_la_validation`, préparées) — le cabinet : « MCB5G : l'appliquer après MCB1, avec ses écrans ». Levé,
- *  la carte « Comptes bancaires » ouvrirait un second compte dont l'ouverture de 2026 ne s'éclaterait pas, et l'onglet
- *  Écritures, l'assistant et la sauvegarde liraient `ecritures_brouillon.ouverture_compte_bancaire_id`, absente. Baissé,
- *  aucune lecture des écrans ne nomme la table ni `compte_bancaire_id` : un mouvement ou un relevé arrivé sans compte reçoit
- *  le seul du dossier, le principal, que la base crée au premier. Il se lève avec MCB5g, quand ses deux migrations entrent
- *  dans l'export, et avec le filet des exercices validés (MCB6Q2-Q1, `compte_propre_hors_des_exercices_valides`, collé avec
- *  elles) : comptesBancaires.test.ts l'exige. */
-export const COMPTES_BANCAIRES_PREVUS = false
+ *  production depuis le 12/11/2026, le filet des exercices validés (MCB6Q2-Q1, `compte_propre_hors_des_exercices_valides`)
+ *  depuis le 27/11/2026 (256), et l'ouverture éclatée (MCB5g) depuis le 27/11/2026 : `ouverture_eclatee_par_compte` (258,
+ *  collée, supabase/schema/20261127055700_…) et son filet `ouverture_eclatee_a_la_validation` (259, par l'outil,
+ *  supabase/schema/20261127142727_…) — le cabinet : « MCB5G : l'appliquer après MCB1, avec ses écrans ». Levé, la carte
+ *  « Comptes bancaires » ouvre un second compte, dont l'ouverture se dit à éclater, et l'onglet Écritures, l'assistant et la
+ *  sauvegarde lisent `ecritures_brouillon.ouverture_compte_bancaire_id`. Baissé (l'état d'avant, que les tests jouent encore
+ *  par `vi.mock` ou un accesseur), aucune lecture des écrans ne nommait la table ni `compte_bancaire_id`. Il se rebaisse
+ *  AVANT tout retour de ces migrations : comptesBancaires.test.ts exige qu'il suive leurs fichiers dans l'export. L'assistant
+ *  en porte une copie (supabase/functions/agent-comptable/index.ts, agentComptableBanques.test.ts), redéployée avec lui. */
+export const COMPTES_BANCAIRES_PREVUS = true
 
 /** La table au PLAN DE SAUVEGARDE, avec les clés des mouvements et des contrôles vers elle : LEVÉ depuis le 12/11/2026, la
  *  migration `comptes_bancaires` dans l'export. En base, chaque mouvement et chaque relevé porte son compte (NOT NULL) : une

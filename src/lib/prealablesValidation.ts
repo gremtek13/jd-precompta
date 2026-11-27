@@ -877,7 +877,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // `COMPTES_BANCAIRES_PREVUS` : drapeau baissé, la lecture des comptes est `sans_objet`, une part sans compte, rien à éclater —
   // et rien ne se dit. Sur des contrôles de relevés illisibles, rien non plus : `releves-inconnus` le dit plus bas. La base le
   // refuse aussi, aux mêmes mots (`refusALaValidation`), une fois sa migration en base : le filet de MCB5G-Q2, un déclencheur sur
-  // `exercices_valides` (supabase/preparees/20261111235500_ouverture_eclatee_a_la_validation.sql, préparée, pas appliquée).
+  // `exercices_valides` (supabase/schema/20261127142727_ouverture_eclatee_a_la_validation.sql, en production depuis le 27/11/2026).
   if (d.comptesBancaires.etat === 'lus' && d.controlesReleves !== null) {
     const eclatement = eclatementDeLExercice({
       annee: d.annee, role: d.modele.plan.banque, parts: partsDuReleve, reprise: d.aNouveaux, reportes: d.soldesReportes,

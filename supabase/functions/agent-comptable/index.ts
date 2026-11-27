@@ -433,7 +433,7 @@ function estFigee(date: string, frontiere: string | null): boolean {
 // mouvement, ou la pièce qu'il paie, n'est dit ni conforme ni à réécrire, et le modèle l'apprend par une phrase neutre
 // (`phraseDesBanquesInconnues`), jamais par un nom de compte ni un identifiant. Les refus ci-dessous sont ceux de l'écran,
 // recopiés pour que la copie se compare à src/lib ; aucun ne part au modèle.
-const COMPTES_BANCAIRES_PREVUS = false
+const COMPTES_BANCAIRES_PREVUS = true
 
 interface CompteDeBanqueRow { id: string; principal: boolean; compte: string | null; compte_propre_depuis: string | null }
 type LectureDesComptes =

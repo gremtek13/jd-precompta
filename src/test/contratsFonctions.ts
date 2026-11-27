@@ -195,6 +195,11 @@ const HORS_DU_DOSSIER: Personne[] = ['comptableNonAssigne', 'chefAutreCabinet', 
 const RATTACHES: Personne[] = ['chef', 'comptableAssigne', 'comptableNonAssigne', 'chefAutreCabinet', 'client', 'superAdmin']
 
 const corpsDe = (r: Resultat) => (r.json && typeof r.json === 'object' ? r.json : {}) as Record<string, unknown>
+// Une lecture d'un outil de l'assistant passe par le service, sauf UNE, nommée : les comptes bancaires du dossier, lus AU JETON
+// DE L'APPELANT (`lireLesComptesDuDossier`, sous la RLS, comme l'écran) depuis que `COMPTES_BANCAIRES_PREVUS` est levé (MCB5g
+// en production, 27/11/2026) — plus étroite que le service, et fermée sur le dossier comme les autres.
+const luParLeServiceOuLesComptes = (e: { table: string; role: string }) =>
+  e.role === 'service' || (e.role === 'authentifie' && e.table === 'comptes_bancaires')
 const lignes = (monde: Monde, table: string) => monde.base[table] ?? []
 const evenements = (monde: Monde, genre: string) => monde.journal.filter((e) => e.genre === genre)
 const jamais = (monde: Monde, genre: string, quoi: string) =>
@@ -1765,7 +1770,7 @@ function ventesLues(constat: string, depuis: string | null) {
       ...verifie(rpc.length === 4 && rpc.every((e) => e.genre === 'rpc' && e.role === 'service'), `ventes_facturees_de_l_exercice : ${rpc.map(decrire).join(' ; ')}`),
       // Chaque lecture des outils, fermée sur le dossier vérifié.
       ...m.journal.slice(m.journal.findIndex((e) => e.genre === 'modele'))
-        .flatMap((e) => (e.genre === 'lecture' && (e.role !== 'service' || !e.filtres.some((f) => f === `eq dossier_id ${D}` || (f.startsWith('or ') && f.includes(`dossier_id.eq.${D}`))))
+        .flatMap((e) => (e.genre === 'lecture' && (!luParLeServiceOuLesComptes(e) || !e.filtres.some((f) => f === `eq dossier_id ${D}` || (f.startsWith('or ') && f.includes(`dossier_id.eq.${D}`))))
           ? [`lecture de ${e.table} non fermée sur le dossier : ${e.filtres.join(' ; ')}`] : [])),
     ]
   }
@@ -3109,7 +3114,7 @@ const AGENT_COMPTABLE: ContratFonction = {
           for (const e of m.journal.slice(premierAppel)) {
             if (e.genre !== 'lecture') continue
             const ferme = e.filtres.some((f) => f === `eq dossier_id ${D}` || (f.startsWith('or ') && f.includes(`dossier_id.eq.${D}`)))
-            if (!ferme || e.role !== 'service') fautes.push(`lecture de ${e.table} non fermée sur le dossier : ${e.filtres.join(' ; ')}`)
+            if (!ferme || !luParLeServiceOuLesComptes(e)) fautes.push(`lecture de ${e.table} non fermée sur le dossier : ${e.filtres.join(' ; ')}`)
           }
           const resultats = JSON.stringify((m.notes.demandesAuModele ?? [])[1] ?? null)
           if (resultats.includes(MARQUEUR_AUTRE_DOSSIER)) fautes.push('une donnée de l’autre dossier est parvenue au modèle')
