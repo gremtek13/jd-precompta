@@ -55155,3 +55155,23 @@ journée (un écart de −51 € pour un écart réel de −1 €) : à plus d'u
 `releveCouvre` lit le dernier jour de tous les comptes bancaires ; une journée exportée incomplète ne se complète qu'en retirant tout
 l'import qui la porte. **Écartés** : le net négatif (conception 53, § 5 : il se rapproche d'un débit), les verrous, la lecture
 partielle, la fuite sans « Banque », la sortie de données de patient (relus, sains).
+
+### 27/11/2026 — RELECTURE ADVERSE DU PARCOURS DE FACTURATION DU PRATICIEN : L'AVOIR SANS SA MENTION DE TVA, L'IMPRESSION AVANT SES LECTURES
+
+(Un agent architecte, sur sa branche, avant le premier dossier réel : de la fiche client à la facture validée, l'aperçu,
+l'e-mail, l'encaissement, l'avoir, la relance, ce que le cabinet en voit.) Deux défauts établis, chacun prouvé par un test
+rouge avant sa correction :
+- **L'avoir ne disait pas avant le clic le refus de sa mention de TVA.** La garde (`garder_factures_validees`, rang 16) exige
+  d'un avoir comme d'une facture la mention du statut qu'il fige — celui de sa facture figée, celui du DOSSIER sinon
+  (`enregistrer_facture`). La fenêtre propose la mention de sa facture, librement modifiable, et ne la jugeait pas : effacée,
+  ou celle d'une facture d'avant écrite sous un autre statut (la franchise sur un dossier depuis exonéré), la base refusait au
+  clic. `statutQueLAvoirFige` et `refusDeLaMentionTvaDeLAvoir` (`lib/validationDeLaFacture.ts`, les mots du rang 16, la règle
+  du statut confrontée au dernier texte d'`enregistrer_facture`), avant la date comme dans la garde
+  (`FactureAvoirModalMentionsFigees.test.tsx`, les deux espaces).
+- **L'aperçu offrait l'impression avant ses lectures.** Lignes pas revenues (« Chargement… ») ou illisibles sous des totaux
+  présents, ou avoir dont la facture corrigée n'était pas lue (« — non lu ») : le PDF enregistré partait faux. L'impression
+  attend désormais les lignes et la référence d'origine, gardée avec l'identifiant lu (`FactureApercuLecture.test.tsx`).
+Plausibles, posés au cabinet sans code (FACT-Q1 à Q3) : la phrase des pénalités et des 40 € proposée à un particulier sans
+paramètres ; l'e-mail d'une facture figée signé et intitulé du nom interne du dossier, non du nom légal figé ; l'e-mail d'un
+avoir qui ne cite pas la facture qu'il corrige. Écartés : le calcul au centime (`calculerLigne` en entiers), le verrou de
+l'envoi, les dates de Paris, les mots de `send-email` au client.

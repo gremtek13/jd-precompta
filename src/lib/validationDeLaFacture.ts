@@ -268,6 +268,33 @@ export function refusDeLaValidation(v: ValidationAJuger): RefusDeLaValidation | 
   return refusDeLaDateDEmission(v)
 }
 
+// ── LA MENTION DE TVA D'UN AVOIR (rang 16 ; relecture adverse du 27/11/2026) ─────────────────────────────────────────
+// La garde exige d'un avoir comme d'une facture la mention de TVA du statut qu'il FIGE : celui de sa facture quand elle a
+// figé ses mentions, celui du dossier au jour de l'avoir sinon (`enregistrer_facture`, supabase/schema/
+// 20261110143044_factures_reprises_encaissements.sql, « pour un avoir, de sa facture quand elle les a figés »). La fenêtre
+// de l'avoir propose la mention de sa facture, librement modifiable : effacée, ou celle d'une facture d'avant écrite sous un
+// autre statut, la base la refusait au clic sans que rien l'ait dit avant.
+
+/** Le statut de TVA et l'article qu'un avoir figera ; null quand on ne le sait pas (le dossier pas encore lu). */
+export function statutQueLAvoirFige(
+  origine: Pick<FactureEmise, 'mentions_figees' | 'statut_tva' | 'article_exoneration'>,
+  dossier: { statut_tva: StatutTva | null; article_exoneration: ArticleExoneration | null } | null,
+): { statutTva: StatutTva | null; articleExoneration: ArticleExoneration | null } | null {
+  if (origine.mentions_figees === true) {
+    return { statutTva: origine.statut_tva ?? null, articleExoneration: origine.article_exoneration ?? null }
+  }
+  return dossier === null ? null : { statutTva: dossier.statut_tva, articleExoneration: dossier.article_exoneration }
+}
+
+/** Le refus du rang 16 pour un avoir, sur ses mentions légales TELLES QU'ELLES PARTENT ; null sans statut connu. */
+export function refusDeLaMentionTvaDeLAvoir(
+  statut: { statutTva: StatutTva | null; articleExoneration: ArticleExoneration | null } | null, mentionsLegales: string,
+): RefusDeLaValidation | null {
+  if (statut === null) return null
+  const mention = mentionTva(statut.statutTva, statut.articleExoneration)
+  return mention !== null && !mentionsLegales.trim().includes(mention) ? refus('mention_tva_absente', mention) : null
+}
+
 // ── L'ADRESSE DU CLIENT (JJ-Q4, la réponse du cabinet du 07/11/2026 : « Oui, refuser à la validation ») ──────────────
 // La migration `adresse_du_client_exigee`, en production depuis le 08/11/2026 (supabase/schema/20261108190701_adresse_du_client_exigee.sql ;
 // son essai : supabase/essais/adresseDuClientExigee.sql ; HISTORIQUE.md, « JJ-Q4 : UNE FACTURE À UNE ENTREPRISE SANS

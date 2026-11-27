@@ -6,6 +6,7 @@ import { NON_BASCULE } from '../../test/factures'
 import { versionParametres } from '../../test/parametresFacturation'
 import { BIC_ESSAI, CABINET_DU_DOSSIER, IBAN_ESSAI, factureFigee, identiteDuDossier, quiCree } from '../../test/mentionsFigees'
 import { REFUS_DE_LA_VALIDATION_FIGEE } from '../../lib/mentionsFigees'
+import { REFUS_DE_LA_VALIDATION } from '../../lib/validationDeLaFacture'
 import {
   RETENUE_EN_LECTURE, RETENUE_MANDATAIRE_EN_LECTURE, RETENUE_MANDATAIRE_VIDE, retenueMandataireIllisible, type LectureDuMandataire,
 } from '../../lib/mentionsFigeesVue'
@@ -218,3 +219,44 @@ describe('le mandat de facturation (P4) — l’avoir', () => {
     expect(valider().disabled).toBe(true)
   })
 })
+
+// LA MENTION DE TVA DE L'AVOIR (relecture adverse du 27/11/2026) : la garde des factures (`garder_factures_validees`, rang 16)
+// exige d'un AVOIR comme d'une facture la mention de TVA du statut qu'il fige — celui de sa facture quand elle a figé ses
+// mentions, celui du dossier sinon (`enregistrer_facture`). La fenêtre ne la jugeait pas : la mention effacée, ou celle d'une
+// facture d'avant écrite sous un autre statut, ne se refusait qu'au clic. Dite avant le clic, sous les mots de la base.
+const EXONERATION_SOINS = 'Exonération de TVA, art. 261, 4, 1° du CGI.'
+const refusMention = (mention: string) => REFUS_DE_LA_VALIDATION.find((r) => r.cle === 'mention_tva_absente')!.modele.replace('%', mention)
+
+for (const espace of ['cabinet', 'client'] as const) {
+  describe(`la mention de TVA de l’avoir, dite avant le clic (${espace})`, () => {
+    it('sa facture figée exonérée : la mention effacée se refuse avant le clic, rendue elle se valide', async () => {
+      await monter(espace, figee({ statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1', numero_tva_imprime: null, mentions_legales: EXONERATION_SOINS }))
+      await waitFor(() => expect(valider().disabled).toBe(false))
+      fireEvent.change(screen.getByLabelText('Mentions légales'), { target: { value: '' } })
+      expect(await screen.findByText(refusMention(EXONERATION_SOINS))).toBeTruthy()
+      expect(valider().disabled).toBe(true)
+      fireEvent.change(screen.getByLabelText('Mentions légales'), { target: { value: `  ${EXONERATION_SOINS}\nAutre texte` } })
+      await waitFor(() => expect(valider().disabled).toBe(false))
+    })
+
+    it('sa facture figée en franchise : la mention du 293 B effacée se refuse', async () => {
+      await monter(espace, figee({ statut_tva: 'franchise', numero_tva_imprime: null, mentions_legales: 'TVA non applicable, art. 293 B du CGI.' }))
+      await waitFor(() => expect(valider().disabled).toBe(false))
+      fireEvent.change(screen.getByLabelText('Mentions légales'), { target: { value: 'Avoir sur facture.' } })
+      expect(await screen.findByText(refusMention('TVA non applicable, art. 293 B du CGI.'))).toBeTruthy()
+      expect(valider().disabled).toBe(true)
+    })
+
+    it('une facture d’avant : le statut du DOSSIER juge l’avoir, et la mention qu’elle portait ne suffit plus', async () => {
+      faux.identite = { id: 'd1', ...identiteDuDossier({ statut_tva: 'exonere', article_exoneration: 'cgi_261_4_1' }) }
+      await monter(espace, figee({ mentions_figees: false, statut_tva: null, article_exoneration: null, mentions_legales: 'TVA non applicable, art. 293 B du CGI.' }))
+      expect(await screen.findByText(refusMention(EXONERATION_SOINS))).toBeTruthy()
+      expect(valider().disabled).toBe(true)
+    })
+
+    it('un redevable : aucune mention exigée', async () => {
+      await monter(espace, figee({ mentions_legales: null }))
+      await waitFor(() => expect(valider().disabled).toBe(false))
+    })
+  })
+}
