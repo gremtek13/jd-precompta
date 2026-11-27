@@ -55014,3 +55014,16 @@ Le même jour, REPET2-Q1 (A) : `compte_propre_hors_des_exercices_valides` (256, 
 `SOUS_DOSSIER_DANS_SON_DOSSIER_PREVU` levé (ses deux états joués sur l'objet du drapeau ; l'essai sorti de la famille « apres » du
 leurre) ; `COMPTES_BANCAIRES_PREVUS` reste baissé (MCB5g et son filet pas collés). Dépôt à 257 : dérive `a77f41f1…`, socle 84
 `e54200f4…`, inventaire 3 530 `09aea267…`.
+
+### 27/11/2026 — RA253-Q3, ELQ8Q1-Q2 ET L3-Q3 : TROIS RÉPONSES DU CABINET, TOUTES (A)
+
+(Agent dev ; aucune migration, rien en production.) RA253-Q3 (A) : la fiche d'une pièce qu'une écriture libre cite, ouverte ou
+figée, n'offre plus « Remplacer le fichier » (le champ désactivé, comme pour une pièce figée) et dit pourquoi sous la référence de
+l'écriture, le remède seulement si aucune n'est figée (`remplacementDuFichierRetenu`) ; côté fermé, des citations pas revenues, lues
+en partie ou d'un autre dossier retiennent le remplacement de toute pièce, et la phrase le dit ; la fiche le refuse aussi à
+l'enregistrement. Aucun autre écran ne remplace un fichier. ELQ8Q1-Q2 (A) : `refusDeSuppressionDUnePiece` dit toutes les
+citations, à la suite (révision, dossier permanent, écritures libres), chacune sous sa phrase d'hier ; `quiCitentLaPiece` les nomme
+toutes dans la sélection. L3-Q1 à Q3 (A) : le point d'attention `justificatifs-de-notes-a-ranger` (Vue d'ensemble, cycle des
+dépenses, onglet Justificatifs) et son avertissement avant la validation, par `rangementDuJustificatif` sur les lectures de la
+section (`lireLesNotesDeFraisDesControles`, sans objet le drapeau baissé, muet sur une lecture partielle). Une mutation par règle
+mord (4, 2 et 3, 1). Non éprouvé dans un navigateur.
