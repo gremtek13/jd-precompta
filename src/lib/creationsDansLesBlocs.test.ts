@@ -330,10 +330,12 @@ describe('aucun objet ne se crée dans un bloc do, que l’inventaire de l’exp
     // `$preparees$` de la porte (ses dix tables) ; vingt et un rendus du catalogue comparés (dix-sept dans l'export, quatre
     // dans INV3 et DOCF-Q1-B). Un nombre qui change est un cas à relire, puis à épingler ici avec sa raison. Le 24/11/2026,
     // quarante-six restrictives : celle de `reglages_d_export` (EXP-Q4, préparée), et celle de `codes_des_clients` (EXP58-Q2,
-    // préparée) sur son compteur, chacune sous sa condition, sur la table qu'elle crée.
+    // préparée) sur son compteur, chacune sous sa condition, sur la table qu'elle crée. Le 27/11/2026, vingt-trois rendus
+    // comparés : les deux déclencheurs de `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1, préparée), relus par sa
+    // garde de fin.
     const tout = releve([...SCHEMA, ...PREPAREES])
     expect(tout.cas).toEqual({ restrictive: 46, paire: 20, balayage: 1, porteDesPreparees: 10 })
-    expect(tout.verifications).toBe(21)
+    expect(tout.verifications).toBe(23)
     expect(tout.blocs).toBeGreaterThanOrEqual(220)
     // 37 blocs dans les préparées le 27/11/2026, trois préparées rangées dans l'export (255 à 257) : le plancher à 35 ; puis
     // 32, les cinq blocs de MCB5g (258 : sa garde, la paire de ses sœurs, sa garde de fin ; 259 : sa garde et sa garde de fin)

@@ -46,6 +46,7 @@ ci-dessous restent ceux de la répétition.
 | 17 | `20261112235000_validation_de_l_inventaire` | INV3, la validation connaît l'inventaire (hors BNC) | `INVENTAIRE_PREVU`, `INVENTAIRE_EXPORTE` | par l'outil | 13 ; avant tout autre remplaçant de `valider_exercice` | INV8 | 71/0, 25 sur 25 |
 | 18 | `20261112210000_exercices_du_dossier` | EXD2, les exercices du dossier | `EXERCICES_DECALES_PREVUS` | par l'outil (aucun retrait ; l'en-tête ne le dit pas) | — | EXD3 (à écrire), EXD-Q1 à Q8 ; hors de REPET-Q3 | 63/0 ; son retour garde `btree_gist` (voulu) |
 | 19 | `20261111241000_plan_depuis_la_balance` | PC6, la reprise propose le plan | `PLAN_DEPUIS_LA_BALANCE_PREVU` | à coller | la levée de son drapeau et le déploiement | hors de REPET-Q3 | 26/0 |
+| 19 bis | `20261127200000_piece_d_une_ecriture_libre_dans_son_dossier` | SECU4-Q1, la pièce qu'une écriture libre cite tenue dans son dossier (relecture de sécurité du 27/11/2026) | aucun (l'application ne déplace jamais une pièce) | par l'outil | — (EL2 et EL7, en production) | SECU4-Q1 (et SECU4-Q2, plus large) | sur 259 : 12/12, 4 mutations sur 4 ; `rls.sql` 295/1 357/0/178 |
 | 20 | `20261107160000_deux_facteurs_exiges` | C7, la double authentification exigée | `DEUX_FACTEURS_EXIGES_EXPORTE` ; `DEUX_FACTEURS_EXIGES_EN_BASE` (quatorze Edge Functions) | à coller ; retour en deux temps | en dernier | SEC2-Q1 : après le MVP | 42/0, 15 sur 15 |
 | — | `20261107120000_facture_internationale` | e7a, la facture à un client hors de France | `FACTURE_INTERNATIONALE_EXPORTEE` | à coller | — | REPET-Q1 (B) : rebasée à son collage, après le MVP | REFUSE (sa garde vise le corps d'`enregistrer_facture` d'`acomptes_des_devis`) |
 
@@ -69,3 +70,12 @@ bout de la chaîne ; tant qu'il ne l'est pas, l'inventaire de la base compte, su
 d'`enregistrer_facture` de LM1 (`a5e2f40e…`), toujours celui de la production ; à 254 puis à 255, il s'applique, son essai rend
 44/0 et 12 mutations sur 12 (SÛR au banc, au bout de la chaîne), seize essais des factures sont inchangés (à 254), et son retour
 rend la base d'avant.
+
+**Préparée depuis** (27/11/2026, la relecture adverse de sécurité des migrations 218 à 259 ; HISTORIQUE.md, « 27/11/2026 — LA
+RELECTURE ADVERSE DE SÉCURITÉ DES MIGRATIONS 218 À 259 ») : `piece_d_une_ecriture_libre_dans_son_dossier` (SECU4-Q1, ligne 19 bis),
+indépendante des autres, par l'outil, son retour à coller. Sur une copie de `replique_227` portée à 259 : seule, son essai 12/12,
+quatre mutations sur quatre, `rls.sql` 295 lignes, 1 357 vérifications, 0 en faute, 178 mutations sur 178, une seconde
+application refusée, son retour rend la signature de 259 ; les 173 essais, avant et après elle, rendent les mêmes verdicts hors
+du sien, de `signature.sql` et `inventaire.sql` (deux déclencheurs et une fonction de plus), et d'EL-F1 et CP-F2, repris pour
+admettre son déclencheur ; SÛR au banc du leurre (famille « apres »). Au bout de la chaîne (les seize, elle, puis la double
+authentification, 20) : son essai 12/12, `rls.sql` 346 lignes, 1 692 vérifications, 0 en faute, 220 mutations sur 220.

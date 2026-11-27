@@ -55233,3 +55233,20 @@ Restent, sous 300 ms à N : les préalables (le FEC numéroté, l'analyse du bro
 chaque ligne de l'onglet Banque (`suggestion`, `candidatsPieces` par ligne affichée, 27 / 107 ms) et `suggestionRecurrente`,
 qui parcourt le relevé pour chaque ligne, sans pagination ni `useMemo` ; et `useClotureDuDossier`, qui recalcule les états des
 ventes et les préalables de chaque exercice à chaque rendu.
+### 27/11/2026 — LA RELECTURE ADVERSE DE SÉCURITÉ DES MIGRATIONS 218 À 259 ; LA PIÈCE QU'UNE ÉCRITURE LIBRE CITE (SECU4-Q1, PRÉPARÉE)
+
+(Agent architecte ; rien en production ; une copie de `replique_227` portée à 259 par l'export, dérive `a540bcd9…`, supprimée.)
+Les 42 migrations depuis le 13/11 (78 fonctions, 15 tables neuves), relues en attaquant. **Tenu** : chemin fixé partout, aucune
+fonction neuve à `anon`, policies neuves à `authenticated`, tables neuves sous RLS et aux quatre droits ; la seule garde définisseuse
+d'une table neuve a sa porte ; aucun réglage `jd.*` laissé posé ; une ligne du relevé, un compte bancaire, une ligne neuve ne
+changent pas de dossier. Les 139 fonctions `security definer` d'`authenticated` tirées sous cinq profils sans droit (rattaché à
+rien, client d'un autre dossier aux quatre cases, membre non assigné, chef d'un autre cabinet, client sans case) : 42501 d'abord,
+hors des prédicats, des lectures du membre et d'`abandonner_transmission` (10/2026 : « introuvable » et un verrou avant le contrôle).
+`rls.sql` : 295 lignes, 0 en faute sur 1 357, 178 mutations sur 178. **Établi** (l'intégrité ; l'auteur administre les deux dossiers) :
+la pièce qu'une écriture libre cite passait à un autre dossier par l'API, la citation née après A8Q5-Q4 sans sa règle. Préparée
+`piece_d_une_ecriture_libre_dans_son_dossier` (une garde dans les deux sens, `4a2b0a48…`, par l'outil, retour à coller) : essai
+12/12, quatre mutations sur quatre, SÛR au banc ; EL-F1 et CP-F2 l'admettent ; 173 essais égaux avant et après, hors des catalogues ;
+la chaîne des seize, elle, puis la double authentification : `rls.sql` 346/1 692/0/220. **Relevé** : six relations d'hier laissent
+leur pièce changer de dossier (SECU4-Q2). **Écartés** : `search_path = public` (aucun SQL libre par l'API) ; un déclencheur exécutable
+à PUBLIC ; `anon` sur huit colonnes de `cabinets` (zéro ligne) ; le reçu que `reprise_de_la_facture` dit (A8Q5Q3Q2-Q1) ; une
+ouverture attestée par un autre membre dans les cinq minutes ; les unicités, jugées après la RLS.
