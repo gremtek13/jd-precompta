@@ -240,7 +240,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // La banque de chaque mouvement du relevé (MCB5, lib/banqueDuMouvement.ts) : « Réaffecter » et les « Réécrire » composent
   // au 512 de son compte bancaire, et les contrôles recomposent de même. Drapeau baissé, le plan lui-même, sans attente ;
   // comptes en cours de lecture ou illisibles, un mouvement n'est pas jugé et son geste se refuse, dits par le bandeau.
-  const { banques, lecture: lectureDesComptes } = useBanquesDuDossier(dossierId, modele.plan)
+  const { banques, lecture: lectureDesComptes, relireLesComptes } = useBanquesDuDossier(dossierId, modele.plan)
   const [regenerating, setRegenerating] = useState<string | null>(null)
   const [retrait, setRetrait] = useState<string | null>(null)
   const [exportPiste, setExportPiste] = useState(false)
@@ -428,6 +428,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setReportesIncomplets(lectureReportes.motif)
     setImmobilisations(lectureImmobilisations.lignes)
     setNatures(lectureNatures.lignes)
+    // Les comptes bancaires se relisent avec le relevé, après lui (relecture adverse du 27/11/2026, lib/useBanquesDuDossier.ts).
+    relireLesComptes()
     setLoading(false)
   }
 

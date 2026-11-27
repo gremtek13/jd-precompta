@@ -100,7 +100,10 @@ const MOUVEMENTS = [
   { date: '2026-03-05', compte_bancaire_id: 'cp' }, { date: '2026-03-05', compte_bancaire_id: 'inconnu' }, { date: '2026-03-05', compte_bancaire_id: null },
   { date: '2026-03-05' },
 ]
-const BANQUES = [ROLE, PAR_COMPTE, RETENU, src.banquesDuDossier({ etat: 'en_cours' }, PLAN)]
+// La banque du rôle sur des comptes LUS (aucun 512 propre) : un mouvement d'un compte que la lecture ne rend pas s'y refuse
+// (relecture adverse du 27/11/2026).
+const ROLE_LU = src.banquesDuDossier({ etat: 'lus', comptes: [compte({})] }, PLAN)
+const BANQUES = [ROLE, ROLE_LU, PAR_COMPTE, RETENU, src.banquesDuDossier({ etat: 'en_cours' }, PLAN)]
 const MODELE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000', plan: PLAN, libelles: LIBELLES_PAR_DEFAUT, prefixes: PREFIXES_PAR_DEFAUT }
 const ENGAGEMENT: ModeleComptable = { ...MODELE, mode: 'engagement' }
 
@@ -267,7 +270,11 @@ describe('le garde-fou du bloc BANQUES DU DOSSIER sait encore échouer', () => {
       '|| date.slice(0, 10) <= compte.compte_propre_depuis) return compteDuRoleBanque'))))
   })
   it('attrape une banque inconnue jugée sous la banque du rôle', () => {
-    echoue(() => memeBloc(blocDe(planter(sourceDeployee(), '  if (!compte) {\n    return { refus:', '  if (!compte) {\n    return { compte: banques.role }\n    return { refus:'))))
+    echoue(() => memeBloc(blocDe(planter(sourceDeployee(), '  if (!compte) return { refus: REFUS_COMPTE_INCONNU }', '  if (!compte) return { compte: banques.role }'))))
+  })
+  it('attrape un compte inconnu de la lecture écrit au 512 du rôle (relecture adverse du 27/11/2026)', () => {
+    echoue(() => memeBloc(blocDe(planter(sourceDeployee(), 'if (banques.connus !== null && id != null && !banques.connus.has(id)) return { refus: REFUS_COMPTE_INCONNU }',
+      'if (banques.connus === undefined) return { refus: REFUS_COMPTE_INCONNU }'))))
   })
   it('attrape un détecteur qui recompose au plan du dossier, plus au plan du mouvement', () => {
     const s = planter(sourceDeployee(), 'ecritureDuCompteDeBilan(l, compte, duMouvement), l.date)', 'ecritureDuCompteDeBilan(l, compte, plan), l.date)')

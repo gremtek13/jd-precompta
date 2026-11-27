@@ -55189,3 +55189,19 @@ bordereaux déjà déposés, la suppression au clic du cabinet ; FACT-Q1 (B) —
 FACT-Q2 (B) — l'e-mail d'une facture figée sous son nom légal figé ; FACT-Q3 (B) — l'e-mail de tout avoir cite la facture
 qu'il corrige ; NOE4R-Q1 (A) — une migration, la période d'un import sur ses seuls paiements insérés ; NOE4R-Q2 (B), contre la
 recommandation — concevoir maintenant le remplacement d'une journée comptable non associée. NOE6R-Q1 et B1-Q1 restent ouvertes.
+
+### 27/11/2026 — LA BANQUE D'UN COMPTE QUE LA LECTURE NE CONNAÎT PAS, ET LES COMPTES RELUS AVEC LE RELEVÉ
+
+(Agent architecte ; aucune migration.) Le plausible de la relecture adverse du jour, prouvé par un test rouge : sous la banque du
+rôle (aucun compte lu ne tient son 512), `banqueDuMouvement` rendait le 512 du rôle pour un mouvement d'un compte que la lecture
+des comptes ne rendait pas — un compte créé dans une autre session, dont le relevé relu portait déjà les mouvements ; la
+contrepartie d'une pièce, que la base ne vérifie pas, partait au mauvais 512 si ce compte tenait le sien. Le rôle garde les
+identifiants lus (`connus`, nuls drapeau baissé seulement) et refuse comme par compte ; un mouvement sans compte reste au rôle
+(une ligne d'avant MCB1). La copie de l'assistant suit (garde : une banque du rôle sur comptes lus, et la dérive plantée qui la
+retire) — `agent-comptable` à redéployer. Les comptes se relisent après chaque relecture du relevé : `useComptesDuDossier` /
+`useBanquesDuDossier().relireLesComptes` dans les huit onglets et le parent de Banque ; `useClotureDuDossier` compose ses
+banques sur la lecture fraîche de `load`, plus sur une lecture du montage ; une relecture égale garde l'objet (aucune boucle de
+Financement, dont la lecture dépend des banques). La fiche d'un mouvement dit le refus avant le clic. En passant :
+`importDeLaConnexion` — dès deux comptes, la connexion bancaire n'offre ni récupération ni import, et le dit (la base refusait
+après le clic, 23502) ; « Ma trésorerie à 90 jours » laisse hors du départ un compte clos au plus tard aujourd'hui, et le dit
+(sans relevé, il rendait la projection muette ; avec un vieux relevé, il reculait le départ à sa date) ; tous clos, rien ne change.

@@ -261,7 +261,7 @@ export default function TvaTab({
 }: Props) {
   // Les exercices validés : une déclaration dont la période y tombe est figée avec eux, et ne s'y enregistre plus.
   // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
-  const { banques } = useBanquesDuDossier(dossierId, plan)
+  const { banques, relireLesComptes } = useBanquesDuDossier(dossierId, plan)
   // LES MODULES DU CABINET (conception 56, § 1.5, OPT3) : l'onglet se monte toujours, le statut de TVA du dossier est du socle ;
   // la CA3 suit la tenue, l'e-reporting le module « Facture électronique » ; l'obligation de facture électronique est du socle
   // (OPT3-Q2 (A)). Les modules sont ceux du cabinet du dossier (OPT3-Q1 (A)). Le drapeau baissé : tout s'affiche comme hier.
@@ -323,6 +323,8 @@ export default function TvaTab({
     setLectureVentes(ventes)
     setLectureEcrituresVentes(ecrituresVentes)
     setLectureCaisse(caisse)
+    // Les comptes bancaires se relisent avec le relevé, après lui (relecture adverse du 27/11/2026, lib/useBanquesDuDossier.ts).
+    relireLesComptes()
   }
 
   useEffect(() => {

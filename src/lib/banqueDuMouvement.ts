@@ -14,20 +14,23 @@ import type { PlanComptable } from './planComptable'
 //   - un dossier dont un compte tient son 512 : la banque de chaque mouvement, par la règle de la base
 //     (`compteDeBanqueDuMouvement`, que comptesBancaires.test.ts confronte au texte de MCB1) ;
 //   - des comptes en cours de lecture, illisibles, ou un mouvement d'un compte que la lecture ne rend pas : un REFUS, et
-//     aucun geste — la base refuserait l'écriture d'un autre 512, l'écran le dit avant.
+//     aucun geste — la base refuserait l'écriture d'un autre 512, l'écran le dit avant. Sous la banque du rôle aussi
+//     (relecture adverse du 27/11/2026) : un compte créé ailleurs après la lecture des comptes peut tenir son 512, et la
+//     contrepartie d'une pièce, que la base ne vérifie pas, partirait au 512 du rôle. Le rôle garde donc les identifiants
+//     que la lecture rend (`connus`), nuls drapeau baissé seulement (rien ne se lit : hier).
 // Les compositions ne changent pas (leur signature est celle que copie l'assistant) : elles reçoivent le plan DU
 // MOUVEMENT, dont la banque est celle du mouvement. COMPTES_BANCAIRES_PREVUS ne se lève qu'avec cette migration en base
 // (banqueDuMouvement.test.ts l'exige de l'export).
 
 /** Ce qu'une composition sait des comptes bancaires du dossier pour la jambe de banque de ses mouvements. */
 export type BanquesDuDossier =
-  | { cas: 'role'; compte: string }
+  | { cas: 'role'; compte: string; connus: ReadonlySet<string> | null }
   | { cas: 'par_compte'; role: string; comptes: ReadonlyMap<string, Pick<CompteBancaire, 'principal' | 'compte' | 'compte_propre_depuis'>> }
   | { cas: 'retenu'; raison: string }
 
 /** Les banques du dossier, de la lecture de ses comptes et de son plan. Sans défaut : l'appelant dit ce qu'il a lu. */
 export function banquesDuDossier(lecture: LectureDesComptes, plan: PlanComptable): BanquesDuDossier {
-  if (lecture.etat === 'sans_objet') return { cas: 'role', compte: plan.banque }
+  if (lecture.etat === 'sans_objet') return { cas: 'role', compte: plan.banque, connus: null }
   if (lecture.etat === 'en_cours') {
     return { cas: 'retenu', raison: 'Les comptes bancaires du dossier sont en cours de lecture : l’écriture attend de savoir sur quel compte de banque elle s’écrit.' }
   }
@@ -35,7 +38,9 @@ export function banquesDuDossier(lecture: LectureDesComptes, plan: PlanComptable
     return { cas: 'retenu', raison: `Les comptes bancaires du dossier n’ont pas été lus en entier (${lecture.motif}) : l’écriture ne sait pas `
       + 'sur quel compte de banque elle s’écrit. Recharge la page.' }
   }
-  if (lecture.comptes.every((c) => c.compte === null)) return { cas: 'role', compte: plan.banque }
+  if (lecture.comptes.every((c) => c.compte === null)) {
+    return { cas: 'role', compte: plan.banque, connus: new Set(lecture.comptes.map((c) => c.id)) }
+  }
   return { cas: 'par_compte', role: plan.banque, comptes: new Map(lecture.comptes.map((c) => [c.id, c])) }
 }
 
@@ -47,15 +52,22 @@ export interface MouvementDUnCompte {
 
 export type BanqueDuMouvement = { compte: string } | { refus: string }
 
-/** Le compte 512 où s'écrit la jambe de banque de ce mouvement, ou le refus qui retient l'écriture. */
+/** Le refus d'un mouvement dont le compte bancaire n'est pas dans la lecture des comptes. */
+export const REFUS_COMPTE_INCONNU = 'Le compte bancaire de ce mouvement n’est pas dans la lecture des comptes du dossier : son écriture ne '
+  + 'sait pas sur quel compte de banque elle s’écrit. Recharge la page.'
+
+/** Le compte 512 où s'écrit la jambe de banque de ce mouvement, ou le refus qui retient l'écriture. Sous la banque du rôle, un
+ *  mouvement d'un compte que la lecture ne rend pas se refuse comme par compte ; un mouvement sans compte (nul ou non lu, une
+ *  ligne d'avant MCB1) reste au rôle, comme hier — la base pose un compte à chaque mouvement depuis MCB1. */
 export function banqueDuMouvement(ligne: MouvementDUnCompte, banques: BanquesDuDossier): BanqueDuMouvement {
-  if (banques.cas === 'role') return { compte: banques.compte }
+  if (banques.cas === 'role') {
+    const id = ligne.compte_bancaire_id
+    if (banques.connus !== null && id != null && !banques.connus.has(id)) return { refus: REFUS_COMPTE_INCONNU }
+    return { compte: banques.compte }
+  }
   if (banques.cas === 'retenu') return { refus: banques.raison }
   const compte = ligne.compte_bancaire_id ? banques.comptes.get(ligne.compte_bancaire_id) : undefined
-  if (!compte) {
-    return { refus: 'Le compte bancaire de ce mouvement n’est pas dans la lecture des comptes du dossier : son écriture ne sait pas sur '
-      + 'quel compte de banque elle s’écrit. Recharge la page.' }
-  }
+  if (!compte) return { refus: REFUS_COMPTE_INCONNU }
   return { compte: compteDeBanqueDuMouvement(compte, ligne.date, banques.role) }
 }
 

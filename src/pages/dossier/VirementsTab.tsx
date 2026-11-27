@@ -48,7 +48,7 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
   const { frontiere, anneesValidees } = useExercicesValides()
   // La banque de chaque virement (MCB5, lib/banqueDuMouvement.ts) : le 512 de son compte bancaire. Drapeau baissé, le plan
   // lui-même, sans attente ; comptes en cours de lecture ou illisibles, le geste se suspend.
-  const { banques } = useBanquesDuDossier(dossierId, modele.plan)
+  const { banques, relireLesComptes } = useBanquesDuDossier(dossierId, modele.plan)
 
   async function load() {
     setLoading(true)
@@ -73,6 +73,8 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
     setLectureIncomplete(lecture.complete ? null : lecture.motif)
     setEcritures(lectureDesEcritures.lignes)
     setLectureEcritures(lectureDesEcritures.complete ? null : lectureDesEcritures.motif)
+    // Les comptes bancaires se relisent avec le relevé, après lui (relecture adverse du 27/11/2026, lib/useBanquesDuDossier.ts).
+    relireLesComptes()
     setLoading(false)
   }
 

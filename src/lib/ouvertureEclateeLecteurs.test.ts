@@ -41,7 +41,7 @@ const compte = (c: Partial<CompteDuReleve> & Pick<CompteDuReleve, 'id'>): Compte
 const P = compte({ id: 'p', libelle: 'Compte principal', principal: true })
 const S = compte({ id: 's', libelle: 'Compte second fictif', compte: '512200', compte_propre_depuis: '2026-01-01', ouvert_le: '2024-06-01' })
 const PAR_COMPTE = banquesDuDossier({ etat: 'lus', comptes: [P, S] }, PLAN_PAR_DEFAUT)
-const ROLE: BanquesDuDossier = { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }
+const ROLE: BanquesDuDossier = { cas: 'role', compte: PLAN_PAR_DEFAUT.banque, connus: null }
 const numeroter = (ecritures: EcritureBrouillon[]) => numeroterFec(ecritures, [], [], [], modeleDeTest('tresorerie'), [],
   SANS_ECRITURE_DE_VENTE, OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)
 

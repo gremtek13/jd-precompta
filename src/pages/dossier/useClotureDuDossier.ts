@@ -1,5 +1,5 @@
-import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { banquesDuDossier } from '../../lib/banqueDuMouvement'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, aujourdHuiAParis, aujourdHuiSql } from '../../lib/format'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
@@ -26,7 +26,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import { chargerControlesReleves } from '../../lib/controlesReleves'
 import { lireLesComptesDuDossier } from '../../lib/comptesBancairesLecture'
 import { COMPTES_BANCAIRES_PREVUS } from '../../lib/comptesBancaires'
-import type { LectureDesComptes } from '../../lib/importParCompte'
+import { memeLectureDesComptes, type LectureDesComptes } from '../../lib/importParCompte'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import {
   prealablesDeValidation, prochainExerciceAValider, type ChampsBncDeLaValidation, type EtatsDesVentesDeLaValidation } from '../../lib/prealablesValidation'
@@ -98,8 +98,6 @@ export function useClotureDuDossier({ dossierId, assujettiTva, periodiciteTva, m
   modele: ModeleComptable
   ventesParLesFactures: boolean
 }) {
-  // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
-  const { banques } = useBanquesDuDossier(dossierId, modele.plan)
   const modeComptable = modele.mode
   // Seul le chef du cabinet valide un exercice (décision du 04/10/2026) — la base le refuse aux autres, et la
   // carte ne leur propose pas le geste.
@@ -211,6 +209,11 @@ export function useClotureDuDossier({ dossierId, assujettiTva, periodiciteTva, m
   // de janvier nomme chaque compte dès deux. Drapeau baissé, `sans_objet` d'emblée : rien ne change, à aucun instant.
   const [lectureDesComptes, setLectureDesComptes] = useState<LectureDesComptes>(
     COMPTES_BANCAIRES_PREVUS ? { etat: 'en_cours' } : { etat: 'sans_objet' })
+  // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement. Sur la
+  // lecture des comptes que fait `load`, après le relevé et avec lui (relecture adverse du 27/11/2026) : une lecture figée au
+  // montage, mêlée à celle-ci, ne connaissait pas un compte créé ailleurs ensuite, et la validation jugeait sur l'une, la
+  // composition des ventes sur l'autre.
+  const banques = useMemo(() => banquesDuDossier(lectureDesComptes, modele.plan), [lectureDesComptes, modele.plan])
   const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[] | null>(null)
   // Les factures émises validées et leurs transmissions (ligne 28.6, lib/ventesJumelles.ts) : la validation refuse une
   // vente que plusieurs pièces portent. Lues en partie, elles suspendent la validation, pas la 2035, qui ne les lit pas.
@@ -425,7 +428,7 @@ export function useClotureDuDossier({ dossierId, assujettiTva, periodiciteTva, m
     setLectureChampsBnc(lectureDesChampsBnc)
     setNotesDeFrais({ dossierId, lues: notesLues })
     setControlesReleves(releves)
-    setLectureDesComptes(comptes)
+    setLectureDesComptes((avant) => (memeLectureDesComptes(avant, comptes) ? avant : comptes))
     setDoublonsTexte(doublons)
     setPiecesAValider(lectureAValider.lignes)
     setExercicesValides(lectureValides.lignes)

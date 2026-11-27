@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
 import type { CompteVu, ConnexionVue, MouvementRecupere, Recuperation } from '../../lib/connexionBancaire'
+import type { CompteDuReleve, LectureDesComptes } from '../../lib/importParCompte'
 import type { LigneBancaire, RegleBancaireIgnoree } from '../../lib/types'
 
 // LA CARTE DE CONNEXION BANCAIRE (onglet Banque, ligne 24). Ce qu'aucun test de `src/lib` ne peut voir :
@@ -146,7 +147,19 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-type Montage = { lignes?: LigneBancaire[]; regles?: RegleBancaireIgnoree[]; suspension?: string | null; lectureEnCours?: boolean; frontiere?: string | null }
+type Montage = {
+  lignes?: LigneBancaire[]; regles?: RegleBancaireIgnoree[]; suspension?: string | null; lectureEnCours?: boolean; frontiere?: string | null
+  lectureDesComptes?: LectureDesComptes
+}
+
+const compteDuReleve = (c: Partial<CompteDuReleve> & Pick<CompteDuReleve, 'id'>): CompteDuReleve => ({
+  libelle: 'Compte', principal: false, fin_d_identifiant: null, compte: null, compte_propre_depuis: null, ouvert_le: null, clos_le: null, ...c,
+})
+// Un dossier d'un seul compte : la base pose son compte sur chaque mouvement importé (MCB1).
+const UN_COMPTE: LectureDesComptes = { etat: 'lus', comptes: [compteDuReleve({ id: 'cp', libelle: 'Compte courant', principal: true })] }
+const DEUX_COMPTES: LectureDesComptes = {
+  etat: 'lus', comptes: [compteDuReleve({ id: 'cp', libelle: 'Compte courant', principal: true }), compteDuReleve({ id: 'cl', libelle: 'Livret' })],
+}
 
 function monter(o: Montage = {}) {
   const onImported = vi.fn()
@@ -158,6 +171,7 @@ function monter(o: Montage = {}) {
       suspension={m.suspension ?? null}
       lectureEnCours={m.lectureEnCours ?? false}
       frontiere={m.frontiere ?? null}
+      lectureDesComptes={m.lectureDesComptes ?? UN_COMPTE}
       onImported={onImported}
     />
   )
@@ -690,6 +704,43 @@ describe('récupérer, puis importer', () => {
     await act(async () => { bouton('Importer les 1 mouvement(s)').click() })
     expect(faux.upserts).toHaveLength(1)
     expect(faux.upserts[0].lot).toEqual([expect.objectContaining({ id_externe: 'eb:r:2', statut: 'ignoree' })])
+  })
+
+  // LA CONNEXION N'ÉCRIT AUCUN COMPTE BANCAIRE (relecture adverse du 27/11/2026) : dès deux comptes, la base refusait le lot
+  // après le clic (23502) ; l'écran le dit avant, et n'offre ni la récupération ni l'import.
+  it('dès deux comptes, rien ne se récupère ni ne s’importe, et la carte dit pourquoi', async () => {
+    etat.connexion = connexion()
+    monter({ lectureDesComptes: DEUX_COMPTES })
+    const recuperer = await screen.findByRole('button', { name: 'Récupérer les mouvements' }) as HTMLButtonElement
+    expect(recuperer.disabled).toBe(true)
+    expect(screen.getByText(/Le dossier tient 2 comptes bancaires : la connexion bancaire ne dit pas sous lequel/)).toBeTruthy()
+    await act(async () => { recuperer.click() })
+    expect(actions()).not.toContain('mouvements')
+  })
+
+  it('des comptes devenus deux après l’aperçu : l’import n’est plus offert, la carte dit pourquoi, rien ne s’écrit', async () => {
+    etat.connexion = connexion()
+    const { relire } = monter()
+    await recupererAvec(recuperation())
+    expect(bouton('Importer les 1 mouvement(s)').disabled).toBe(false)
+    relire({ lectureDesComptes: DEUX_COMPTES })
+    expect(screen.queryByRole('button', { name: /^Importer les/ })).toBeNull()
+    expect(screen.getAllByText(/Le dossier tient 2 comptes bancaires/).length).toBeGreaterThan(0)
+    expect(faux.upserts).toEqual([])
+  })
+
+  it('des comptes en cours de lecture retiennent l’import et le disent ; illisibles, ils le refusent', async () => {
+    etat.connexion = connexion()
+    const { relire } = monter({ lectureDesComptes: { etat: 'en_cours' } })
+    await recupererAvec(recuperation())
+    expect(screen.getByText(/Les comptes bancaires du dossier sont en cours de lecture/)).toBeTruthy()
+    const importer = bouton('Importer les 1 mouvement(s)')
+    expect(importer.disabled).toBe(true)
+    await act(async () => { importer.click() })
+    expect(faux.upserts).toEqual([])
+    relire({ lectureDesComptes: { etat: 'illisible', motif: 'coupure réseau' } })
+    expect(screen.queryByRole('button', { name: /^Importer les/ })).toBeNull()
+    expect(screen.getAllByText(/n’ont pas été lus en entier \(coupure réseau\)/).length).toBeGreaterThan(0)
   })
 
   it('une lecture complète n’est pas suspendue — le garde symétrique', async () => {

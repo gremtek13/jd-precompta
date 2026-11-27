@@ -44,7 +44,7 @@ const CONSTATATIONS = [
 const EXTOURNES = CONSTATATIONS.map((l) => ({
   ...l, id: `x${l.id}`, date: '2026-01-01', sens: l.sens === 'debit' ? 'credit' as const : 'debit' as const, libelle: `Extourne — ${l.libelle}`,
 }))
-const ROLE: BanquesDuDossier = { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }
+const ROLE: BanquesDuDossier = { cas: 'role', compte: PLAN_PAR_DEFAUT.banque, connus: null }
 const ENGAGEMENT = modeleDeTest('engagement')
 const numeroter = (ecritures: EcritureBrouillon[]) => numeroterFec(ecritures, [], [], [], ENGAGEMENT, [], SANS_ECRITURE_DE_VENTE,
   OPERATIONS_DE_CAISSE_ABSENTES, CHAMPS_BNC_NON_EXPORTES)

@@ -23,7 +23,7 @@ const SECOND = compte({ id: 'S', libelle: 'Compte pro bis', compte: '512200', co
 const CLOS = compte({ id: 'C', libelle: 'Ancien compte', compte: '512300', compte_propre_depuis: '2025-01-01', clos_le: '2025-12-31' })
 const DEUX: LectureDesComptes = { etat: 'lus', comptes: [PRINCIPAL, SECOND, CLOS] }
 const PAR_COMPTE = banquesDuDossier(DEUX, PLAN_PAR_DEFAUT)
-const ROLE: BanquesDuDossier = { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }
+const ROLE: BanquesDuDossier = { cas: 'role', compte: PLAN_PAR_DEFAUT.banque, connus: null }
 const RETENU = banquesDuDossier({ etat: 'illisible', motif: 'refusée' }, PLAN_PAR_DEFAUT)
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
@@ -39,7 +39,7 @@ const aNouveau = (o: Partial<ANouveau>): ANouveau => ({
 describe('banqueDesLecteurs et estUneBanque', () => {
   it('le rôle seul drapeau baissé ; le rôle puis chaque 512 propre, clos compris ; nul sur des comptes qui ne se savent pas', () => {
     expect([...banqueDesLecteurs(PLAN_PAR_DEFAUT, ROLE)!]).toEqual(['512000'])
-    expect([...banqueDesLecteurs(PLAN_DECALE, { cas: 'role', compte: PLAN_DECALE.banque })!]).toEqual([PLAN_DECALE.banque])
+    expect([...banqueDesLecteurs(PLAN_DECALE, { cas: 'role', compte: PLAN_DECALE.banque, connus: null })!]).toEqual([PLAN_DECALE.banque])
     expect([...banqueDesLecteurs(PLAN_PAR_DEFAUT, PAR_COMPTE)!].sort()).toEqual(['512000', '512200', '512300'])
     expect(banqueDesLecteurs(PLAN_PAR_DEFAUT, RETENU)).toBeNull()
   })

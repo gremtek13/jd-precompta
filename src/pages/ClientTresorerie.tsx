@@ -7,7 +7,8 @@ import { aujourdHuiAParis, formatMoney } from '../lib/format'
 import {
   TRESORERIE_BANQUE_FERMEE, TRESORERIE_DROITS_ILLISIBLES, TRESORERIE_INTRODUCTION, TRESORERIE_MUETTE, TRESORERIE_PLUSIEURS_DATES,
   TRESORERIE_PREVISION, TRESORERIE_SANS_MOUVEMENT, TRESORERIE_SOURCE_DU_SOLDE, composerTresorerie, departDesSoldes,
-  dernierJourDeLHorizon, echeancesDeLEcheancier, enLettres, phraseDuDecouvert, soldesDeLaBanque, type Depart, type NonCompte, type Tresorerie,
+  dernierJourDeLHorizon, echeancesDeLEcheancier, enLettres, phraseDuCompteClos, phraseDuDecouvert, soldesDeLaBanque, type CompteClos, type Depart,
+  type NonCompte, type Tresorerie,
 } from '../lib/tresorerieClient'
 import { useTresorerieDuClient, type LectureDeLaTresorerie } from '../lib/tresorerieClientLecture'
 import { moisEnLettres } from '../lib/echeancierClient'
@@ -62,7 +63,7 @@ export default function ClientTresorerie() {
         <div className="card"><p className="muted">{TRESORERIE_BANQUE_FERMEE}</p></div>
       ) : (
         <>
-          <Projection tresorerie={composer(lecture, aujourdHui)} aujourdHui={aujourdHui} />
+          <Projection {...composer(lecture, aujourdHui)} aujourdHui={aujourdHui} />
           {PREVISIONS_PUBLIEES_PREVUES && <PrevisionDuCabinet lecture={prevision} aujourdHui={aujourdHui} />}
         </>
       )}
@@ -70,26 +71,30 @@ export default function ClientTresorerie() {
   )
 }
 
-function composer(lecture: Extract<LectureDeLaTresorerie, { etat: 'lue' }>, aujourdHui: string): Tresorerie {
-  const soldes = soldesDeLaBanque(lecture.comptes, lecture.controles)
+function composer(lecture: Extract<LectureDeLaTresorerie, { etat: 'lue' }>, aujourdHui: string): { tresorerie: Tresorerie; clos: CompteClos[] } {
+  const soldes = soldesDeLaBanque(lecture.comptes, lecture.controles, aujourdHui)
   const depart: Depart = soldes.etat === 'retenus' ? { etat: 'muet', motif: soldes.raison } : departDesSoldes(soldes.soldes)
-  return composerTresorerie({
+  const clos = soldes.etat === 'lus' ? soldes.clos : []
+  return { clos, tresorerie: composerTresorerie({
     aujourdHui, depart, creances: lecture.creances, achats: lecture.achats, releve: lecture.releve,
     // Le régime d'imposition ne se lit pas encore en base (LIA4) : aucun dossier n'a d'IS au calendrier (LIA8), comme
     // « Mon échéancier ».
     echeances: echeancesDeLEcheancier(lecture.echeancier, aujourdHui, SANS_IMPOT_SUR_LES_SOCIETES),
-  })
+  }) }
 }
 
 const euros = (centimes: number) => <span style={{ whiteSpace: 'nowrap' }}>{formatMoney(centimes / 100)}</span>
 
-function Projection({ tresorerie: t, aujourdHui }: { tresorerie: Tresorerie; aujourdHui: string }) {
+function Projection({ tresorerie: t, clos, aujourdHui }: { tresorerie: Tresorerie; clos: CompteClos[]; aujourdHui: string }) {
+  // Un compte clos laissé hors de la projection se dit, quoi que la projection devienne (lib/tresorerieClient.ts).
+  const comptesClos = clos.map((c) => <p key={`${c.libelle}-${c.closLe}`} className="muted" style={{ fontSize: '0.85rem', margin: 0 }}>{phraseDuCompteClos(c)}</p>)
   if (t.etat === 'sans_depart') {
     return (
       <div className="card">
         <p className={t.depart.etat === 'muet' ? 'error-text' : 'muted'} title={t.depart.etat === 'muet' ? t.depart.motif : undefined}>
           {t.depart.etat === 'muet' ? TRESORERIE_MUETTE : t.depart.phrase}
         </p>
+        {comptesClos}
       </div>
     )
   }
@@ -100,6 +105,7 @@ function Projection({ tresorerie: t, aujourdHui }: { tresorerie: Tresorerie; auj
       </p>
       <p className="muted" style={{ fontSize: '0.85rem', margin: 0 }}>{TRESORERIE_SOURCE_DU_SOLDE}</p>
       {t.depart.datesDifferentes && <p className="muted" style={{ fontSize: '0.85rem', margin: 0 }}>{TRESORERIE_PLUSIEURS_DATES}</p>}
+      {comptesClos}
     </section>
   )
   if (t.etat === 'muette') {

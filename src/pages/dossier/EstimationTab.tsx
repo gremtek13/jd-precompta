@@ -47,7 +47,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable; plan: PlanComptable; ventesParLesFactures: boolean
 }) {
   // Les banques du dossier (MCB5) : la composition des ventes facturées écrit la jambe de banque au 512 du mouvement.
-  const { banques } = useBanquesDuDossier(dossierId, plan)
+  const { banques, relireLesComptes } = useBanquesDuDossier(dossierId, plan)
   // Les écritures libres de l'expert-comptable (EL5) : le drapeau baissé, l'absence, sans requête.
   const { lu: lectureDesLibres } = useEcrituresLibres(dossierId)
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
@@ -218,6 +218,8 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
     setReferencesPostes(lectureReferencesPostes.lignes)
     setReferencesIncompletes(!lectureReferences.complete)
     setPostesIncomplets(!lectureReferencesPostes.complete)
+    // Les comptes bancaires se relisent avec le relevé, après lui (relecture adverse du 27/11/2026, lib/useBanquesDuDossier.ts).
+    relireLesComptes()
     setLoading(false)
   }
 

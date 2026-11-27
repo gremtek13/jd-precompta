@@ -80,7 +80,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   const modeComptable = modele.mode
   // La banque de chaque mouvement qui paie une échéance (MCB5, lib/banqueDuMouvement.ts) : le 512 de son compte bancaire.
   // Drapeau baissé, le plan lui-même, sans attente ; comptes en cours de lecture ou illisibles, les gestes se suspendent.
-  const { banques } = useBanquesDuDossier(dossierId, modele.plan)
+  const { banques, relireLesComptes } = useBanquesDuDossier(dossierId, modele.plan)
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Les mouvements rapprochés d'une échéance, et les écritures sans pièce du dossier : ce qui dit quelle
   // échéance est payée, et si son paiement est écrit. Chacune son drapeau : leurs conséquences diffèrent.
@@ -195,6 +195,8 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
       [lectureCotisations, lectureDocuments, lecturePaiements]
         .find((l) => !l.complete)?.motif ?? null,
     )
+    // Les comptes bancaires se relisent avec le relevé, après lui (relecture adverse du 27/11/2026, lib/useBanquesDuDossier.ts).
+    relireLesComptes()
     setLoading(false)
   }
 

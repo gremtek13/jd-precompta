@@ -60,7 +60,7 @@ const ANNEE = 2026
 const MODELE = modeleDeTest('tresorerie')
 const PLAN = MODELE.plan
 // Un seul compte bancaire, la banque du rôle (MCB5) : l'écriture d'hier.
-const BANQUES = { cas: 'role', compte: PLAN.banque } as const
+const BANQUES = { cas: 'role', compte: PLAN.banque, connus: null } as const
 
 // ── Le tirage, d'une graine fixe ─────────────────────────────────────────────────────────────────────────────────────
 function mulberry32(graine: number): () => number {

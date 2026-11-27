@@ -338,7 +338,7 @@ describe('drapeau levé : la 2035, la concordance, le FEC, la situation', () => 
 
 describe('drapeau levé : « Modifier » et « Réunir »', () => {
   const contexte = (o: Partial<ContexteDesGestes> = {}): ContexteDesGestes => ({
-    mode: 'tresorerie', plan: AVEC_LE_ROLE, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque }, mouvementDe: () => mouvement(),
+    mode: 'tresorerie', plan: AVEC_LE_ROLE, banques: { cas: 'role', compte: PLAN_PAR_DEFAUT.banque, connus: null }, mouvementDe: () => mouvement(),
     figee: () => null, dateFigee: () => null, ecritures: [], ...o,
   })
 

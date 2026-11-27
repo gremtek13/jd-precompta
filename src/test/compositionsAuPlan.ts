@@ -580,7 +580,7 @@ const CAS_DES_VENTES_FACTUREES: CasDuPlan[] = [
           lignes: [ligneVendue('vf-s', 100, 20), ligneVendue('vf-b', 200, 10)],
           encaissements: [VENTES_CHEQUE.encaissement, VENTES_ESPECES.encaissement], parts: [VENTES_CHEQUE.part, VENTES_ESPECES.part],
         },
-        mouvements: [VENTES_MOUVEMENT], comptesDeContrepartie: new Map(), exemplaires: [], mode, plan, banques: { cas: 'role', compte: plan.banque },
+        mouvements: [VENTES_MOUVEMENT], comptesDeContrepartie: new Map(), exemplaires: [], mode, plan, banques: { cas: 'role', compte: plan.banque, connus: null },
       })
       return { ecritures, nonEcrites }
     }),
@@ -597,7 +597,7 @@ const CAS_DES_VENTES_FACTUREES: CasDuPlan[] = [
         encaissements: [VENTES_CHEQUE.encaissement, VENTES_ESPECES.encaissement], parts: [VENTES_CHEQUE.part, VENTES_ESPECES.part],
       }
       const composition = ecrituresDesVentesFacturees({
-        sources, mouvements: [VENTES_MOUVEMENT], comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan, banques: { cas: 'role', compte: plan.banque },
+        sources, mouvements: [VENTES_MOUVEMENT], comptesDeContrepartie: new Map(), exemplaires: [], mode: 'tresorerie', plan, banques: { cas: 'role', compte: plan.banque, connus: null },
       })
       const fraisBancaires = categorie({ id: 'c-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires fictifs', poste_2035: 'Frais financiers' })
       return calculerDeclaration2035(

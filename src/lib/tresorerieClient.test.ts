@@ -3,7 +3,7 @@ import * as module from './tresorerieClient'
 import {
   HORIZON_EN_JOURS, NON_COMPTE_ACHATS, NON_COMPTE_PREVISIONNEL_DU_CABINET, NON_COMPTE_VENTES_FERMEES, TRESORERIE_A_90_JOURS_OFFERTE,
   composerTresorerie, departDesSoldes, dernierJourDeLHorizon, echeancesDeLEcheancier, finDeLHorizon, maTresorerieOuverte,
-  NON_COMPTE_PAS_ENCORE_ENREGISTRE, NON_COMPTE_PEUT_ETRE_PAYEE, reglementDeLaCotisation, soldesDeLaBanque, type CreancesDeLaTresorerie, type Depart,
+  NON_COMPTE_PAS_ENCORE_ENREGISTRE, NON_COMPTE_PEUT_ETRE_PAYEE, phraseDuCompteClos, reglementDeLaCotisation, soldesDeLaBanque, type CreancesDeLaTresorerie, type Depart,
   type AchatsDeLaTresorerie, type DeclarationDePaiement, type EcheancesDeLaTresorerie, type MouvementDuReleve, type PartDeReglement,
   type PieceDAchatLue, reglementDeLAchat,
 } from './tresorerieClient'
@@ -270,13 +270,46 @@ describe('le départ', () => {
         { id: 'c2', solde_final: 20, coherent: true, periode_fin: '2026-09-30', created_at: '2026-10-01T00:00:00Z', compte_bancaire_id: 'k2' },
       ],
     }
-    expect(soldesDeLaBanque({ etat: 'sans_objet' }, controles)).toEqual({ etat: 'lus', soldes: [{ etat: 'lu', solde: 10, au: '2026-10-31' }] })
+    const J = '2026-11-27'
+    expect(soldesDeLaBanque({ etat: 'sans_objet' }, controles, J)).toEqual({ etat: 'lus', soldes: [{ etat: 'lu', solde: 10, au: '2026-10-31' }], clos: [] })
     const compte = (id: string, principal: boolean) => ({ id, libelle: id, principal, fin_d_identifiant: null, ouvert_le: null, clos_le: null })
-    expect(soldesDeLaBanque({ etat: 'lus', comptes: [compte('k1', true), compte('k2', false)] }, controles)).toEqual({
-      etat: 'lus', soldes: [{ etat: 'lu', solde: 10, au: '2026-10-31' }, { etat: 'lu', solde: 20, au: '2026-09-30' }],
+    expect(soldesDeLaBanque({ etat: 'lus', comptes: [compte('k1', true), compte('k2', false)] }, controles, J)).toEqual({
+      etat: 'lus', soldes: [{ etat: 'lu', solde: 10, au: '2026-10-31' }, { etat: 'lu', solde: 20, au: '2026-09-30' }], clos: [],
     })
-    expect(soldesDeLaBanque({ etat: 'lus', comptes: [compte('k1', true)] }, controles).etat).toBe('retenus')
-    expect(soldesDeLaBanque({ etat: 'illisible', motif: 'refus' }, controles).etat).toBe('retenus')
+    expect(soldesDeLaBanque({ etat: 'lus', comptes: [compte('k1', true)] }, controles, J).etat).toBe('retenus')
+    expect(soldesDeLaBanque({ etat: 'illisible', motif: 'refus' }, controles, J).etat).toBe('retenus')
+  })
+
+  // UN COMPTE CLOS (relecture adverse du 27/11/2026) : sans relevé contrôlé, il rendait la projection muette ; avec un, son
+  // vieux solde s'ajoutait et reculait le départ à sa date. Clos au plus tard aujourd'hui, il sort du calcul et se dit.
+  it('un compte clos au plus tard aujourd’hui sort du départ et se dit ; une clôture à venir, ou tous clos, ne change rien', () => {
+    const J = '2026-11-27'
+    const compte = (id: string, principal: boolean, clos_le: string | null) => ({ id, libelle: `Compte ${id}`, principal, fin_d_identifiant: null, ouvert_le: null, clos_le })
+    const controles = {
+      complete: true, motif: null, lignes: [
+        { id: 'c1', solde_final: 10, coherent: true, periode_fin: '2026-10-31', created_at: '2026-11-01T00:00:00Z', compte_bancaire_id: 'k1' },
+      ],
+    }
+    // Le livret clos le 15/06/2026, sans relevé contrôlé : hier, « un de tes comptes n'a pas de solde contrôlé ».
+    const sansReleve = soldesDeLaBanque({ etat: 'lus', comptes: [compte('k1', true, null), compte('k2', false, '2026-06-15')] }, controles, J)
+    expect(sansReleve).toEqual({ etat: 'lus', soldes: [{ etat: 'lu', solde: 10, au: '2026-10-31' }], clos: [{ libelle: 'Compte k2', closLe: '2026-06-15' }] })
+    expect(sansReleve.etat === 'lus' && departDesSoldes(sansReleve.soldes)).toMatchObject({ etat: 'lu', centimes: 1000, au: '2026-10-31', comptes: 1 })
+    expect(phraseDuCompteClos({ libelle: 'Compte k2', closLe: '2026-06-15' })).toBe(
+      'Ton compte « Compte k2 », clos le 15 juin 2026, n’entre pas dans la projection : un compte clos ne tient plus d’argent.')
+    // Avec un vieux relevé contrôlé : son solde ne s'ajoute plus, et le départ reste au relevé du compte ouvert.
+    const vieux = { ...controles, lignes: [...controles.lignes,
+      { id: 'c2', solde_final: 500, coherent: true, periode_fin: '2026-05-31', created_at: '2026-06-01T00:00:00Z', compte_bancaire_id: 'k2' }] }
+    const avecReleve = soldesDeLaBanque({ etat: 'lus', comptes: [compte('k1', true, null), compte('k2', false, '2026-06-15')] }, vieux, J)
+    expect(avecReleve.etat === 'lus' && departDesSoldes(avecReleve.soldes)).toMatchObject({ etat: 'lu', centimes: 1000, au: '2026-10-31', datesDifferentes: false })
+    // Clos aujourd'hui : dehors ; demain : encore dedans.
+    expect(soldesDeLaBanque({ etat: 'lus', comptes: [compte('k1', true, null), compte('k2', false, J)] }, vieux, J)).toMatchObject({ clos: [{ closLe: J }] })
+    const demain = soldesDeLaBanque({ etat: 'lus', comptes: [compte('k1', true, null), compte('k2', false, '2026-11-28')] }, vieux, J)
+    expect(demain).toMatchObject({ clos: [] })
+    expect(demain.etat === 'lus' && demain.soldes).toHaveLength(2)
+    // Tous clos : rien ne s'écarte, la projection d'hier plutôt qu'aucun départ.
+    const tous = soldesDeLaBanque({ etat: 'lus', comptes: [compte('k1', true, '2026-10-31'), compte('k2', false, '2026-06-15')] }, vieux, J)
+    expect(tous).toMatchObject({ clos: [] })
+    expect(tous.etat === 'lus' && tous.soldes).toHaveLength(2)
   })
 })
 
