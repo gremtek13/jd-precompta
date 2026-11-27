@@ -45,7 +45,7 @@ import { lireLesVentesFacturees } from '../../lib/ventesFactureesLecture'
 import { citantDe, lireCitationsDeLaRevision, quiCitentLaPiece, refusDeSuppressionDUnePiece, type LectureDesCitations } from '../../lib/citationsRevisionLecture'
 import { lireLesCitationsDesEcrituresLibres } from '../../lib/ecrituresLibresLecture'
 import {
-  motifDesCitationsDesEcrituresLibres, refusDeSuppressionParUneEcritureLibre, type CitationsDesEcrituresLibres,
+  motifDesCitationsDesEcrituresLibres, refusDeSuppressionParUneEcritureLibre, remplacementDuFichierRetenu, type CitationsDesEcrituresLibres,
 } from '../../lib/pieceCiteeParUneEcritureLibre'
 import { lireFichesHorsDeFrance } from '../../lib/piecesHorsDeFranceLecture'
 import { lireEcarts } from '../../lib/regimesEreportingLecture'
@@ -1486,6 +1486,7 @@ export default function PiecesTab({ dossierId, dossierSiret = null, ventesParLes
             sansTexteLu={!presenceTexteIncertaine && !avecTexteOcr.has(editing.id)}
             figeePar={figees.has(editing.id) ? `L'exercice ${figees.get(editing.id)} est validé` : null}
             citeePar={refusDeSuppressionDUnePiece(editing.id, citations, citationsLibres)}
+            remplacementRetenu={remplacementDuFichierRetenu(dossierId, editing.id, citationsLibres)}
             venteEmise={(() => {
               const marque = marqueParPiece.get(editing.id)
               return marque ? {

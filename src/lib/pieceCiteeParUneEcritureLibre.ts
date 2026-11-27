@@ -87,6 +87,48 @@ export const SUPPRESSION_CITEE_PAR_UNE_ECRITURE_LIBRE =
   + 'Pour la supprimer, retire d’abord la citation de l’écriture, dans l’onglet Écritures, si son exercice n’est pas validé ; '
   + 'validé, la citation ne se retire plus.'
 
+// LE FICHIER D'UNE PIÈCE CITÉE NE SE REMPLACE PAS À L'ÉCRAN (RA253-Q3 (A), réponse du cabinet du 27/11/2026). Depuis la 254e
+// migration (`fichier_cite_par_une_ecriture_libre`), `fichier_fige` refuse de retirer du stockage le fichier d'une pièce qu'une
+// écriture libre cite, ouverte ou figée : « Remplacer le fichier » déposait le nouveau et échouait à retirer l'ancien. La fiche ne
+// l'offre plus et dit pourquoi, comme pour une pièce figée par la validation. CÔTÉ FERMÉ : tant que les citations ne sont pas
+// revenues en entier pour ce dossier (pas encore lues, lues en partie, lues pour un autre), on ne sait pas si une écriture cite
+// la pièce — le geste n'est pas offert non plus, et la phrase dit pourquoi. Le drapeau baissé (`absentes`) : rien ne cite, le
+// geste reste. Le remède, comme pour la suppression, n'est dit que si aucune écriture qui cite n'est figée.
+
+/** Le remède, quand toutes les écritures qui citent sont d'un exercice ouvert. */
+export const REMEDE_DU_REMPLACEMENT = 'Pour le remplacer, retire d’abord la citation de l’écriture, dans l’onglet Écritures.'
+
+/** Les citations ne sont pas encore revenues : le fichier ne se remplace pas d'ici, faute de savoir. */
+export const REMPLACEMENT_AVANT_LA_LECTURE = 'Les écritures libres du dossier ne sont pas encore lues : son fichier ne se remplace '
+  + 'pas tant qu’on ne sait pas si l’une d’elles cite cette pièce.'
+
+/** Les citations n'ont pas été lues en entier : le fichier ne se remplace pas d'ici. */
+export function remplacementSansLecture(motif: string): string {
+  return `Les écritures libres du dossier n’ont pas pu être lues en entier (${motif}) : son fichier ne se remplace pas tant `
+    + 'qu’on ne sait pas si l’une d’elles cite cette pièce.'
+}
+
+/**
+ * Pourquoi le fichier de cette pièce ne se remplace pas d'ici, ou nul quand il se remplace : aucune écriture libre lue en entier
+ * ne la cite, ou les écritures libres ne sont pas en base. Une lecture pas revenue, partielle ou d'un autre dossier le retient.
+ */
+export function remplacementDuFichierRetenu(
+  dossierId: string, pieceId: string, lecture: CitationsDesEcrituresLibres | null,
+): string | null {
+  if (lecture === null || lecture.dossierId !== dossierId) return REMPLACEMENT_AVANT_LA_LECTURE
+  if (lecture.etat === 'absentes') return null
+  if (lecture.etat === 'illisibles') return remplacementSansLecture(lecture.motif)
+  const citations = citationsDeLaPiece(pieceId, lecture)
+  if (citations.length === 0) return null
+  const references = citations.map(referenceDeLEcritureLibre)
+  const qui = references.length === 1 ? `l’écriture libre ${references[0]} cite` : `les écritures libres ${enumeration(references)} citent`
+  const figees = citations.filter((c) => c.figee).map(referenceDeLEcritureLibre)
+  const suite = figees.length === 0 ? REMEDE_DU_REMPLACEMENT
+    : figees.length === 1 ? `L’écriture ${figees[0]} est d’un exercice validé : sa citation ne se retire plus, et le fichier reste celui-ci.`
+      : `Les écritures ${enumeration(figees)} sont d’exercices validés : leur citation ne se retire plus, et le fichier reste celui-ci.`
+  return `Son fichier ne se remplace plus : ${qui} ce fichier-là. ${suite}`
+}
+
 /**
  * LE REFUS DE LA BASE DEVANT LA SUPPRESSION D'UNE PIÈCE QU'UNE ÉCRITURE LIBRE CITE, TRADUIT : la clé étrangère
  * `ecritures_libres_piece_citee_id_fkey` lève 23503 (« violates foreign key constraint … on table "ecritures_libres" »). Les mots
