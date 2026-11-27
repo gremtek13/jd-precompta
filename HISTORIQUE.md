@@ -54982,7 +54982,7 @@ mordent (la devise à blanc, le justificatif sur chaque ligne, le sens inversé)
 `ecrituresLibresAppelants.test.ts` (lecture et analyse de tout `src/`) et `refusDesBordereauxAuDepot.test.ts` (analyse de toute la source, deux fois) paient désormais ce calcul dans un `beforeAll` à délai propre, les `it` ne gardent que leurs assertions ; `caisseDuClient`, `agentComptableAnalyse`, `recuperationMotDePasse` et `acompteDevis` (sa batterie est déjà dans un `beforeAll`) restent tels quels, leur plus long `it` tenant sous une seconde. Une mutation par fichier mord (plancher relevé, compte attendu faussé), annulée.
 Six essais (`hausseDuChiffreDAffaires`, `pieceDUnPaiementDansSonDossier`, `plancherALEcartDAlignement`, `especesDuClientHorsDesReprises`, `auteurDesOuvertures`, `modeDeReglementDesMouvements`) disent en en-tête, en commentaire seulement, « en production depuis le … (n°) » et le chemin réel dans `supabase/schema/` ; aucun SQL exécutable touché.
 
-### 27/11/2026 — LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 254 (RIEN EN PRODUCTION)
+### 27/11/2026 — LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 254, PUIS À 255
 
 (Agent architecte.) Une copie de `replique_227` portée à 254 par l'export (dérive `8727d024…`, socle 84 `e54200f4…`, inventaire 3 518
 `a6475fb0…`, égaux aux fichiers). **Seules**, après leurs dépendances déclarées : 21 des 22 préparées s'appliquent, leur garde refuse
@@ -55027,3 +55027,18 @@ toutes dans la sélection. L3-Q1 à Q3 (A) : le point d'attention `justificatifs
 dépenses, onglet Justificatifs) et son avertissement avant la validation, par `rangementDuJustificatif` sur les lectures de la
 section (`lireLesNotesDeFraisDesControles`, sans objet le drapeau baissé, muet sur une lecture partielle). Une mutation par règle
 mord (4, 2 et 3, 1). Non éprouvé dans un navigateur.
+
+(Agent architecte ; la répétition n'a rien appliqué en production.) Une copie de `replique_227` portée à 254 par l'export, puis à
+255 par OPT6, que la production a reçue par l'outil pendant la répétition (`20261127053521`, au texte du fichier préparé) : dérive
+255 `7f7b434c…`, socle 84, inventaire 3 523 `2d71d9f1…`, égaux à la production et aux fichiers. **Seules**, après leurs
+dépendances, à 254 puis à 255 : les 20 autres s'appliquent (e7a refuse, REPET-Q1 (B) ; son candidat du 14/11, hors du dépôt, vise
+encore le corps du jour : 44/0, seize essais des factures inchangés), leur garde refuse une seconde application, leur essai et ceux
+des trois tables que garde la frontière sont justes, `rls.sql` sans faute, leur retour rend la signature étendue d'avant (stockage,
+auth, rôles, commentaires et données compris ; EXD2 garde `btree_gist`, voulu). **La chaîne** (l'ordre de la conception 60) et un
+second ordre (la double authentification d'abord, les sœurs du brouillon à rebours), à 254 et à 255 : 275 migrations, `rls.sql`
+346 lignes, 1 692 vérifications, 0 en faute, 220 mutations sur 220 ; les retours rendent la base de départ. **Aucune préparée n'a
+dérivé ; trois essais, si** : `sousDossierDansSonDossier`, écrit avant CFCS-Q1 (238), déplaçait une ligne sans son chemin (27/27,
+SÛR au banc) ; `ecrituresLibres` et `contrePassationDesEcrituresLibres` ignoraient les déclencheurs d'OPT6 sur `ecritures_libres`
+— en faute sur la production depuis 255 —, admis sous sa garde ; l'en-tête d'`exercicesDuDossier` dit `-1`. Les 167 autres essais :
+identiques avant et après la chaîne, hors des EN ATTENTE qui se lèvent ; la famille « apres » et l'essai d'OPT6 SÛRS au banc. Au
+collage, le socle se régénère (84 → 100 ; 26 objets de l'inventaire en dépendent). Le tableau : la conception 60 ; question REPET2-Q1.
