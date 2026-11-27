@@ -53,6 +53,7 @@ import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES } from './rapprochementAssurance
 import { ECRITURES_LIBRES_PREVUES, TABLES_DES_ECRITURES_LIBRES } from './ecritureLibre'
 import { COLONNE_DE_LA_CONTRE_PASSATION, CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import { REGLAGES_D_EXPORT_PREVUS, TABLES_DES_REGLAGES_D_EXPORT } from './reglagesDExport'
+import { REMPLACEMENT_DES_JOURNEES_PREVU, TABLES_DES_REMPLACEMENTS_ASSURANCE_MALADIE } from './remplacementDesJourneesAssuranceMaladie'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -288,6 +289,22 @@ export const TABLES_DE_L_ASSOCIATION_ASSURANCE_MALADIE: readonly string[] = ['pa
  *  n'est pas en base. */
 export function auPlanDeLAssociationAssuranceMaladie(table: string, prevues: boolean): boolean {
   return prevues || !TABLES_DE_L_ASSOCIATION_ASSURANCE_MALADIE.includes(table)
+}
+
+// LA TRACE DES PAIEMENTS DE L'ASSURANCE MALADIE REMPLACÉS (conception 53, § 14.2, NOE4R-Q2 ; migration
+// `remplacement_des_journees_assurance_maladie`, préparée le 27/11/2026, PAS APPLIQUÉE, après `periode_des_imports_assurance_maladie`) :
+// un paiement qu'un nouvel export a remplacé, ses chiffres d'avant et d'après, sans aucune colonne de texte. Sous le drapeau de la
+// migration (`REMPLACEMENT_DES_JOURNEES_PREVU`, src/lib/remplacementDesJourneesAssuranceMaladie.ts), baissé : la lire avant elle
+// ferait échouer toute sauvegarde. Sa relation au dossier (cascade) — les deux imports qu'elle nomme le sont SANS clé étrangère :
+// la trace survit à leur retrait, et la restauration la réinsère même quand l'un d'eux n'est plus là —, son rang (juste après
+// `paiements_assurance_maladie`, une place qu'aucun voisin ne fixe), son chemin, direct ; aucune vague ; sa clé est la commune,
+// `id`. La restauration la réinsère par la porte que sa garde et sa policy d'insertion ouvrent au super-administrateur, ses
+// auteurs et ses instants tels qu'ils ont été lus. sauvegardeRemplacementsAssuranceMaladie.test.ts éprouve le plan prévu et le
+// plan du jour, sous chaque état du drapeau.
+
+/** Une table au plan, côté trace des remplacements : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDesRemplacementsAssuranceMaladie(table: string, prevus: boolean): boolean {
+  return prevus || !TABLES_DES_REMPLACEMENTS_ASSURANCE_MALADIE.includes(table)
 }
 
 // LE FACTURÉ À L'ASSURANCE MALADIE (conception 59, BOR3 ; migration `factures_assurance_maladie`, préparée le 19/11/2026, en
@@ -777,6 +794,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDesPaiementsAssuranceMaladie(table, PAIEMENTS_ASSURANCE_MALADIE_PREVUS)
     && auPlanDuFactureAssuranceMaladie(table, FACTURES_ASSURANCE_MALADIE_EN_BASE)
     && auPlanDeLAssociationAssuranceMaladie(table, ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES)
+    && auPlanDesRemplacementsAssuranceMaladie(table, REMPLACEMENT_DES_JOURNEES_PREVU)
     && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
     && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
@@ -1000,6 +1018,8 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'imports_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'paiements_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'paiements_assurance_maladie', parent: 'imports_assurance_maladie', colonne: 'import_id', aLaSuppression: 'cascade' },
+  // La trace des paiements remplacés (NOE4R-Q2, préparée) : à son dossier, en cascade ; ses deux imports, sans clé étrangère.
+  { enfant: 'remplacements_assurance_maladie', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   // L'association d'un paiement à son crédit (NOE5, en production) : au dossier et au mouvement, en cascade ; au paiement, sans
   // action (elle retient le retrait de son import).
   { enfant: 'paiements_assurance_maladie_mouvements', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -1419,6 +1439,9 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   // qu'aucun voisin ne fixe — l'essai de restauration les met après `controles_releves_bancaires`.
   'imports_assurance_maladie',
   'paiements_assurance_maladie',
+  // La trace des paiements remplacés (NOE4R-Q2, préparée) : après le dossier, sa seule clé ; juste après les paiements, une place
+  // qu'aucun voisin ne fixe — l'essai de restauration l'y met.
+  'remplacements_assurance_maladie',
   'cotisations_declarees',
   // Le facturé à l'assurance maladie (BOR3, en production) : après le dossier, la clé, puis l'import avant ses totaux et ses
   // empreintes ; une place qu'aucun voisin ne fixe — l'essai de restauration les met après `cotisations_declarees`.
@@ -2069,6 +2092,7 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   reglages_d_export: { acces: 'direct' },
   imports_assurance_maladie: { acces: 'direct' },
   paiements_assurance_maladie: { acces: 'direct' },
+  remplacements_assurance_maladie: { acces: 'direct' },
   paiements_assurance_maladie_mouvements: { acces: 'direct' },
   cles_des_lots_teletransmission: { acces: 'direct' },
   imports_factures_assurance_maladie: { acces: 'direct' },

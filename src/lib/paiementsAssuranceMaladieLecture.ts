@@ -3,8 +3,9 @@ import { messageErreur } from './messageErreur'
 import { supabase } from './supabase'
 import { PAIEMENTS_ASSURANCE_MALADIE_PREVUS } from './paiementsAssuranceMaladie'
 import { ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES, type AssociationAssuranceMaladie } from './rapprochementAssuranceMaladie'
+import { REMPLACEMENT_DES_JOURNEES_PREVU } from './remplacementDesJourneesAssuranceMaladie'
 import type { EspaceVentes } from './espaceVentes'
-import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from './types'
+import type { ImportAssuranceMaladie, PaiementAssuranceMaladie, RemplacementAssuranceMaladie } from './types'
 
 // LES PAIEMENTS DE L'ASSURANCE MALADIE, CE QUE L'ÉCRAN LIT (conception 53, lot NOE4 ; le patron : lib/achatsClientLecture.ts).
 // Aucune lecture ne rejette : une requête qui lève ou un refus tombent du côté signalé, avec leur motif — jamais une liste
@@ -20,10 +21,17 @@ import type { ImportAssuranceMaladie, PaiementAssuranceMaladie } from './types'
 // cabinet, la fiche d'un crédit, la section NOEMIE et les candidats d'une vente facturée les lisent ; des deux côtés, le
 // retrait d'un import dont un paiement est associé se dit refusé avant le clic. Côté client, la policy qui les ouvre à un
 // accès « Banque » est celle de la migration (NOE5-Q1) : elle se présente au cabinet avant d'être appliquée.
+//
+// LA TRACE DES REMPLACEMENTS (NOE4R-Q2) se lit dans la même vague, sous `REMPLACEMENT_DES_JOURNEES_PREVU` seulement (avant sa
+// migration, la table n'existe pas : `null`, rien de lu). Elle dit quels paiements un nouvel export a remplacés : la section la
+// montre, et la confirmation du retrait d'un import qui en a remplacé dit qu'ils ne reviennent pas ; lue en partie, la section
+// n'offre aucun geste. Côté client, la policy qui l'ouvre à un accès « Banque » est celle de la migration (NOE4RQ2-Q1) : elle
+// se présente au cabinet avant d'être appliquée.
 
 const COLONNES_IMPORT = 'id, dossier_id, periode_du, periode_au, nombre_de_rejets, montant_rejete_centimes, importe_par, importe_le'
 const COLONNES_PAIEMENT = 'id, dossier_id, import_id, date_journee_comptable, regime, caisse, organisme_complementaire, part, montant_centimes, regularisations_centimes, nombre_de_factures'
 const COLONNES_ASSOCIATION = 'id, dossier_id, paiement_id, ligne_bancaire_id, associe_par, associe_le'
+const COLONNES_REMPLACEMENT = 'id, dossier_id, import_id, ancien_import_id, date_journee_comptable, regime, caisse, organisme_complementaire, part, ancien_montant_centimes, ancien_regularisations_centimes, ancien_nombre_de_factures, nouveau_montant_centimes, nouveau_regularisations_centimes, nouveau_nombre_de_factures, remplace_par, remplace_le'
 
 export type PaiementsLus =
   | { dossierId: string; etat: 'echec'; motif: string }
@@ -33,6 +41,8 @@ export type PaiementsLus =
     imports: LectureComplete<ImportAssuranceMaladie>; paiements: LectureComplete<PaiementAssuranceMaladie>
     /** Nul : le drapeau de l'association baissé, rien de lu (la table n'existe pas encore). */
     associations: LectureComplete<AssociationAssuranceMaladie> | null
+    /** Nul : le drapeau du remplacement baissé, rien de lu (la table n'existe pas encore). */
+    remplacements: LectureComplete<RemplacementAssuranceMaladie> | null
   }
 
 const echec = <T>(motif: string): LectureComplete<T> => ({ lignes: [], complete: false, motif })
@@ -53,7 +63,7 @@ export async function lireLesPaiementsAssuranceMaladie(dossierId: string, espace
     return { dossierId, etat: 'echec', motif: 'les paiements de l’assurance maladie ne sont pas encore en base' }
   }
   try {
-    const [droits, imports, paiements, associations] = await Promise.all([
+    const [droits, imports, paiements, associations, remplacements] = await Promise.all([
       espace === 'client' ? supabase.rpc('droits_sur_le_dossier', { p_dossier_id: dossierId }) : Promise.resolve(null),
       lireTout<ImportAssuranceMaladie>((debut, fin) =>
         supabase.from('imports_assurance_maladie').select(COLONNES_IMPORT, { count: 'exact' })
@@ -65,6 +75,11 @@ export async function lireLesPaiementsAssuranceMaladie(dossierId: string, espace
         ? lireTout<AssociationAssuranceMaladie>((debut, fin) =>
           supabase.from('paiements_assurance_maladie_mouvements').select(COLONNES_ASSOCIATION, { count: 'exact' })
             .eq('dossier_id', dossierId).order('associe_le').order('id').range(debut, fin))
+        : Promise.resolve(null),
+      REMPLACEMENT_DES_JOURNEES_PREVU
+        ? lireTout<RemplacementAssuranceMaladie>((debut, fin) =>
+          supabase.from('remplacements_assurance_maladie').select(COLONNES_REMPLACEMENT, { count: 'exact' })
+            .eq('dossier_id', dossierId).order('remplace_le').order('id').range(debut, fin))
         : Promise.resolve(null),
     ])
     if (droits !== null) {
@@ -82,6 +97,7 @@ export async function lireLesPaiementsAssuranceMaladie(dossierId: string, espace
       imports: imports.complete ? duDossier(imports, dossierId) : imports,
       paiements: paiements.complete ? duDossier(paiements, dossierId) : paiements,
       associations: associations === null || !associations.complete ? associations : duDossier(associations, dossierId),
+      remplacements: remplacements === null || !remplacements.complete ? remplacements : duDossier(remplacements, dossierId),
     }
   } catch (erreur) {
     return {

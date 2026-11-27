@@ -216,6 +216,10 @@
 --      contrôles positifs), le client du dossier, un membre non assigné et l'anonyme rien ; le client n'enregistre, n'écrit,
 --      ne réécrit ni ne retire rien ; le super-administrateur réinsère (la restauration) ; le catalogue. Quatre mutations,
 --      dont l'enregistrement sans son contrôle d'accès ; avant la migration, une ligne « EN ATTENTE ».
+--  22. La trace des paiements de l'assurance maladie remplacés (bloc RJ, en fin de fichier ; migration
+--      `remplacement_des_journees_assurance_maladie`, NOE4R-Q2, préparée) : le client « Banque » lit la trace de son dossier, le
+--      chef aussi, rien sans la case ; il ne l'écrit pas en direct (la garde) ; le catalogue. Deux mutations ; la section P7 la
+--      compte parmi les tables de la banque ; avant la migration, une ligne « EN ATTENTE ».
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -1688,7 +1692,11 @@ declare
     -- L'association des paiements aux crédits du relevé (NOE5 ; migration `association_paiements_assurance_maladie`,
     -- EN PRODUCTION) : le client « Banque » lit les associations de son dossier (NOE5-Q1), dès que la migration est en base.
     || case when to_regclass('public.paiements_assurance_maladie_mouvements') is not null
-            then array['paiements_assurance_maladie_mouvements'] else '{}'::text[] end;
+            then array['paiements_assurance_maladie_mouvements'] else '{}'::text[] end
+    -- La trace des paiements de l'assurance maladie remplacés (NOE4R-Q2 ; migration `remplacement_des_journees_assurance_maladie`,
+    -- PRÉPARÉE) : le client « Banque » lit celle de son dossier (NOE4RQ2-Q1), dès que la migration est en base.
+    || case when to_regclass('public.remplacements_assurance_maladie') is not null
+            then array['remplacements_assurance_maladie'] else '{}'::text[] end;
   banque_lues text[];
   -- Ce que « toutes les lignes de ses dossiers » compte d'une table de la banque : toutes, sauf pour la prévision publiée,
   -- dont la policy n'ouvre que les publications EN COURS (`prevision_publiee_en_cours`).
@@ -1789,6 +1797,19 @@ begin
       end loop;
       perform set_config('jd.associations_assurance_maladie', '', true);
     end if;
+    -- La trace des remplacements (NOE4R-Q2), dès sa migration : une trace dans chaque dossier, posée par le propriétaire sous le
+    -- réglage de sa fonction (sa garde n'admet qu'elle et la restauration) ; elle nomme l'import de son dossier.
+    if to_regclass('public.remplacements_assurance_maladie') is not null then
+      for p in select * from (values (dossier_du_client, import_client), (autre_dossier, import_autre)) as v(dossier, ligne) loop
+        perform set_config('jd.remplacements_assurance_maladie', p.dossier::text, true);
+        execute format('insert into public.remplacements_assurance_maladie (dossier_id, import_id, ancien_import_id, date_journee_comptable, '
+          || 'regime, caisse, part, ancien_montant_centimes, ancien_regularisations_centimes, ancien_nombre_de_factures, '
+          || 'nouveau_montant_centimes, nouveau_regularisations_centimes, nouveau_nombre_de_factures, remplace_par) '
+          || 'values (%L, %L, %L, %L, 1, 691, %L, 1200, 0, 1, 1234, 0, 1, %L)',
+          p.dossier, p.ligne, gen_random_uuid(), '2026-01-12', 'obligatoire', chef);
+      end loop;
+      perform set_config('jd.remplacements_assurance_maladie', '', true);
+    end if;
     -- Le facturé à l'assurance maladie (BOR3), dès sa migration : un import et un total dans chaque dossier, posés par le
     -- propriétaire sous le réglage de l'import (la garde n'admet que lui et la restauration).
     if to_regclass('public.factures_assurance_maladie') is not null then
@@ -1877,6 +1898,14 @@ begin
       ecritures := ecritures
         || format('insert into paiements_assurance_maladie_mouvements (dossier_id, paiement_id, ligne_bancaire_id, associe_par) values (%L, %L, %L, %L)',
              dossier_du_client, paiement_libre, mvt_client_2, client);
+    end if;
+    -- La trace des remplacements (NOE4R-Q2), dès sa migration : une trace d'une autre journée insérée en direct.
+    if to_regclass('public.remplacements_assurance_maladie') is not null then
+      ecritures := ecritures
+        || format('insert into remplacements_assurance_maladie (dossier_id, import_id, ancien_import_id, date_journee_comptable, regime, caisse, '
+             || 'part, ancien_montant_centimes, ancien_regularisations_centimes, ancien_nombre_de_factures, nouveau_montant_centimes, '
+             || 'nouveau_regularisations_centimes, nouveau_nombre_de_factures, remplace_par) values (%L, %L, %L, %L, 1, 691, %L, 99, 0, 1, 100, 0, 1, %L)',
+             dossier_du_client, import_client, gen_random_uuid(), '2026-01-13', 'obligatoire', client);
     end if;
     for t in select e as sql, split_part(split_part(e, 'insert into ', 2), ' ', 1) as nom from unnest(ecritures) e loop
       motif := null;
@@ -13375,6 +13404,172 @@ begin
   insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
     from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
 end $rx$;
+
+-- ══ RJ. La trace des paiements de l'assurance maladie remplacés (NOE4R-Q2 ; migration `remplacement_des_journees_assurance_maladie`,
+-- PRÉPARÉE) ══════
+-- Une table que le client LIT sous sa case « Banque » — la trace de son dossier (NOE4RQ2-Q1, présentée au cabinet avant d'être
+-- appliquée) —, que le cabinet du dossier lit entière, et que personne n'écrit en direct : sa fonction, ou la restauration. La
+-- section P7 la compte parmi les tables de la banque (3bis, 3bis+, 4bis, M3bis, M4bis) ; ce bloc juge ce qui lui est propre.
+--   RJ1. Une trace dans le dossier du client : le client « Banque » la lit (le contrôle POSITIF), le chef aussi ; la case
+--        décochée, le client n'en lit rien ; l'anonyme non plus.
+--   RJ2. Le client ne l'écrit pas en direct (42501, la garde, sous ses mots).
+--   RJ3. Le catalogue : la RLS active, trois policies à authenticated seul, hors la restrictive `deux_facteurs` (C7), la garde
+--        avant chaque écriture, la fonction du remplacement exécutée par authenticated, ni par l'anonyme ni par PUBLIC.
+-- Deux mutations, qui doivent mordre : M-RJ1 (la lecture du client ouverte à tout accès du dossier : sans la case, il lit),
+-- M-RJ2 (la lecture du client fermée : la case cochée, il ne lit plus). Avant la migration, une ligne dit que le bloc attend.
+do $rj$
+declare
+  client uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
+  import_essai uuid := gen_random_uuid();
+  acces uuid; avec_case text; sans_case text; du_chef text; de_l_anon text; ecrite text; elargie bigint; fermee bigint;
+  n bigint; erreur text; construit boolean := false;
+  verdicts jsonb := '[]'::jsonb; mutations jsonb := '[]'::jsonb;
+begin
+  if to_regclass('public.remplacements_assurance_maladie') is null then
+    insert into rls_verdict values ('RJ. la trace des paiements de l''assurance maladie remplacés : EN ATTENTE de la migration remplacement_des_journees_assurance_maladie',
+      'remplacements_assurance_maladie', 'absente : elle se juge dès que la migration y est', true);
+    return;
+  end if;
+  begin
+    -- ── Le jeu : une trace dans le dossier du client, posée par le propriétaire sous le réglage de sa fonction (la garde
+    -- n'admet qu'elle et la restauration) ; la case « Banque » cochée sur l'accès du client ──
+    perform set_config('request.jwt.claims', '', true);
+    select m.id into acces from memberships m where m.user_id = client and m.dossier_id = dossier_du_client;
+    perform set_config('jd.remplacements_assurance_maladie', dossier_du_client::text, true);
+    execute format('insert into public.remplacements_assurance_maladie (dossier_id, import_id, ancien_import_id, date_journee_comptable, '
+      || 'regime, caisse, part, ancien_montant_centimes, ancien_regularisations_centimes, ancien_nombre_de_factures, '
+      || 'nouveau_montant_centimes, nouveau_regularisations_centimes, nouveau_nombre_de_factures, remplace_par) '
+      || 'values (%L, %L, %L, %L, 1, 691, %L, 1500, 0, 2, 1800, 0, 3, %L)',
+      dossier_du_client, import_essai, gen_random_uuid(), '2026-02-02', 'obligatoire', chef);
+    perform set_config('jd.remplacements_assurance_maladie', '', true);
+    update memberships set droit_banque = true where id = acces;
+    construit := true;
+
+    -- RJ1 : le client avec la case, sans elle ; le chef ; l'anonyme.
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*)::text into avec_case from remplacements_assurance_maladie t where t.import_id = import_essai;
+    reset role;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role', 'authenticated')::text, true);
+    select count(*)::text into du_chef from remplacements_assurance_maladie t where t.import_id = import_essai;
+    reset role;
+    update memberships set droit_banque = false where id = acces;
+    set local role authenticated;
+    perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+    select count(*)::text into sans_case from remplacements_assurance_maladie t where t.import_id = import_essai;
+    reset role;
+    begin
+      set local role anon;
+      perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+      select count(*)::text into de_l_anon from remplacements_assurance_maladie;
+    exception when others then de_l_anon := sqlstate || ' ' || sqlerrm;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'RJ1. le client « Banque » lit la trace de son dossier (le contrôle positif), le chef aussi ; sans la case, rien ; l''anonyme rien',
+      'cible', 'remplacements_assurance_maladie',
+      'observe', 'avec la case : ' || coalesce(avec_case, '?') || ' | le chef : ' || coalesce(du_chef, '?') || ' | sans : '
+        || coalesce(sans_case, '?') || ' | l''anonyme : ' || coalesce(de_l_anon, '?'),
+      'ok', avec_case = '1' and du_chef = '1' and sans_case = '0' and de_l_anon = '0');
+
+    -- RJ2 : le client n'écrit pas en direct, même « Banque ».
+    update memberships set droit_banque = true where id = acces;
+    begin
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      insert into remplacements_assurance_maladie (dossier_id, import_id, ancien_import_id, date_journee_comptable, regime, caisse, part,
+        ancien_montant_centimes, ancien_regularisations_centimes, ancien_nombre_de_factures, nouveau_montant_centimes,
+        nouveau_regularisations_centimes, nouveau_nombre_de_factures, remplace_par)
+      values (dossier_du_client, import_essai, gen_random_uuid(), '2026-02-03', 1, 691, 'obligatoire', 100, 0, 1, 200, 0, 1, client);
+      ecrite := 'ACCEPTÉ';
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if ecrite is null then ecrite := sqlstate || ' ' || sqlerrm; end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    verdicts := verdicts || jsonb_build_object('controle', 'RJ2. le client n''écrit pas une trace en direct (42501, la garde)',
+      'cible', 'remplacements_assurance_maladie', 'observe', coalesce(ecrite, '?'),
+      'ok', ecrite = '42501 Les remplacements des paiements de l''assurance maladie ne s''écrivent que par leur fonction.');
+
+    -- M-RJ1 : la lecture du client ouverte à tout accès du dossier — sans la case, il lit.
+    begin
+      update memberships set droit_banque = false where id = acces;
+      alter policy remplacements_assurance_maladie_lecture_banque on public.remplacements_assurance_maladie
+        using (client_du_dossier(dossier_id, 'membre'));
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into elargie from remplacements_assurance_maladie where import_id = import_essai;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-RJ1 — la lecture de la trace ouverte à tout accès du dossier',
+      'attendu', 'le client sans la case lit la trace', 'observe', coalesce(elargie::text, '?') || ' lu(s)', 'mord', coalesce(elargie = 1, false));
+
+    -- M-RJ2 : la lecture du client fermée — la case cochée, il ne lit plus.
+    begin
+      alter policy remplacements_assurance_maladie_lecture_banque on public.remplacements_assurance_maladie using (false);
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', client, 'role', 'authenticated')::text, true);
+      select count(*) into fermee from remplacements_assurance_maladie where import_id = import_essai;
+      reset role;
+      raise exception 'ANNULATION_ESSAI';
+    exception when others then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := coalesce(erreur, sqlstate || ' ' || sqlerrm); end if;
+    end;
+    reset role;
+    perform set_config('request.jwt.claims', '', true);
+    mutations := mutations || jsonb_build_object('mutation', 'M-RJ2 — la lecture de la trace du client fermée',
+      'attendu', 'le client « Banque » ne lit plus la trace', 'observe', coalesce(fermee::text, '?') || ' lu(s)', 'mord', coalesce(fermee = 0, false));
+
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then if sqlerrm <> 'ANNULATION_ESSAI' then erreur := sqlerrm; end if;
+    when others then erreur := sqlstate || ' ' || sqlerrm;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
+
+  -- RJ3 : le catalogue.
+  select count(*) into n from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'remplacements_assurance_maladie'
+     and p.roles = array['authenticated']::name[] and p.permissive = 'PERMISSIVE'
+     and ((p.policyname = 'remplacements_assurance_maladie_lecture' and p.cmd = 'SELECT' and p.qual = 'admin_du_dossier(dossier_id)' and p.with_check is null)
+       or (p.policyname = 'remplacements_assurance_maladie_lecture_banque' and p.cmd = 'SELECT' and p.with_check is null
+           and p.qual = 'client_du_dossier(dossier_id, ''banque''::text)')
+       or (p.policyname = 'remplacements_assurance_maladie_restauration' and p.cmd = 'INSERT' and p.qual is null and p.with_check = 'is_super_admin()'));
+  verdicts := verdicts || jsonb_build_object('controle', 'RJ3. le catalogue : la RLS, trois policies à authenticated (hors la restrictive), la garde, la fonction du remplacement',
+    'cible', 'remplacements_assurance_maladie',
+    'observe', n || ' sur 3, ' || (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'remplacements_assurance_maladie'
+        and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) || ' en tout, RLS '
+      || (select c.relrowsecurity::text from pg_class c where c.oid = 'public.remplacements_assurance_maladie'::regclass)
+      || ', garde ' || (select count(*) from pg_trigger t where t.tgrelid = 'public.remplacements_assurance_maladie'::regclass and not t.tgisinternal
+           and t.tgtype = 31 and t.tgfoid = to_regprocedure('public.garder_remplacements_assurance_maladie()'))
+      || ', fonction ' || (select has_function_privilege('authenticated', p.oid, 'execute')::text || '/'
+           || has_function_privilege('anon', p.oid, 'execute')::text || '/'
+           || exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)::text
+         from pg_proc p where p.oid = to_regprocedure('public.remplacer_journees_assurance_maladie(uuid, jsonb, uuid[])')),
+    'ok', n = 3 and (select count(*) from pg_policies p where p.schemaname = 'public' and p.tablename = 'remplacements_assurance_maladie'
+        and not (p.policyname = 'deux_facteurs' and p.permissive = 'RESTRICTIVE')) = 3
+      and (select c.relrowsecurity from pg_class c where c.oid = 'public.remplacements_assurance_maladie'::regclass)
+      and (select count(*) from pg_trigger t where t.tgrelid = 'public.remplacements_assurance_maladie'::regclass and not t.tgisinternal
+           and t.tgtype = 31 and t.tgfoid = to_regprocedure('public.garder_remplacements_assurance_maladie()')) = 1
+      and (select has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')
+                  and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0)
+             from pg_proc p where p.oid = to_regprocedure('public.remplacer_journees_assurance_maladie(uuid, jsonb, uuid[])')));
+  verdicts := verdicts || jsonb_build_object('controle', 'RJ. le jeu d''essai de la trace des remplacements s''est construit', 'cible', 'le dossier du client',
+    'observe', case when construit and erreur is null then 'construit' else coalesce(erreur, 'non construit') end,
+    'ok', construit and erreur is null);
+
+  insert into rls_verdict select v.controle, v.cible, v.observe, v.ok
+    from jsonb_to_recordset(verdicts) as v(controle text, cible text, observe text, ok boolean);
+  insert into rls_mutation select m.mutation, m.attendu, m.observe, m.mord
+    from jsonb_to_recordset(mutations) as m(mutation text, attendu text, observe text, mord boolean);
+end $rj$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :
 -- `execute_sql` ne rend que le résultat de la DERNIÈRE requête, donc en deux `select` le verdict des

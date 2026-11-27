@@ -2570,6 +2570,31 @@ export interface PaiementAssuranceMaladie {
   nombre_de_factures: number
 }
 
+// LA TRACE DES PAIEMENTS DE L'ASSURANCE MALADIE REMPLACÉS (conception 53, § 14.2, NOE4R-Q2 ; migration
+// `remplacement_des_journees_assurance_maladie`, préparée, pas appliquée — lib/remplacementDesJourneesAssuranceMaladie.ts). Une
+// ligne par paiement qu'un nouvel export a remplacé : sa clé, ses chiffres d'avant et d'après, l'import qui l'avait apporté et
+// celui qui le remplace (sans clé étrangère : la trace survit à leur retrait), qui et quand. Aucun texte, aucune donnée de
+// patient ; écrite par `remplacer_journees_assurance_maladie` seule, jamais modifiée.
+export interface RemplacementAssuranceMaladie {
+  id: string
+  dossier_id: string
+  import_id: string
+  ancien_import_id: string
+  date_journee_comptable: string
+  regime: number | null
+  caisse: number | null
+  organisme_complementaire: number | null
+  part: 'obligatoire' | 'complementaire' | 'forfait'
+  ancien_montant_centimes: number
+  ancien_regularisations_centimes: number
+  ancien_nombre_de_factures: number
+  nouveau_montant_centimes: number
+  nouveau_regularisations_centimes: number
+  nouveau_nombre_de_factures: number
+  remplace_par: string
+  remplace_le: string
+}
+
 // LES OPTIONS D'UN CABINET (conception 56, OPT1 ; migration `options_des_cabinets`, préparée, pas appliquée —
 // lib/modulesDuCabinet.ts). Une ligne par cabinet et par module ; une ligne absente est un module fermé. Écrite par
 // `regler_option_du_cabinet` seule (le super-administrateur), lue par l'équipe du cabinet ; le client lit ses modules par

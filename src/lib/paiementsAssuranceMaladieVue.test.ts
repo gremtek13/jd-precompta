@@ -83,7 +83,7 @@ describe('la confirmation et la phrase d’après l’import', () => {
     const tous = confirmationDeLImport(imp, [], 'cabinet')
     expect(tous).toContain('2 paiements de l’assurance maladie partent en base')
     expect(tous).toContain('journées comptables du 02/11/2026 au 03/11/2026')
-    expect(tous).toMatch(/pour 40,50\s€ au total ; 2 rejets, 15,00\s€\./)
+    expect(tous).toMatch(/pour 40,50\s€ au total ; rejets du fichier : 2 rejets, 15,00\s€\./)
     expect(tous).toContain('restent dans le fichier, sur cet ordinateur')
     const texte = confirmationDeLImport(imp, [imp.paiements[1]], 'client')
     expect(texte).toContain('1 paiement de l’assurance maladie part en base')
@@ -95,8 +95,10 @@ describe('la confirmation et la phrase d’après l’import', () => {
     // était celui du fichier entier (40,50 €), sous « 1 paiement part en base ».
     const texte = confirmationDeLImport(imp, [imp.paiements[1]], 'client')
     expect(texte).toContain('1 paiement de l’assurance maladie part en base, journée comptable du 02/11/2026, ')
-    expect(texte).toMatch(/pour 45,50\s€ au total ; 2 rejets, 15,00\s€\./)
+    expect(texte).toMatch(/pour 45,50\s€ au total ; rejets du fichier : 2 rejets, 15,00\s€\./)
     expect(texte).toContain('1 paiement déjà importé aux mêmes chiffres est passé : journée comptable du 03/11/2026, -5,00')
+    // NOE4R-Q1 (A) : les rejets restent ceux du fichier entier, journées passées comprises, et la phrase le dit.
+    expect(texte).toContain('les rejets comptés restent ceux du fichier entier, ces journées comprises.')
     // Un paiement en base à d'autres chiffres n'est pas « passé » : il n'est pas compté ici (la base refuserait l'import).
     const autre = { ...imp.paiements[0], montant_centimes: 1 }
     expect(confirmationDeLImport(imp, [autre], 'cabinet')).toContain('2 paiements de l’assurance maladie partent en base')
@@ -110,12 +112,14 @@ describe('la confirmation et la phrase d’après l’import', () => {
   })
 
   it('le retrait nomme ce qui part avec l’import', () => {
-    const texte = confirmationDuRetrait(
-      { id: 'i1', dossier_id: 'd1', periode_du: '2026-11-02', periode_au: '2026-11-03', nombre_de_rejets: null, montant_rejete_centimes: null, importe_par: 'u1', importe_le: '2026-11-16T10:00:00Z' },
-      [{ id: 'p1', dossier_id: 'd1', import_id: 'i1', ...imp.paiements[0] }, { id: 'p2', dossier_id: 'd1', import_id: 'autre', ...imp.paiements[1] }],
-      'client',
-    )
+    const importLu = { id: 'i1', dossier_id: 'd1', periode_du: '2026-11-02', periode_au: '2026-11-03', nombre_de_rejets: null, montant_rejete_centimes: null, importe_par: 'u1', importe_le: '2026-11-16T10:00:00Z' }
+    const lus = [{ id: 'p1', dossier_id: 'd1', import_id: 'i1', ...imp.paiements[0] }, { id: 'p2', dossier_id: 'd1', import_id: 'autre', ...imp.paiements[1] }]
+    const texte = confirmationDuRetrait(importLu, lus, 'client', 0)
     expect(texte).toMatch(/^Retirer l’import des journées du 02\/11\/2026 au 03\/11\/2026 : 1 paiement, 45,50\s€ au total, part avec lui\./)
+    expect(texte).not.toContain('remplacé')
+    // NOE4R-Q2 : un import qui a remplacé des paiements d'un import antérieur le dit — ils ne reviennent pas.
+    expect(confirmationDuRetrait(importLu, lus, 'client', 2)).toContain('Il avait remplacé 2 paiements d’un import antérieur : ils ne reviendront pas')
+    expect(confirmationDuRetrait(importLu, lus, 'cabinet', 1)).toContain('Il avait remplacé 1 paiement d’un import antérieur : il ne reviendra pas')
   })
 
   it('les phrases du client ne portent aucun mot du cabinet', () => {

@@ -1311,6 +1311,26 @@ begin
   end if;
 end $$;
 
+-- ══ La trace des paiements de l'assurance maladie remplacés (NOE4R-Q2) ══ Au plan du code quand
+-- `REMPLACEMENT_DES_JOURNEES_PREVU` est levé — c'est-à-dire quand sa migration (`remplacement_des_journees_assurance_maladie`)
+-- est en base : le script met sa table juste après `paiements_assurance_maladie` (ORDRE_RESTAURATION_PREVU : sa seule clé est
+-- celle du dossier ; les deux imports qu'elle nomme le sont sans clé, et le bloc de NOE3, joué plus haut, a mis les paiements
+-- au plan), les tables qui suivent reculant d'un rang ; son chemin ; aucune vague. Joué après le bloc du compteur des codes
+-- (EXP58-Q2) et avant celui des options des cabinets, qui reste le dernier. Absente de la base, rien n'entre : le plan est celui
+-- d'hier. restaurationEssai.test.ts confronte ce bloc au plan prévu du code.
+do $$
+declare v_rang int;
+begin
+  if to_regclass('public.remplacements_assurance_maladie') is not null then
+    select o.rang into v_rang from essai_restauration._ordre o where o.table_nom = 'paiements_assurance_maladie';
+    update essai_restauration._ordre set rang = -(rang + 1) where rang > v_rang;
+    update essai_restauration._ordre set rang = -rang where rang < 0;
+    insert into essai_restauration._ordre (rang, table_nom) values (v_rang + 1, 'remplacements_assurance_maladie');
+    insert into essai_restauration._chemins (table_nom, acces, parent, colonne) values
+     ('remplacements_assurance_maladie','direct',null,null);
+  end if;
+end $$;
+
 -- ══ Les options des cabinets (conception 56, OPT1) ══ Au plan du code quand `OPTIONS_DES_CABINETS_PREVUES` est levé —
 -- c'est-à-dire quand leur migration est en base : le script met leur table juste après `copies_des_fichiers`
 -- (ORDRE_RESTAURATION_PREVU : une table du cabinet, hors de l'export d'un dossier), les tables qui suivent reculant d'un

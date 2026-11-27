@@ -34,7 +34,8 @@ import { parseDateBancaire, parseMontantBancaire } from './csv'
 // CE QUI N'EST PAS SÛR SE REFUSE OU S'ÉCARTE, ET SE COMPTE : un montant illisible n'est jamais zéro ; une date illisible,
 // un organisme qui n'est pas fait de chiffres, un statut inconnu écartent la part de la ligne ; une part sans montant (vide
 // ou nul) n'est pas un paiement. Les refus de la base (`refus_de_l_import_assurance_maladie` et la fonction d'import) sont
-// redits ici, sous les mêmes mots et dans le même ordre, avant le clic (`refusDeLImport`, `refusAvantLEnvoi`).
+// redits ici, sous les mêmes mots et dans le même ordre, avant le clic (`refusDeLImport`, `refusAvantLEnvoi`), et la période
+// que la base écrit sur un import, celle de ses seuls paiements insérés (`periodeDeLImport`, NOE4R-Q1 (A)).
 
 /** Le drapeau de la migration `paiements_assurance_maladie` (NOE3, en production depuis le 20/11/2026, collée, 246) : levé,
  *  le plan de sauvegarde porte les deux tables et l'écran d'import (NOE4) les lit et les écrit. Baissé (son état d'avant,
@@ -216,6 +217,33 @@ export function confrontationAuxPaiementsEnBase(imp: ImportAEnvoyer, enBase: rea
     }
   }
   return { conflit, nouveaux, dejaImportes: imp.paiements.length - nouveaux }
+}
+
+/**
+ * Les paiements que la base INSÈRE de cet import : ceux qu'aucun paiement en base ne porte aux mêmes chiffres sous leur clé (un
+ * paiement égal est passé). Sous l'import seul, un paiement de même clé et d'autres chiffres le refuse : il n'en reste que les
+ * clés neuves ; sous le remplacement d'une journée (NOE4R-Q2, lib/remplacementDesJourneesAssuranceMaladie.ts), celui qui diffère
+ * est retiré d'abord, et il entre avec elles.
+ */
+export function paiementsInseres(imp: ImportAEnvoyer, enBase: readonly PaiementEnBase[]): PaiementAgrege[] {
+  const parCle = new Map(enBase.map((p) => [cleDUnPaiement(p), p]))
+  return imp.paiements.filter((p) => {
+    const deja = parCle.get(cleDUnPaiement(p))
+    return deja === undefined || deja.montant_centimes !== p.montant_centimes
+      || deja.regularisations_centimes !== p.regularisations_centimes || deja.nombre_de_factures !== p.nombre_de_factures
+  })
+}
+
+/**
+ * La période que la base écrit sur l'import (NOE4R-Q1 (A), réponse du cabinet du 27/11/2026 ; la migration
+ * `periode_des_imports_assurance_maladie`) : la plus ancienne et la plus récente journée comptable des seuls paiements qu'il
+ * insère (`paiementsInseres`), jamais de ceux que la base passe ; nulle quand il n'en insère aucun — la base refuse alors
+ * l'import (« rien de neuf ») plutôt que de l'écrire sans période. Les rejets, eux, restent ceux du fichier.
+ * paiementsAssuranceMaladie.test.ts confronte la règle au texte de la migration.
+ */
+export function periodeDeLImport(imp: ImportAEnvoyer, enBase: readonly PaiementEnBase[]): { du: string; au: string } | null {
+  const journees = paiementsInseres(imp, enBase).map((p) => p.date_journee_comptable).sort()
+  return journees.length === 0 ? null : { du: journees[0], au: journees[journees.length - 1] }
 }
 
 /**
