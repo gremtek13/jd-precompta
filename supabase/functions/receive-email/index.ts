@@ -90,7 +90,14 @@ function orientationDe(classification: ClassificationDocument): Orientation {
 // à la main, comme pour un dépôt manuel dont l'extraction aurait échoué. Mais un refus se JOURNALISE :
 // muet, un changement de contrat entre les deux fonctions ferait arriver chaque pièce jointe sans
 // lecture, et rien ne le dirait.
-async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, cleSecrete: string): Promise<ExtractionPiece | null> {
+//
+// UN BORDEREAU RECONNU PAR LA LECTURE (BOR6, troisième partie, 27/11/2026) : une photo d'un bordereau de télétransmission, ou un
+// PDF numérisé, échappe à la lecture de la couche de texte ci-dessous (`formeDUnBordereauDansLePdf`) ; extract-piece le
+// reconnaît sur sa lecture (Textract) et le refuse sous un code (422, `bordereau`), sans rien citer au modèle ni rien rendre. Ce
+// refus n'est pas une lecture ratée : la pièce jointe s'écarte, comme le bordereau en PDF. D'où la lecture AVANT le stockage.
+type LectureDUnePieceJointe = { etat: "lue"; extraction: ExtractionPiece } | { etat: "bordereau" } | { etat: "ratee" }
+
+async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, cleSecrete: string): Promise<LectureDUnePieceJointe> {
   try {
     const res = await fetch(`${supabaseUrl}/functions/v1/extract-piece`, {
       method: "POST",
@@ -98,14 +105,18 @@ async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, cleS
       body: bytes,
     })
     if (!res.ok) {
+      if (res.status === 422) {
+        const corps: unknown = await res.json().catch(() => null)
+        if (corps !== null && typeof corps === "object" && (corps as { code?: unknown }).code === "bordereau") return { etat: "bordereau" }
+      }
       console.error(`[receive-email] extract-piece a répondu ${res.status} : pièce jointe déposée sans lecture`)
-      return null
+      return { etat: "ratee" }
     }
     const result = await res.json()
-    return result.error ? null : result
+    return result.error ? { etat: "ratee" } : { etat: "lue", extraction: result }
   } catch (err) {
     console.error("Appel extract-piece échoué:", err)
-    return null
+    return { etat: "ratee" }
   }
 }
 
@@ -288,9 +299,11 @@ export function confianceDeLExtraction(
 
 // ── DÉBUT COPIE formeDUnBordereau ────────────────────────────────────────────────────────────────────────────────────
 // LA FORME D'UN BORDEREAU DE TÉLÉTRANSMISSION, ET LES LIGNES D'UNE PAGE (BOR6). Ce bloc est copié À L'IDENTIQUE dans
-// receive-email, auto-portée, qui écarte à la réception par e-mail la pièce jointe qui a cette forme (seconde partie de BOR6) ;
-// formeDUnBordereauCopie.test.ts compare la copie au caractère près et l'exécute contre l'original. La lecture des
-// bordereaux, plus bas, s'en sert telle quelle.
+// receive-email, auto-portée, qui écarte à la réception par e-mail la pièce jointe qui a cette forme (seconde partie de BOR6),
+// et dans extract-piece, qui refuse de citer ou de rendre le texte d'un document dont la lecture (Textract) a cette forme — une
+// photo, un PDF numérisé (troisième partie, 27/11/2026) ; bordereauALaReceptionCopie.test.ts et bordereauALaLectureCopie.test.ts
+// comparent chaque copie au caractère près et l'exécutent contre l'original. La lecture des bordereaux, plus bas, s'en sert
+// telle quelle.
 
 /** Un fragment de texte tel que pdf.js le rend (`getTextContent`), réduit à ce qui sert : le texte et sa position. */
 export interface FragmentDeTexte {
@@ -312,7 +325,7 @@ export type PageDeTexte = { lignes: readonly string[] } | { fragments: readonly 
 
 const ESPACES = /[   \t]/g
 
-function normaliser(texte: string): string {
+function normaliserLaLigne(texte: string): string {
   return texte.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(ESPACES, ' ').toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
@@ -366,7 +379,7 @@ function lignesDuFichier(pages: readonly PageDeTexte[]): LigneDuFichier[] {
     const brutes = 'lignes' in page ? page.lignes.map((l) => l.replace(ESPACES, ' ').replace(/\s+/g, ' ').trim()) : lignesDesFragments(page.fragments)
     let premiere = true
     for (const originale of brutes) {
-      const normalisee = normaliser(originale)
+      const normalisee = normaliserLaLigne(originale)
       if (normalisee === '') continue
       const pied = estUnPied(normalisee)
       toutes.push({ page: indice + 1, originale, normalisee, enTeteDePage: premiere && !pied })
@@ -1596,6 +1609,21 @@ Deno.serve(async (req: Request) => {
         continue
       }
 
+      // LA LECTURE AVANT LE STOCKAGE (BOR6, troisième partie, 27/11/2026) : un bordereau que seule la lecture reconnaît (une
+      // photo, un PDF numérisé) s'écarte sans avoir été déposé. Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF
+      // ou image uniquement) — classé directement en relevé bancaire sur son extension, comme les autres points d'entrée. Les
+      // autres formats passent par la même extraction/classification que l'import manuel ou en masse.
+      const estCsv = nomFichier.toLowerCase().endsWith(".csv")
+      const lecture = estCsv ? null : await classifierEtExtraire(bytes, supabaseUrl, cleSecrete)
+      // Sous la même constante que l'écart d'un PDF : baissée (le retour de la migration 249, qui ne connaît plus la raison
+      // `bordereau`), la pièce jointe part comme une lecture ratée, sans texte.
+      if (BORDEREAUX_ECARTES_A_LA_RECEPTION && lecture?.etat === "bordereau") {
+        console.warn(`Pièce jointe écartée, lecture d'un bordereau de télétransmission : ${fichier.id}`)
+        await noterLaPieceJointeEcartee(supabase, dossier.id, email_id, fichier.id, "bordereau", bytes.byteLength)
+        continue
+      }
+      const extraction = lecture?.etat === "lue" ? lecture.extraction : null
+
       // L'horodatage à part : le journal d'un fichier orphelin le cite sans le nom que porte le chemin.
       const horodatage = Date.now()
       const path = `${dossier.id}/${horodatage}-${slugify(nomFichier)}`
@@ -1611,11 +1639,6 @@ Deno.serve(async (req: Request) => {
         continue
       }
 
-      // Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF ou image uniquement) — classé
-      // directement en relevé bancaire sur son extension, comme les autres points d'entrée. Les autres
-      // formats passent par la même extraction/classification que l'import manuel ou en masse.
-      const estCsv = nomFichier.toLowerCase().endsWith(".csv")
-      const extraction = estCsv ? null : await classifierEtExtraire(bytes, supabaseUrl, cleSecrete)
       const classification = estCsv ? "releve_bancaire" : (extraction?.classification ?? "facture")
       const orientation = orientationDe(classification)
 

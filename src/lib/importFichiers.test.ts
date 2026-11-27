@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { REFUS_D_UN_BORDEREAU_LU } from './refusDesBordereaux'
 
 // Client Supabase et extraction simulés (même motif que packGenerator.test.ts) : ce module est fait
 // d'appels à la base, au stockage et à l'Edge Function d'extraction.
@@ -12,6 +13,7 @@ const etat = {
   removeError: null as { message: string } | null,
   extraction: null as Record<string, unknown> | null,
   extractionLeve: false,
+  extractionBordereau: false,
   // Plafond du serveur (« Max rows » de PostgREST, qui ne se signale pas) et total annoncé quand le
   // test veut le faire mentir.
   plafond: null as number | null,
@@ -100,6 +102,7 @@ vi.mock('./extraction', async (importOriginal) => {
     hashFichier: async (f: Blob) => `hash-de-${(f as File).name}`,
     extractPiece: async () => {
       if (etat.extractionLeve) throw new Error('Textract indisponible')
+      if (etat.extractionBordereau) throw Object.assign(new Error('Ce document a la forme d’un bordereau'), { code: 'bordereau' })
       return etat.extraction
     },
   }
@@ -123,6 +126,7 @@ beforeEach(() => {
   etat.removeError = null
   etat.extraction = { classification: 'facture', date_piece: '2026-03-10', tiers: 'EDF', montant_ttc: 120, confiance: 'haute' }
   etat.extractionLeve = false
+  etat.extractionBordereau = false
   journal.length = 0
   corpsDeposes.length = 0
 })
@@ -163,6 +167,21 @@ describe('importerFichierDossier — les bornes du seau', () => {
     const resultat = await importerFichierDossier({ dossierId: 'd1', file: csv, sousDossierId: null, hashsConnus: new Set(), userId: 'u1' })
     expect(resultat.statut).toBe('ok')
     expect(corpsDeposes.map((c) => c.type)).toEqual(['text/csv'])
+  })
+})
+
+// UNE PHOTO D'UN BORDEREAU DE TÉLÉTRANSMISSION (BOR6, troisième partie, 27/11/2026) : reconnue à la lecture, avant l'envoi.
+describe('importerFichierDossier — un bordereau reconnu à la lecture', () => {
+  it('n’envoie rien au stockage, ne retient pas l’empreinte, et dit le refus au cabinet', async () => {
+    etat.extractionBordereau = true
+    const hashs = new Set<string>()
+    const issue = await importerFichierDossier({
+      dossierId: 'd1', file: new File(['photo'], 'photo.jpg', { type: 'image/jpeg' }), sousDossierId: null, hashsConnus: hashs, userId: 'u1',
+    })
+    expect(issue).toEqual({ statut: 'erreur', message: `Non importé : ${REFUS_D_UN_BORDEREAU_LU}` })
+    expect(hashs.size).toBe(0)
+    expect(journal).toEqual([])
+    expect(corpsDeposes).toEqual([])
   })
 })
 

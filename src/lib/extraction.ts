@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { extraireErreurFonction } from './invokeErreur'
+import { codeDeLErreurFonction, extraireErreurFonction } from './invokeErreur'
 import type { CategorieDocument, TypePiece } from './types'
 
 // Classification automatique du document, déduite du texte OCR brut (voir extract-piece) — permet de
@@ -212,10 +212,22 @@ export async function extractPiece(source: Blob, name: string): Promise<Extracti
   const bytes = await normalized.arrayBuffer()
 
   const { data: result, error } = await supabase.functions.invoke<ExtractionResult>('extract-piece', { body: bytes })
-  if (error) throw new Error(await extraireErreurFonction(error, "L'extraction a échoué."))
+  if (error) {
+    // Le code d'abord, sur une copie du corps : la phrase se lit après (lib/invokeErreur.ts). Un refus codé (un bordereau,
+    // BOR6) porte son code sur l'erreur levée ; tout appelant en dit la phrase, les deux chemins du dépôt le reconnaissent.
+    const code = await codeDeLErreurFonction(error)
+    const message = await extraireErreurFonction(error, "L'extraction a échoué.")
+    throw Object.assign(new Error(message), code === null ? {} : { code })
+  }
   if (!result || result.error) throw new Error(result?.error ?? "L'extraction a échoué.")
   return result
 }
+
+/**
+ * Le code par lequel `extract-piece` refuse une lecture qui a la forme d'un bordereau de télétransmission (sa constante
+ * `CODE_D_UN_BORDEREAU_LU`, BOR6) : `extractPiece` le porte sur l'erreur qu'elle lève (`code`), lib/lectureAuDepot.ts le lit.
+ */
+export const CODE_D_UN_BORDEREAU_LU = 'bordereau'
 
 // Empreinte du contenu exact du fichier (SHA-256) — sert à détecter un doublon (même fichier importé
 // deux fois, ex. import relancé sur un dossier déjà traité, ou deux sous-dossiers qui se recoupent)

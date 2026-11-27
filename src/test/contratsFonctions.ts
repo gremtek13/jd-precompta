@@ -308,19 +308,44 @@ function corpsMalFormes(
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13])
 const PDF = new TextEncoder().encode('%PDF-1.4 document fictif du harnais')
 const TIERS_LU = 'Quarzbuch Zelintor'
+/** Les cellules nominatives d'un bordereau lu par Textract (inventées) : jamais au journal, jamais dans une réponse. */
+const NOMINATIFS_LUS = ['Vandrelune Opsquarine', '1990299999999']
+
+/** Le refus d'une lecture qui a la forme d'un bordereau : 422, le code `bordereau`, sa phrase, et rien de lu. */
+function refusDUnBordereauLu(r: Resultat): string[] {
+  const corps = corpsDe(r)
+  const fautes: string[] = []
+  if (corps.code !== 'bordereau') fautes.push(`code rendu : ${String(corps.code)}`)
+  if (!/forme d'un bordereau de télétransmission/.test(String(corps.error))) fautes.push('la phrase ne dit pas le bordereau')
+  const cles = Object.keys(corps).sort().join(',')
+  if (cles !== 'code,error') fautes.push(`la réponse porte aussi : ${cles}`)
+  return fautes
+}
 
 /** Textract lit trois lignes, le modèle cite le tiers et le total : des valeurs de pièce, que nul journal ne doit porter. */
 // `modele: 'muet'` : un modèle qui ne répond jamais, et ne s'arrête que si l'appel est abandonné — le signal que passe
 // extract-piece, que la minuterie immédiate du harnais fait tomber sur-le-champ (relecture du 04/11/2026, D6).
 // `dateDeduite` : le document porte deux dates sans libellé, que le modèle ne cite pas — extract-piece retient la première
 // et le marque (`_date_deduite`), receive-email doit alors plafonner la confiance (PIECES-Q1).
-function lecture(monde: Monde, options: { textract?: 'echec'; modele?: 'panne' | 'illisible' | 'muet'; dateDeduite?: true } = {}) {
+// `bordereau` : Textract lit un bordereau de télétransmission (une photo, un PDF numérisé : BOR6, troisième partie) — le titre,
+// un nom de patient et un numéro d'assuré inventés, qu'aucun journal ni aucune réponse ne doit porter.
+function lecture(
+  monde: Monde, options: { textract?: 'echec'; modele?: 'panne' | 'illisible' | 'muet'; dateDeduite?: true; bordereau?: true } = {},
+) {
   monde.sensibles.push(TIERS_LU)
+  if (options.bordereau) monde.sensibles.push(...NOMINATIFS_LUS)
   monde.minuteriesImmediates = true
   monde.s3 = () => ({})
   monde.textract = (commande) => {
     if (commande === 'StartDocumentTextDetection') return { JobId: 'travail-du-harnais' }
     if (options.textract === 'echec') return { JobStatus: 'FAILED' }
+    if (options.bordereau) {
+      return {
+        JobStatus: 'SUCCEEDED',
+        Blocks: ['Bordereau de Teletransmission', 'Lot : 412 créé le 03/11/2026', ...NOMINATIFS_LUS, 'TOTAL: LOT de 1 Factures 23,00 16,10 6,90 0,00']
+          .map((Text) => ({ BlockType: 'LINE', Text, Confidence: 99 })),
+      }
+    }
     return {
       JobStatus: 'SUCCEEDED',
       Blocks: [
@@ -436,6 +461,28 @@ const EXTRACT_PIECE: ContratFonction = {
         statut: 200,
         depenses: ['AWS textract DetectDocumentText', 'modèle'],
         verifier: (r) => (corpsDe(r).tiers === TIERS_LU ? [] : [`tiers rendu : ${String(corpsDe(r).tiers)}`]),
+      },
+    },
+    {
+      nom: 'une photo d’un bordereau de télétransmission : Textract la lit, rien ne part au modèle, 422 « bordereau » sans rien de lu',
+      preparer: (m) => lecture(m, { bordereau: true }),
+      requete: (s) => requeteDe(s, { personne: 'client', corpsBrut: PNG }),
+      attendu: {
+        statut: 422, refusEnFrancais: true, depenses: ['AWS textract DetectDocumentText'],
+        verifier: (r, m) => [
+          ...refusDUnBordereauLu(r),
+          ...journalise(m, /^\[extract-piece\] forme d'un bordereau de télétransmission : ni citation, ni texte rendu$/, 'le bordereau lu'),
+        ],
+      },
+    },
+    {
+      nom: 'un PDF numérisé d’un bordereau (lu par la clé secrète de receive-email) : S3 et Textract, le fichier retiré de S3, aucun modèle',
+      preparer: (m) => lecture(m, { bordereau: true }),
+      requete: (s) => requeteDe(s, { corpsBrut: PDF, apikey: CLE_SECRETE }),
+      attendu: {
+        statut: 422, refusEnFrancais: true,
+        depenses: ['AWS s3 PutObject', 'AWS textract StartDocumentTextDetection', 'AWS textract GetDocumentTextDetection', 'AWS s3 DeleteObject'],
+        verifier: (r) => refusDUnBordereauLu(r),
       },
     },
     {
@@ -571,10 +618,10 @@ function requeteWebhook(corps: string, options: { secret?: string; corpsSigne?: 
 function boiteAuxLettres(
   monde: Monde, voisine: (slug: string) => FonctionChargee,
   options: {
-    lecture?: 'refusee' | 'date-deduite'; octets?: Uint8Array<ArrayBuffer>; octetsPar?: Record<string, Uint8Array<ArrayBuffer>>
+    lecture?: 'refusee' | 'date-deduite' | 'bordereau'; octets?: Uint8Array<ArrayBuffer>; octetsPar?: Record<string, Uint8Array<ArrayBuffer>>
   } = {},
 ) {
-  lecture(monde, options.lecture === 'date-deduite' ? { dateDeduite: true } : {})
+  lecture(monde, options.lecture === 'date-deduite' ? { dateDeduite: true } : options.lecture === 'bordereau' ? { bordereau: true } : {})
   monde.resend.pieceJointe = (demande) => ({ data: { download_url: `https://${HOTE_PIECES_JOINTES}/${String(demande.id)}` }, error: null })
   monde.hotes[HOTE_PIECES_JOINTES] = (requete) =>
     new Response(options.octetsPar?.[new URL(requete.url).pathname.slice(1)] ?? options.octets ?? PNG)
@@ -588,10 +635,12 @@ function boiteAuxLettres(
   }
 }
 
-const ETAPES_DEPOT = [
-  'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`, 'stockage upload pieces',
-  `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`,
+// La pièce jointe se LIT avant d'aller au stockage (BOR6, troisième partie, 27/11/2026 : un bordereau que seule la lecture
+// reconnaît s'écarte sans avoir été déposé). `lue(...)` : les dépenses de la lecture, entre l'appel et le dépôt.
+const ETAPES_LECTURE = [
+  'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`, `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`,
 ]
+const deposeeApres = (...lecture: string[]) => [...ETAPES_LECTURE, ...lecture, 'stockage upload pieces']
 
 // Les bornes du seau des pièces (ligne 22.6) : un nom de pièce jointe inventé, qu'aucun journal ne doit porter, et le
 // début d'un document Word — un format que le seau n'admet pas.
@@ -602,8 +651,8 @@ const ecartee = (pj: string) => ['Resend piece-jointe', `réseau GET ${HOTE_PIEC
 // Une pièce jointe déposée de bout en bout : lue chez Resend, téléchargée, déposée au stockage, lue par extract-piece,
 // posée « à valider ».
 const deposee = (pj: string) => [
-  'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/${pj}`, 'stockage upload pieces',
-  `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces',
+  'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/${pj}`, `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`,
+  'AWS textract DetectDocumentText', 'modèle', 'stockage upload pieces', 'écriture insert pieces',
 ]
 // Deux noms de pièce jointe inventés (ligne 22.8), qu'aucun journal ni aucune trace ne doit porter : celle dont le dépôt
 // échoue avant toute lecture, celle que la base refuse avec le détail de la ligne.
@@ -771,7 +820,7 @@ const RECEIVE_EMAIL: ContratFonction = {
       requete: requeteWebhook(evenementRecu()),
       attendu: {
         statut: 200,
-        depenses: [...ETAPES_DEPOT, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces'],
+        depenses: [...deposeeApres('AWS textract DetectDocumentText', 'modèle'), 'écriture insert pieces'],
         verifier: (_r, m) => {
           const fautes: string[] = []
           const appels = (m.notes.appelsExtractPiece ?? []) as { apikey: string | null; autorisation: string | null }[]
@@ -789,12 +838,28 @@ const RECEIVE_EMAIL: ContratFonction = {
       },
     },
     {
+      nom: 'la photo d’un bordereau de télétransmission : lue par extract-piece, écartée avant le stockage, consignée « bordereau » au poids lu',
+      preparer: (m, voisine) => boiteAuxLettres(m, voisine, { lecture: 'bordereau' }),
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: 'photo.png', type: 'image/png' } })),
+      attendu: {
+        statut: 200,
+        depenses: [...ETAPES_LECTURE, 'AWS textract DetectDocumentText', 'écriture upsert pieces_jointes_ecartees'],
+        verifier: (_r, m) => [
+          ...journalise(m, /^Pièce jointe écartée, lecture d'un bordereau de télétransmission : pj-0$/, 'le bordereau lu, écarté'),
+          ...ecartsConsignes(m, [{ raison: 'bordereau', octets: PNG.byteLength }], NOMINATIFS_LUS),
+          ...(m.fichiers.size === 0 ? [] : ['un fichier est arrivé au stockage']),
+          ...(lignes(m, 'pieces').length === 0 ? [] : ['une pièce posée']),
+          ...bilanAuJournal(m, 0, 1),
+        ],
+      },
+    },
+    {
       nom: 'une date déduite de la mise en page : la pièce jointe s’écrit de confiance « moyenne », comme aux trois autres dépôts',
       preparer: (m, voisine) => boiteAuxLettres(m, voisine, { lecture: 'date-deduite' }),
       requete: requeteWebhook(evenementRecu()),
       attendu: {
         statut: 200,
-        depenses: [...ETAPES_DEPOT, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces'],
+        depenses: [...deposeeApres('AWS textract DetectDocumentText', 'modèle'), 'écriture insert pieces'],
         verifier: (_r, m) => {
           const piece = lignes(m, 'pieces')[0]
           return piece && piece.date_piece === '2023-05-15' && piece.confiance === 'moyenne'
@@ -809,7 +874,7 @@ const RECEIVE_EMAIL: ContratFonction = {
       requete: requeteWebhook(evenementRecu()),
       attendu: {
         statut: 200,
-        depenses: [...ETAPES_DEPOT, 'écriture insert pieces'],
+        depenses: [...deposeeApres(), 'écriture insert pieces'],
         verifier: (_r, m) => (m.journaux.some((j) => /extract-piece a répondu 401/.test(j.texte)) ? [] : ['refus de lecture non journalisé']),
       },
     },
@@ -846,7 +911,7 @@ const RECEIVE_EMAIL: ContratFonction = {
       attendu: {
         statut: 200,
         depenses: [
-          ...ETAPES_DEPOT, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces', 'stockage remove pieces',
+          ...deposeeApres('AWS textract DetectDocumentText', 'modèle'), 'écriture insert pieces', 'stockage remove pieces',
           'écriture upsert pieces_jointes_ecartees',
         ],
         verifier: (_r, m) => [
@@ -983,8 +1048,9 @@ const RECEIVE_EMAIL: ContratFonction = {
       attendu: {
         statut: 200,
         depenses: [
-          ...ecartee('pj-0'), 'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-1`, 'stockage upload pieces',
-          `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces',
+          ...ecartee('pj-0'), 'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-1`,
+          `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`, 'AWS textract DetectDocumentText', 'modèle', 'stockage upload pieces',
+          'écriture insert pieces',
         ],
         verifier: (_r, m) => [
           ...journalise(m, /pièce jointe écartée NON consignée \(format, 8 octets\) : délai dépassé/, 'le refus de la trace'),
@@ -999,7 +1065,7 @@ const RECEIVE_EMAIL: ContratFonction = {
       requete: requeteWebhook(evenementRecu({ fichier: { nom: 'facture-0.png', type: 'application/octet-stream' } })),
       attendu: {
         statut: 200,
-        depenses: [...ETAPES_DEPOT, 'AWS textract DetectDocumentText', 'modèle', 'écriture insert pieces'],
+        depenses: [...deposeeApres('AWS textract DetectDocumentText', 'modèle'), 'écriture insert pieces'],
         verifier: (_r, m) => {
           const corps = [...m.fichiers.values()]
           return corps.length === 1 && corps[0] instanceof Blob && corps[0].type === 'image/png'
@@ -1080,7 +1146,7 @@ const RECEIVE_EMAIL: ContratFonction = {
       requete: requeteWebhook(evenementRecu({ fichier: { nom: NOM_REFUSE, type: 'image/png' } })),
       attendu: {
         statut: 200,
-        depenses: ['Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/pj-0`, 'stockage upload pieces', 'écriture upsert pieces_jointes_ecartees'],
+        depenses: [...deposeeApres('AWS textract DetectDocumentText', 'modèle'), 'écriture upsert pieces_jointes_ecartees'],
         verifier: (_r, m) => [
           ...journalise(m, /Upload storage échoué: pj-0/, 'le refus du stockage'),
           ...ecartsConsignes(m, [{ raison: 'depot', octets: PNG.byteLength }], [NOM_REFUSE, 'png']),
@@ -6899,9 +6965,9 @@ export const BORDEREAUX_ECARTES_BAISSES = 'const BORDEREAUX_ECARTES_A_LA_RECEPTI
 
 // Un PDF déposé de bout en bout : comme `deposee`, Textract en lecture asynchrone (le PDF passe par S3).
 const deposeePdf = (pj: string) => [
-  'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/${pj}`, 'stockage upload pieces',
-  `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`, 'AWS s3 PutObject', 'AWS textract StartDocumentTextDetection',
-  'AWS textract GetDocumentTextDetection', 'AWS s3 DeleteObject', 'modèle', 'écriture insert pieces',
+  'Resend piece-jointe', `réseau GET ${HOTE_PIECES_JOINTES}/${pj}`, `réseau POST ${HOTE_PROJET}/functions/v1/extract-piece`,
+  'AWS s3 PutObject', 'AWS textract StartDocumentTextDetection', 'AWS textract GetDocumentTextDetection', 'AWS s3 DeleteObject',
+  'modèle', 'stockage upload pieces', 'écriture insert pieces',
 ]
 
 const sansExtractPiece = (m: Monde): string[] =>

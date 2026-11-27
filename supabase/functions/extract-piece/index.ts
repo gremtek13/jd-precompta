@@ -692,6 +692,121 @@ const MARQUEURS_RECETTE = [
   /BORDEREAU\s+DE\s+T[EÉ]L[EÉ]TRANSMISSION/,
 ]
 
+// ── DÉBUT COPIE formeDUnBordereau ────────────────────────────────────────────────────────────────────────────────────
+// LA FORME D'UN BORDEREAU DE TÉLÉTRANSMISSION, ET LES LIGNES D'UNE PAGE (BOR6). Ce bloc est copié À L'IDENTIQUE dans
+// receive-email, auto-portée, qui écarte à la réception par e-mail la pièce jointe qui a cette forme (seconde partie de BOR6),
+// et dans extract-piece, qui refuse de citer ou de rendre le texte d'un document dont la lecture (Textract) a cette forme — une
+// photo, un PDF numérisé (troisième partie, 27/11/2026) ; bordereauALaReceptionCopie.test.ts et bordereauALaLectureCopie.test.ts
+// comparent chaque copie au caractère près et l'exécutent contre l'original. La lecture des bordereaux, plus bas, s'en sert
+// telle quelle.
+
+/** Un fragment de texte tel que pdf.js le rend (`getTextContent`), réduit à ce qui sert : le texte et sa position. */
+export interface FragmentDeTexte {
+  texte: string
+  /** L'abscisse du début du fragment (`transform[4]`). */
+  x: number
+  /** L'ordonnée de la ligne de base (`transform[5]`), qui croît vers le haut de la page. */
+  y: number
+  /** La largeur du fragment, quand pdf.js la donne : deux fragments qui se touchent se recollent sans espace. */
+  largeur?: number
+  /** La hauteur du fragment, quand pdf.js la donne : elle règle la tolérance d'une ligne. */
+  hauteur?: number
+}
+
+/** Une page : ses lignes déjà recomposées, ou ses fragments positionnés. */
+export type PageDeTexte = { lignes: readonly string[] } | { fragments: readonly FragmentDeTexte[] }
+
+// ── La normalisation : minuscules, sans accents, espaces insécables ramenées, espaces réduites. ──
+
+const ESPACES = /[   \t]/g
+
+function normaliserLaLigne(texte: string): string {
+  return texte.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(ESPACES, ' ').toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+// ── Les lignes d'une page faite de fragments. ──
+
+/** Les lignes d'une page de fragments : regroupés par ordonnée (du haut vers le bas), puis par abscisse. */
+export function lignesDesFragments(fragments: readonly FragmentDeTexte[]): string[] {
+  const utiles = fragments.filter((f) => f.texte.trim() !== '' && Number.isFinite(f.x) && Number.isFinite(f.y))
+  const parOrdonnee = [...utiles].sort((a, b) => b.y - a.y || a.x - b.x)
+  const groupes: FragmentDeTexte[][] = []
+  for (const f of parOrdonnee) {
+    const courant = groupes[groupes.length - 1]
+    const tolerance = Math.max(2, (f.hauteur ?? 0) / 3)
+    if (courant !== undefined && Math.abs(courant[0].y - f.y) <= tolerance) courant.push(f)
+    else groupes.push([f])
+  }
+  return groupes.map((groupe) => {
+    const tries = [...groupe].sort((a, b) => a.x - b.x)
+    let ligne = ''
+    let finPrecedente: number | null = null
+    for (const f of tries) {
+      // Deux fragments qui se touchent (pdf.js coupe parfois un mot) se recollent ; sinon une espace les sépare.
+      const colle = finPrecedente !== null && f.largeur !== undefined && f.x - finPrecedente < 0.5
+      ligne += (ligne === '' || colle ? '' : ' ') + f.texte
+      finPrecedente = f.largeur !== undefined ? f.x + f.largeur : null
+    }
+    return ligne.replace(ESPACES, ' ').replace(/\s+/g, ' ').trim()
+  })
+}
+
+const TITRE = 'bordereau de teletransmission'
+const ENTETE_DES_COLONNES = 'facture date prescription numero assure nom beneficiaire naissance total caisse mutuelle assure'
+
+function estUnPied(normalisee: string): boolean {
+  const reste = normalisee.replace('realise par televitale', ' ').trim()
+  if (reste === '') return normalisee !== ''
+  return reste.split(' ').every((j) => /^\d{2}\/\d{2}\/\d{4}$/.test(j) || /^\d{1,3}\/\d{1,3}$/.test(j))
+}
+
+interface LigneDuFichier {
+  page: number
+  originale: string
+  normalisee: string
+  /** La première ligne de sa page qui ne soit ni vide ni un pied. */
+  enTeteDePage: boolean
+}
+
+function lignesDuFichier(pages: readonly PageDeTexte[]): LigneDuFichier[] {
+  const toutes: LigneDuFichier[] = []
+  pages.forEach((page, indice) => {
+    const brutes = 'lignes' in page ? page.lignes.map((l) => l.replace(ESPACES, ' ').replace(/\s+/g, ' ').trim()) : lignesDesFragments(page.fragments)
+    let premiere = true
+    for (const originale of brutes) {
+      const normalisee = normaliserLaLigne(originale)
+      if (normalisee === '') continue
+      const pied = estUnPied(normalisee)
+      toutes.push({ page: indice + 1, originale, normalisee, enTeteDePage: premiere && !pied })
+      if (!pied) premiere = false
+    }
+  })
+  return toutes
+}
+
+/**
+ * LA FORME D'UN BORDEREAU, AU DÉPÔT (lot BOR6, BOR-Q9 (A)) : vrai dès qu'une ligne du fichier, sur n'importe quelle page, EST
+ * le titre « Bordereau de Teletransmission », ou CONTIENT l'en-tête des colonnes (« … Numéro Assuré Nom Bénéficiaire
+ * Naissance … ») — les deux reconnaissances de la lecture ci-dessous, sous la même normalisation, jamais recopiées. Deux
+ * signaux indépendants plutôt qu'un : un titre que pdf.js aurait collé à un autre texte de sa ligne laisse l'en-tête des
+ * colonnes, propre à un état nominatif. Aucun autre contrôle (ni le lot, ni les totaux) : un bordereau que la lecture
+ * refuserait (mal formé, tronqué) porte les mêmes noms, et se refuse au dépôt de même. Le titre n'est cherché qu'en ligne
+ * ENTIÈRE : une facture de logiciel qui vend « l'impression du bordereau de télétransmission » ne se refuse pas
+ * (refusDesBordereaux.test.ts mesure les faux positifs). Rend un booléen, jamais une ligne.
+ */
+export function porteLaFormeDUnBordereau(pages: readonly PageDeTexte[]): boolean {
+  return lignesDuFichier(pages).some((l) => l.normalisee === TITRE || l.normalisee.includes(ENTETE_DES_COLONNES))
+}
+// ── FIN COPIE formeDUnBordereau ──────────────────────────────────────────────────────────────────────────────────────
+
+/** Le code du refus d'une lecture qui a la forme d'un bordereau de télétransmission (BOR6) : lib/extraction.ts le lit. */
+const CODE_D_UN_BORDEREAU_LU = "bordereau"
+
+/** Sa phrase : neutre (le cabinet et le client la lisent), elle ne cite rien du document. */
+const REFUS_D_UN_BORDEREAU_LU = "Ce document a la forme d'un bordereau de télétransmission : il porte des noms de patients et ne se " +
+  "dépose pas au dossier, qui n'est pas hébergé pour des données de santé. Ses totaux s'importent depuis le PDF du bordereau, " +
+  "dans la section « Facturé à l'assurance maladie »."
+
 // ── DÉBUT COPIE titreDeFacture ───────────────────────────────────────────────────────────────────────────────────────
 // LE NOM QUE SE DONNE UNE FACTURE L'EMPORTE SUR UN MOT CROISÉ DANS SON TEXTE (relecture du 04/11/2026, D4 ; PIECES-Q3, sur la
 // recommandation). `classifieDocument` (extract-piece) cherchait ses mots dans le texte entier : « Votre attestation
@@ -1494,6 +1609,19 @@ Deno.serve(async (req: Request) => {
       : (await textract.send(new DetectDocumentTextCommand({ Document: { Bytes: fileBytes } }))).Blocks ?? []
 
     const lignes = lignesOcr(blocks)
+
+    // UN BORDEREAU DE TÉLÉTRANSMISSION LU PAR TEXTRACT (conception 59, BOR6, troisième partie, 27/11/2026 ; BOR-Q9 (A)). Le
+    // navigateur et receive-email refusent un PDF qui a la forme d'un bordereau AVANT tout envoi, par sa couche de texte ; une
+    // PHOTO du bordereau, ou un PDF numérisé sans couche de texte, ne se lit qu'ici, et rien ne peut l'arrêter avant Textract
+    // sans une reconnaissance de caractères dans le navigateur, écartée depuis le 21/09/2026. Ce qui reste possible, et se fait :
+    // la lecture reconnue (`porteLaFormeDUnBordereau`, la règle du navigateur, copiée), aucune ligne ne part au modèle de
+    // citation, aucun texte ni champ ne revient à l'appelant, et le refus porte un CODE (422, `bordereau`) que les deux chemins
+    // du dépôt lisent AVANT le stockage (lib/extraction.ts, `lireAuDepot`) et receive-email avant le sien — un appelant d'avant
+    // y voit une lecture ratée, et dépose sans texte. Le journal ne dit que le fait.
+    if (porteLaFormeDUnBordereau([{ lignes }])) {
+      console.log("[extract-piece] forme d'un bordereau de télétransmission : ni citation, ni texte rendu")
+      return json({ error: REFUS_D_UN_BORDEREAU_LU, code: CODE_D_UN_BORDEREAU_LU }, 422)
+    }
 
     // L'étage 2 n'est tenté que s'il reste de quoi l'achever. Le sauter rend le même objet qu'un
     // échec Bedrock — c'est la forme que le contrat best-effort prévoit déjà — et l'extraction

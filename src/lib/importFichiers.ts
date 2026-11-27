@@ -2,13 +2,16 @@ import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { slugify } from './format'
 import {
-  ACHAT_PAR_DEFAUT, extractPiece, hashFichier, LABEL_CLASSIFICATION, orientationDe, pdfTropLourdPourEtreLu, textractPeutLire,
+  ACHAT_PAR_DEFAUT, hashFichier, LABEL_CLASSIFICATION, orientationDe, pdfTropLourdPourEtreLu, textractPeutLire,
+  type ExtractionResult,
 } from './extraction'
 import { ceQuiManque, LECTURE_RATEE_CABINET, lectureIncompleteCabinet, PDF_NON_LU_CABINET, SI_C_EST_UNE_FACTURE } from './lectureDesPieces'
 import { enregistrerTexteOcr } from './texteOcr'
 import { montantsPourPiece } from './tauxChange'
 import { retirerFichiers } from './stockage'
 import { preparerPiece } from './bornesStockage'
+import { lireAuDepot } from './lectureAuDepot'
+import { REFUS_D_UN_BORDEREAU_LU } from './refusDesBordereaux'
 import { confianceDeLExtraction, dateDeduite, DATE_DEDUITE_A_VERIFIER } from './dateDeduite'
 
 // Logique de dépôt de fichier(s) dans un dossier, partagée entre l'import en masse d'une arborescence
@@ -92,6 +95,25 @@ export async function importerFichierDossier(params: {
     return { statut: 'doublon', message: 'Déjà présent dans ce dossier — ignoré' }
   }
 
+  // L'extraction peut échouer pièce par pièce (page illisible, format refusé...) sans faire échouer
+  // l'import : le fichier est quand même archivé, à compléter à la main ensuite. Sans extraction, on
+  // ne peut pas savoir si c'est une facture ou autre chose — on part du principe que c'en est une
+  // (même repli par défaut que côté extract-piece).
+  // Un format que Textract ne lit pas n'est pas envoyé du tout : la lecture ratée l'aurait ramené ici avec
+  // la même valeur, après un aller-retour et un 400 (voir `textractPeutLire`) ; un CSV non plus.
+  // Ni un PDF de plus de 10 Mo (relecture du 04/11/2026, D5) : la lecture le refuse, et la fenêtre l'a dit avant l'envoi.
+  // LA LECTURE AVANT LE STOCKAGE (BOR6, troisième partie, 27/11/2026) : une photo d'un bordereau de télétransmission, ou un
+  // PDF numérisé, ne se reconnaît qu'à la lecture d'extract-piece (lib/lectureAuDepot.ts) ; reconnu, rien ne part.
+  const estCsv = extensionDe(file.name) === 'csv'
+  const tropLourd = pdfTropLourdPourEtreLu(file)
+  let extraction: ExtractionResult | null = null
+  if (!estCsv && textractPeutLire(file.name) && !tropLourd) {
+    onProgress?.('extraction')
+    const lecture = await lireAuDepot(file, file.name)
+    if (lecture.etat === 'bordereau') return { statut: 'erreur', message: `Non importé : ${REFUS_D_UN_BORDEREAU_LU}` }
+    extraction = lecture.etat === 'lue' ? lecture.extraction : null
+  }
+
   onProgress?.('upload')
   const path = `${dossierId}/${Date.now()}-${slugify(file.name)}`
   const { error: uploadError } = await supabase.storage.from('pieces').upload(path, pret.corps)
@@ -122,7 +144,7 @@ export async function importerFichierDossier(params: {
   // Un CSV n'est ni un PDF ni une image : Textract ne peut pas l'analyser, donc pas d'extraction à
   // tenter. Dans ce contexte, un CSV est presque toujours un export de relevé bancaire — classé
   // directement sur la foi de l'extension plutôt que laissé de côté comme "format non pris en charge".
-  if (extensionDe(file.name) === 'csv') {
+  if (estCsv) {
     await enregistrer('documents_divers', {
       dossier_id: dossierId,
       sous_dossier_id: sousDossierId,
@@ -133,17 +155,6 @@ export async function importerFichierDossier(params: {
     })
     return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION.releve_bancaire} » → Documents` }
   }
-
-  onProgress?.('extraction')
-  // L'extraction peut échouer pièce par pièce (page illisible, format refusé...) sans faire échouer
-  // l'import : le fichier est quand même archivé, à compléter à la main ensuite. Sans extraction, on
-  // ne peut pas savoir si c'est une facture ou autre chose — on part du principe que c'en est une
-  // (même repli par défaut que côté extract-piece).
-  // Un format que Textract ne lit pas n'est pas envoyé du tout : le `.catch` l'aurait ramené ici avec
-  // la même valeur, après un aller-retour et un 400 (voir `textractPeutLire`).
-  // Ni un PDF de plus de 10 Mo (relecture du 04/11/2026, D5) : la lecture le refuse, et la fenêtre l'a dit avant l'envoi.
-  const tropLourd = pdfTropLourdPourEtreLu(file)
-  const extraction = textractPeutLire(file.name) && !tropLourd ? await extractPiece(file, file.name).catch(() => null) : null
 
   const orientation = extraction ? orientationDe(extraction.classification) : ACHAT_PAR_DEFAUT
 

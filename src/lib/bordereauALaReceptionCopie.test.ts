@@ -55,7 +55,7 @@ describe('les copies de BOR6 dans receive-email', () => {
     compiles = diagnosticsSepares({
       forme: ORIGINES.formeDUnBordereau,
       texte: ORIGINES.texteDUnPdf,
-      formeEmprunte: ORIGINES.formeDUnBordereau.replace('normaliser(originale)', 'normaliserAilleurs(originale)'),
+      formeEmprunte: ORIGINES.formeDUnBordereau.replace('normaliserLaLigne(originale)', 'normaliserAilleurs(originale)'),
     }, {
       target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, strict: true, noEmit: true, noUnusedLocals: true,
       noUnusedParameters: true, lib: ['lib.es2022.d.ts', 'lib.dom.d.ts'], types: [],
@@ -102,7 +102,7 @@ describe('les copies de BOR6 dans receive-email', () => {
 
   it('receive-email s’en sert : une lecture du texte, jugée par la forme, sur un PDF seulement, avant le doublon et le stockage', () => {
     const horsBlocs = FONCTION.replace(ORIGINES.formeDUnBordereau, '').replace(ORIGINES.texteDUnPdf, '')
-    for (const nom of ['porteLaFormeDUnBordereau', 'lireLeTexteDUnPdf', 'lignesDesFragments', 'normaliser']) {
+    for (const nom of ['porteLaFormeDUnBordereau', 'lireLeTexteDUnPdf', 'lignesDesFragments', 'normaliserLaLigne']) {
       expect(horsBlocs, nom).not.toMatch(new RegExp(`function ${nom}\\b`))
     }
     expect(horsBlocs).toContain('(page) => porteLaFormeDUnBordereau([page]),')
