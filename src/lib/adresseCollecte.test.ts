@@ -54,6 +54,15 @@ describe('la composition : <code du dossier>@<domaine>, une seule fois', () => {
     expect(lus).toBeGreaterThan(200)
     expect(ecrivent).toEqual(['lib/adresseCollecte.ts'])
   })
+
+  // receive-email ne lit le dossier que dans une adresse de CE domaine (relecture adverse de sécurité des Edge Functions,
+  // 27/11/2026) : sa constante, redite dans la fonction auto-portée, est celle d'ici — une divergence ferait perdre chaque
+  // e-mail entrant, sous « aucun destinataire exploitable ».
+  it('receive-email reconnaît le domaine que l’application compose, et le redit une seule fois', () => {
+    const source = readFileSync(new URL('../../supabase/functions/receive-email/index.ts', import.meta.url), 'utf8')
+    const constantes = [...source.matchAll(/^const DOMAINE_COLLECTE = "([^"]*)"$/gm)].map((m) => m[1])
+    expect(constantes).toEqual([DOMAINE_COLLECTE_EMAIL])
+  })
 })
 
 describe('la lecture du client : l’adresse lue, ou rien et pourquoi — jamais une adresse devinée', () => {

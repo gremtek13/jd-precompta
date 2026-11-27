@@ -16,8 +16,11 @@ const contexte: Contexte = { entetesDuNavigateur: [] }
 const contrat = CONTRATS.find((c) => c.slug === 'agent-comptable')!
 // Les scénarios de l'inventaire (INV7) posent leur propre mode, que `bnc` et `societe` écraseraient : le contrat et
 // agentComptableInventaire.test.ts les jugent. Les autres rendent, le drapeau de l'inventaire baissé, ce qu'ils rendaient.
-// Ni ceux de l'inventaire (INV7), ni ceux des écritures libres (EL6), qui rejouent leur monde à eux.
-const SCENARIOS = contrat.scenarios.map((s) => s.nom).filter((nom) => !nom.endsWith('(INV7)') && !nom.endsWith('(EL6)'))
+// Ni ceux de l'inventaire (INV7), ni ceux des écritures libres (EL6), qui rejouent leur monde à eux, ni ceux du compteur du
+// plafond (ASSIST-Q1, relecture adverse de sécurité du 27/11/2026), venus après l'empreinte et qui posent la même question
+// deux fois : un défaut connu, jugé par le contrat.
+const SCENARIOS = contrat.scenarios.map((s) => s.nom)
+  .filter((nom) => !nom.endsWith('(INV7)') && !nom.endsWith('(EL6)') && !nom.endsWith('(ASSIST-Q1)'))
 
 /** Le BNC en trésorerie : le dirigeant au compte de l'exploitant, exonéré. */
 function bnc(m: Monde) {
