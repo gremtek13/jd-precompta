@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
@@ -154,5 +155,22 @@ describe('l’essai, le retour, le drapeau', () => {
     const preparee = existsSync(new URL(`../../${PREPAREE}`, import.meta.url))
     expect(RANGEE.length + (preparee ? 1 : 0)).toBe(1)
     expect(ECRITURES_LIBRES_PREVUES).toBe(RANGEE.length === 1)
+  })
+})
+
+// SECU4-Q1 : la pièce qu'une écriture libre cite, tenue dans son dossier, pour tout auteur, et une pièce citée qui ne change
+// plus de dossier — `piece_d_une_ecriture_libre_dans_son_dossier`, en production depuis le 27/11/2026 (260, par l'outil ;
+// préparée sous 20261127200000), rangée dans l'export sous sa version d'historique, texte inchangé. Son essai,
+// supabase/essais/pieceDUneEcritureLibreDansSonDossier.sql, se joue en production ; son retour reste préparé.
+describe('la pièce qu’une écriture libre cite, tenue dans son dossier (SECU4-Q1, 260)', () => {
+  it('rangée sous sa version d’historique, texte inchangé ; plus rien d’elle dans les préparées', () => {
+    // L'empreinte de la ligne d'historique, sans le saut de ligne final : celle que la production rend.
+    const sansFin = lire('supabase/schema/20261127213748_piece_d_une_ecriture_libre_dans_son_dossier.sql').replace(/\n$/, '')
+    expect(sansFin.length).toBe(13604)
+    expect(createHash('md5').update(sansFin).digest('hex')).toBe('d64d3aa00c7f49f421ca475cba83f596')
+    expect(readdirSync(new URL('../../supabase/preparees/', import.meta.url))
+      .some((f) => /_piece_d_une_ecriture_libre_dans_son_dossier\.sql$/.test(f))).toBe(false)
+    expect(lire('supabase/preparees/retour/20261127200100_retour_piece_d_une_ecriture_libre_dans_son_dossier.sql'))
+      .toContain('drop function public.garder_piece_d_une_ecriture_libre();')
   })
 })

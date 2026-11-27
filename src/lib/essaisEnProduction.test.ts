@@ -353,8 +353,8 @@ describe('les essais de la base, rejoués en production', () => {
     // `fichier_cite_par_une_ecriture_libre`, en production depuis le 26/11/2026, 254) : il retire des lignes de `storage.objects` comme l'API du stockage, et mute
     // `fichier_fige` ; le catalogue de la fonction se rejoue partout : le bloc PF de rls.sql.
     // Le quarante-deuxième, ouvertureSuivanteALaValidation, le 27/11/2026 (MCBR-Q2, migration `ouverture_suivante_a_la_validation`,
-    // préparée) : il crée des dossiers, des comptes, des relevés et des exercices validés fictifs, rend les contraintes immédiates
-    // pour simuler la fin de la transaction, et mute la fonction et le déclencheur du filet. Son catalogue se relit partout
+    // en production depuis le 27/11/2026, 261) : il crée des dossiers, des comptes, des relevés et des exercices validés fictifs,
+    // rend les contraintes immédiates pour simuler la fin de la transaction, et mute la fonction et le déclencheur du filet. Son catalogue se relit partout
     // (signature.sql, familles des fonctions et des déclencheurs) ; il ne touche à aucune policy.
     // Le quarante-troisième, remplacementDesJourneesAssuranceMaladieSuppression, le 27/11/2026 (NOE4R-Q2, migration
     // `remplacement_des_journees_assurance_maladie`, préparée) : il retire en direct une trace, un import et un dossier jetable, sous
@@ -551,7 +551,10 @@ describe('les essais de la base, rejoués en production', () => {
     // `remplacementDesJourneesAssuranceMaladie` (NOE4R-Q2, `remplacement_des_journees_assurance_maladie`, après la première)
     // entrés dans la famille « apres », après leurs migrations préparées : un seul modèle « apres » porte les deux ; joués sur
     // une copie de la réplique à 259 (11 et 35 verdicts justes), SÛRS au banc.
-    expect(cas.length).toBe(27)
+    // Vingt-six le même soir : `pieceDUneEcritureLibreDansSonDossier` sorti (SECU4-Q1 en production, 20261127213748, par l'outil ;
+    // il ne cherche aucun semis ni le super-utilisateur — le membre d'essai d'ESSAIS-Q1 est en production —, il se joue comme
+    // un essai de la production).
+    expect(cas.length).toBe(26)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

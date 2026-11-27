@@ -1,5 +1,6 @@
 -- ESSAI DU FILET DE L'OUVERTURE SUIVANTE À LA VALIDATION (ligne 26.6, MCBR-Q2 ; migration `ouverture_suivante_a_la_validation`,
--- préparée le 27/11/2026, supabase/preparees/20261127190000_ouverture_suivante_a_la_validation.sql). SUR UNE RÉPLIQUE SEULEMENT :
+-- en production depuis le 27/11/2026, 261, par l'outil : supabase/schema/20261127214813_ouverture_suivante_a_la_validation.sql).
+-- SUR UNE RÉPLIQUE SEULEMENT :
 -- il crée des dossiers, des comptes bancaires, des relevés et des exercices validés fictifs, simule la fin de la transaction en
 -- rendant les contraintes immédiates, et falsifie la fonction et le déclencheur du filet. Joué ENTIER, en une transaction qui
 -- s'annule (`begin` … `rollback`), par psql, sans `-1` :

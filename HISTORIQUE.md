@@ -55409,3 +55409,21 @@ fiche des comptes avertit avant le clic ; MCBR2-Q2 (A) — la validation bloque 
 principal ; BOR6TQ1-Q1 (A) — une ligne permanente dans « Mes pièces », sur les dossiers de santé ; FACT-Q4 (A) — l'avoir d'un
 particulier sans la phrase des pénalités ; FACT-Q5 (A) — vérifier puis aligner le nom du vendeur de la facture électronique.
 Restent ouvertes : NOE4R-migrations, NOE4RQ2-Q1 à Q4, RACLI-Q1 et Q2, SAUV-Q1 et Q2, NOE6R-Q1, B1-Q1.
+
+### 27/11/2026 — SECU4-Q1 ET MCBR-Q2 EN PRODUCTION (260, 261)
+
+(Agent architecte, rangement ; aucun outil de la base.) `piece_d_une_ecriture_libre_dans_son_dossier` (260, `20261127213748`,
+`d64d3aa0…`, 13 604 caractères, SECU4-Q1 (A)) et `ouverture_suivante_a_la_validation` (261, `20261127214813`, `30ebb2cd…`, 10 667,
+MCBR-Q2 (A)), appliquées par l'outil, rangées dans `supabase/schema/`, textes inchangés ; leurs retours restent préparés, leurs
+en-têtes et ceux des deux essais au nouveau chemin. Aucune ne touche le socle (sur `pieces`, un déclencheur, qu'il ne porte pas).
+Une copie de `replique_227` portée à 261 par l'export : dérive 261 `84978ecb…`, inventaire 3 548 `c69af6cf…` (deux fonctions, trois
+déclencheurs, la contrainte du déclencheur de contrainte), socle 85 `585debf7…`, égaux aux fichiers ; `signature.sql` change sur
+quatre familles (contraintes 1 053 `70e24cab…`, déclencheurs 220 `a6b6724c…`, fonctions 429 `f26849eb…`, droits des fonctions 429
+`b286dd2e…`), et les deux retours, à rebours, rendent celle de 259. `rejouer.py` : 261 migrations, 102 objets du socle, 0 reprise,
+neuf familles égales à la copie. Les 214 jeux (130 essais de la production, 42 de réplique seulement sous les deux rôles, hors
+de `rls.sql`, `signature`, `socle`, `inventaire` et `situationsPublieesMutations`) rendent les mêmes verdicts à 259 et à 261,
+hors des deux essais neufs sortis de leur EN ATTENTE (`pieceDUneEcritureLibreDansSonDossier` 12/12,
+`ouvertureSuivanteALaValidation` 13/13 et 5 mutations sur 5) ; `rls.sql` 1 358 justes, 0 en faute, 178 mutations, 14 EN ATTENTE
+des deux côtés. L'essai de SECU4-Q1 quitte la famille « apres » du banc (26 cas) ; SÛR au banc du leurre, avec `validationExercice`,
+`ouvertureEclatee` et `reportDesSoldes`. Planchers de `creationsDansLesBlocs` : préparées 19, export 261, blocs 37. Restent, à la
+session : les trois contrôles et `signature.sql` relevés en production, et les essais rejoués.
