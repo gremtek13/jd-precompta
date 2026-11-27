@@ -50,7 +50,7 @@ function part(o: Partial<ReglementGroupe> = {}): ReglementGroupe {
 
 function controle(o: Partial<ControleReleveBancaire> = {}): ControleReleveBancaire {
   return {
-    id: 'c1', dossier_id: DOSSIER, source_fichier: null, solde_initial: 100, solde_final: 1234.56, somme_mouvements: 1134.56,
+    id: 'c1', dossier_id: DOSSIER, compte_bancaire_id: 'cb-essai', source_fichier: null, solde_initial: 100, solde_final: 1234.56, somme_mouvements: 1134.56,
     ecart: 0, coherent: true, periode_debut: '2026-08-01', periode_fin: '2026-08-31', created_at: '2026-09-02T08:00:00Z', ...o,
   }
 }

@@ -291,8 +291,10 @@ vi.mock('../../lib/supabase', async () => {
           // écrites, comme `ignoreDuplicates` — un identifiant externe déjà présent n'est ni réécrit ni rendu.
           const deja = new Set(faux.lignes.map((l) => l.id_externe))
           const ecrites = valeurUpsert.filter((l) => !deja.has(String(l.id_externe)))
+          // Le compte bancaire, comme le déclencheur de la base le pose : celui que l'écriture dit, sinon le seul du dossier.
           faux.lignes = [...faux.lignes, ...ecrites.map((l, i): LigneBancaire => ({
-            id: `importee-${faux.lignes.length + i}`, dossier_id: String(l.dossier_id), date: String(l.date),
+            id: `importee-${faux.lignes.length + i}`, dossier_id: String(l.dossier_id),
+            compte_bancaire_id: typeof l.compte_bancaire_id === 'string' ? l.compte_bancaire_id : 'cb-essai', date: String(l.date),
             libelle: String(l.libelle), montant: Number(l.montant), statut: l.statut as LigneBancaire['statut'],
             piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
             source_fichier: String(l.source_fichier), libelle_brut: null, emprunt_id: null, emprunt_echeance: null,
@@ -508,7 +510,7 @@ vi.mock('../../lib/supabase', async () => {
 // jeu d'essai — même remède que les cinq colonnes manquantes du `piece()` de PiecesTab.
 function ligneDeTest(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
-    id: 'ligne-1', dossier_id: 'dossier-de-test', date: '2025-06-02', montant: -100,
+    id: 'ligne-1', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', date: '2025-06-02', montant: -100,
     libelle: 'PRLV SEPA FOURNISSEUR', libelle_brut: null, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
@@ -6921,7 +6923,7 @@ describe('RELEVE-Q1 — la rupture de solde entre deux relevés', () => {
   })
   // Août exporté jusqu'au 15 : son contrôle boucle, il finit à 1 000,00 €.
   const AOUT_AU_15: ControleReleveBancaire = {
-    id: 'controle-aout', dossier_id: 'dossier-de-test', source_fichier: 'releve-aout.csv', solde_initial: 1200, solde_final: 1000,
+    id: 'controle-aout', dossier_id: 'dossier-de-test', compte_bancaire_id: 'cb-essai', source_fichier: 'releve-aout.csv', solde_initial: 1200, solde_final: 1000,
     somme_mouvements: -200, ecart: 0, coherent: true, periode_debut: '2025-08-01', periode_fin: '2025-08-15', created_at: '2025-09-02T10:00:00Z',
   }
   const LIGNE_AOUT = { id: 'aout', date: '2025-08-10', libelle: 'PRLV LOYER', montant: -200, source_fichier: 'releve-aout.csv' }

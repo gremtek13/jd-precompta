@@ -76,7 +76,7 @@ describe('calculerSituationIntermediaire', () => {
     // La règle de la 2035 (lib/rattachement.ts) : un état arrêté au 31 janvier ne porte pas une
     // facture de janvier réglée en février, et porte celle de décembre réglée en janvier.
     const paiement = (pieceId: string, date: string, montant: number): LigneBancaire => ({
-      id: `l-${pieceId}`, dossier_id: 'd1', date, libelle: 'PRLV', montant, statut: 'rapprochee',
+      id: `l-${pieceId}`, dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date, libelle: 'PRLV', montant, statut: 'rapprochee',
       piece_id: pieceId, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
       libelle_brut: null, created_at: `${date}T09:00:00Z`, encaissements_de_factures: false,
@@ -97,7 +97,7 @@ describe('calculerSituationIntermediaire', () => {
     // 200 € facturés le 15 décembre, 80 € payés le 10 janvier : 40 % dans l'état de janvier, le reste
     // à la date de facture, donc dans l'exercice d'avant.
     const acompte: LigneBancaire = {
-      id: 'l-acompte', dossier_id: 'd1', date: '2026-01-10', libelle: 'PRLV', montant: -80, statut: 'rapprochee',
+      id: 'l-acompte', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-01-10', libelle: 'PRLV', montant: -80, statut: 'rapprochee',
       piece_id: 'partielle', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
       libelle_brut: null, created_at: '2026-01-10T09:00:00Z', encaissements_de_factures: false,
@@ -138,7 +138,7 @@ describe('calculerSituationIntermediaire', () => {
       { id: 'c', dossier_id: 'd1', echeance: '2026-06-28', montant_appele: 300, montant_verse: null, montant_csg_crds: null },
     ] as CotisationDeclaree[]
     const prelevement: LigneBancaire = {
-      id: 'l-urssaf', dossier_id: 'd1', date: '2026-07-02', libelle: 'PRLV URSSAF', montant: -290, statut: 'rapprochee',
+      id: 'l-urssaf', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-07-02', libelle: 'PRLV URSSAF', montant: -290, statut: 'rapprochee',
       piece_id: null, cotisation_id: 'c', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
       libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
       reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-07-03T09:00:00Z', encaissements_de_factures: false,
@@ -280,7 +280,7 @@ describe('calculerSituationIntermediaire — en engagement', () => {
   it('compte une facture dans la période de sa DATE, pas de son paiement', () => {
     const facture = piece({ id: 'dec', date_piece: '2025-12-20', montant_ttc: 300 })
     const paiement = {
-      id: 'l1', dossier_id: 'd1', date: '2026-01-10', libelle: 'PRLV', montant: -300, statut: 'rapprochee',
+      id: 'l1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-01-10', libelle: 'PRLV', montant: -300, statut: 'rapprochee',
       piece_id: 'dec', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
       created_at: '2026-01-11T00:00:00Z',
@@ -302,7 +302,7 @@ describe('calculerSituationIntermediaire — les mouvements affectés du relevé
   const exploitant = { id: 'c5', libelle: 'Exploitant', poste_2035: 'Recettes', compte_comptable: '108000' } as Categorie
   const toutes = [categorie, recette, frais, sansPoste, exploitant]
   const mouvement = (o: Partial<LigneBancaire>): LigneBancaire => ({
-    id: 'm', dossier_id: 'd1', date: '2026-01-20', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
+    id: 'm', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-01-20', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'c2', taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     libelle_brut: null, created_at: '2026-01-21T00:00:00Z', encaissements_de_factures: false, ...o,

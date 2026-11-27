@@ -6,7 +6,7 @@ import type { ModeleComptable } from './engagement'
 import { formatDate, formatMoney } from './format'
 import type { LectureDesComptes } from './importParCompte'
 import type { MouvementsHorsDesLots } from './mouvementsDesVentes'
-import type { LigneBancaire } from './types'
+import type { CompteBancaireSiDemande, LigneBancaire } from './types'
 import { dateFigee } from './validationExercice'
 
 // LE RAPPROCHEMENT PAR COMPTE BANCAIRE ET LE VIREMENT ENTRE DEUX COMPTES DU DOSSIER (ligne 26.6, lot MCB3 ; MCB-Q3, tranchée
@@ -52,8 +52,8 @@ export const JOURS_DU_VIREMENT_INTERNE = 3
 export const RAISON_VIREMENT_INTERNE = 'un mouvement du montant opposé, sur un autre compte bancaire du dossier, en fait '
   + 'peut-être un virement entre comptes, à confirmer depuis sa fiche — classé autrement, il manquerait au compte des virements internes'
 
-/** Ce que l'analyse lit d'un mouvement. */
-export type MouvementDuVirement = MouvementBancaire & Pick<LigneBancaire, 'compte_bancaire_id'>
+/** Ce que l'analyse lit d'un mouvement : un mouvement sans compte (une lecture d'avant la migration) n'entre dans aucune paire. */
+export type MouvementDuVirement = MouvementBancaire & CompteBancaireSiDemande
 
 /** Un candidat d'un mouvement libre : l'autre mouvement, et s'il est déjà écrit au 580 (il ne reste que ce mouvement-ci). */
 export interface CandidatDuVirement<L extends MouvementDuVirement> {

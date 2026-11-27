@@ -55109,3 +55109,16 @@ fermeture de `echoue`, que son contrôle d'ancre (une assertion) faisait lever �
 attrapée (la sonde, toutes les ancres rendues absentes : 6 dérives sur 8 restaient vertes dans Banques). Contrôles d'ancre
 souples (`expect.soft`), `echoue` stricte (une assertion de la comparaison, jamais l'ancre) ; la sonde sur les seize gardes de
 l'assistant : chaque dérive rougit. Le scanner `derivesPlanteesDansLesFermetures.test.ts` le tient (plancher, défauts plantés).
+### 27/11/2026 — `compte_bancaire_id` OBLIGATOIRE DANS `types.ts`, ET `contacts.nom` DÉJÀ AU VRAI
+
+(Agent dev.) `LigneBancaire.compte_bancaire_id` et `ControleReleveBancaire.compte_bancaire_id` deviennent obligatoires, comme en
+base (NOT NULL depuis MCB1, posé par le déclencheur quand l'insertion se tait) ; aucune autre table n'en porte un NOT NULL (l'export).
+138 erreurs, corrigées à leur source, sans `as`, `!` ni `any` ajoutés. Quatre lectures de l'application ne demandaient pas la colonne
+que leur type annonçait : les badges de Justificatifs et la fenêtre des encaissements jamais, « Ma banque » et les sources des
+écritures de vente drapeau baissé. Leurs types le disent désormais : `CompteBancaireSiDemande` (types.ts) dans `LignePayante`,
+`MouvementDesEncaissements`, `MouvementDuClient`, `MouvementDuVirement` et le mouvement du rejet — ce que leurs modules faisaient
+déjà d'un absent ; quatre tests de forme des paiements attendent désormais le compte que la ligne porte.
+Aucun défaut réel : rien en aval de ces deux écrans ne lit le compte d'un paiement (seuls BanqueTab et la fiche d'un mouvement le
+font, sur des lignes entières). Le reste : une centaine de fabriques d'essai portent `compte_bancaire_id: 'cb-essai'` ; le faux
+serveur de BanqueTab.test pose le compte comme le déclencheur ; `releveParCompte.test` perd son `as`. `contacts.nom` était déjà
+nullable dans types.ts depuis LM3, ses lecteurs passent par `contactNomme` (le commentaire nommait un `nomDuContact` inexistant).

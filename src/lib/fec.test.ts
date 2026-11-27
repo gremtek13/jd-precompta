@@ -452,7 +452,7 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
     // CompteNum ne porte qu'un CompteLib dans tout le fichier, et la validation refuserait un compte à deux noms.
     const pret = aNouveau({ id: 'an-3', compte: '274100', compte_origine: '2741', libelle: '', montant: 2000 })
     const rembourse: LigneBancaire = {
-      id: 'l-rb', dossier_id: 'd1', date: '2026-02-10', libelle: 'VIR REMBOURSEMENT PRET', montant: 500, statut: 'rapprochee',
+      id: 'l-rb', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-02-10', libelle: 'VIR REMBOURSEMENT PRET', montant: 500, statut: 'rapprochee',
       piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
       reglement_groupe: false, compte_bilan: '274100', declaration_tva_id: null, id_externe: null, source_fichier: null, libelle_brut: null,
@@ -730,7 +730,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
   // Ligne 26.6 : un encaissement de l'Assurance maladie rangé en recettes, des frais bancaires. Ils
   // n'ont pas de pièce ; leur justificatif est le relevé qui les porte.
   const mouvement = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-    id, dossier_id: 'd1', date: '2026-03-12', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
+    id, dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-03-12', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'c-recettes', taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: 'releve-mars-2026.pdf', libelle_brut: null, created_at: '2026-03-13T00:00:00Z', encaissements_de_factures: false, ...o,
@@ -1014,7 +1014,7 @@ describe('genererFec — la liquidation de la TVA, son paiement et son rembourse
     id: `q1-${i}`, piece_id: null, declaration_tva_id: 'q1', date: '2026-03-31', ...l,
   }))
   const prelevement: LigneBancaire = {
-    id: 'l-tva', dossier_id: 'd1', date: '2026-04-20', libelle: 'PRLV DGFIP TVA', montant: -79, statut: 'rapprochee',
+    id: 'l-tva', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-04-20', libelle: 'PRLV DGFIP TVA', montant: -79, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     reglement_groupe: false, compte_bilan: null, declaration_tva_id: 'q1', id_externe: null,

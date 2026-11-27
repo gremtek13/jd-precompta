@@ -37,7 +37,7 @@ function piece(o: Partial<Piece> = {}): Piece {
 
 function ligne(montant: number): LigneBancaire {
   return {
-    id: 'l1', dossier_id: 'd1', date: '2026-03-12', montant,
+    id: 'l1', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-03-12', montant,
     libelle: 'PRLV FOURNISSEUR', libelle_brut: null, statut: 'rapprochee',
     piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,

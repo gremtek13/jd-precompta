@@ -16,7 +16,7 @@ import { refusVirementPersonnel } from './virementPersonnel'
 // TYPÉS sans `as` : le compilateur confronte chaque champ au type, donc à la table.
 function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
-    id: 'g', dossier_id: 'd1', date: '2026-03-10', libelle: 'VIR FOURNISSEUR', libelle_brut: null, montant: -900,
+    id: 'g', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2026-03-10', libelle: 'VIR FOURNISSEUR', libelle_brut: null, montant: -900,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
     ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2026-03-11T09:00:00Z', encaissements_de_factures: false, ...o,

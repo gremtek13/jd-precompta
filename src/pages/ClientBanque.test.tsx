@@ -131,7 +131,7 @@ const part = (o: Partial<ReglementGroupe>): ReglementGroupe => ({
   id: 'r0', dossier_id: 'd1', ligne_bancaire_id: 'l8', piece_id: 'p1', montant: 100, created_at: '2026-09-21T08:00:00Z', ...o,
 })
 const controle = (o: Partial<ControleReleveBancaire>): ControleReleveBancaire => ({
-  id: 'c0', dossier_id: 'd1', source_fichier: null, solde_initial: 0, solde_final: 5432.1, somme_mouvements: 5432.1, ecart: 0,
+  id: 'c0', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', source_fichier: null, solde_initial: 0, solde_final: 5432.1, somme_mouvements: 5432.1, ecart: 0,
   coherent: true, periode_debut: '2026-08-01', periode_fin: '2026-08-31', created_at: '2026-09-02T08:00:00Z', ...o,
 })
 const nues = (lignes: readonly object[]): Record<string, unknown>[] => lignes.map((l) => ({ ...l }))

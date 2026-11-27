@@ -9,7 +9,9 @@ import { AUCUNE_PIECE_CITEE } from './facturesSources'
 import { formatDate } from './format'
 import { libelleDUneVenteFacturee, libelleDUnMouvementDesVentes, nomDuClientEcrit } from './libellesDesVentes'
 import type { PlanComptable } from './planComptable'
-import type { EcritureBrouillon, FactureEmise, JournalCode, LigneBancaire, ModeComptable, SensEcriture } from './types'
+import type {
+  CompteBancaireSiDemande, EcritureBrouillon, FactureEmise, JournalCode, LigneBancaire, ModeComptable, SensEcriture,
+} from './types'
 import {
   regimeDeLaFacture, SANS_ACOMPTE, ventesFacturees, type EncaissementVendu, type FactureVendue, type MotifVenteEcartee, type RegimeCa3,
   type SourcesVentesFacturees, type VentesFacturees,
@@ -109,11 +111,12 @@ import {
 
 // ── Ce que le module lit, en plus des sources des ventes facturées ──────────────────────────────────────────────────────
 
-/** Un mouvement du relevé, tel que l'écriture d'un encaissement et celle du mouvement le lisent. */
+/** Un mouvement du relevé, tel que l'écriture d'un encaissement et celle du mouvement le lisent. Son compte bancaire, lu le
+ *  drapeau `COMPTES_BANCAIRES_PREVUS` levé seulement (lib/ecrituresVentesFactureesLecture.ts) : absent, la banque du rôle
+ *  quand le dossier n'en tient pas d'autre, sinon le refus de `banqueDuMouvement` — jamais un compte deviné. */
 export type MouvementDesEncaissements = Pick<
   LigneBancaire, 'id' | 'dossier_id' | 'date' | 'montant' | 'libelle' | 'source_fichier' | 'encaissements_de_factures'
-  | 'compte_bancaire_id'
->
+> & CompteBancaireSiDemande
 
 /**
  * Une facture ou un avoir tel que la composition le lit : ce que les moteurs en lisent, et le SIRET figé de son client, qui

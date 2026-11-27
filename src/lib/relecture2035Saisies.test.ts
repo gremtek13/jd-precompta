@@ -27,7 +27,7 @@ import { ECRITURES_LIBRES_ABSENTES } from './ecrituresLibresDesExports'
 // (25), (26).
 
 const mouvement = (o: Partial<LigneBancaire>): LigneBancaire => ({
-  id: 'l', dossier_id: 'd1', date: '2025-06-01', libelle: 'VIR', montant: 0, statut: 'rapprochee',
+  id: 'l', dossier_id: 'd1', compte_bancaire_id: 'cb-essai', date: '2025-06-01', libelle: 'VIR', montant: 0, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
   libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
   reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, created_at: '2025-06-02T09:00:00Z',
