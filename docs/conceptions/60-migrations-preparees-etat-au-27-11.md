@@ -12,6 +12,8 @@ de `signature.sql`, le stockage, auth, les rôles, les commentaires, les donnée
 `truncate`), même dans un corps de fonction ou un commentaire ; « par l'outil », à coller si l'outil la retient quand même.
 Tous les retours se collent.
 
+**Depuis la répétition** (27/11/2026, par l'outil, sur l'accord du cabinet) : les lignes 3, 4 et 5 du tableau sont en production — `frontiere_de_la_tenue` (255, version `20261127053521`), `compte_propre_hors_des_exercices_valides` (256, `20261127055505`), `sous_dossier_dans_son_dossier` (257, `20261127055603`) —, rangées dans `supabase/schema/` ; la ligne 1 est donnée à coller au cabinet, la 2 suit par l'outil.
+
 | Ordre | Préparée | Chantier | Drapeau(x) | Mode | Après | Ce qu'elle attend | Seule, sur 254 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `20261111235000_ouverture_eclatee_par_compte` | MCB5g, l'ouverture éclatée par compte (ligne 26.6, MVP) | `COMPTES_BANCAIRES_PREVUS` (levé après 1 à 3) | à coller | MCB1 à MCB5 (en production) | l'accord | `ouvertureEclatee` 30/0, 1 EN ATTENTE (la 2) |
