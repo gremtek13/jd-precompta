@@ -158,6 +158,11 @@ describe('« Ma trésorerie à 90 jours »', () => {
       ['10 décembre 2026', 'Facture F2026-001 : ce que ton client te doit encore', `+ ${formatMoney(800)}`, formatMoney(300)],
       ['5 janvier 2027', 'Cotisations sociales : échéance prévisionnelleprévision', formatMoney(-100), formatMoney(200)],
     ])
+    // Le « + » d'une entrée vit DANS le montant insécable (relecture adverse du 27/11/2026) : seul en bout de ligne, il se lisait
+    // séparé de son montant sur un téléphone.
+    const entree = within(tableau()).getAllByRole('row')[2].querySelectorAll('td')[2]
+    const insecable = [...entree.querySelectorAll('span')].find((s) => s.style.whiteSpace === 'nowrap')
+    expect(insecable?.textContent).toBe(`+ ${formatMoney(800)}`)
     const synthese = screen.getByRole('region', { name: 'Dans 90 jours' }).textContent ?? ''
     expect(synthese).toContain('Jusqu’au 10 février 2027')
     expect(synthese).toContain(`Point le plus bas : ${formatMoney(-500)}, le 5 décembre 2026`)

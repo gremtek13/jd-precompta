@@ -257,7 +257,9 @@ const CATEGORIES_AUTOMATIQUES: Record<CategorieAutomatique, { nombre: number; ra
     raison: 'Ne fait que supprimer (ou réécrire par clé) : le second envoi ne trouve plus rien, sans erreur.',
   },
   session: {
-    nombre: 2,
+    // 1 depuis que `Login.handleSubmit` porte son verrou (relecture adverse du 27/11/2026 : chaque essai compte dans le débit du
+    // service, et une exception laissait « Connexion… » pour toujours) ; reste `signOut`.
+    nombre: 1,
     raison: 'Ouvre ou ferme la session de l’utilisateur : rien du dossier n’est écrit.',
   },
 }
