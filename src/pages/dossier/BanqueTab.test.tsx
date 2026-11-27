@@ -1638,6 +1638,44 @@ describe('BanqueTab — l’import d’un relevé par compte bancaire (MCB2)', (
     ])
   })
 
+  // Relecture adverse du 27/11/2026 : le compte choisi pour un relevé restait choisi pour le fichier suivant — importé,
+  // le relevé d'après (celui de l'autre compte) entrait sous le même compte sans qu'on le choisisse, dédoublonné contre le
+  // mauvais relevé, et un mouvement importé sous le mauvais compte ne se retire pas. Le choix vaut pour UN relevé.
+  const JUILLET = 'Date;Libellé;Montant\n03/07/2025;PRLV SEPA ASSURANCE;-80,00\n09/07/2025;VIR CLIENT MARTIN;300,00\n'
+  it('le compte choisi vaut pour un relevé : importé, le fichier suivant le redemande ; choisi avant le fichier, il le garde', async () => {
+    avecComptes(PRINCIPAL, SECOND)
+    rendre()
+    await deposer()
+    await choisir('cb-s')
+    await act(async () => { screen.getByRole('button', { name: /Importer 2 ligne\(s\)/ }).click() })
+    expect(lot()).toHaveLength(1)
+    const suivant = await deposer(JUILLET, 'releve-juillet.csv')
+    expect((screen.getByLabelText('Compte bancaire dont ce relevé est l’extrait') as HTMLSelectElement).value).toBe('')
+    expect(screen.getByText(/Ce dossier tient 2 comptes bancaires : choisis celui/)).toBeTruthy()
+    expect(suivant.hasAttribute('disabled')).toBe(true)
+    await act(async () => { suivant.click() })
+    expect(lot()).toHaveLength(1)
+
+    // Choisi avant de déposer le fichier, le compte vaut pour ce fichier-là.
+    avecComptes(PRINCIPAL, SECOND)
+    cleanup()
+    rendre()
+    await choisir('cb-s')
+    const garde = await deposer()
+    expect((screen.getByLabelText('Compte bancaire dont ce relevé est l’extrait') as HTMLSelectElement).value).toBe('cb-s')
+    expect(garde.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('un autre fichier déposé à la place du premier redemande le compte', async () => {
+    avecComptes(PRINCIPAL, SECOND)
+    rendre()
+    await deposer()
+    await choisir('cb-s')
+    const remplace = await deposer(JUILLET, 'releve-juillet.csv')
+    expect((screen.getByLabelText('Compte bancaire dont ce relevé est l’extrait') as HTMLSelectElement).value).toBe('')
+    expect(remplace.hasAttribute('disabled')).toBe(true)
+  })
+
   it('le nom d’un relevé de l’autre compte se refuse avant le clic', async () => {
     avecComptes(PRINCIPAL, SECOND)
     faux.lignes = faux.lignes.map((l) => ({ ...l, source_fichier: 'releve-juin.csv' }))

@@ -171,9 +171,12 @@ describe('agent-comptable / bloc PLAN DU DOSSIER (copie déployée)', () => {
 })
 
 describe('le garde-fou du bloc PLAN DU DOSSIER sait encore échouer', () => {
+  // Le contrôle de l'ancre est SOUPLE (`expect.soft`) : levé dans la fermeture d'`echoue`, il passait pour la dérive
+  // attrapée — son message dit « expected » —, et une ancre disparue ne faisait rougir aucun test (relecture adverse du
+  // 27/11/2026). Souple, il met le test en faute sans lever.
   function planter(avant: string, apres: string): Copie {
     const source = sourceDeployee()
-    expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
+    expect.soft(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
     return extraire(source.replace(avant, apres))
   }
   const memesLectures = (copie: Copie) => {
@@ -188,7 +191,13 @@ describe('le garde-fou du bloc PLAN DU DOSSIER sait encore échouer', () => {
       }
     }
   }
-  const echoue = (f: () => void) => expect(f).toThrowError(/expected/)
+  // Une dérive doit faire échouer une ASSERTION de la comparaison, jamais une erreur d'exécution ni le contrôle d'une ancre.
+  const echoue = (f: () => void) => {
+    let erreur: unknown = null
+    try { f() } catch (e) { erreur = e }
+    expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    expect(String(erreur), 'un motif introuvable n’est pas une dérive attrapée').not.toMatch(/motif à planter introuvable|introuvable ou ambigu/)
+  }
 
   it('attrape un rôle oublié du catalogue', () => {
     echoue(() => memesLectures(planter('  { role: "caisse", racines: ["53"], deTiers: false },\n', '')))
@@ -276,11 +285,12 @@ describe('agent-comptable / bloc PLAN DU DOSSIER et les deux rôles du change (l
     drapeauDuChange.leve = true
     const source = sourceDeployee()
     const racine = '{ role: "pertes_de_change", racines: ["656", "666"] }'
-    expect(source.split(racine).length - 1).toBe(1)
+    // Souples comme celui de `planter` : une ancre absente met le test en faute sans lever (derivesPlanteesDansLesFermetures).
+    expect.soft(source.split(racine).length - 1).toBe(1)
     const derivee = extraire(source.replace(racine, '{ role: "pertes_de_change", racines: ["65", "666"] }'), true)
     expect(derivee.planDeLaReponse(avecChange({ compte: '657000' }))).not.toEqual(planDeLaReponse(avecChange({ compte: '657000' })))
     const oubli = 'const duChange = ECARTS_DE_REGLEMENT_PREVUS ? ROLES_DU_CHANGE : []'
-    expect(source.split(oubli).length - 1).toBe(1)
+    expect.soft(source.split(oubli).length - 1).toBe(1)
     const sansExigence = extraire(source.replace(oubli, 'const duChange = ECARTS_DE_REGLEMENT_PREVUS ? [] : []'), true)
     expect(sansExigence.planDeLaReponse(SANS_CHANGE)).not.toEqual(planDeLaReponse(SANS_CHANGE))
   })

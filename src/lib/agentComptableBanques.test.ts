@@ -72,9 +72,11 @@ function analyseDe(source: string): Analyse {
   return executer<Analyse>(source.slice(debut, fin + 2), 'lignesPourPiece, analyserEcritures, paiementsDesPieces')
 }
 
-/** Une dérive plantée dans la vraie source : l'ancre doit y être une seule fois. */
+/** Une dérive plantée dans la vraie source : l'ancre doit y être une seule fois. Un contrôle SOUPLE (`expect.soft`) : il
+ *  marque le test en faute sans lever — levé, il l'était à l'intérieur de `echoue`, qui le prenait pour la dérive attrapée,
+ *  et une ancre disparue passait pour un garde qui sait encore échouer (relecture adverse du 27/11/2026). */
 function planter(source: string, avant: string, apres: string): string {
-  expect(source.split(avant).length - 1, `ancre à planter introuvable ou ambiguë : ${avant}`).toBe(1)
+  expect.soft(source.split(avant).length - 1, `ancre à planter introuvable ou ambiguë : ${avant}`).toBe(1)
   return source.replace(avant, apres)
 }
 
@@ -247,7 +249,15 @@ describe('agent-comptable / la contrepartie d’une pièce sous deux comptes ban
 })
 
 describe('le garde-fou du bloc BANQUES DU DOSSIER sait encore échouer', () => {
-  const echoue = (f: () => void) => expect(f).toThrow()
+  // Une dérive doit faire échouer une ASSERTION de la comparaison : ni une erreur d'exécution (une copie plantée qui ne se
+  // transpile plus, un nom hors de portée), ni le contrôle d'une ancre — `expect(f).toThrow()` prenait l'un et l'autre pour
+  // la dérive attrapée.
+  const echoue = (f: () => void) => {
+    let erreur: unknown = null
+    try { f() } catch (e) { erreur = e }
+    expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    expect(String(erreur), 'une ancre introuvable n’est pas une dérive attrapée').not.toMatch(/introuvable ou ambigu/)
+  }
   it('attrape un drapeau qui diverge de src/lib', () => {
     // Le drapeau levé le 27/11/2026 (MCB5g en production) : la copie rebaissée seule doit faire rougir le garde.
     echoue(() => memeBloc(blocDe(planter(sourceDeployee(), 'const COMPTES_BANCAIRES_PREVUS = true', 'const COMPTES_BANCAIRES_PREVUS = false'))))

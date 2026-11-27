@@ -423,16 +423,19 @@ describe('le garde-fou du bloc BALANCE sait encore échouer', () => {
   const planter = (...remplacements: [string, string][]) => {
     let source = sourceDeployee()
     for (const [avant, apres] of remplacements) {
-      expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
+      // SOUPLE (`expect.soft`) : levé dans la fermeture d'`echoue`, ce contrôle — une assertion lui aussi — passait pour la
+      // dérive attrapée, et une ancre disparue ne faisait rougir aucun test (relecture adverse du 27/11/2026).
+      expect.soft(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
       source = source.replace(avant, apres)
     }
     return extraire(source)
   }
-  // Une dérive doit faire échouer une ASSERTION, pas lever pour une autre raison.
+  // Une dérive doit faire échouer une ASSERTION de la comparaison, pas lever pour une autre raison, ni sur une ancre.
   const echoue = (f: () => void) => {
     let erreur: unknown = null
     try { f() } catch (e) { erreur = e }
     expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    expect(String(erreur), 'un motif introuvable n’est pas une dérive attrapée').not.toMatch(/motif à planter introuvable|introuvable ou ambigu/)
   }
 
   it('l’exercice précédent pris pour l’exercice lui-même', () => {
