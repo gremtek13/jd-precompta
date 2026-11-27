@@ -339,8 +339,10 @@ describe('aucun objet ne se crée dans un bloc do, que l’inventaire de l’exp
     // Le même soir, vingt-sept rendus comparés : les deux déclencheurs de
     // `ni_piece_ni_document_ne_change_de_dossier` (SECU4-Q2, préparée) et celui du filet différé de MCBR2-Q2
     // (`banque_partagee_a_la_validation`, préparée), relus par leurs gardes de fin.
+    // Quarante-huit restrictives ensuite : celle de `consommations_de_l_assistant` (ASSIST-Q1, préparée), sous sa condition,
+    // sur la table qu'elle crée.
     const tout = releve([...SCHEMA, ...PREPAREES])
-    expect(tout.cas).toEqual({ restrictive: 47, paire: 20, balayage: 1, porteDesPreparees: 10 })
+    expect(tout.cas).toEqual({ restrictive: 48, paire: 20, balayage: 1, porteDesPreparees: 10 })
     expect(tout.verifications).toBe(27)
     expect(tout.blocs).toBeGreaterThanOrEqual(220)
     // 37 blocs dans les préparées le 27/11/2026, trois préparées rangées dans l'export (255 à 257) : le plancher à 35 ; puis
@@ -597,8 +599,9 @@ ${pose}`
     }, { balayage: 0, sous_condition: 0, retrait: 0 })
     // Les nombres du relevé épinglé plus haut : un balayage, quarante-six tables sous condition (vingt-sept dans l'export,
     // dix-sept dans les préparées depuis qu'EL2 est rangée, le 23/11/2026, et deux de plus le 24/11/2026 : `reglages_d_export`, puis
-    // le compteur des codes des fiches, `codes_des_clients` ; le 27/11/2026, quarante-sept : la trace des remplacements, NOE4R-Q2).
-    expect(total([...SCHEMA, ...PREPAREES])).toEqual({ balayage: 1, sous_condition: 47, retrait: 0 })
+    // le compteur des codes des fiches, `codes_des_clients` ; le 27/11/2026, quarante-sept : la trace des remplacements, NOE4R-Q2 ;
+    // puis quarante-huit : le journal de consommation de l'assistant, ASSIST-Q1).
+    expect(total([...SCHEMA, ...PREPAREES])).toEqual({ balayage: 1, sous_condition: 48, retrait: 0 })
     expect(RETOURS.filter((f) => formes[abs(f.chemin)].retrait > 0).map((f) => f.chemin)).toEqual([RETOUR_DF?.chemin])
     expect(total(RETOURS)).toEqual({ balayage: 0, sous_condition: 0, retrait: 1 })
   })

@@ -55464,3 +55464,20 @@ virer au rouge. Essai neuf 16/16, huit mutations sur huit. **MCBR2-Q2 (A)** : `r
 à zéro), le préalable `banque-partagee-retenue` hors du cas de 261 ; le filet `banque_partagee_a_la_validation` (par l'outil), différé,
 à part, tirant après 261, que les retours de 258 et 261 attendent. Essai 17/17, huit sur huit ; celui de 261 repris (OS-C2). 179 essais
 dans les quatre états, aucune faute neuve ; `rls.sql` 296/1 358/0/178 ; retours → signature ; inventaire 3 554 `0ef6c24b…` égal ; banc SÛR.
+### 27/11/2026 — ASSIST-Q1 : LE JOURNAL DE CONSOMMATION DE L'ASSISTANT (PRÉPARÉE, PAS APPLIQUÉE)
+
+(Agent architecte ; rien en production, aucun outil de la base, rien déployé.) ASSIST-Q1 (A) écrite. **La base** :
+`consommations_de_l_assistant` préparée (20261127230000, md5 `a6d0a668…`, 19 605 caractères, par l'outil ; retour 230100, à
+coller, destructif) — une ligne par appel au modèle (cabinet en cascade, dossier mis à nul, compte de la session sans clé, instant
+posé par la garde, tokens entiers bornés à 10 M et 1 M), RLS sans policy et `revoke all` aux rôles de l'API (HR5 la met à part,
+le bloc CO juge l'inverse), une garde invoker (ni réécriture ni sortie hors des deux clés étrangères ; le dossier d'un autre cabinet
+refusé, un dossier absent laissé à sa clé, 23503), les sommes au super-administrateur seul. **La fonction**, derrière
+`CONSOMMATION_TENUE_PAR_LA_FONCTION` baissée (la source d'avant à l'octet : même empreinte de tous ses rendus) : une ligne après
+CHAQUE réponse du modèle, quelle qu'en soit l'issue ; le plafond ne lit plus que le journal, par cabinet ; une écriture refusée se
+dit au journal sous son seul code, la réponse déjà payée part marquée `consommation_non_notee`, aucun appel de plus (503). **Choix** :
+pas de réservation avant l'appel, pas de reprise de l'historique, la table hors de la sauvegarde d'un dossier (`acces: 'cabinet'`).
+**Éprouvé** : levée en mémoire, tout le contrat HTTP passe (le défaut connu tombe, `DEFAUTS_CONNUS` suit l'état servi) et chaque
+scénario commun rend la même chose, onze défauts plantés ; sur une copie de `replique_227` portée à 261 : essai 8/8, sa suppression
+4/4, `rls.sql` 300/1 370/0/180 (297/1 359/0/178 avant, CO EN ATTENTE), avec `deux_facteurs_exiges` dans les deux ordres 304/1 506/0/187,
+`restauration.sql` IDENTIQUE, le retour rend la signature, l'inventaire simulé égal à la base (3 566 `29a479ab…`) ; SÛR au banc (le
+modèle avant et après). Questions : ASSIST1-Q1 à Q3.

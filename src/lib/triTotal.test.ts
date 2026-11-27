@@ -150,6 +150,13 @@ export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: st
       + '(supabase/schema/20261120101707_plafonds_hors_du_client.sql, en production depuis le 20/11/2026) — l’écran du '
       + 'super-administrateur la lit (OPT1-Q3).',
   },
+  consommation_de_l_assistant: {
+    colonnes: ['cabinet_id'],
+    raison: 'une ligne par cabinet : `from consommations_de_l_assistant c … group by c.cabinet_id`, sans jointure '
+      + '(supabase/preparees/20261127230000_consommations_de_l_assistant.sql) — l’écran du super-administrateur la lit, le drapeau '
+      + '`CONSOMMATION_TENUE_PAR_LA_FONCTION` levé (ASSIST-Q1).',
+    preparee: 'supabase/preparees/20261127230000_consommations_de_l_assistant.sql',
+  },
   identites_des_fiches_liees: {
     colonnes: ['contact_id'],
     raison: 'une ligne par fiche liée : `from contacts f` filtré sur le dossier, puis deux jointures GAUCHES sur la clé primaire '

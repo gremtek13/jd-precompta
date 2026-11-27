@@ -338,7 +338,9 @@ incompréhensible trois étapes plus loin.
    cabinets » du super-administrateur AVANT de reprendre le travail ; la restauration d'un dossier, elle,
    passe), l'équipe (`cabinet_admins`, recréée par l'écran de l'équipe), les règles apprises du cabinet
    (`tiers_categories_cabinet`, perdues : elles se réapprennent), le modèle de plan (le CSV que porte
-   l'export d'un cabinet), et l'historique des copies des fichiers (`copies_des_fichiers`).
+   l'export d'un cabinet), l'historique des copies des fichiers (`copies_des_fichiers`), et, sa migration en base
+   (ASSIST-Q1), le journal de consommation de l'assistant (`consommations_de_l_assistant`) : il repart vide, et le
+   plafond du mois en cours ne compte que ce qui suit.
 5. **Les dossiers, un par un** — écran super-admin → « Restaurer une sauvegarde ». L'écran lit le
    fichier, vérifie son empreinte, montre ce qu'il contient, et refuse tout ce qu'il ne peut pas
    faire honnêtement : un fichier abîmé, un dossier déjà présent, un cabinet absent, un lien

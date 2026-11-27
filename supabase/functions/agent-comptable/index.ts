@@ -6,7 +6,8 @@
 // ou un libellé bancaire peut contenir du texte conçu pour manipuler un modèle qui le lit (injection
 // de prompt) — en interdisant toute écriture à la racine (pas seulement par consigne de prompt), le
 // pire qu'une telle manipulation puisse produire est une réponse trompeuse, jamais une donnée
-// altérée. Le dossierId ne vient jamais du modèle : chaque outil est fermé sur le dossier déjà
+// altérée. La fonction elle-même, hors des outils et hors de portée du modèle, ne note que ce qu'elle
+// consomme, dans le journal du plafond (bloc CONSOMMATION, ASSIST-Q1). Le dossierId ne vient jamais du modèle : chaque outil est fermé sur le dossier déjà
 // vérifié par le serveur (JWT + cabinet_admins, comme create-client-access) — un contenu piégé ne
 // peut donc pas non plus faire sortir l'agent de son dossier pour aller lire un autre client.
 // L'historique envoyé par le navigateur n'est lui aussi que du texte brut, jamais des blocs
@@ -3568,6 +3569,78 @@ function balanceDesComptes(
 }
 // ── FIN BALANCE ──────────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT CONSOMMATION ───────────────────────────────────────────────────────────────────────────────────────────────
+// LE JOURNAL DE CONSOMMATION DE L'ASSISTANT, QUE CETTE FONCTION ÉCRIT SEULE (ASSIST-Q1 (A), tranchée par le cabinet le
+// 27/11/2026 ; la migration préparée `consommations_de_l_assistant`, supabase/preparees/20261127230000_…). Jusqu'ici le plafond
+// mensuel se comptait sur les lignes `agent_conversations` que le NAVIGATEUR écrit après la réponse, avec les tokens qu'elle lui
+// rend, et que tout le cabinet du dossier réécrit ou retire ; un appel direct, une réponse en erreur après le modèle, n'en
+// écrivaient aucune (le défaut connu `plafondTenuParLeNavigateur`, src/test/contratsFonctions.ts). Levée, la constante fait
+// noter par la fonction, sous la clé du service, ce que CHAQUE appel au modèle a rendu (`usage`), dès sa réponse et avant toute
+// issue — la réponse rendue, refusée (502), coupée (502), un tour d'outils, huit tours épuisés (500) —, et le plafond ne lit
+// plus que ce journal, cabinet par cabinet, sur le mois calendaire UTC. Les tokens se bornent comme la table les borne (entiers,
+// de 0 à dix millions, de 0 à un million) : une valeur absurde se note à sa borne, jamais refusée par la base, jamais négative.
+//
+// UNE ÉCRITURE QUI ÉCHOUE. Elle se dit au journal de la fonction, sous son seul code d'erreur — ni un nombre, ni un identifiant
+// —, et alors : la réponse DÉJÀ PAYÉE part (la retenir ne rendrait rien : l'appel est facturé), marquée `consommation_non_notee`,
+// que l'écran dit ; mais aucun APPEL DE PLUS ne s'engage (un tour d'outils, une pause) : 503, la règle du plafond lui-même —
+// ne pas savoir ce qui est consommé interdit d'engager une dépense. Le dossier retiré pendant la question (sa clé étrangère,
+// 23503) n'empêche rien : la consommation se note sans lui, celle du cabinet.
+//
+// LE DRAPEAU. Baissée tant que la migration n'est pas en base : la fonction d'hier, à l'octet — elle ne lit ni n'écrit le
+// journal. `CONSOMMATION_TENUE_PAR_LA_FONCTION` redit celle de src/lib/consommationDeLAssistant.ts (agentComptableConsommation.test.ts
+// rougit si elles divergent), qui ne se lève qu'avec elle, après la migration, la fonction déployée avant le navigateur.
+const CONSOMMATION_TENUE_PAR_LA_FONCTION = false
+
+const BORNE_DES_TOKENS_D_ENTREE = 10_000_000
+const BORNE_DES_TOKENS_DE_SORTIE = 1_000_000
+
+const REFUS_CONSOMMATION_NON_NOTEE = "La consommation d'un appel à l'assistant n'a pas pu être notée : il s'arrête avant d'engager un nouvel appel, que le plafond du cabinet ne compterait pas. Réessaie dans un instant."
+
+/** Qui consomme : le cabinet du dossier, le dossier, le compte de la session. */
+interface Consommateur {
+  cabinetId: string
+  dossierId: string
+  compte: string
+}
+
+/** Un nombre de tokens tel que la table le borne : un entier de 0 à sa borne ; ce qui ne se lit pas vaut 0. */
+function tokensBornes(valeur: unknown, borne: number): number {
+  if (typeof valeur !== "number" || !Number.isFinite(valeur) || valeur <= 0) return 0
+  return Math.min(Math.floor(valeur), borne)
+}
+
+/** Le code d'une erreur de la base, s'il en a la forme (SQLSTATE ou PostgREST) : rien d'autre ne part au journal. */
+function codeDeLErreur(erreur: unknown): string {
+  const code = erreur && typeof erreur === "object" ? (erreur as { code?: unknown }).code : undefined
+  return typeof code === "string" && /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(code) ? code : "sans code"
+}
+
+/** Note la consommation d'un appel au modèle, ce qu'il a rendu ; vrai si la ligne est écrite. Ne lève jamais. */
+async function noterConsommation(admin: ReturnType<typeof createClient>, qui: Consommateur, usage: unknown): Promise<boolean> {
+  const lu = usage && typeof usage === "object" ? usage as Record<string, unknown> : {}
+  const ligne = {
+    cabinet_id: qui.cabinetId,
+    dossier_id: qui.dossierId as string | null,
+    compte: qui.compte,
+    tokens_entree: tokensBornes(lu.input_tokens, BORNE_DES_TOKENS_D_ENTREE),
+    tokens_sortie: tokensBornes(lu.output_tokens, BORNE_DES_TOKENS_DE_SORTIE),
+  }
+  let erreur: unknown = null
+  try {
+    erreur = (await admin.from("consommations_de_l_assistant").insert(ligne)).error
+    // Le dossier retiré pendant la question : la consommation reste celle du cabinet, notée sans lui.
+    if (erreur && codeDeLErreur(erreur) === "23503") {
+      erreur = (await admin.from("consommations_de_l_assistant").insert({ ...ligne, dossier_id: null })).error
+    }
+  } catch (e) {
+    erreur = e
+  }
+  if (!erreur) return true
+  console.error(`[agent-comptable] la consommation d'un appel au modèle n'a pas pu être notée (${codeDeLErreur(erreur)}) : le plafond du cabinet ne la compte pas.`)
+  return false
+}
+// ── FIN CONSOMMATION ─────────────────────────────────────────────────────────────────────────────────────────────────
+
 interface PlafondResultat {
   bloque: boolean
   alerte: boolean
@@ -3666,40 +3739,61 @@ async function verifierPlafondCabinet(admin: ReturnType<typeof createClient>, ca
     return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd: null, limiteBlocageUsd: null, indetermine: null }
   }
 
-  // TRONQUÉE, cette liste ne vide pas le compteur : elle le SOUS-ESTIME, en retirant les dossiers
-  // qui tombent au-delà de la coupure. Un plafond qui sous-estime cesse de protéger sans le dire,
-  // donc une lecture incomplète vaut ici exactement une lecture refusée.
-  const lectureDossiers = await lireTout<{ id: string }>((debut, fin) =>
-    admin.from("dossiers").select("id", { count: "exact" }).eq("cabinet_id", cabinetId).order("id").range(debut, fin))
-  if (!lectureDossiers.complete) {
-    return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: lectureDossiers.motif }
-  }
-  const dossierIds = lectureDossiers.lignes.map((d) => d.id)
-  if (dossierIds.length === 0) {
-    return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: null }
+  let lignesUsage: { tokens_entree: number | null; tokens_sortie: number | null }[]
+  if (CONSOMMATION_TENUE_PAR_LA_FONCTION) {
+    // LE JOURNAL QUE LA FONCTION ÉCRIT (bloc CONSOMMATION) : les lignes du cabinet, quel que soit leur dossier — un dossier
+    // retiré laisse les siennes, à nul —, sur le mois calendaire UTC. Lu en entier, ou le plafond se dit invérifiable : tronqué,
+    // il SOUS-ESTIME, refusé, il vaudrait zéro.
+    const maintenant = new Date()
+    const debutMois = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1)).toISOString()
+    const lectureJournal = await lireTout<{ tokens_entree: number | null; tokens_sortie: number | null }>((debut, fin) =>
+      admin
+        .from("consommations_de_l_assistant")
+        .select("tokens_entree, tokens_sortie", { count: "exact" })
+        .eq("cabinet_id", cabinetId)
+        .gte("consommee_le", debutMois)
+        .order("id")
+        .range(debut, fin))
+    if (!lectureJournal.complete) {
+      return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: lectureJournal.motif }
+    }
+    lignesUsage = lectureJournal.lignes
+  } else {
+    // TRONQUÉE, cette liste ne vide pas le compteur : elle le SOUS-ESTIME, en retirant les dossiers
+    // qui tombent au-delà de la coupure. Un plafond qui sous-estime cesse de protéger sans le dire,
+    // donc une lecture incomplète vaut ici exactement une lecture refusée.
+    const lectureDossiers = await lireTout<{ id: string }>((debut, fin) =>
+      admin.from("dossiers").select("id", { count: "exact" }).eq("cabinet_id", cabinetId).order("id").range(debut, fin))
+    if (!lectureDossiers.complete) {
+      return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: lectureDossiers.motif }
+    }
+    const dossierIds = lectureDossiers.lignes.map((d) => d.id)
+    if (dossierIds.length === 0) {
+      return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: null }
+    }
+
+    const maintenant = new Date()
+    const debutMois = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1)).toISOString()
+    const lectureUsage = await lireTout<{ tokens_entree: number | null; tokens_sortie: number | null }>((debut, fin) =>
+      admin
+        .from("agent_conversations")
+        .select("tokens_entree, tokens_sortie", { count: "exact" })
+        .eq("role", "assistant")
+        .in("dossier_id", dossierIds)
+        .gte("created_at", debutMois)
+        .order("id")
+        .range(debut, fin))
+    // C'est la table que CLAUDE.md désigne déjà comme celle dont la troncature « ne vide pas le
+    // compteur de coût IA, elle le SOUS-ESTIME, ce qui est la façon exacte dont un plafond cesse de
+    // protéger ». Une lecture REFUSÉE, elle, le met à zéro : la même phrase en pire.
+    // Et c'est LA table qui grandit le plus vite du projet — une ligne par message. Elle est donc la
+    // première à franchir le plafond de PostgREST, sur le seul mécanisme qui borne une dépense.
+    if (!lectureUsage.complete) {
+      return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: lectureUsage.motif }
+    }
+    lignesUsage = lectureUsage.lignes
   }
 
-  const maintenant = new Date()
-  const debutMois = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1)).toISOString()
-  const lectureUsage = await lireTout<{ tokens_entree: number | null; tokens_sortie: number | null }>((debut, fin) =>
-    admin
-      .from("agent_conversations")
-      .select("tokens_entree, tokens_sortie", { count: "exact" })
-      .eq("role", "assistant")
-      .in("dossier_id", dossierIds)
-      .gte("created_at", debutMois)
-      .order("id")
-      .range(debut, fin))
-  // C'est la table que CLAUDE.md désigne déjà comme celle dont la troncature « ne vide pas le
-  // compteur de coût IA, elle le SOUS-ESTIME, ce qui est la façon exacte dont un plafond cesse de
-  // protéger ». Une lecture REFUSÉE, elle, le met à zéro : la même phrase en pire.
-  // Et c'est LA table qui grandit le plus vite du projet — une ligne par message. Elle est donc la
-  // première à franchir le plafond de PostgREST, sur le seul mécanisme qui borne une dépense.
-  if (!lectureUsage.complete) {
-    return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: lectureUsage.motif }
-  }
-
-  const lignesUsage = lectureUsage.lignes
   const totalEntree = lignesUsage.reduce((s, c) => s + (c.tokens_entree ?? 0), 0)
   const totalSortie = lignesUsage.reduce((s, c) => s + (c.tokens_sortie ?? 0), 0)
   const coutMoisUsd = totalEntree * PRIX_TOKEN_ENTREE_USD + totalSortie * PRIX_TOKEN_SORTIE_USD
@@ -5863,6 +5957,9 @@ Règles impératives :
   // par dossier/cabinet (voir lib/coutsApi.ts, page Comptes master), jamais à facturer précisément.
   let usageEntree = 0
   let usageSortie = 0
+  // Qui consomme (bloc CONSOMMATION) : le cabinet du dossier, le dossier, le compte de la session — lus avant le premier appel.
+  const consommateur: Consommateur = { cabinetId: dossierRow.cabinet_id as string, dossierId, compte: callerData.user.id }
+  let consommationNonNotee = false
 
   try {
     // Identifiants passés explicitement (plutôt que de compter sur la chaîne de résolution AWS
@@ -5913,6 +6010,9 @@ Règles impératives :
       console.log(`[agent-comptable] tour ${tour} : réponse reçue en ${Date.now() - debut} ms, stop_reason=${response.stop_reason}`)
       usageEntree += response.usage?.input_tokens ?? 0
       usageSortie += response.usage?.output_tokens ?? 0
+      // Ce que cet appel a consommé, noté avant toute issue (bloc CONSOMMATION) : la réponse rendue, refusée ou coupée.
+      const consommationNotee = CONSOMMATION_TENUE_PAR_LA_FONCTION ? await noterConsommation(admin, consommateur, response.usage) : true
+      if (!consommationNotee) consommationNonNotee = true
 
       if (response.stop_reason === "refusal") {
         const categorie = response.stop_details?.category ?? null
@@ -5920,6 +6020,8 @@ Règles impératives :
       }
 
       if (response.stop_reason === "pause_turn") {
+        // Un appel de plus : jamais engagé quand celui-ci n'a pas pu être noté.
+        if (!consommationNotee) return json({ error: REFUS_CONSOMMATION_NON_NOTEE }, 503)
         messages.push({ role: "assistant", content: response.content })
         continue
       }
@@ -5942,8 +6044,13 @@ Règles impératives :
           // question, donc peut ne pas encore compter la question en cours — un léger retard sans
           // conséquence puisque l'alerte ne fait que signaler, jamais bloquer.
           ...(plafond.alerte ? { alerte_cout: true, cout_mois_usd: plafond.coutMoisUsd, limite_alerte_usd: plafond.limiteAlerteUsd } : {}),
+          // La réponse déjà payée part ; l'écran dit qu'un de ses appels manque au plafond (bloc CONSOMMATION).
+          ...(consommationNonNotee ? { consommation_non_notee: true } : {}),
         })
       }
+
+      // Un tour d'outils appelle le modèle une fois de plus : jamais quand cet appel-ci n'a pas pu être noté.
+      if (!consommationNotee) return json({ error: REFUS_CONSOMMATION_NON_NOTEE }, 503)
 
       messages.push({ role: "assistant", content: response.content })
 

@@ -30,7 +30,16 @@ const faux = vi.hoisted(() => ({
   // envoi arrive — et porte `refusAssistant` quand il y en a un (le blocage par le plafond du cabinet, par exemple).
   porteAssistant: null as Promise<void> | null,
   refusAssistant: null as string | null,
+  // Les deux états du drapeau de la consommation (ASSIST-Q1), joués par un accesseur ; et la réponse que la fonction marque
+  // quand elle n'a pas pu noter sa consommation.
+  tenue: false,
+  nonNotee: false,
 }))
+
+vi.mock('../../lib/consommationDeLAssistant', async (importOriginal) => {
+  const reel = await importOriginal<typeof import('../../lib/consommationDeLAssistant')>()
+  return { ...reel, get CONSOMMATION_TENUE_PAR_LA_FONCTION() { return faux.tenue } }
+})
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -61,7 +70,13 @@ vi.mock('../../lib/supabase', () => ({
         faux.appels.push({ nom, body })
         await faux.porteAssistant
         if (faux.refusAssistant) return { data: { error: faux.refusAssistant }, error: null }
-        return { data: { reponse: 'Réponse de l’assistant', outils_utilises: ['lister_pieces'], usage: { tokens_entree: 10, tokens_sortie: 5 } }, error: null }
+        return {
+          data: {
+            reponse: 'Réponse de l’assistant', outils_utilises: ['lister_pieces'], usage: { tokens_entree: 10, tokens_sortie: 5 },
+            ...(faux.nonNotee ? { consommation_non_notee: true } : {}),
+          },
+          error: null,
+        }
       },
     },
   },
@@ -104,6 +119,8 @@ beforeEach(() => {
   faux.appels = []
   faux.porteAssistant = null
   faux.refusAssistant = null
+  faux.tenue = false
+  faux.nonNotee = false
 })
 
 describe('Assistant — dans le panneau de droite', () => {
@@ -192,6 +209,50 @@ describe('Assistant — dans le panneau de droite', () => {
     render(<Page dossierId="dA" dossierNom="Dossier A" />)
     await act(async () => { fireEvent.click(boutonEntete()) })
     expect(await within(volet()).findByText(/L’historique des échanges n'a pas pu être lu en entier/)).toBeTruthy()
+  })
+})
+
+// LE JOURNAL DE CONSOMMATION QUE LA FONCTION TIENT (ASSIST-Q1). Drapeau baissé, l'écran recopie dans `agent_conversations` les
+// tokens que la réponse lui rend — le compteur d'hier, que le plafond somme ; levé, il n'en recopie plus aucun : le plafond ne lit
+// que le journal de la fonction. Et la réponse que la fonction marque « non notée » se dit sous elle, dans les deux états.
+describe('Assistant — la consommation de la réponse', () => {
+  async function poser() {
+    render(<Page dossierId="dA" dossierNom="Dossier A" />)
+    await act(async () => { fireEvent.click(boutonEntete()) })
+    await within(volet()).findByText('Question du dossier A')
+    const zone = within(volet()).getByRole('textbox', { name: 'Question' })
+    fireEvent.change(zone, { target: { value: 'Et la TVA ?' } })
+    await act(async () => { fireEvent.keyDown(zone, { key: 'Enter' }) })
+    await within(volet()).findByText('Réponse de l’assistant')
+    return faux.inserts.find((i) => i.role === 'assistant')!
+  }
+
+  it('drapeau baissé : la réponse recopie ses tokens, comme hier', async () => {
+    const ligneAssistant = await poser()
+    expect([ligneAssistant.tokens_entree, ligneAssistant.tokens_sortie]).toEqual([10, 5])
+  })
+
+  it('drapeau levé : la réponse ne recopie plus aucun token', async () => {
+    faux.tenue = true
+    const ligneAssistant = await poser()
+    expect([ligneAssistant.tokens_entree, ligneAssistant.tokens_sortie]).toEqual([null, null])
+    expect(faux.inserts.every((i) => i.tokens_entree === null && i.tokens_sortie === null)).toBe(true)
+  })
+
+  it('la réponse dont la consommation n’a pas été notée le dit sous elle, et la suivante l’efface', async () => {
+    faux.nonNotee = true
+    await poser()
+    expect(within(volet()).getByText(/La consommation de cette réponse n’a pas pu être notée par le serveur/)).toBeTruthy()
+    faux.nonNotee = false
+    const zone = within(volet()).getByRole('textbox', { name: 'Question' })
+    fireEvent.change(zone, { target: { value: 'Et ensuite ?' } })
+    await act(async () => { fireEvent.keyDown(zone, { key: 'Enter' }) })
+    expect(within(volet()).queryByText(/La consommation de cette réponse n’a pas pu être notée/)).toBeNull()
+  })
+
+  it('sans la marque, rien n’est dit', async () => {
+    await poser()
+    expect(within(volet()).queryByText(/n’a pas pu être notée/)).toBeNull()
   })
 })
 

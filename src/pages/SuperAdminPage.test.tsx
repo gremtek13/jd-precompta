@@ -30,14 +30,27 @@ const faux = vi.hoisted(() => ({
   plafonds: [] as Record<string, unknown>[],
   refusPlafonds: null as { message: string; code: string } | null,
   rpcs: [] as string[],
+  // Le journal de consommation (ASSIST-Q1) : le drapeau, joué par un accesseur ; ce que rend `consommation_de_l_assistant`, et
+  // les arguments qu'elle a reçus ; `refusConsommations` posé, elle refuse.
+  tenue: false,
+  consommations: [] as Record<string, unknown>[],
+  refusConsommations: null as { message: string; code: string } | null,
+  argumentsRpc: [] as unknown[],
+  // Les lignes `agent_conversations` que l'assistant recopie (le compteur d'hier).
+  conversations: [] as Record<string, unknown>[],
 }))
+
+vi.mock('../lib/consommationDeLAssistant', async (importOriginal) => {
+  const reel = await importOriginal<typeof import('../lib/consommationDeLAssistant')>()
+  return { ...reel, get CONSOMMATION_TENUE_PAR_LA_FONCTION() { return faux.tenue } }
+})
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
     // Les lectures du parc — cabinets, dossiers, membres, accès, usage de l'assistant — rendent un parc vide, lu en
     // entier : rien de ce que ce test garde n'en dépend.
     from: (table: string) => {
-      const lignes = table === 'cabinets' ? faux.cabinets : []
+      const lignes = table === 'cabinets' ? faux.cabinets : table === 'agent_conversations' ? faux.conversations : []
       const chaine: Record<string, unknown> = {}
       Object.assign(chaine, {
         select: () => chaine,
@@ -50,11 +63,14 @@ vi.mock('../lib/supabase', () => ({
       return chaine
     },
     // Les plafonds de l'assistant (OPT1-Q3, en production depuis le 20/11/2026) : une fonction qui rend une table, paginée.
-    rpc: (nom: string) => {
+    rpc: (nom: string, args?: unknown) => {
       faux.rpcs.push(nom)
+      faux.argumentsRpc.push(args)
       const rendu = nom === 'plafonds_de_l_assistant'
         ? (faux.refusPlafonds ? { data: null, error: faux.refusPlafonds, count: null } : { data: faux.plafonds, error: null, count: faux.plafonds.length })
-        : { data: null, error: { message: `fonction inconnue : ${nom}`, code: 'PGRST202' }, count: null }
+        : nom === 'consommation_de_l_assistant'
+          ? (faux.refusConsommations ? { data: null, error: faux.refusConsommations, count: null } : { data: faux.consommations, error: null, count: faux.consommations.length })
+          : { data: null, error: { message: `fonction inconnue : ${nom}`, code: 'PGRST202' }, count: null }
       const chaine: Record<string, unknown> = {}
       Object.assign(chaine, {
         order: () => chaine,
@@ -86,6 +102,11 @@ beforeEach(() => {
   faux.plafonds = []
   faux.refusPlafonds = null
   faux.rpcs = []
+  faux.tenue = false
+  faux.consommations = []
+  faux.refusConsommations = null
+  faux.argumentsRpc = []
+  faux.conversations = []
 })
 
 // Une porte laissée par un test qui échoue ne doit pas faire échouer les suivants.
@@ -255,5 +276,55 @@ describe('SuperAdminPage — les plafonds de l’assistant, lus par la fonction'
 
     expect(ligne('Cabinet Alpha').textContent).toContain('Illisibles')
     expect(boutons('Cabinet Alpha')).not.toContain('Plafond IA')
+  })
+})
+
+// LE JOURNAL DE CONSOMMATION DE L'ASSISTANT (ASSIST-Q1, `CONSOMMATION_TENUE_PAR_LA_FONCTION`). Drapeau baissé, l'écran somme les
+// tokens que l'assistant recopie dans `agent_conversations`, comme hier, et n'appelle pas la lecture du journal ; levé, il lit les
+// sommes du journal par `consommation_de_l_assistant`, depuis le premier instant du mois UTC — la frontière du plafond —, et
+// plus aucune ligne recopiée ; une somme illisible, ou la lecture refusée, se disent par le bandeau, jamais un zéro deviné.
+describe('SuperAdminPage — la consommation de l’assistant', () => {
+  const cabinet = (id: string, nom: string) => ({ id, nom, couleur_primaire: null, logo_storage_path: null, created_at: '2026-11-01T10:00:00Z' })
+  const ligne = (nom: string) => screen.getAllByText(nom).map((e) => e.closest('tr')).find((tr) => tr?.textContent?.includes('Exporter')) as HTMLElement
+  beforeEach(() => {
+    faux.cabinets = [cabinet('a', 'Cabinet Alpha')]
+    faux.plafonds = [{ cabinet_id: 'a', limite_ia_alerte_usd: null, limite_ia_blocage_usd: 5 }]
+  })
+
+  it('drapeau baissé : les lignes que l’assistant recopie, et pas la lecture du journal', async () => {
+    faux.conversations = [{ dossier_id: 'd', tokens_entree: 1000, tokens_sortie: 2000, created_at: new Date().toISOString(), id: '1' }]
+    await act(async () => { render(<SuperAdminPage />) })
+    expect(faux.rpcs).not.toContain('consommation_de_l_assistant')
+  })
+
+  it('drapeau levé : les sommes du journal, depuis toujours et depuis le mois UTC, que le plafond compare', async () => {
+    faux.tenue = true
+    faux.conversations = [{ dossier_id: 'd', tokens_entree: 9_000_000, tokens_sortie: 9_000_000, created_at: new Date().toISOString(), id: '1' }]
+    faux.consommations = [{ cabinet_id: 'a', tokens_entree: '400000', tokens_sortie: 300000, tokens_entree_depuis: 100000, tokens_sortie_depuis: 200000 }]
+    await act(async () => { render(<SuperAdminPage />) })
+
+    const i = faux.rpcs.indexOf('consommation_de_l_assistant')
+    expect(i).toBeGreaterThanOrEqual(0)
+    const maintenant = new Date()
+    expect(faux.argumentsRpc[i]).toEqual({ p_depuis: new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1)).toISOString() })
+    const texte = ligne('Cabinet Alpha').textContent ?? ''
+    // Depuis toujours : 400 000 / 300 000 tokens ; le mois : 0,30 $ + 3,00 $ = 3,30 $, sous le blocage de 5 $.
+    expect(texte.replace(/\s/g, ' ')).toContain('400 000 / 300 000')
+    expect(texte).toMatch(/3[,.]30/)
+    expect(document.body.textContent).not.toContain('pas pu être lus en entier')
+  })
+
+  it('drapeau levé : une somme illisible, ou la lecture refusée, se disent par le bandeau', async () => {
+    faux.tenue = true
+    faux.consommations = [{ cabinet_id: 'a', tokens_entree: -1, tokens_sortie: 0, tokens_entree_depuis: 0, tokens_sortie_depuis: 0 }]
+    await act(async () => { render(<SuperAdminPage />) })
+    expect(document.body.textContent).toContain('la consommation de 1 cabinet(s) ne se lit pas')
+  })
+
+  it('drapeau levé, la lecture refusée : le bandeau dit son motif', async () => {
+    faux.tenue = true
+    faux.refusConsommations = { message: 'Seul le super-administrateur lit la consommation de l’assistant.', code: '42501' }
+    await act(async () => { render(<SuperAdminPage />) })
+    expect(document.body.textContent).toContain('Seul le super-administrateur lit la consommation')
   })
 })

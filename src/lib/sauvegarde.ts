@@ -54,6 +54,7 @@ import { ECRITURES_LIBRES_PREVUES, TABLES_DES_ECRITURES_LIBRES } from './ecritur
 import { COLONNE_DE_LA_CONTRE_PASSATION, CONTRE_PASSATION_DES_ECRITURES_LIBRES_PREVUE } from './contrePassationDesEcrituresLibres'
 import { REGLAGES_D_EXPORT_PREVUS, TABLES_DES_REGLAGES_D_EXPORT } from './reglagesDExport'
 import { REMPLACEMENT_DES_JOURNEES_PREVU, TABLES_DES_REMPLACEMENTS_ASSURANCE_MALADIE } from './remplacementDesJourneesAssuranceMaladie'
+import { CONSOMMATION_TENUE_PAR_LA_FONCTION, TABLES_DES_CONSOMMATIONS } from './consommationDeLAssistant'
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
@@ -305,6 +306,23 @@ export function auPlanDeLAssociationAssuranceMaladie(table: string, prevues: boo
 /** Une table au plan, côté trace des remplacements : toutes, sauf la sienne tant que sa migration n'est pas en base. */
 export function auPlanDesRemplacementsAssuranceMaladie(table: string, prevus: boolean): boolean {
   return prevus || !TABLES_DES_REMPLACEMENTS_ASSURANCE_MALADIE.includes(table)
+}
+
+// LE JOURNAL DE CONSOMMATION DE L'ASSISTANT (ASSIST-Q1 (A) ; migration `consommations_de_l_assistant`, préparée le 27/11/2026,
+// PAS APPLIQUÉE) : une ligne par appel au modèle, que la fonction `agent-comptable` écrit seule. Une table du CABINET, HORS de
+// l'export d'un dossier (`acces: 'cabinet'`, que la restauration saute) : la consommation est celle du cabinet qui a payé
+// l'appel — restaurer un dossier, dans son cabinet ou dans un autre, ne rend à personne une consommation passée, et la
+// sauvegarde d'un dossier ne porte pas qui a interrogé l'assistant ; aucune policy ne l'ouvre d'ailleurs à une session, pas même
+// au super-administrateur (la sauvegarde la lirait vide). La sauvegarde quotidienne de la base la couvre ; une reprise depuis
+// l'export la rend vide, et le mois en cours ne compte que ce qui suit (PLAN_DE_REPRISE.md). Sous le drapeau de la migration
+// (`CONSOMMATION_TENUE_PAR_LA_FONCTION`, src/lib/consommationDeLAssistant.ts), baissé : la production n'a pas la table. Ses
+// relations (le cabinet, en cascade ; le dossier, mis à nul — une ligne n'affirme rien du dossier qu'elle a nommé, son cabinet
+// la compte), son rang (après `connexions_plateformes`, ses deux parents écrits avant), sa clé commune, aucune vague.
+// sauvegardeConsommationsDeLAssistant.test.ts éprouve le plan prévu et le plan du jour.
+
+/** Une table au plan, côté journal de consommation : toutes, sauf la sienne tant que sa migration n'est pas en base. */
+export function auPlanDesConsommations(table: string, tenue: boolean): boolean {
+  return tenue || !(TABLES_DES_CONSOMMATIONS as readonly string[]).includes(table)
 }
 
 // LE FACTURÉ À L'ASSURANCE MALADIE (conception 59, BOR3 ; migration `factures_assurance_maladie`, préparée le 19/11/2026, en
@@ -795,6 +813,7 @@ export function auPlanAujourdHui(table: string): boolean {
     && auPlanDuFactureAssuranceMaladie(table, FACTURES_ASSURANCE_MALADIE_EN_BASE)
     && auPlanDeLAssociationAssuranceMaladie(table, ASSOCIATIONS_ASSURANCE_MALADIE_PREVUES)
     && auPlanDesRemplacementsAssuranceMaladie(table, REMPLACEMENT_DES_JOURNEES_PREVU)
+    && auPlanDesConsommations(table, CONSOMMATION_TENUE_PAR_LA_FONCTION)
     && auPlanDesSaisies2035(table, SAISIES_2035_EN_BASE)
     && auPlanDesFacturesImportees(table, FACTURES_IMPORTEES_PREVUES)
     && auPlanDeLaNumerotationContinue(table, NUMEROTATION_CONTINUE_PREVUE)
@@ -917,6 +936,9 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'comptes_courants_associes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'connexions_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'connexions_plateformes', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  // Le journal de consommation de l'assistant (ASSIST-Q1) : une table du cabinet, hors de l'export d'un dossier.
+  { enfant: 'consommations_de_l_assistant', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'cascade' },
+  { enfant: 'consommations_de_l_assistant', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'met_a_null' },
   { enfant: 'controles_releves_bancaires', parent: 'comptes_bancaires', colonne: 'compte_bancaire_id', aLaSuppression: 'bloque' },
   { enfant: 'controles_releves_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'cotisations_declarees', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -1434,6 +1456,9 @@ export const ORDRE_RESTAURATION_PREVU: readonly string[] = [
   'comptes_courants_associes',
   'connexions_bancaires',
   'connexions_plateformes',
+  // Le journal de consommation de l'assistant (ASSIST-Q1) : une table du cabinet, après ses deux parents (le cabinet et le
+  // dossier) ; la restauration d'un dossier la saute.
+  'consommations_de_l_assistant',
   'controles_releves_bancaires',
   // Les paiements de l'assurance maladie (NOE3, en production) : après le dossier, l'import avant ses paiements ; une place
   // qu'aucun voisin ne fixe — l'essai de restauration les met après `controles_releves_bancaires`.
@@ -2028,6 +2053,8 @@ export const CHEMINS_DOSSIER_PREVUS: Readonly<Record<string, CheminDossier>> = {
   copies_des_fichiers: { acces: 'cabinet' },
   options_des_cabinets: { acces: 'cabinet' },
   plan_comptable_cabinet: { acces: 'cabinet' },
+  // Le journal de consommation de l'assistant (ASSIST-Q1) : la consommation du cabinet, pas du dossier.
+  consommations_de_l_assistant: { acces: 'cabinet' },
 
   categories: { acces: 'partage' },
   natures_immobilisation: { acces: 'partage' },

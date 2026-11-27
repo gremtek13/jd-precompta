@@ -365,7 +365,7 @@ describe('les essais de la base, rejoués en production', () => {
     // contraintes immédiates et mute la fonction et le déclencheur du filet. Son catalogue se relit partout (signature.sql) ; il ne
     // touche à aucune policy.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
-      'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'associationPaiementsAssuranceMaladieSuppression (son en-tête)', 'banquePartageeALaValidation (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'contrePassationDesEcrituresLibres (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
+      'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'associationPaiementsAssuranceMaladieSuppression (son en-tête)', 'banquePartageeALaValidation (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'consommationsDeLAssistantSuppression (son en-tête)', 'contrePassationDesEcrituresLibres (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'ecrituresLibres (son en-tête)', 'exercicesDuDossier (son en-tête)', 'facturesAssuranceMaladieSuppression (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)', 'fichierCiteParUneEcritureLibre (son en-tête)',
       'frontiereDesEncaissements (son en-tête)', 'hausseDuChiffreDAffairesSuppression (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'optionsDesCabinetsEnCours (son en-tête)', 'originalDUnImport (son en-tête)', 'ouvertureSuivanteALaValidation (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
@@ -560,7 +560,9 @@ describe('les essais de la base, rejoués en production', () => {
     // un essai de la production).
     // Vingt-sept ensuite : `niPieceNiDocumentNeChangeDeDossier` (SECU4-Q2, `ni_piece_ni_document_ne_change_de_dossier`) entré dans
     // la famille « apres », après sa migration préparée ; 16 verdicts justes sur une copie de la réplique portée à 261, SÛR au banc.
-    expect(cas.length).toBe(27)
+    // Vingt-huit le même jour : `consommationsDeLAssistant` (ASSIST-Q1, `consommations_de_l_assistant`) entré dans la famille
+    // « apres », après sa migration préparée ; joué sur une copie de la réplique portée à 261 (8 verdicts justes), SÛR au banc.
+    expect(cas.length).toBe(28)
     for (const [essai, c] of cas) {
       expect(CLASSEMENT.production, essai).toContain(essai)
       expect(c.raison.length, essai).toBeGreaterThan(20)

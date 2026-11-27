@@ -940,6 +940,18 @@ const LECTURES_QUI_NOMMENT: readonly LectureDeclaree[] = [
   },
 ]
 
+/**
+ * Les ÉCRITURES de la fonction, toutes hors des outils, AVEC LEUR NOMBRE : aucun outil n'écrit (la première règle de la fonction,
+ * que la consigne redit au modèle) ; seul le journal de consommation de l'assistant reçoit, de la fonction elle-même, ce que
+ * chaque appel au modèle consomme (ASSIST-Q1, bloc CONSOMMATION) — une insertion, et sa reprise sans le dossier quand il est
+ * retiré pendant la question. Rien n'en revient : ni au modèle, ni dans une réponse.
+ */
+const ECRITURES_DECLAREES: readonly { table: string; nombre: number; raison: string }[] = [{
+  table: 'consommations_de_l_assistant', nombre: 2,
+  raison: 'le journal de consommation (ASSIST-Q1) : des nombres de tokens, le cabinet, le dossier et le compte de la session, '
+    + 'écrits sous la clé du service après chaque appel au modèle',
+}]
+
 interface Lecture { zone: string; table: string; selections: string[]; drapeau: string | null; nomme: string[]; lues: string[]; position: number }
 
 /** Découpe sur les virgules de premier niveau : `pieces(type_piece, date_piece)` est UNE entrée. */
@@ -990,6 +1002,7 @@ function lecturesDe(source: string): { lectures: Lecture[]; fautes: string[] } {
   const texte = code(source)
   const { zones, fautes } = zonesDe(texte)
   const lectures: Lecture[] = []
+  const ecritures = new Map<string, number>()
   const departs = [...texte.matchAll(/\.(from|rpc)\(/g)].map((m) => ({ genre: m[1], position: m.index }))
   for (const [i, depart] of departs.entries()) {
     if (depart.genre !== 'from') continue
@@ -1000,6 +1013,12 @@ function lecturesDe(source: string): { lectures: Lecture[]; fautes: string[] } {
     const table = /^\.from\(\s*"(\w+)"\s*\)/.exec(chaine)?.[1]
     if (!table) { fautes.push(`${ou} : une table qui n’est pas un texte littéral`); continue }
     const s = chaine.indexOf('.select(')
+    // Une insertion déclarée, hors des outils, sans sélection : rien n'en revient.
+    if (s < 0 && /^\.from\(\s*"\w+"\s*\)\s*\.insert\(/.test(chaine) && zone === HORS_DES_OUTILS
+        && ECRITURES_DECLAREES.some((e) => e.table === table)) {
+      ecritures.set(table, (ecritures.get(table) ?? 0) + 1)
+      continue
+    }
     if (s < 0) { fautes.push(`${ou} : ${table} sans sélection — une écriture, ou une forme que le scanner ne sait pas lire`); continue }
     const argument = chaine.slice(s + '.select('.length)
     const litteral = /^\s*"([^"\\]*)"\s*[,)]/.exec(argument)
@@ -1019,6 +1038,10 @@ function lecturesDe(source: string): { lectures: Lecture[]; fautes: string[] } {
       return (QUI_NOMMENT[t] ?? []).includes(colonne)
     })
     lectures.push({ zone, table, selections, drapeau: choix ? choix[1] : null, nomme, lues, position: depart.position })
+  }
+  for (const e of ECRITURES_DECLAREES) {
+    const n = ecritures.get(e.table) ?? 0
+    if (n !== e.nombre) fautes.push(`${e.table} : ${n} écriture(s) déclarée(s) trouvée(s) hors des outils, ${e.nombre} attendue(s)`)
   }
   return { lectures, fautes }
 }
@@ -1118,6 +1141,21 @@ describe('agent-comptable : tout ce qui peut nommer le client d’une vente pass
   it('chaque lecture qui nomme passe par le passage, ou se déclare avec sa raison et son nombre : aucune faute sur la vraie source', () => {
     expect(fautesDe(sourceDeployee())).toEqual([])
     for (const d of LECTURES_QUI_NOMMENT) expect(d.raison.length, `${d.zone} · ${d.table}`).toBeGreaterThan(40)
+  })
+
+  // ASSIST-Q1 : la fonction note sa consommation, hors des outils, dans le seul journal ; une écriture de plus, dans un outil,
+  // ou dans une autre table, se voit — défauts plantés.
+  it('les écritures de la fonction : le journal de consommation, hors des outils, au nombre près — défauts plantés', () => {
+    const vraie = sourceDeployee()
+    expect(ECRITURES_DECLAREES.every((e) => e.raison.length > 40)).toBe(true)
+    const uneDePlus = vraie.replace('    if (erreur && codeDeLErreur(erreur) === "23503") {',
+      '    await admin.from("consommations_de_l_assistant").insert(ligne)\n    if (erreur && codeDeLErreur(erreur) === "23503") {')
+    expect(uneDePlus).not.toBe(vraie)
+    expect(lecturesDe(uneDePlus).fautes).toEqual(['consommations_de_l_assistant : 3 écriture(s) déclarée(s) trouvée(s) hors des outils, 2 attendue(s)'])
+    const ailleurs = vraie.replace('erreur = (await admin.from("consommations_de_l_assistant").insert({ ...ligne, dossier_id: null })).error',
+      'erreur = (await admin.from("pieces").insert({ ...ligne, dossier_id: null })).error')
+    expect(ailleurs).not.toBe(vraie)
+    expect(lecturesDe(ailleurs).fautes.join('\n')).toMatch(/pieces sans sélection — une écriture/)
   })
 
   // Un scanner qui rend « aucune faute » sur la vraie source n'a rien prouvé tant qu'on ne l'a pas vu en rendre : chaque

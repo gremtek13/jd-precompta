@@ -10,10 +10,11 @@ import { facture as factureEnBase, ligne as ligneDeFacture } from './facturesCii
 import { QUI_PEUT_QUOI_ATTENDU, type DroitExigeAttendu } from './quiPeutQuoi'
 import { REGLE_DU_PROJET_RELEVEE, type RaisonDuService, type RegleDuService } from './regleDuService'
 import {
-  CLE_PUBLIABLE, CLE_SECRETE, HOTE_PROJET, ID, PERSONNES, URL_PROJET, chargerFonction, decrire, depensesDe, fuitesDans, identifiantGenere,
-  mondeDeReference, preflightDe, projetSurLeReseau, requeteDe, signerWebhook, sourceDe, verifyJwtDe,
+  CLE_PUBLIABLE, CLE_SECRETE, CONSOMMATION_TENUE_LEVEE, HOTE_PROJET, ID, PERSONNES, URL_PROJET, chargerFonction, decrire, depensesDe,
+  fuitesDans, identifiantGenere, mondeDeReference, preflightDe, projetSurLeReseau, requeteDe, signerWebhook, sourceDe, verifyJwtDe,
   type Environnement, type FonctionChargee, type Monde, type Personne, type Resultat,
 } from './fonctionsEdge'
+import { fichiersDuSchema } from './schema'
 
 // LES CONTRATS HTTP DES EDGE FUNCTIONS, fonction par fonction — ce que le code et CLAUDE.md affirment de chacune, joué
 // par le harnais (`fonctionsEdge.ts`) et jugé sur ce que la fonction a RÉPONDU et DEMANDÉ au monde.
@@ -91,11 +92,18 @@ export interface ContratFonction {
 //
 // `plafondTenuParLeNavigateur` (relecture adverse de sécurité des Edge Functions, 27/11/2026) : le plafond mensuel de
 // l'assistant se compte sur des lignes que le navigateur du cabinet écrit et supprime, jamais la fonction (voir
-// `modeleQuiConsommeQuinzeDollars`). Sa correction demande un compteur que la fonction seule écrit, dans une table que ni le
-// cabinet ni le client ne touchent : une migration, que le cabinet arbitre (ASSIST-Q1). Deux scénarios, au nombre près.
+// `modeleQuiConsommeQuinzeDollars`). Sa correction, un journal que la fonction seule écrit, dans une table que ni le cabinet ni le
+// client ne touchent (ASSIST-Q1 (A), la migration préparée `consommations_de_l_assistant`), se tient derrière la constante
+// `CONSOMMATION_TENUE_PAR_LA_FONCTION` de la fonction, baissée tant que la migration n'est pas en base : servie baissée, le
+// défaut est là, deux scénarios, au nombre près ; servie levée, il n'est plus, et le décompte tombe à zéro de lui-même — les
+// deux scénarios se jouent alors sans défaut (agentComptableConsommation.test.ts les joue déjà ainsi, la constante levée en
+// mémoire, avec tout le contrat de la fonction).
 export type CleDefaut = 'plafondTenuParLeNavigateur'
 
-export const DEFAUTS_CONNUS: Readonly<Record<string, { nombre: number; raison: string }>> = {
+/** Vrai quand la source servie de agent-comptable tient elle-même la consommation de l'assistant (la constante levée). */
+export const CONSOMMATION_TENUE_SERVIE = sourceDe('agent-comptable').includes(CONSOMMATION_TENUE_LEVEE)
+
+export const DEFAUTS_CONNUS: Readonly<Record<string, { nombre: number; raison: string }>> = CONSOMMATION_TENUE_SERVIE ? {} : {
   plafondTenuParLeNavigateur: {
     nombre: 2,
     raison: 'agent-comptable ne note rien de ce qu’il consomme : le plafond de blocage se compte sur les lignes que le navigateur ' +
@@ -1602,12 +1610,47 @@ function modeleQuiRepond(monde: Monde) {
   }
 }
 
-/** Une consommation du mois dans un dossier, au tarif que la fonction applique (15 $ le million de tokens de sortie). */
-function consommation(monde: Monde, dossierId: string, dollars: number, ilYaJours = 0) {
+// LE JOURNAL DE CONSOMMATION DE L'ASSISTANT (ASSIST-Q1 (A) ; la migration préparée `consommations_de_l_assistant`). La table
+// n'est au schéma du monde que celui des préparées (`schemaPrepare`) tant que sa migration n'est pas dans l'export ; la base
+// y pose l'instant d'une ligne (sa garde : `now()`, jamais l'auteur), que le faux redit par un défaut.
+const JOURNAL = 'consommations_de_l_assistant'
+const NOTE_AU_JOURNAL = `écriture insert ${JOURNAL}`
+const JOURNAL_DANS_L_EXPORT = fichiersDuSchema().some((f) => /\/\d{14}_consommations_de_l_assistant\.sql$/.test(f.chemin))
+
+/** Le monde porte le journal : sa table au schéma, son instant posé par la base. */
+function journalTenu(monde: Monde) {
+  if (!JOURNAL_DANS_L_EXPORT) monde.schemaPrepare = true
+  monde.defauts[JOURNAL] = () => ({ consommee_le: new Date().toISOString() })
+}
+
+/** Les lignes du journal que le monde porte. */
+const lignesDuJournal = (monde: Monde) => monde.base[JOURNAL] ?? []
+
+/**
+ * Une consommation du mois dans un dossier, au tarif que la fonction applique (15 $ le million de tokens de sortie) : dans le
+ * journal que la fonction tient, ou, la constante baissée, dans les lignes que le navigateur écrit. Au journal, des lignes d'au
+ * plus un million de tokens de sortie (la borne de la table), au cabinet du dossier — ou à celui qu'on nomme, le dossier à nul.
+ */
+function consommation(
+  monde: Monde, dossierId: string | null, dollars: number, ilYaJours = 0,
+  tenue = CONSOMMATION_TENUE_SERVIE, cabinetId: string = ID.cabinet,
+) {
   const quand = new Date(Date.now() - ilYaJours * 86_400_000).toISOString()
+  const sortie = Math.ceil(dollars / 0.000015)
+  if (tenue) {
+    journalTenu(monde)
+    const cabinet = dossierId === null ? cabinetId : String(lignes(monde, 'dossiers').find((d) => d.id === dossierId)?.cabinet_id)
+    for (let reste = sortie; reste > 0; reste -= 1_000_000) {
+      ;(monde.base[JOURNAL] ??= []).push({
+        id: identifiantGenere(), cabinet_id: cabinet, dossier_id: dossierId, compte: PERSONNES.chef.id, consommee_le: quand,
+        tokens_entree: 0, tokens_sortie: Math.min(reste, 1_000_000),
+      })
+    }
+    return
+  }
   ;(monde.base.agent_conversations ??= []).push({
     id: identifiantGenere(), dossier_id: dossierId, role: 'assistant', tokens_entree: 0,
-    tokens_sortie: Math.ceil(dollars / 0.000015), created_at: quand,
+    tokens_sortie: sortie, created_at: quand,
   })
 }
 
@@ -3313,11 +3356,267 @@ export const SCENARIOS_DES_ECRITURES_LIBRES: Scenario[] = [
     (m) => { (lignes(m, 'ecritures_libres').find((e) => e.dossier_id === D)!.lignes as Record<string, unknown>[])[0].centimes = 0 }),
 ]
 
-const AGENT_COMPTABLE: ContratFonction = {
-  slug: 'agent-comptable',
-  navigateur: true,
-  porte: 'une session (service d’authentification) puis `admin_du_dossier` avec le jeton de l’appelant ; le plafond de coût du cabinet avant tout appel au modèle',
-  scenarios: [
+// LE PLAFOND DE L'ASSISTANT, DANS LES DEUX ÉTATS DE LA CONSTANTE (ASSIST-Q1). Baissée, la consommation se compte sur les lignes
+// `agent_conversations` (le navigateur les écrit) ; levée, sur le journal que la fonction tient. Les scénarios communs portent le
+// même nom et rendent la même chose dans les deux états (agentComptableConsommation.test.ts le vérifie) ; ceux d'un seul état
+// finissent par « (ASSIST-Q1) », que l'empreinte d'agentComptableAuPlan.test.ts écarte : elle ne change pas à la levée.
+function scenariosDuPlafond(tenue: boolean): Scenario[] {
+  return [
+    {
+      nom: 'le plafond de blocage atteint : 402, et pas un appel au modèle',
+      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); consommation(m, D, 1.2, 0, tenue) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: { statut: 402, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
+    },
+    {
+      nom: 'le plafond d’alerte franchi : la réponse part, et l’alerte avec elle',
+      preparer: (m) => { modeleQuiRepond(m); plafond(m, 0.5, 5); consommation(m, D, 1.2, 0, tenue) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: {
+        statut: 200, depenses: ['modèle'],
+        verifier: (r) => (corpsDe(r).alerte_cout === true && Number(corpsDe(r).cout_mois_usd) >= 1.2 ? [] : [`alerte absente : ${r.texte.slice(0, 160)}`]),
+      },
+    },
+    {
+      nom: 'la consommation d’un autre cabinet ne compte pas',
+      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); consommation(m, ID.dossierAutreCabinet, 50, 0, tenue) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: { statut: 200, depenses: ['modèle'] },
+    },
+    {
+      nom: 'la consommation du mois passé ne compte pas',
+      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); consommation(m, D, 50, 45, tenue) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: { statut: 200, depenses: ['modèle'] },
+    },
+    // LE COMPTEUR DU PLAFOND (relecture adverse de sécurité des Edge Functions, 27/11/2026). La même question, posée deux fois
+    // dans le même monde : la première consomme 15 $ sur un plafond de 1 $, la seconde doit être refusée en 402 sans un appel
+    // au modèle. La constante baissée, elle passe — la fonction ne note rien de ce qu'elle consomme : défaut CONNU
+    // `plafondTenuParLeNavigateur` ; levée, la fonction a noté la première, et la seconde se refuse.
+    ...([
+      ['une réponse rendue (200)', 'end_turn'],
+      ['une réponse coupée (502) après l’appel au modèle', 'max_tokens'],
+    ] as const).map(([issue, arret]): Scenario => ({
+      nom: `le plafond de blocage : ${issue} qui le dépasse se compte, et la question suivante est refusée en 402 (ASSIST-Q1)`,
+      preparer: (m) => { modeleQuiConsommeQuinzeDollars(m, arret); plafond(m, null, 1) },
+      dejaRecue: true,
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: { statut: 402, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
+      ...(tenue ? {} : { defautConnu: 'plafondTenuParLeNavigateur' as const }),
+    })),
+    {
+      nom: 'les seuils du cabinet illisibles : 503 qui le dit, pas un appel au modèle',
+      preparer: (m) => { modeleQuiRepond(m); m.pannes.push({ table: 'cabinets', operation: 'select', erreur: { message: 'délai dépassé' } }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
+    },
+    {
+      nom: 'la consommation du mois illisible : 503, pas un appel au modèle',
+      preparer: (m) => {
+        modeleQuiRepond(m); plafond(m, null, 1)
+        m.pannes.push({ table: tenue ? JOURNAL : 'agent_conversations', operation: 'select', erreur: { message: 'délai dépassé' } })
+      },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
+    },
+    // Baissée, la consommation passe par la liste des dossiers du cabinet ; levée, le journal se lit par cabinet, en pages.
+    // Le journal sur deux pages (une tranche de la lecture complète en porte 500) : la seconde en panne. Le refus est celui du
+    // plafond — tronqué, le journal se lirait sous le plafond, et la question passerait.
+    tenue ? {
+      nom: 'le journal du mois lu en partie : 503, pas un appel au modèle (ASSIST-Q1)',
+      preparer: (m) => {
+        modeleQuiRepond(m); plafond(m, null, 1)
+        for (let i = 0; i < 501; i++) consommation(m, D, 0.0015, 0, true)
+        m.pannes.push({ table: JOURNAL, operation: 'select', sauter: 1, erreur: { message: 'délai dépassé' } })
+      },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: {
+        statut: 503, refusEnFrancais: true, aucuneDepense: true,
+        verifier: (r, m) => [
+          ...sansModele(r, m),
+          ...(r.texte.includes('pas pu être vérifié (lecture interrompue après 500 ligne(s)') ? [] : [`le refus n’est pas celui du journal tronqué : ${r.texte.slice(0, 160)}`]),
+        ],
+      },
+    } : {
+      nom: 'les dossiers du cabinet lus en partie : 503, pas un appel au modèle (ASSIST-Q1)',
+      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); m.pannes.push({ table: 'dossiers', operation: 'select', sauter: 1, erreur: { message: 'délai dépassé' } }) },
+      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
+      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
+    },
+  ]
+}
+
+/** Le modèle qui rend son tour avec un usage donné, puis, s'il y en a, ses tours suivants. */
+function modeleQuiRend(monde: Monde, tours: readonly Record<string, unknown>[]) {
+  let tour = 0
+  monde.modele = (demande) => {
+    ;(monde.notes.demandesAuModele ??= []).push(demande)
+    const rendu = tours[Math.min(tour, tours.length - 1)]
+    tour += 1
+    if (rendu.leve) throw new Error(String(rendu.leve))
+    return rendu
+  }
+}
+const TOUR_D_OUTILS = { content: [{ type: 'tool_use', id: 'outil-0', name: 'resume_dossier', input: {} }], stop_reason: 'tool_use', usage: { input_tokens: 300, output_tokens: 30 } }
+
+/** Ce que le journal porte, ligne par ligne : le cabinet, le dossier, le compte, les tokens. */
+const journalLu = (m: Monde) => lignesDuJournal(m).map((l) => [l.cabinet_id, l.dossier_id, l.compte, l.tokens_entree, l.tokens_sortie])
+
+// LE JOURNAL QUE LA FONCTION TIENT, LA CONSTANTE LEVÉE (ASSIST-Q1 (A)) : ce que chaque appel au modèle consomme, noté après sa
+// réponse, quelle qu'en soit l'issue ; et l'écriture qui échoue. Ces scénarios ne se jouent que la constante levée (en mémoire,
+// agentComptableConsommation.test.ts, tant que la migration n'est pas en base ; servis, le jour de la levée).
+function scenariosDuJournal(): Scenario[] {
+  const chef = PERSONNES.chef.id
+  const question = (s: string) => requeteDe(s, { personne: 'chef', corps: QUESTION })
+  const attendre = (attendu: unknown[][]) => (_r: Resultat, m: Monde) =>
+    JSON.stringify(journalLu(m)) === JSON.stringify(attendu) ? [] : [`le journal porte ${JSON.stringify(journalLu(m))}, attendu ${JSON.stringify(attendu)}`]
+  return [
+    {
+      nom: 'une réponse rendue : sa consommation notée par la fonction, au cabinet, au dossier et au compte de la session (ASSIST-Q1)',
+      preparer: (m) => { journalTenu(m); modeleQuiRepond(m) },
+      requete: question,
+      attendu: { statut: 200, depenses: ['modèle', NOTE_AU_JOURNAL], verifier: attendre([[ID.cabinet, D, chef, 120, 40]]) },
+    },
+    {
+      nom: 'le membre assigné : sa consommation notée à son compte, au cabinet du dossier (ASSIST-Q1)',
+      preparer: (m) => { journalTenu(m); modeleQuiRepond(m) },
+      requete: (s) => requeteDe(s, { personne: 'comptableAssigne', corps: QUESTION }),
+      attendu: { statut: 200, depenses: ['modèle', NOTE_AU_JOURNAL], verifier: attendre([[ID.cabinet, D, PERSONNES.comptableAssigne.id, 120, 40]]) },
+    },
+    {
+      nom: 'un refus du modèle (502) : sa consommation notée (ASSIST-Q1)',
+      preparer: (m) => { journalTenu(m); modeleQuiRend(m, [{ content: [], stop_reason: 'refusal', usage: { input_tokens: 7, output_tokens: 2 } }]) },
+      requete: question,
+      attendu: { statut: 502, refusEnFrancais: true, depenses: ['modèle', NOTE_AU_JOURNAL], verifier: attendre([[ID.cabinet, D, chef, 7, 2]]) },
+    },
+    {
+      nom: 'un tour d’outils puis la réponse : les deux appels notés, chacun le sien (ASSIST-Q1)',
+      preparer: (m) => { journalTenu(m); modeleQuiRend(m, [TOUR_D_OUTILS, reponseModele('Rien à signaler.')]) },
+      requete: question,
+      attendu: {
+        statut: 200, depenses: ['modèle', NOTE_AU_JOURNAL, 'modèle', NOTE_AU_JOURNAL],
+        verifier: attendre([[ID.cabinet, D, chef, 300, 30], [ID.cabinet, D, chef, 120, 40]]),
+      },
+    },
+    {
+      nom: 'huit tours d’outils sans conclusion (500) : les huit appels notés (ASSIST-Q1)',
+      preparer: (m) => { journalTenu(m); modeleQuiRend(m, [TOUR_D_OUTILS]) },
+      requete: question,
+      attendu: {
+        statut: 500, refusEnFrancais: true, depenses: Array.from({ length: 8 }, () => ['modèle', NOTE_AU_JOURNAL]).flat(),
+        verifier: attendre(Array.from({ length: 8 }, () => [ID.cabinet, D, chef, 300, 30])),
+      },
+    },
+    {
+      nom: 'un tour noté, puis un appel qui ne rend rien (une erreur) : le premier reste noté, le second n’a rien à noter (ASSIST-Q1)',
+      preparer: (m) => { journalTenu(m); modeleQuiRend(m, [TOUR_D_OUTILS, { leve: 'connexion perdue' }]) },
+      requete: question,
+      attendu: { statut: 500, depenses: ['modèle', NOTE_AU_JOURNAL, 'modèle'], verifier: attendre([[ID.cabinet, D, chef, 300, 30]]) },
+    },
+    {
+      nom: 'une consommation hors des bornes : notée à ses bornes, jamais négative, un nombre illisible à zéro (ASSIST-Q1)',
+      preparer: (m) => {
+        journalTenu(m)
+        modeleQuiRend(m, [
+          { ...TOUR_D_OUTILS, usage: { input_tokens: -5, output_tokens: 2_000_000_000.5 } },
+          { ...reponseModele('Rien à signaler.'), usage: { input_tokens: 99_000_000, output_tokens: '40' } },
+        ])
+      },
+      requete: question,
+      attendu: {
+        statut: 200, depenses: ['modèle', NOTE_AU_JOURNAL, 'modèle', NOTE_AU_JOURNAL],
+        verifier: attendre([[ID.cabinet, D, chef, 0, 1_000_000], [ID.cabinet, D, chef, 10_000_000, 0]]),
+      },
+    },
+    {
+      nom: 'les lignes que le navigateur écrit ne comptent plus : 50 $ dans agent_conversations, la question passe (ASSIST-Q1)',
+      preparer: (m) => { journalTenu(m); modeleQuiRepond(m); plafond(m, null, 1); consommation(m, D, 50, 0, false) },
+      requete: question,
+      attendu: { statut: 200, depenses: ['modèle', NOTE_AU_JOURNAL] },
+    },
+    {
+      nom: 'la consommation d’un dossier retiré (son dossier à nul) compte encore pour son cabinet : 402 (ASSIST-Q1)',
+      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); consommation(m, null, 1.2, 0, true, ID.cabinet) },
+      requete: question,
+      attendu: { statut: 402, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
+    },
+    {
+      nom: 'le journal ne se lit qu’au cabinet du dossier, et sur le mois : rien d’autre n’est demandé (ASSIST-Q1)',
+      preparer: (m) => { journalTenu(m); modeleQuiRepond(m); plafond(m, null, 1) },
+      requete: question,
+      attendu: {
+        statut: 200, depenses: ['modèle', NOTE_AU_JOURNAL],
+        verifier: (_r, m) => {
+          const lues = m.journal.filter((e): e is Extract<typeof e, { genre: 'lecture' }> => e.genre === 'lecture' && e.table === JOURNAL)
+          const ferme = lues.length === 1 && lues[0].role === 'service' && lues[0].filtres.includes(`eq cabinet_id ${ID.cabinet}`)
+            && lues[0].filtres.some((f) => f.startsWith('gte consommee_le '))
+          const conversations = m.journal.some((e) => e.genre === 'lecture' && e.table === 'agent_conversations')
+          return [
+            ...(ferme ? [] : [`la lecture du journal : ${JSON.stringify(lues)}`]),
+            ...(conversations ? ['le plafond lit encore les lignes que le navigateur écrit'] : []),
+          ]
+        },
+      },
+    },
+    {
+      nom: 'la consommation de la réponse non notée : la réponse déjà payée part, marquée, et le journal de la fonction le dit sans valeur (ASSIST-Q1)',
+      preparer: (m) => {
+        journalTenu(m); modeleQuiRepond(m)
+        m.sensibles.push(D, chef)
+        m.pannes.push({ table: JOURNAL, operation: 'insert', erreur: { message: `Key (dossier_id)=(${D}) délai dépassé`, code: '57014' } })
+      },
+      requete: question,
+      attendu: {
+        statut: 200, depenses: ['modèle', NOTE_AU_JOURNAL],
+        verifier: (r, m) => [
+          ...(corpsDe(r).consommation_non_notee === true && typeof corpsDe(r).reponse === 'string' ? [] : [`la réponse : ${r.texte.slice(0, 160)}`]),
+          ...(m.journaux.some((j) => j.texte.includes('n\'a pas pu être notée (57014)')) ? [] : ['le refus n’est pas dit au journal, sous son code']),
+          ...(m.journaux.some((j) => j.texte.includes('délai dépassé')) ? ['le message de la base recopié au journal'] : []),
+          ...attendre([])(r, m),
+        ],
+      },
+    },
+    {
+      nom: 'la consommation d’un tour d’outils non notée : aucun appel de plus, 503 qui le dit (ASSIST-Q1)',
+      preparer: (m) => {
+        journalTenu(m); modeleQuiRend(m, [TOUR_D_OUTILS, reponseModele('Rien à signaler.')])
+        m.pannes.push({ table: JOURNAL, operation: 'insert', erreur: { message: 'délai dépassé', code: '57014' } })
+      },
+      requete: question,
+      attendu: {
+        statut: 503, refusEnFrancais: true, depenses: ['modèle', NOTE_AU_JOURNAL],
+        verifier: (_r, m) => ((m.notes.demandesAuModele ?? []).length === 1 ? [] : [`${(m.notes.demandesAuModele ?? []).length} appels au modèle`]),
+      },
+    },
+    {
+      nom: 'le dossier retiré pendant la question (23503) : la consommation notée sans lui, au cabinet (ASSIST-Q1)',
+      preparer: (m) => {
+        journalTenu(m); modeleQuiRepond(m)
+        m.pannes.push({ table: JOURNAL, operation: 'insert', fois: 1, erreur: { message: 'violates foreign key constraint', code: '23503' } })
+      },
+      requete: question,
+      attendu: { statut: 200, depenses: ['modèle', NOTE_AU_JOURNAL, NOTE_AU_JOURNAL], verifier: attendre([[ID.cabinet, null, chef, 120, 40]]) },
+    },
+  ]
+}
+
+/** Un scénario d'avant le journal, joué la constante levée : le journal au monde, et la ligne qu'il reçoit après chaque appel. */
+function sousLeJournal(s: Scenario): Scenario {
+  return {
+    ...s,
+    preparer: (m, voisine) => { journalTenu(m); s.preparer?.(m, voisine) },
+    attendu: s.attendu.depenses
+      ? { ...s.attendu, depenses: s.attendu.depenses.flatMap((d) => (d === 'modèle' ? [d, NOTE_AU_JOURNAL] : [d])) }
+      : s.attendu,
+  }
+}
+
+/**
+ * Le contrat de agent-comptable, dans un état de sa constante `CONSOMMATION_TENUE_PAR_LA_FONCTION` : celui de la source servie
+ * (`AGENT_COMPTABLE`), ou l'autre, que agentComptableConsommation.test.ts joue sur la source levée en mémoire.
+ */
+export function contratDeLAgentComptable(tenue: boolean): ContratFonction {
+  const scenarios: Scenario[] = [
     preflight(),
     ...sansSession('agent-comptable', QUESTION),
     ...SCENARIOS_DE_L_INVENTAIRE,
@@ -3335,66 +3634,7 @@ const AGENT_COMPTABLE: ContratFonction = {
       requete: (s) => requeteDe(s, { personne, corps: QUESTION }),
       attendu: { statut: 200, depenses: ['modèle'], verifier: (r) => (typeof corpsDe(r).reponse === 'string' ? [] : ['pas de réponse']) },
     })),
-    {
-      nom: 'le plafond de blocage atteint : 402, et pas un appel au modèle',
-      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); consommation(m, D, 1.2) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
-      attendu: { statut: 402, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
-    },
-    {
-      nom: 'le plafond d’alerte franchi : la réponse part, et l’alerte avec elle',
-      preparer: (m) => { modeleQuiRepond(m); plafond(m, 0.5, 5); consommation(m, D, 1.2) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
-      attendu: {
-        statut: 200, depenses: ['modèle'],
-        verifier: (r) => (corpsDe(r).alerte_cout === true && Number(corpsDe(r).cout_mois_usd) >= 1.2 ? [] : [`alerte absente : ${r.texte.slice(0, 160)}`]),
-      },
-    },
-    {
-      nom: 'la consommation d’un autre cabinet ne compte pas',
-      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); consommation(m, ID.dossierAutreCabinet, 50) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
-      attendu: { statut: 200, depenses: ['modèle'] },
-    },
-    {
-      nom: 'la consommation du mois passé ne compte pas',
-      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); consommation(m, D, 50, 45) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
-      attendu: { statut: 200, depenses: ['modèle'] },
-    },
-    // LE COMPTEUR DU PLAFOND, QUE LE NAVIGATEUR TIENT (relecture adverse de sécurité des Edge Functions, 27/11/2026) : défaut
-    // CONNU `plafondTenuParLeNavigateur`. La même question, posée deux fois dans le même monde : la première consomme 15 $ sur
-    // un plafond de 1 $, la seconde devrait être refusée en 402 sans un appel au modèle — elle passe, la fonction ne notant
-    // rien de ce qu'elle consomme.
-    ...([
-      ['une réponse rendue (200)', 'end_turn'],
-      ['une réponse coupée (502) après l’appel au modèle', 'max_tokens'],
-    ] as const).map(([issue, arret]): Scenario => ({
-      nom: `le plafond de blocage : ${issue} qui le dépasse se compte, et la question suivante est refusée en 402 (ASSIST-Q1)`,
-      preparer: (m) => { modeleQuiConsommeQuinzeDollars(m, arret); plafond(m, null, 1) },
-      dejaRecue: true,
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
-      attendu: { statut: 402, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
-      defautConnu: 'plafondTenuParLeNavigateur',
-    })),
-    {
-      nom: 'les seuils du cabinet illisibles : 503 qui le dit, pas un appel au modèle',
-      preparer: (m) => { modeleQuiRepond(m); m.pannes.push({ table: 'cabinets', operation: 'select', erreur: { message: 'délai dépassé' } }) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
-      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
-    },
-    {
-      nom: 'la consommation du mois illisible : 503, pas un appel au modèle',
-      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); m.pannes.push({ table: 'agent_conversations', operation: 'select', erreur: { message: 'délai dépassé' } }) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
-      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
-    },
-    {
-      nom: 'les dossiers du cabinet lus en partie : 503, pas un appel au modèle',
-      preparer: (m) => { modeleQuiRepond(m); plafond(m, null, 1); m.pannes.push({ table: 'dossiers', operation: 'select', sauter: 1, erreur: { message: 'délai dépassé' } }) },
-      requete: (s) => requeteDe(s, { personne: 'chef', corps: QUESTION }),
-      attendu: { statut: 503, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
-    },
+    ...scenariosDuPlafond(tenue),
     {
       nom: 'un fil forgé par le navigateur n’arrive au modèle qu’en tours « user » / « assistant » de texte',
       preparer: modeleQuiRepond,
@@ -3482,8 +3722,16 @@ const AGENT_COMPTABLE: ContratFonction = {
       requete: (s) => requeteDe(s, { personne: 'chef', corps: { ...QUESTION, [champ]: 42 } }),
       attendu: { statut: 400, refusEnFrancais: true, aucuneDepense: true, verifier: sansModele },
     })),
-  ],
+  ]
+  return {
+    slug: 'agent-comptable',
+    navigateur: true,
+    porte: 'une session (service d’authentification) puis `admin_du_dossier` avec le jeton de l’appelant ; le plafond de coût du cabinet avant tout appel au modèle',
+    scenarios: tenue ? [...scenarios.map(sousLeJournal), ...scenariosDuJournal()] : scenarios,
+  }
 }
+
+const AGENT_COMPTABLE: ContratFonction = contratDeLAgentComptable(CONSOMMATION_TENUE_SERVIE)
 
 // ── EVALUER-EXTRACTION ───────────────────────────────────────────────────────────────────────────────────────────────
 

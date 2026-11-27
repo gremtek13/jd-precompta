@@ -147,6 +147,19 @@ export function relancesDeDemandesLevees(source: string): string {
   return muter(source, [[RELANCES_DE_DEMANDES_BAISSEES, RELANCES_DE_DEMANDES_LEVEES]])
 }
 
+/** La constante de agent-comptable qui tient la consommation de l'assistant (ASSIST-Q1), telle qu'elle est servie : baissée. */
+export const CONSOMMATION_TENUE_BAISSEE = 'const CONSOMMATION_TENUE_PAR_LA_FONCTION = false'
+/** La même, levée : la source du jour où la migration `consommations_de_l_assistant` sera en base. */
+export const CONSOMMATION_TENUE_LEVEE = 'const CONSOMMATION_TENUE_PAR_LA_FONCTION = true'
+
+/**
+ * La source de agent-comptable telle qu'elle se servira APRÈS la migration `consommations_de_l_assistant` : la constante levée,
+ * en mémoire, rien d'autre de changé. Une occurrence exactement de la constante baissée, sinon `muter` lève.
+ */
+export function consommationTenueLevee(source: string): string {
+  return muter(source, [[CONSOMMATION_TENUE_BAISSEE, CONSOMMATION_TENUE_LEVEE]])
+}
+
 /**
  * Le `verify_jwt` d'une fonction, tel que `supabase/config.toml` le fixe — la valeur que tout déploiement repasse. Une
  * fonction sans section lève : la passerelle la traiterait à `true`, et le harnais ne devine pas.

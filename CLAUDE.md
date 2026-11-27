@@ -117,7 +117,9 @@ L'expert-comptable ne se sollicite plus : ce qui manque se cherche dans les sour
   toute migration : y ajouter son fichier et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle,
   inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock), v64 depuis le 27/11/2026, plafond de coût mensuel par cabinet ; aucun
+  - `agent-comptable` — assistant IA (Bedrock), v64 depuis le 27/11/2026, plafond de coût mensuel par cabinet, compté demain sur un
+    journal que la fonction écrit seule, après chaque appel au modèle (ASSIST-Q1 (A), `consommations_de_l_assistant` préparée, sans policy ni
+    droit d'API ; `CONSOMMATION_TENUE_PAR_LA_FONCTION` baissée, jumelle de `lib/consommationDeLAssistant.ts`) → « ASSIST-Q1 : LE JOURNAL DE CONSOMMATION » ; aucun
     nom de cabinet (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant
     un dossier basculé, une garde provisoire (VF9a), que VF9c a levée — elle ne ferme plus qu'une source des ventes
     illisible → « VF9A, LA GARDE PROVISOIRE DE L'ASSISTANT DEVANT UN DOSSIER BASCULÉ », « VF9C, LES POINTS ET LES OUTILS
@@ -1110,7 +1112,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   `attribuer_numero_facture` ne sont exécutées par aucun rôle ; une lecture ne rend que ce que son essai vérifie. À
   revérifier : qu'une NOUVELLE fonction `SECURITY DEFINER` n'écrive pas sans contrôle interne.
 - `rls_enabled_no_policy` sur `super_admins`, `superpdp_credentials`, `facture_numerotation`, `devis_numerotation`,
-  `connexions_bancaires`, `connexions_plateformes`, `originaux_liberes`, `contacts_numerotation` : volontaire. `function_search_path_mutable` sur `retour_declencheur` : bénin (`immutable`,
+  `connexions_bancaires`, `connexions_plateformes`, `originaux_liberes`, `contacts_numerotation`, et `consommations_de_l_assistant` à sa migration : volontaire. `function_search_path_mutable` sur `retour_declencheur` : bénin (`immutable`,
   ne nomme aucun objet).
 
 ### Base de données et schéma

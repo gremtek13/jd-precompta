@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../lib/format'
 import { formatUsd } from '../../lib/coutsApi'
+import { AVERTISSEMENT_CONSOMMATION_NON_NOTEE, CONSOMMATION_TENUE_PAR_LA_FONCTION } from '../../lib/consommationDeLAssistant'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
@@ -53,6 +54,9 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
   // ordinaire via data.error, voir plus bas) — juste un signal affiché au comptable après chaque
   // réponse. Propre à cette instance, donc au dossier consulté (voir la clé posée par le parent).
   const [alerteCout, setAlerteCout] = useState<{ coutMoisUsd: number; limiteAlerteUsd: number } | null>(null)
+  // La fonction n'a pas pu noter la consommation de la réponse qu'elle rend (ASSIST-Q1, `consommation_non_notee`) : le plafond du
+  // cabinet ne la compte pas, et l'écran le dit, sous la réponse.
+  const [consommationNonNotee, setConsommationNonNotee] = useState(false)
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
   // Verrou d'exécution de l'envoi, en `useRef` : `loading`, lu dans la fermeture du rendu, valait `false` pour deux
   // « Entrée » du même rendu, et la question partait deux fois — deux appels FACTURÉS au modèle, deux réponses comptées
@@ -115,7 +119,10 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
   // elle-même, seulement priver cette ligne de persistance (rare, et sans conséquence grave).
   // `usage` (tokens Bedrock consommés pour produire cette réponse — voir agent-comptable) n'existe
   // que pour un message assistant, jamais un message user (aucun appel modèle) : sert à estimer le
-  // coût réel de l'agent par dossier/cabinet (voir lib/coutsApi.ts, page Comptes master).
+  // coût réel de l'agent par dossier/cabinet (voir lib/coutsApi.ts, page Comptes master). Le jour où
+  // la fonction tient elle-même ce qu'elle consomme (ASSIST-Q1, `CONSOMMATION_TENUE_PAR_LA_FONCTION`,
+  // lib/consommationDeLAssistant.ts), l'écran ne passe plus d'usage : les deux colonnes restent nulles,
+  // celles d'avant gardent l'historique, et le plafond ne lit plus que le journal de la fonction.
   async function enregistrer(role: 'user' | 'assistant', texte: string, outils?: string[], usage?: { tokens_entree: number; tokens_sortie: number }) {
     if (!conversationId) return
     const { error } = await supabase.from('agent_conversations').insert({
@@ -128,9 +135,10 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
       tokens_sortie: usage?.tokens_sortie ?? null,
       created_by: session?.user.id ?? null,
     })
-    // Reste best-effort (la conversation à l'écran n'est pas remise en cause), mais plus muet : cette
-    // table alimente aussi le plafond IA mensuel du cabinet, que l'Edge Function recalcule en sommant
-    // tokens_entree/tokens_sortie. Une ligne perdue, c'est un coût qui n'est jamais décompté.
+    // Reste best-effort (la conversation à l'écran n'est pas remise en cause), mais plus muet : tant que la
+    // fonction ne tient pas sa consommation, cette table alimente aussi le plafond IA mensuel du cabinet,
+    // que l'Edge Function recalcule en sommant tokens_entree/tokens_sortie. Une ligne perdue, c'est un coût
+    // qui n'est jamais décompté.
     if (error) console.warn("Historique de l'agent non enregistré (conversation intacte) :", error.message)
   }
 
@@ -147,13 +155,14 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
     try {
       setInput('')
       setError(null)
+      setConsommationNonNotee(false)
       const historique = messages.map((m) => ({ role: m.role, texte: m.texte }))
       setTous((prev) => [...prev, { conversation_id: conversationId, role: 'user', texte, outils_utilises: null, created_at: new Date().toISOString() }])
       enregistrer('user', texte)
 
       const { data, error: invokeError } = await supabase.functions.invoke<{
         reponse?: string; outils_utilises?: string[]; usage?: { tokens_entree: number; tokens_sortie: number }
-        alerte_cout?: boolean; cout_mois_usd?: number; limite_alerte_usd?: number; error?: string
+        alerte_cout?: boolean; cout_mois_usd?: number; limite_alerte_usd?: number; consommation_non_notee?: boolean; error?: string
       }>('agent-comptable', { body: { dossierId, message: texte, historique } })
       // Sur un statut non-2xx, data reste toujours vide (voir lib/invokeErreur.ts) — le message
       // précis se lit sur invokeError.context. C'est ici (et seulement ici) que remonte le blocage
@@ -168,8 +177,10 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
         conversation_id: conversationId, role: 'assistant', texte: reponseTexte,
         outils_utilises: data.outils_utilises ?? null, created_at: new Date().toISOString(),
       }])
-      enregistrer('assistant', reponseTexte, data.outils_utilises, data.usage)
+      // Le jour où la fonction tient sa consommation, l'écran ne la recopie plus : le plafond ne lit que le journal de la fonction.
+      enregistrer('assistant', reponseTexte, data.outils_utilises, CONSOMMATION_TENUE_PAR_LA_FONCTION ? undefined : data.usage)
       setAlerteCout(data.alerte_cout ? { coutMoisUsd: data.cout_mois_usd ?? 0, limiteAlerteUsd: data.limite_alerte_usd ?? 0 } : null)
+      setConsommationNonNotee(data.consommation_non_notee === true)
     } catch (err) {
       setError(messageErreur(err))
     } finally {
@@ -315,6 +326,8 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
           (seuil {formatUsd(alerteCout.limiteAlerteUsd)}). L'agent reste utilisable — ajustable depuis Comptes master.
         </p>
       )}
+
+      {consommationNonNotee && <p className="assistant-note assistant-alerte-cout">{AVERTISSEMENT_CONSOMMATION_NON_NOTEE}</p>}
 
       <form className="assistant-saisie" onSubmit={envoyer}>
         <div className="assistant-saisie-champ">

@@ -60,6 +60,12 @@ const PORTES_DECLAREES: Record<string, { nature: Nature; raison: string }> = {
     raison: 'Les plafonds de l’assistant des cabinets que l’appelant administre (fonction `security definer` sans écriture ; '
       + 'migration `plafonds_hors_du_client`, en production depuis le 20/11/2026, OPT1-Q3) : l’écran du super-administrateur les lit au chargement.',
   },
+  'rpc:consommation_de_l_assistant': {
+    nature: 'lecture',
+    raison: 'Les sommes du journal de consommation de l’assistant, par cabinet (fonction `stable`, `security definer`, sans écriture, '
+      + 'au super-administrateur seul ; migration préparée `consommations_de_l_assistant`, ASSIST-Q1) : l’écran du super-administrateur '
+      + 'les lit au chargement, le drapeau `CONSOMMATION_TENUE_PAR_LA_FONCTION` levé.',
+  },
   'rpc:identites_des_fiches_liees': {
     nature: 'lecture',
     raison: 'L’identité que chaque dossier lié donne (fonction `security definer` sans écriture ; migration préparée '
