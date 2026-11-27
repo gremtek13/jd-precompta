@@ -1,8 +1,11 @@
--- LE RETOUR de la migration `ouverture_eclatee_par_compte` (supabase/preparees/20261111235000_…, ligne 26.6, MCB5, sixième
+-- LE RETOUR de la migration `ouverture_eclatee_par_compte` (supabase/schema/20261127055700_…, en production depuis le
+-- 27/11/2026, 258 ; ligne 26.6, MCB5, sixième
 -- partie). Il retire la garde, les trois fonctions, la contrainte, l'index et la colonne `ouverture_compte_bancaire_id` du
 -- brouillon : DESTRUCTIF par sa forme (des `drop`), il ne perd pourtant rien, car il se REFUSE tant qu'une écriture porte
 -- cette source — sans elle, l'éclatement deviendrait une écriture que rien n'explique, et que la validation figerait. À
--- coller par le cabinet, avant le retour de `comptes_bancaires` (MCB1), que la colonne cite.
+-- coller par le cabinet, avant le retour de `comptes_bancaires` (MCB1), que la colonne cite. `COMPTES_BANCAIRES_PREVUS` se
+-- rebaisse AVANT lui (src/lib/comptesBancaires.ts, et sa copie dans l'assistant, redéployé) : levé, les écrans, la sauvegarde
+-- et l'assistant liraient la colonne qu'il retire.
 
 do $garde$
 begin

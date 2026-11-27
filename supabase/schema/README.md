@@ -1021,6 +1021,25 @@ d'historique. Les trois contrôles côté dépôt : la dérive, 257 fichiers, `a
 instructions, `e54200f470db2f9199c62707d1df3f70` (inchangé) ; l'inventaire, 3 530 objets, `09aea267a8d1771abdb7a001856519a6` — à
 comparer à la production. Leurs retours restent dans `supabase/preparees/retour/`.
 
+**En production le 27/11/2026, MCB5g : `20261127055700_ouverture_eclatee_par_compte` (258), COLLÉE par le cabinet (son texte
+nomme un `delete`, REPET2-Q1 (A)), et `20261127142727_ouverture_eclatee_a_la_validation` (259), par l'outil (MCB5G-Q2)** :
+l'écriture qui éclate au 1er janvier l'ouverture de la banque entre les 512 des comptes bancaires (la colonne
+`ecritures_brouillon.ouverture_compte_bancaire_id`, sa clé, sa contrainte, son index, la paire avec l'écriture libre posée par
+son bloc `$autres_sources$`, quatre fonctions et une garde), puis le filet de `exercices_valides` qui refuse une validation
+dont l'éclatement n'est pas à jour. Préparés sous `20261111235000` et `20261111235500`, les fichiers entrent ici sous leur
+version, texte inchangé : `872afe9211e7c1ee12f4e819f226323d` (29 265 caractères) et `ef9e47e0b017dafb2a1d981ae03c5580`
+(9 348 caractères), sans le saut de ligne final, ceux des lignes d'historique. 258 touche une table du socle : la ligne
+`create table public.ecritures_brouillon` et un index du brouillon sont régénérés du catalogue d'une copie de `replique_227`
+portée à 259 par les fichiers de l'export (la colonne, la clé `ecritures_brouillon_ouverture_compte_bancaire`, les
+contraintes `ecritures_brouillon_ouverture_eclatee` et `ecritures_brouillon_libre_hors_de_l_ouverture`, l'index
+`ecritures_brouillon_ouverture_compte_bancaire_id_idx`). Les trois contrôles, égaux dans le dépôt et sur cette copie : la
+dérive, 259 fichiers, `a540bcd9df4c6db834f977fd90262a4f` ; l'inventaire, 3 542 objets, `58b4a5993117143c5ac411323ba3f705` (les
+deux, relevés en production le 27/11/2026) ; le socle, 85 instructions, `585debf740c5f74f4e2669a0d4ebcc9c` — à relever en
+production. Sans le socle régénéré, l'inventaire des fichiers rendait 3 540 : la colonne (que la reconstruction ne compte
+qu'avec la table du socle) et la contrainte de paire, que 258 crée dans un bloc `do` que l'inventaire ne lit pas, ne
+s'y comptent que par le rendu du catalogue. Leurs retours restent dans `supabase/preparees/retour/` (HISTORIQUE.md, « MCB5G EN
+PRODUCTION (258, 259) »).
+
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
 Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations

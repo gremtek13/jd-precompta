@@ -249,7 +249,8 @@ describe('agent-comptable / la contrepartie d’une pièce sous deux comptes ban
 describe('le garde-fou du bloc BANQUES DU DOSSIER sait encore échouer', () => {
   const echoue = (f: () => void) => expect(f).toThrow()
   it('attrape un drapeau qui diverge de src/lib', () => {
-    echoue(() => memeBloc(blocDe(planter(sourceDeployee(), 'const COMPTES_BANCAIRES_PREVUS = false', 'const COMPTES_BANCAIRES_PREVUS = true'))))
+    // Le drapeau levé le 27/11/2026 (MCB5g en production) : la copie rebaissée seule doit faire rougir le garde.
+    echoue(() => memeBloc(blocDe(planter(sourceDeployee(), 'const COMPTES_BANCAIRES_PREVUS = true', 'const COMPTES_BANCAIRES_PREVUS = false'))))
   })
   it('attrape un 512 propre qui vaudrait dès la veille de sa date', () => {
     echoue(() => memeBloc(blocDe(planter(sourceDeployee(), '|| date.slice(0, 10) < compte.compte_propre_depuis) return compteDuRoleBanque',

@@ -20,6 +20,12 @@ import { ajouterMois, premierJourDuMoisCourant } from '../../lib/format'
 // LA CAISSE (ligne 26.6, étape C3a) : sa lecture est celle du module (le drapeau baissé, la caisse absente, sans appel au
 // réseau) tant qu'un cas n'en pose pas une autre — lue en entier, lue en partie —, pour jouer l'écran le drapeau levé.
 const caisseDuTest = vi.hoisted(() => ({ lecture: null as null | ((dossierId: string) => unknown) }))
+// L'état d'avant les comptes bancaires, que ces cas éprouvent : `COMPTES_BANCAIRES_PREVUS` est LEVÉ depuis le 27/11/2026
+// (MCB5g en production, 258 et 259) ; ici forcé baissé — un drapeau levé garde son état d'avant éprouvé. L'écran sous le
+// drapeau levé (un seul compte : celui d'hier ; plusieurs : chacun le sien) se joue dans les tests de MCB2 à MCB7.
+vi.mock('../../lib/comptesBancaires', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/comptesBancaires')>()), COMPTES_BANCAIRES_PREVUS: false,
+}))
 vi.mock('../../lib/caisseLecture', async (original) => {
   const vrai = await original<typeof import('../../lib/caisseLecture')>()
   return {

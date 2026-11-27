@@ -224,10 +224,12 @@ export function relationsDuSchema(fichiers: { chemin: string; texte: string }[])
             continue
           }
           if (/^(constraint|primary|unique|check|exclude|like)\b/i.test(t)) continue
-          const colonne = new RegExp(String.raw`^"?(\w+)"?\s[\s\S]*?\b${CIBLE}([\s\S]*)$`, 'i').exec(t)
+          // Une contrainte de colonne NOMMÉE (`col uuid constraint x references t (id)`) garde son nom ; sans nom, celui que
+          // Postgres déduit (`<table>_<colonne>_fkey`).
+          const colonne = new RegExp(String.raw`^"?(\w+)"?\s[\s\S]*?\b(?:constraint\s+"?(\w+)"?\s+)?${CIBLE}([\s\S]*)$`, 'i').exec(t)
           if (colonne) {
-            const [, col, schema, parent, queue] = colonne
-            ajouter({ enfant: e.table, colonne: col, parent: cible(schema, parent), aLaSuppression: actionDe(queue) }, undefined)
+            const [, col, nom, schema, parent, queue] = colonne
+            ajouter({ enfant: e.table, colonne: col, parent: cible(schema, parent), aLaSuppression: actionDe(queue) }, nom)
           }
         }
         continue
@@ -259,10 +261,13 @@ export function relationsDuSchema(fichiers: { chemin: string; texte: string }[])
           ajouter({ enfant: e.table, colonne: uneColonne(cols, a), parent: cible(schema, parent), aLaSuppression: actionDe(queue) }, nom)
           continue
         }
-        const colonne = new RegExp(String.raw`^add\s+column\s+(?:if\s+not\s+exists\s+)?"?(\w+)"?\s[\s\S]*?\b${CIBLE}([\s\S]*)$`, 'i').exec(a)
+        // De même pour une colonne ajoutée : la contrainte qu'elle nomme garde son nom. MCB5g (27/11/2026) est la première à
+        // nommer la sienne autrement que Postgres (`ecritures_brouillon_ouverture_compte_bancaire`) : sous le nom déduit, la
+        // clé de la migration et celle du socle, rendue du catalogue, faisaient DEUX relations entre les mêmes tables.
+        const colonne = new RegExp(String.raw`^add\s+column\s+(?:if\s+not\s+exists\s+)?"?(\w+)"?\s[\s\S]*?\b(?:constraint\s+"?(\w+)"?\s+)?${CIBLE}([\s\S]*)$`, 'i').exec(a)
         if (colonne) {
-          const [, col, schema, parent, queue] = colonne
-          ajouter({ enfant: e.table, colonne: col, parent: cible(schema, parent), aLaSuppression: actionDe(queue) }, undefined)
+          const [, col, nom, schema, parent, queue] = colonne
+          ajouter({ enfant: e.table, colonne: col, parent: cible(schema, parent), aLaSuppression: actionDe(queue) }, nom)
         }
       }
     }

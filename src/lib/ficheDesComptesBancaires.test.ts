@@ -239,7 +239,7 @@ describe('MCB6-Q1 : retirer un compte créé par erreur, seulement quand la base
       .sort()
     expect(relations).toEqual([
       'controles_releves_bancaires.compte_bancaire_id bloque', // usage.releves
-      'ecritures_brouillon.ouverture_compte_bancaire_id bloque', // usage.ouvertures (MCB5g, préparée)
+      'ecritures_brouillon.ouverture_compte_bancaire_id bloque', // usage.ouvertures (MCB5g, en production depuis le 27/11/2026)
       'lignes_bancaires.compte_bancaire_id bloque', // usage.mouvements
     ])
     // Chacune des trois retient le retrait, à elle seule.
@@ -250,7 +250,7 @@ describe('MCB6-Q1 : retirer un compte créé par erreur, seulement quand la base
 
   it('une écriture qui éclate l’ouverture vers lui le retient : sa clé, sans cascade, et la sauvegarde la dit bloquante', () => {
     expect(retraitDuCompte(SECOND, [PRINCIPAL, SECOND], { ...VIDE, ouvertures: 2 })).toEqual({ offert: false, raison: RAISON_OUVERTURE_ECLATEE('Compte pro 2') })
-    const mcb5g = readFileSync('supabase/preparees/20261111235000_ouverture_eclatee_par_compte.sql', 'utf8')
+    const mcb5g = readFileSync('supabase/schema/20261127055700_ouverture_eclatee_par_compte.sql', 'utf8')
     expect(mcb5g).toContain('constraint ecritures_brouillon_ouverture_compte_bancaire references public.comptes_bancaires (id);')
     expect(readFileSync('src/lib/sauvegarde.ts', 'utf8'))
       .toContain("{ enfant: 'ecritures_brouillon', parent: 'comptes_bancaires', colonne: 'ouverture_compte_bancaire_id', aLaSuppression: 'bloque' }")

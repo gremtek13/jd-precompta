@@ -1,9 +1,12 @@
 -- L'OUVERTURE DE LA BANQUE ÉCLATÉE ENTRE LES COMPTES BANCAIRES (ligne 26.6, lot MCB5, sixième partie ; MCB-Q7), ÉPROUVÉE
--- EN BASE — l'essai de la migration `ouverture_eclatee_par_compte` (supabase/preparees/20261111235000_…, préparée le
--- 11/11/2026), qui suit `comptes_bancaires` (MCB1). RÉPLIQUE SEULEMENT. À rejouer après toute migration qui touche ses
+-- EN BASE — l'essai de la migration `ouverture_eclatee_par_compte` (préparée le 11/11/2026, en production depuis le
+-- 27/11/2026, 258, supabase/schema/20261127055700_ouverture_eclatee_par_compte.sql), qui suit `comptes_bancaires` (MCB1).
+-- Classé parmi les essais joués en production (outils/leurre/banc.py, essaisEnProduction.test.ts) : SÛR au banc du leurre sur
+-- une réplique portée à 259, le 27/11/2026 (42 lignes, 41 verdicts justes). À rejouer après toute migration qui touche ses
 -- trois fonctions, sa garde, `comptes_bancaires`, `controles_releves_bancaires`, `soldes_reportes` ou `a_nouveaux`. Sans la
 -- migration : une seule ligne, EN ATTENTE. Les contrôles 40 à 49 éprouvent le filet de la validation, la migration
--- `ouverture_eclatee_a_la_validation` (20261111235500, MCB5G-Q2), qui suit celle-ci : sans lui, une ligne EN ATTENTE (40).
+-- `ouverture_eclatee_a_la_validation` (259, supabase/schema/20261127142727_…, MCB5G-Q2), qui suit celle-ci : sans lui, une
+-- ligne EN ATTENTE (40).
 --
 -- Ce qui se prouve ici, dans un dossier JETABLE du cabinet du dossier `test`, créé dans la sous-transaction de chaque étape
 -- (un principal au 512000 et un second compte qui tient son 512200 depuis le 01/01/2026 ; l'exercice 2025 validé, ses

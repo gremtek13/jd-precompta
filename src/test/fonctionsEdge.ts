@@ -519,6 +519,10 @@ const POLITIQUES_LECTURE: Record<string, Politique> = {
   // LES ÉCRITURES LIBRES DE L'EXPERT-COMPTABLE (EL6), que l'assistant lit au jeton de l'appelant : `ecritures_libres_lecture`
   // (migration EL2, `admin_du_dossier`), le cabinet du dossier seul.
   ecritures_libres: (l, u, m) => adminDuDossier(m, u, l.dossier_id),
+  // LES COMPTES BANCAIRES DU DOSSIER (MCB1, la migration `comptes_bancaires`), que l'assistant lit au jeton de l'appelant depuis
+  // que `COMPTES_BANCAIRES_PREVUS` est levé (MCB5g en production, 27/11/2026) : `comptes_bancaires_cabinet` (`admin_du_dossier`)
+  // et `comptes_bancaires_lecture_banque` (`client_du_dossier(dossier_id, 'banque')`).
+  comptes_bancaires: (l, u, m) => adminDuDossier(m, u, l.dossier_id) || clientDuDossier(m, u, l.dossier_id, 'banque'),
 }
 
 /** Qui appelle une fonction SQL : le compte de la session (nul sous une clé seule), et le rôle sous lequel PostgREST la sert. */

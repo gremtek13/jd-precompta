@@ -69,8 +69,10 @@ const banqueDe = (r: EcrituresDesVentesFacturees, cle: string, plan: PlanComptab
   r.ecritures.find((e) => e.cle === cle)?.lignes.filter((l) => [plan.banque, ...autres].includes(l.compte)).map((l) => l.compte)
 
 describe('drapeau baissé : la lecture et la composition d’hier', () => {
-  it('le drapeau est baissé ; la lecture demande les colonnes d’hier, la colonne du compte seulement le drapeau levé', () => {
-    expect(COMPTES_BANCAIRES_PREVUS).toBe(false)
+  // Le drapeau est LEVÉ depuis le 27/11/2026 (MCB5g en production, 258 et 259) ; l'état d'avant reste éprouvé : la lecture
+  // `sans_objet` qu'il rendait, et les colonnes d'hier, que la lecture ne demande plus que lui baissé.
+  it('le drapeau est levé ; la lecture demande les colonnes d’hier, la colonne du compte seulement le drapeau levé', () => {
+    expect(COMPTES_BANCAIRES_PREVUS).toBe(true)
     expect(COLONNES_MOUVEMENTS_ECRITURES).not.toContain('compte_bancaire_id')
     expect(COLONNES_MOUVEMENTS_ECRITURES_PAR_COMPTE).toBe(`${COLONNES_MOUVEMENTS_ECRITURES}, compte_bancaire_id`)
     expect(banquesDuDossier({ etat: 'sans_objet' }, PLAN_DECALE)).toEqual(role(PLAN_DECALE))

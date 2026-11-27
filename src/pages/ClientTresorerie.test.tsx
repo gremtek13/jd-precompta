@@ -26,6 +26,12 @@ const faux = vi.hoisted(() => ({
 
 // Le drapeau de C8-Q2 (`PREVISIONS_PUBLIEES_PREVUES`, levé le 18/11/2026) est forcé à son état d'avant : ce fichier
 // garde la page sans la prévision du cabinet ; ses deux états se jouent dans ClientTresorerie.prevision.test.tsx.
+// L'état d'avant les comptes bancaires, que ces cas éprouvent : `COMPTES_BANCAIRES_PREVUS` est LEVÉ depuis le 27/11/2026
+// (MCB5g en production, 258 et 259) ; ici forcé baissé — un drapeau levé garde son état d'avant éprouvé. L'écran sous le
+// drapeau levé (un seul compte : celui d'hier ; plusieurs : chacun le sien) se joue dans les tests de MCB2 à MCB7.
+vi.mock('../lib/comptesBancaires', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/comptesBancaires')>()), COMPTES_BANCAIRES_PREVUS: false,
+}))
 vi.mock('../lib/previsionsPubliees', async (original) => ({
   ...await original<typeof import('../lib/previsionsPubliees')>(),
   PREVISIONS_PUBLIEES_PREVUES: false,

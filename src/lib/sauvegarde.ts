@@ -395,10 +395,10 @@ export function auPlanDesParametresDesCotisations(table: string, exportees: bool
 // de chaque relevé (`compte_bancaire_id`, NOT NULL, une clé vers le compte, que sa garde tient dans le dossier, sans action à
 // la suppression : un compte qui porte un mouvement ou un relevé ne se retire pas, il part avec son dossier). Sous le drapeau
 // de la BASE (`COMPTES_BANCAIRES_EN_BASE`, src/lib/comptesBancaires.ts), levé depuis le 12/11/2026, et non sous celui des
-// écrans (`COMPTES_BANCAIRES_PREVUS`, baissé jusqu'à l'ouverture éclatée) : un mouvement sauvegardé porte son compte, et une
+// écrans (`COMPTES_BANCAIRES_PREVUS`, levé avec l'ouverture éclatée le 27/11/2026) : un mouvement sauvegardé porte son compte, et une
 // sauvegarde sans la table ne se restaurerait plus. Baissé — l'état d'avant —, la table et ses deux relations vers les
 // mouvements et les contrôles quittent le plan et le graphe du jour (`auGrapheDesComptesBancaires`) ; la relation de
-// l'ouverture éclatée suit le drapeau des écrans, sa colonne n'étant pas en base. Son rang : après le plan du dossier, que
+// l'ouverture éclatée suit le drapeau des écrans, sa colonne n'entrant en base qu'avec sa migration (258). Son rang : après le plan du dossier, que
 // sa garde lit, et avant les contrôles et les mouvements, qui la citent. Sa clé est la commune, `id` ; aucune vague. La restauration la réinsère par la policy du
 // cabinet, que le super-administrateur passe ; ses comptes d'un dossier partent dans un seul lot (une même forme), et la
 // contrainte différée du principal se juge à la fin de ce lot. Une sauvegarde d'avant la migration (formats 1 et 2) ne la
@@ -920,7 +920,7 @@ export const RELATIONS_PREVUES: readonly Relation[] = [
   { enfant: 'dossier_permanent', parent: 'dossier_permanent', colonne: 'remplace_id', aLaSuppression: 'bloque' },
   { enfant: 'dossier_permanent', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'dossiers', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
-  // L'ouverture éclatée (ligne 26.6, MCB5g ; migration `ouverture_eclatee_par_compte`, préparée, qui suit `comptes_bancaires`) :
+  // L'ouverture éclatée (ligne 26.6, MCB5g ; migration `ouverture_eclatee_par_compte`, en production depuis le 27/11/2026, 258) :
   // le compte bancaire dont une écriture du 1er janvier ouvre le 512, sans action à la suppression — un compte qui la porte ne
   // se retire pas, et le lien n'est pas sacrifiable : sans lui, l'écriture perdrait sa source. Le parent est la table des
   // comptes bancaires : la relation ne vit au graphe du jour que `COMPTES_BANCAIRES_PREVUS` levé (`auGrapheDesComptesBancaires`),

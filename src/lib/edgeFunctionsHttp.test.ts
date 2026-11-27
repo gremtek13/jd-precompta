@@ -187,6 +187,11 @@ interface DefautPlante {
   scenario: string
 }
 
+// La fin de la sélection du brouillon de `lister_ecritures` sous `COMPTES_BANCAIRES_PREVUS` LEVÉ (MCB5g en production, 27/11/2026) :
+// la source de l'ouverture éclatée et le 512 de son compte. Les défauts plantés dans cette sélection s'ancrent sur la branche
+// que l'assistant joue — ancrés sur celle du drapeau baissé, ils passaient inaperçus.
+const FIN_DE_LA_SELECTION_DES_ECRITURES = ', ouverture_compte_bancaire_id, comptes_bancaires(compte)"'
+
 const DEFAUTS_PLANTES: DefautPlante[] = [
   {
     slug: 'extract-piece', quoi: 'le contrôle de l’appelant court-circuité',
@@ -308,17 +313,17 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
         // mouvement embarqué porte aussi son classement et ses lignes.
         const lignes = '    const lignes = ((data ?? []) as Record<string, unknown>[]).map((ligne) => ecritureVueParLeModele(ligne, nommees))\n'
         const mouvement = 'lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))'
-        const embarquee = `, pieces(type_piece, date_piece, montant_ttc), ${mouvement}"`
+        const embarquee = `, pieces(type_piece, date_piece, montant_ttc), ${mouvement}${FIN_DE_LA_SELECTION_DES_ECRITURES}`
         return [
           { slug, quoi: 'lister_pieces sans le passage vers le modèle', remplacements: [['    const lues = ((data ?? []) as Record<string, unknown>[]).map(pieceVueParLeModele)\n', '    const lues = ((data ?? []) as Record<string, unknown>[])\n']], scenario: nonBascule },
           { slug, quoi: 'lister_ecritures sans le passage vers le modèle', remplacements: [[lignes, lignes.replace('.map((ligne) => ecritureVueParLeModele(ligne, nommees))', '')]], scenario: nonBascule },
           {
             slug, quoi: 'lister_ecritures lue sans la pièce de chaque ligne, sur un dossier qui n’a pas basculé',
-            remplacements: [[embarquee, `, ${mouvement}"`]], scenario: nonBascule,
+            remplacements: [[embarquee, `, ${mouvement}${FIN_DE_LA_SELECTION_DES_ECRITURES}`]], scenario: nonBascule,
           },
           {
             slug, quoi: 'lister_ecritures lue sans la pièce de chaque ligne, sur un dossier basculé',
-            remplacements: [[embarquee, `, ${mouvement}"`]], scenario: basculeVente,
+            remplacements: [[embarquee, `, ${mouvement}${FIN_DE_LA_SELECTION_DES_ECRITURES}`]], scenario: basculeVente,
           },
           {
             slug, quoi: 'lister_ecritures, dossier basculé, ses lignes prises avant le passage',
@@ -362,7 +367,7 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
             remplacements: [[' || lu.montant === 0) return null', ') return null'], ['  if (lu.montant < 0) {\n', '  if (lu.montant <= 0) {\n']], scenario: tresorerie,
           },
           { slug, quoi: 'les écritures composées sans pièce ni mouvement tues : la règle vise trop large', remplacements: [['    return { libelle: libelleDuBrouillon(ligne), source: null }\n  }\n', '    return { libelle: null, source: null }\n  }\n']], scenario: tresorerie },
-          { slug, quoi: 'lister_ecritures lue sans le mouvement de chaque ligne', remplacements: [[`, ${'lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))'}"`, '"']], scenario: tresorerie },
+          { slug, quoi: 'lister_ecritures lue sans le mouvement de chaque ligne', remplacements: [[`, ${'lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))'}${FIN_DE_LA_SELECTION_DES_ECRITURES}`, FIN_DE_LA_SELECTION_DES_ECRITURES]], scenario: tresorerie },
           {
             slug, quoi: 'la ligne d’un crédit classé par ses encaissements sous le libellé du brouillon',
             remplacements: [['    return { libelle: libelleDUneLigneDuReleve(ligne), source:', '    return { libelle: classe ? libelleDuBrouillon(ligne) : libelleDUneLigneDuReleve(ligne), source:']], scenario: basculeReleve,
@@ -395,8 +400,8 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
           { slug, quoi: 'le fournisseur pris pour un client : la règle vise trop large', remplacements: [[racines, racines.replace('["7", "41"]', '["7", "4"]')]], scenario: engagement },
           { slug, quoi: 'le classement par les contre-passations oublié', remplacements: [[classement, '']], scenario: basculeReleve },
           { slug, quoi: 'un classement illisible pris pour un débit ordinaire', remplacements: [[classement, classement.replace('!== false', '=== true')]], scenario: tresorerie },
-          { slug, quoi: 'lister_ecritures lue sans le classement du mouvement', remplacements: [['lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"', 'lignes_bancaires(date, montant, ecritures_brouillon(compte, facture_id, encaissement_id))"']], scenario: tresorerie },
-          { slug, quoi: 'lister_ecritures lue sans les lignes du mouvement', remplacements: [['encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"', 'encaissements_de_factures)"']], scenario: tresorerie },
+          { slug, quoi: 'lister_ecritures lue sans le classement du mouvement', remplacements: [['lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))' + FIN_DE_LA_SELECTION_DES_ECRITURES, 'lignes_bancaires(date, montant, ecritures_brouillon(compte, facture_id, encaissement_id))' + FIN_DE_LA_SELECTION_DES_ECRITURES]], scenario: tresorerie },
+          { slug, quoi: 'lister_ecritures lue sans les lignes du mouvement', remplacements: [['encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))' + FIN_DE_LA_SELECTION_DES_ECRITURES, 'encaissements_de_factures)' + FIN_DE_LA_SELECTION_DES_ECRITURES]], scenario: tresorerie },
           { slug, quoi: 'la consigne sans le débit qui rend l’argent d’un client', remplacements: [['De même, un DÉBIT qui rend ou défait l\'argent d\'un client', 'De même, un débit']], scenario: tresorerie },
           { slug, quoi: 'la description de lister_ecritures sans le nom d’un débit', remplacements: [[' (« Débit du relevé du JJ/MM/AAAA, 0,00 € ») : à qui', ' : à qui']], scenario: tresorerie },
         ]
@@ -415,7 +420,7 @@ const DEFAUTS_PLANTES: DefautPlante[] = [
           { slug, quoi: 'la ligne d’une opération de caisse sous le libellé du brouillon, d’un dossier basculé', remplacements: [[caisse, caisse.replace('libelleDUneLigneDeCaisse(ligne)', 'libelleDuBrouillon(ligne)')]], scenario: basculeReleve },
           { slug, quoi: 'la caisse tue, comme une ligne rattachée à rien', remplacements: [[caisse, '']], scenario: tresorerie },
           { slug, quoi: 'la source d’une ligne de caisse perdue', remplacements: [[caisse, caisse.replace('source: "caisse"', 'source: null')]], scenario: basculeReleve },
-          { slug, quoi: 'lister_ecritures lue sans l’opération de caisse de chaque ligne', remplacements: [[' operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"', ' pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))"']], scenario: tresorerie },
+          { slug, quoi: 'lister_ecritures lue sans l’opération de caisse de chaque ligne', remplacements: [[' operations_caisse(genre, date, montant), pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))' + FIN_DE_LA_SELECTION_DES_ECRITURES, ' pieces(type_piece, date_piece, montant_ttc), lignes_bancaires(date, montant, encaissements_de_factures, ecritures_brouillon(compte, facture_id, encaissement_id))' + FIN_DE_LA_SELECTION_DES_ECRITURES]], scenario: tresorerie },
           { slug, quoi: 'une opération que la lecture n’a pas rendue sous le libellé du brouillon', remplacements: [['  if (operation === null || typeof operation !== "object") return null\n', '  if (operation === null || typeof operation !== "object") return libelleDuBrouillon(ligne)\n']], scenario: tresorerie },
           { slug, quoi: 'des espèces rendues sous le mot d’une recette', remplacements: [['  const nom = operation.genre === "recette" && montant < 0 ? "Espèces rendues" : mots\n', '  const nom = mots\n']], scenario: tresorerie },
           { slug, quoi: 'la consigne sans la phrase de la caisse', remplacements: [['La caisse ne nomme personne — le détail, recette par recette, reste à ce brouillard — : ne le demande pas', 'La caisse dit ce qu’elle peut']], scenario: tresorerie },

@@ -471,7 +471,8 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 - **Espace client** : « Mes ventes » et « Ma banque », écran par écran dans les contraintes ci-dessus.
 - **Dossiers, pièces, banque** : trois volets, PWA ; dépôt, OCR et citation, classification, doublons, validation, fil
   de précisions, notes internes, proposition de catégorie, fiche hors de France, bornes du stockage, pièces jointes
-  écartées ; import des relevés (contrôle de solde), rapprochement, connexion bancaire (bac à sable).
+  écartées ; import des relevés (contrôle de solde), rapprochement, connexion bancaire (bac à sable) ; plusieurs comptes bancaires
+  par dossier, un 512 chacun (MCB1 à MCB7, l'ouverture éclatée en production le 27/11/2026).
 - **Comptabilité et déclarations** : chaque mouvement du relevé s'écrit (ligne 26.6) ; inventaire ; validation d'un
   exercice ; engagement, étape 1 ; lettrage ; TVA liquidée ; report des soldes ; 2035, volet social et estimation
   Urssaf, CA3, FEC et piste d'audit, à-nouveaux, 2035-E et calendrier CFE-CVAE.
@@ -493,8 +494,9 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
 
 - **Proposition de catégorie** : à éprouver par un premier clic réel du cabinet.
 - **La répétition générale des migrations préparées**, refaite le 27/11/2026 à 254 : 21 des 22 s'appliquent, seules et en
-  chaîne, retours compris ; e7a refuse (REPET-Q1) ; le tableau et l'ordre de collage dans `docs/conceptions/60-…` → « LA
-  RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 254 », « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES ».
+  chaîne, retours compris ; e7a refuse (REPET-Q1) ; cinq sont en production depuis (255 à 259, MCB5g compris), les 16 autres
+  s'appliquent encore sur 259, seules et en chaîne ; le tableau et l'ordre de collage dans `docs/conceptions/60-…` → « LA
+  RÉPÉTITION DES MIGRATIONS PRÉPARÉES REFAITE À 254 », « LA RÉPÉTITION DES MIGRATIONS PRÉPARÉES », « MCB5G EN PRODUCTION (258, 259) ».
 - **En production le 15/11/2026, neuf migrations (218 → 227)**, leurs drapeaux levés : le 468 sur le relevé (PC4Q2-Q1), une
   reprise retient la trésorerie (A8B-Q3), le registre d'une facture reprise part de ce que sa pièce citée a reçu
   (A8Q5Q3-Q2), l'auteur d'une connexion de plateforme (B4RS-Q1 ; `plateforme-agreee` déployée, v14), le
@@ -518,7 +520,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   prévision de trésorerie publiée au client « Banque » (`previsions_publiees`, C8-Q2, en production depuis le 18/11/2026
   (241, par l'outil), `PREVISIONS_PUBLIEES_PREVUES` levé ; le mois de raccord au prorata des jours, C8Q2-Q3 (B)
   → « C8Q2-Q3 : LE MOIS DE RACCORD AU PRORATA, LA PRÉVISION PUBLIÉE PRÊTE », « C8-Q2 EN PRODUCTION ») ; le 512 propre refusé depuis une année validée, en base (`compte_propre_hors_des_exercices_valides`,
-  MCB6Q2-Q1, en production depuis le 27/11/2026 (256, par l'outil, REPET2-Q1 (A)), avant MCB5g : `COMPTES_BANCAIRES_PREVUS` reste baissé) ; INV3Q2-Q1 (A) dans INV2, INV3 et INV4 ; le retour d'INAL1 récrit (INAL1R-Q1). Toute préparée qui remplace
+  MCB6Q2-Q1, en production depuis le 27/11/2026 (256, par l'outil, REPET2-Q1 (A)), avant MCB5g) ; INV3Q2-Q1 (A) dans INV2, INV3 et INV4 ; le retour d'INAL1 récrit (INAL1R-Q1). Toute préparée qui remplace
   une fonction vérifie l'empreinte du corps qu'elle remplace (`remplacementsDesPreparees.test.ts`, REPET-Q2 : la garde
   d'INV3 le faisait déjà) → « A8Q5Q3Q2-Q2 : LA GARDE DES RÈGLEMENTS », « RET2-Q2 : L'EXONÉRATION DE 2025 », chercher
   « C8-Q2 », « REPET-Q2 » au 15/11/2026.
@@ -786,11 +788,12 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   02/11/2026 », « VINGT ET UNE RÉPONSES DU CABINET (PAGE DES ARBITRAGES, RELUE LE 02/11/2026) ».
 - **Ligne 26.6** : reste (e), les vingt-deux champs et Test Compta Demat ; l'opération découverte après coup, conçue
   (B9, l'engagement, reste à l'expert-comptable). Aucun exercice n'est encore validé en base → « L'OPÉRATION DÉCOUVERTE
-  APRÈS COUP ». Un dossier ne tient qu'UN compte bancaire : le relevé d'un second ne s'importe pas (doublons écartés en
-  silence, ruptures fausses) tant que MCB n'est pas fait — un 512 par compte d'emblée (MCB-Q1 à Q8, 11/11/2026), huit lots ; MCB1, la base
-  (`comptes_bancaires`, `compte_bancaire_id`), en production depuis le 12/11/2026 avec MCB2, MCB4 et MCB5 (les dix
-  fonctions), la table au plan de sauvegarde (`COMPTES_BANCAIRES_EN_BASE`), les écrans derrière `COMPTES_BANCAIRES_PREVUS`
-  baissé jusqu'à l'ouverture éclatée (MCB5g, préparée) → « LA SÉANCE DE COLLAGE DU 12/11/2026 » ; MCB2, l'import par compte
+  APRÈS COUP ». Un dossier tient plusieurs comptes bancaires depuis le 27/11/2026 — un 512 par compte d'emblée (MCB-Q1 à Q8,
+  11/11/2026), huit lots ; MCB1, la base (`comptes_bancaires`, `compte_bancaire_id`), en production depuis le 12/11/2026 avec
+  MCB2, MCB4 et MCB5 (les dix fonctions), la table au plan de sauvegarde (`COMPTES_BANCAIRES_EN_BASE`) ; MCB5g, l'ouverture
+  éclatée (258, collée) et son filet à la validation (259, par l'outil), en production le 27/11/2026, `COMPTES_BANCAIRES_PREVUS`
+  levé (les écrans, la sauvegarde et la copie de l'assistant, à redéployer) → « MCB5G EN PRODUCTION (258, 259) », « LA SÉANCE DE
+  COLLAGE DU 12/11/2026 » ; MCB2, l'import par compte
   (`lib/importParCompte.ts` : aucun compte par défaut dès deux, dédoublonnage, recouvrement et suite des soldes par compte,
   un OFX confronté à la fin de son identifiant, une seconde migration), derrière le même drapeau ; MCB3, le rapprochement
   par compte et le virement entre comptes ; MCB4, la suite des soldes, le 31 décembre par 512, les mois manquants et la
@@ -1012,7 +1015,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   derrière `LIASSE_EXPORTEE` baissé, LIA8 les acomptes et le solde de l'IS au calendrier derrière `CALENDRIER_IS_EXPORTE`
   baissé, la date légale gardée faute de texte qui la reporte, LIA8-Q1), l'affectation et l'approbation (`45-affectation-et-approbation.md`, AFF1 en module,
   `lib/affectationDuResultat.ts`) ; rien n'est à l'écran, et deux migrations sont préparées, à coller dans n'importe
-  quel ordre avec MCB5g (INV2 `operations_d_inventaire`, LIA2 `stocks_de_cloture`) ; INV3-Q1 et INV3-Q2 (A) dans INV2 et
+  quel ordre (INV2 `operations_d_inventaire`, LIA2 `stocks_de_cloture` ; MCB5g, en production, leur laisse sa paire) ; INV3-Q1 et INV3-Q2 (A) dans INV2 et
   INV3 le 13/11/2026 : l'empreinte en forme 2 scelle l'inventaire sans changer le texte d'un exercice qui n'en porte pas
   (la garde de fin le rejoue), la régularisation reprise d'une balance confrontée au solde repris (INV3Q2-Q1 posée) ;
   INV6, fini le 13/11/2026 derrière `INVENTAIRE_EXPORTE` baissé (`lib/inventaireDesControles.ts` : le bilan, la Vue
@@ -1395,7 +1398,7 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   du corps EN PRODUCTION le jour de son collage et reprend les filets des précédents, jamais d'une copie d'avant (INV3, reprise
   le 25/11/2026 sur celui de `codes_des_clients`, md5 65df5e35…, EXP58Q2-Q3 (A), et le 26/11/2026 sa `fichier_fige` sur
   celui de 254, md5 5e7016c0…) ; de
-  même, une colonne de source neuve du brouillon (MCB5g, INV2, LIA2, demain AFF2) laisse intacte la contrainte « sans
+  même, une colonne de source neuve du brouillon (MCB5g, en production depuis le 27/11/2026, INV2, LIA2, demain AFF2) laisse intacte la contrainte « sans
   autre source » d'hier et pose, si l'autre colonne est déjà là, une contrainte par PAIRE au même nom des deux côtés
   (`ecritures_brouillon_inventaire_hors_des_stocks`…), sa garde de tête acceptant les colonnes neuves des autres.
 

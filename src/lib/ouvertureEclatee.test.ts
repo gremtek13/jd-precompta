@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { COMPTES_BANCAIRES_PREVUS } from './comptesBancaires'
@@ -9,9 +10,10 @@ import {
 import { releveParCompte } from './releveParCompte'
 import type { ControleReleveBancaire } from './types'
 
-// Le module confronté au texte de la migration `ouverture_eclatee_par_compte`, et rejoué sur les cas de son essai
+// Le module confronté au texte de la migration `ouverture_eclatee_par_compte` (en production depuis le 27/11/2026, 258, collée ;
+// rangée dans l'export sous sa version d'historique, texte inchangé), et rejoué sur les cas de son essai
 // (supabase/essais/ouvertureEclatee.sql) : les mêmes comptes, les mêmes relevés, les mêmes lignes et les mêmes refus.
-const MIGRATION = readFileSync('supabase/preparees/20261111235000_ouverture_eclatee_par_compte.sql', 'utf8')
+const MIGRATION = readFileSync('supabase/schema/20261127055700_ouverture_eclatee_par_compte.sql', 'utf8')
 const enSql = (modele: string) => modele.replace(/'/g, "''")
 
 const P: CompteDuReleve = { id: 'p', libelle: 'Compte principal', principal: true, fin_d_identifiant: null, compte: null,
@@ -72,6 +74,18 @@ describe("l'éclatement de l'ouverture, au texte de la migration", () => {
     if (COMPTES_BANCAIRES_PREVUS) expect(exportee).toBe(true)
     else expect(exportee).toBe(false)
   })
+  it('les deux migrations sont rangées sous leur version d’historique, textes inchangés (258 collée, 259 par l’outil)', () => {
+    // Les empreintes des lignes d'historique, sans le saut de ligne final : celles que la production rend.
+    for (const [chemin, longueur, empreinte] of [
+      ['supabase/schema/20261127055700_ouverture_eclatee_par_compte.sql', 29265, '872afe9211e7c1ee12f4e819f226323d'],
+      ['supabase/schema/20261127142727_ouverture_eclatee_a_la_validation.sql', 9348, 'ef9e47e0b017dafb2a1d981ae03c5580'],
+    ] as const) {
+      const sansFin = readFileSync(chemin, 'utf8').replace(/\n$/, '')
+      expect(sansFin.length, chemin).toBe(longueur)
+      expect(createHash('md5').update(sansFin).digest('hex'), chemin).toBe(empreinte)
+    }
+    expect(readdirSync('supabase/preparees').some((f) => /_ouverture_eclatee_(par_compte|a_la_validation)\.sql$/.test(f))).toBe(false)
+  })
 })
 
 describe("l'éclatement attendu, sur les cas de l'essai", () => {
@@ -127,11 +141,12 @@ describe("l'état de l'éclatement dans le brouillon", () => {
 })
 
 // ── Le filet de la validation (MCB5G-Q2) ─────────────────────────────────────────────────────────────────────────────────
-// La migration `ouverture_eclatee_a_la_validation` (préparée) : un déclencheur sur `exercices_valides` qui refuse la validation
-// d'un exercice dont l'écriture qui éclate l'ouverture manque, n'est plus à jour ou n'a plus rien à éclater — aux mots du
-// préalable `ouverture-a-eclater`. Son essai : les contrôles 40 à 51 de supabase/essais/ouvertureEclatee.sql.
+// La migration `ouverture_eclatee_a_la_validation` (en production depuis le 27/11/2026, 259, par l'outil) : un déclencheur sur
+// `exercices_valides` qui refuse la validation d'un exercice dont l'écriture qui éclate l'ouverture manque, n'est plus à jour
+// ou n'a plus rien à éclater — aux mots du préalable `ouverture-a-eclater`. Son essai : les contrôles 40 à 51 de
+// supabase/essais/ouvertureEclatee.sql.
 describe('le filet de la validation, au texte de sa migration', () => {
-  const FILET = readFileSync('supabase/preparees/20261111235500_ouverture_eclatee_a_la_validation.sql', 'utf8')
+  const FILET = readFileSync('supabase/schema/20261127142727_ouverture_eclatee_a_la_validation.sql', 'utf8')
   const RETOUR_FILET = readFileSync('supabase/preparees/retour/20261111235600_retour_ouverture_eclatee_a_la_validation.sql', 'utf8')
   const RETOUR_OUVERTURE = readFileSync('supabase/preparees/retour/20261111235100_retour_ouverture_eclatee_par_compte.sql', 'utf8')
   const ESSAI = readFileSync('supabase/essais/ouvertureEclatee.sql', 'utf8')
