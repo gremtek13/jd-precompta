@@ -44,9 +44,11 @@
 
 // ── DÉBUT COPIE formeDUnBordereau ────────────────────────────────────────────────────────────────────────────────────
 // LA FORME D'UN BORDEREAU DE TÉLÉTRANSMISSION, ET LES LIGNES D'UNE PAGE (BOR6). Ce bloc est copié À L'IDENTIQUE dans
-// receive-email, auto-portée, qui écarte à la réception par e-mail la pièce jointe qui a cette forme (seconde partie de BOR6) ;
-// formeDUnBordereauCopie.test.ts compare la copie au caractère près et l'exécute contre l'original. La lecture des
-// bordereaux, plus bas, s'en sert telle quelle.
+// receive-email, auto-portée, qui écarte à la réception par e-mail la pièce jointe qui a cette forme (seconde partie de BOR6),
+// et dans extract-piece, qui refuse de citer ou de rendre le texte d'un document dont la lecture (Textract) a cette forme — une
+// photo, un PDF numérisé (troisième partie, 27/11/2026) ; bordereauALaReceptionCopie.test.ts et bordereauALaLectureCopie.test.ts
+// comparent chaque copie au caractère près et l'exécutent contre l'original. La lecture des bordereaux, plus bas, s'en sert
+// telle quelle.
 
 /** Un fragment de texte tel que pdf.js le rend (`getTextContent`), réduit à ce qui sert : le texte et sa position. */
 export interface FragmentDeTexte {
@@ -68,7 +70,7 @@ export type PageDeTexte = { lignes: readonly string[] } | { fragments: readonly 
 
 const ESPACES = /[   \t]/g
 
-function normaliser(texte: string): string {
+function normaliserLaLigne(texte: string): string {
   return texte.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(ESPACES, ' ').toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
@@ -122,7 +124,7 @@ function lignesDuFichier(pages: readonly PageDeTexte[]): LigneDuFichier[] {
     const brutes = 'lignes' in page ? page.lignes.map((l) => l.replace(ESPACES, ' ').replace(/\s+/g, ' ').trim()) : lignesDesFragments(page.fragments)
     let premiere = true
     for (const originale of brutes) {
-      const normalisee = normaliser(originale)
+      const normalisee = normaliserLaLigne(originale)
       if (normalisee === '') continue
       const pied = estUnPied(normalisee)
       toutes.push({ page: indice + 1, originale, normalisee, enTeteDePage: premiere && !pied })

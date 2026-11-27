@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { REFUS_D_UN_BORDEREAU_LU_AU_CLIENT } from './refusDesBordereaux'
 
 // Client Supabase et extraction simulés (même motif que importFichiers.test.ts, dont ce module est le
 // jumeau côté client). Le faux client journalise ce qui part vraiment vers la base et le stockage :
@@ -20,6 +21,7 @@ const etat = {
   insertRendVide: false,
   extraction: null as Record<string, unknown> | null,
   extractionLeve: false,
+  extractionBordereau: false,
   utilisateur: 'u1' as string | null,
 }
 // `type` note le sens de la pièce écrite : « rangé dans Pièces » ne suffit plus à décrire un dépôt
@@ -94,6 +96,7 @@ vi.mock('./extraction', async (importOriginal) => {
     },
     extractPiece: async () => {
       if (etat.extractionLeve) throw new Error('Textract indisponible')
+      if (etat.extractionBordereau) throw Object.assign(new Error('Ce document a la forme d’un bordereau'), { code: 'bordereau' })
       return etat.extraction
     },
   }
@@ -118,6 +121,7 @@ beforeEach(() => {
   etat.insertRendVide = false
   etat.extraction = { classification: 'facture', date_piece: '2026-03-10', tiers: 'EDF', montant_ttc: 120, confiance: 'haute' }
   etat.extractionLeve = false
+  etat.extractionBordereau = false
   etat.utilisateur = 'u1'
   journal.length = 0
   corpsDeposes.length = 0
@@ -154,6 +158,27 @@ describe('deposerFichier — les bornes du seau', () => {
     await deposerFichier('d1', new File(['date;montant'], 'releve.csv', { type: 'text/comma-separated-values' }), new Set())
     await deposerFichier('d1', new File(['jpeg'], 'photo.jpg', { type: '' }), new Set())
     expect(corpsDeposes.map((c) => c.type)).toEqual(['text/csv', 'image/jpeg'])
+  })
+})
+
+// UNE PHOTO D'UN BORDEREAU DE TÉLÉTRANSMISSION (BOR6, troisième partie, 27/11/2026) : seule la lecture d'extract-piece la
+// reconnaît (422, `bordereau`) ; lue AVANT l'envoi, elle ne part pas au stockage, et le refus est dit au client.
+describe('deposerFichier — un bordereau reconnu à la lecture', () => {
+  it('ne dépose rien, ne réserve rien de plus, et dit le refus au client', async () => {
+    etat.extractionBordereau = true
+    const lot = new Set<string>()
+    const issue = await deposerFichier('d1', new File(['photo'], 'photo.jpg', { type: 'image/jpeg' }), lot)
+    expect(issue).toEqual({ statut: 'erreur', message: REFUS_D_UN_BORDEREAU_LU_AU_CLIENT })
+    expect(journal).toEqual([])
+    expect(corpsDeposes).toEqual([])
+    expect(lot.size).toBe(0)
+  })
+
+  it('une lecture RATÉE, elle, reste tolérée : la pièce part sans rien de lu', async () => {
+    etat.extractionLeve = true
+    const issue = await deposerFichier('d1', new File(['photo'], 'photo.jpg', { type: 'image/jpeg' }), new Set())
+    expect(issue.statut).toBe('ok')
+    expect(journal.map((j) => j.action)).toEqual(['upload', 'insert:pieces'])
   })
 })
 

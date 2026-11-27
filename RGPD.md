@@ -762,7 +762,11 @@ client, sous sa case « Banque » — la voie que la consigne aux clients recomm
 cabinet, quand c'est lui qui importe, sur place (sur l'ordinateur du praticien) ou d'un fichier que le praticien lui remet de la
 main à la main — JAMAIS par e-mail : l'adresse de collecte écarte un bordereau avant tout dépôt depuis le 22/11/2026 (BOR6 :
 `receive-email`, la raison `bordereau` dite au cabinet, sans nom) et écartera un retour NOEMIE (NOE-Q6, BOR-Q9 (A), à faire :
-NOE7), ce qui remplace, pour eux, la décision du 24/09/2026 de ne rien changer au code. Dans tous les cas, le
+NOE7), ce qui remplace, pour eux, la décision du 24/09/2026 de ne rien changer au code. Une PHOTO d'un bordereau, ou un PDF
+numérisé sans couche de texte, ne se reconnaît qu'à la lecture de `extract-piece` (BOR6, troisième partie, 27/11/2026) : l'image
+passe donc par Textract (AWS, Union européenne ; un PDF transite sur S3 et en est
+retiré), comme toute pièce lue ; reconnue, rien ne part au modèle de citation, rien n'est rendu, et ni le dépôt du navigateur ni
+`receive-email` ne la déposent. Dans tous les cas, le
 fichier se lit dans le navigateur de celui qui importe et n'en sort qu'en agrégats. **La remise de la main à la main est une
 transmission** : le bordereau quitte le poste du praticien pour le cabinet, et les informations qu'il porte sont couvertes par le
 secret professionnel du praticien (code de la santé publique, art. L. 1110-4) ; c'est le praticien qui la décide et qui en

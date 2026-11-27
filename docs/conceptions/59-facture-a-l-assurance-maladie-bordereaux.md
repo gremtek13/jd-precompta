@@ -989,3 +989,39 @@ règle entière) ; la section : `src/components/DuContrePaye.tsx`, au cabinet se
 - **Muet, jamais 0** : une lecture partielle, un côté sans import, une donnée illisible, une fenêtre à l'envers, à venir ou hors de
   l'étendue d'un côté. Dans l'étendue, un lot non importé ne se voit pas : les mois sans lot ou sans paiement importé se disent.
 - **Pas fait** : « Ma banque » (DU-Q3), les points d'attention (BOR6), le délai de D. 161-13-3 en jours ouvrés (DU-Q2).
+
+## 17. BOR6, troisième partie, et BOR7 : l'état au 27/11/2026
+
+### 17.1 Une photo d'un bordereau, ou un PDF numérisé
+
+- **Ce qui n'est pas faisable** : le refuser AVANT tout envoi. Le navigateur ne lit que la couche de texte d'un PDF (BOR6,
+  première partie) ; une image n'en a pas, et la reconnaissance de caractères dans le navigateur est écartée depuis le 21/09/2026.
+  L'image passe donc par Textract (AWS, Union européenne), comme toute pièce lue ; c'est le reste du risque, et il est dit
+  (RGPD.md § 8.7, BOR6T-Q1).
+- **Ce qui est fait** : `extract-piece` juge SA lecture par `porteLaFormeDUnBordereau` (le bloc `formeDUnBordereau` copié,
+  `bordereauALaLectureCopie.test.ts`) et, reconnue, ne cite rien au modèle, ne rend ni texte ni champ, et répond 422
+  `{ error, code: "bordereau" }`. Les deux chemins du dépôt lisent désormais AVANT l'envoi au stockage (`lib/lectureAuDepot.ts`,
+  appelé par `lib/depot.ts` et `lib/importFichiers.ts`) et refusent (`REFUS_D_UN_BORDEREAU_LU`, au cabinet et au client) ;
+  `receive-email` lit aussi avant son stockage et écarte la pièce jointe sous la raison `bordereau`, sous la même constante que
+  l'écart d'un PDF. Un appelant d'avant voit une lecture ratée (rien de lu, rien cité) : l'ordre des déploiements est libre.
+- **Ce qui reste** : la fiche d'une pièce (le fichier choisi à la main) et l'onglet Cotisations disent la phrase du refus à la
+  lecture, mais leur enregistrement ne la retient pas ; une image déposée dans un document du cabinet, un original d'import ou
+  un procès-verbal n'est lue par personne et ne se reconnaît pas ; une photo que Textract lit mal ne se reconnaît pas ; les
+  pièces DÉJÀ au dossier (BOR6T-Q2).
+
+### 17.2 L'état des paiements par journée comptable
+
+Pas écrit : sa forme n'est pas connue (§ 13.4, BOR-Q1 ; BOR6-Q2 (A), le 21/11/2026 : « il attend une page rendue anonyme »).
+Reconnaître ses intitulés sans les avoir lus serait deviner ; le jour où la page est montrée, le prédicat va dans un module à
+lui (`lib/formeDeLEtatDesPaiements.ts`), appelé à côté de `porteLaFormeDUnBordereau` aux trois endroits (les préparateurs,
+`receive-email`, `extract-piece`), chacun par sa copie gardée.
+
+### 17.3 BOR7
+
+En production : les quatre migrations (246 à 249), `FACTURES_ASSURANCE_MALADIE_EN_BASE`, `FACTURES_ASSURANCE_MALADIE_PREVUES`,
+`REFUS_DES_BORDEREAUX_PREVU`, `BORDEREAUX_ECARTES_A_LA_RECEPTION` et `CONTROLES_ASSURANCE_MALADIE_PREVUS` levés ; les essais
+de 246 à 249 et `rls.sql` rejoués sur une réplique égale à la production (22/11/2026). Restent, à la session ou au cabinet :
+rejouer en production les essais `facturesAssuranceMaladie.sql` et le bloc FM de `rls.sql` ; relever `log_statement`,
+`log_min_duration_statement` et `log_parameter_max_length` en production (§ 14.3 : le numéro du lot arrive en paramètre) ;
+redéployer `extract-piece` puis `receive-email` (ce lot) ; un premier import réel des deux côtés, après lequel seulement
+`DU_CONTRE_PAYE_PREVU` se lève (DU-Q1 (A)).

@@ -55122,3 +55122,19 @@ Aucun défaut réel : rien en aval de ces deux écrans ne lit le compte d'un pai
 font, sur des lignes entières). Le reste : une centaine de fabriques d'essai portent `compte_bancaire_id: 'cb-essai'` ; le faux
 serveur de BanqueTab.test pose le compte comme le déclencheur ; `releveParCompte.test` perd son `as`. `contacts.nom` était déjà
 nullable dans types.ts depuis LM3, ses lecteurs passent par `contactNomme` (le commentaire nommait un `nomDuContact` inexistant).
+### 27/11/2026 — BOR6, TROISIÈME PARTIE : LA PHOTO D'UN BORDEREAU RECONNUE À LA LECTURE, AVANT LE STOCKAGE ; BOR7, L'ÉTAT
+
+(Agent architecte ; aucun outil de la base, aucune migration, aucun déploiement.) Une photo d'un bordereau de télétransmission,
+ou un PDF numérisé, n'a pas de couche de texte : le refus du navigateur et de `receive-email` ne la voyait pas, et l'OCR dans le
+navigateur reste écarté (21/09/2026). Ce qui se peut, et se fait : `extract-piece` juge SA lecture (Textract) par le bloc
+`formeDUnBordereau` copié (sa fonction `normaliser` renommée `normaliserLaLigne`, qui heurtait celle d'`extractionChamps`) ;
+reconnue, rien ne part au modèle de citation, rien n'est rendu, 422 `{ error, code: "bordereau" }`. Le navigateur lit le code sur
+une copie du corps (`codeDeLErreurFonction`, lib/invokeErreur.ts ; `extractPiece` le porte sur l'erreur levée) ;
+`lib/lectureAuDepot.ts` distingue « bordereau » de « ratée » ; `lib/depot.ts` et `lib/importFichiers.ts` LISENT DÉSORMAIS AVANT
+l'envoi au stockage et refusent (`REFUS_D_UN_BORDEREAU_LU`, au cabinet et au client) ; `receive-email` lit aussi avant son
+stockage et écarte sous la raison `bordereau` (en base depuis 249), sous `BORDEREAUX_ECARTES_A_LA_RECEPTION`. Un appelant d'avant
+voit une lecture ratée : l'ordre des déploiements est libre. Gardes : `bordereauALaLectureCopie.test.ts`, `lectureAuDepot.test.ts`,
+trois scénarios HTTP (photo et PDF numérisé dans extract-piece, photo écartée dans receive-email ; les étapes des dépôts de
+receive-email remises dans l'ordre lecture puis stockage), deux cas de dépôt ; mutations du jugement d'extract-piece et du refus
+du dépôt : quatre tests rouges. Non fait : la fiche d'une pièce et Cotisations disent le refus sans retenir l'enregistrement ;
+l'état des paiements (forme inconnue, BOR6-Q2 (A)) ; BOR7 n'a plus rien à coder (conception 59, § 17.3).

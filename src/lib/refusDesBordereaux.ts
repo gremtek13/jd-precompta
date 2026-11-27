@@ -14,11 +14,12 @@
 // (lib/refusDesBordereauxLecture.ts).
 //
 // CE QUE LE LOT NE COUVRE PAS, dit plutôt que laissé croire :
-//   - la réception par e-mail (`receive-email`) : elle ne lit pas le texte d'un PDF aujourd'hui ; l'écarter avant le stockage
-//     demande d'y lire la couche de texte, dans l'Edge Function (la seconde partie de BOR6, à mesurer : pdf.js sous Deno, son
-//     poids, le mur de 150 s) ;
+//   - la réception par e-mail (`receive-email`) : la seconde partie de BOR6 (21/11/2026) l'y écarte, par sa couche de texte lue
+//     dans l'Edge Function (`lib/texteDUnPdf.ts`, copié) ;
 //   - une image (une photo du bordereau) ou un PDF numérisé sans couche de texte : rien ne s'y lit sans OCR, et l'OCR sort du
-//     navigateur ;
+//     navigateur. La troisième partie (27/11/2026) le refuse APRÈS Textract et AVANT le stockage : `extract-piece` reconnaît la
+//     forme sur sa lecture, ne cite rien au modèle, ne rend rien, et les deux chemins du dépôt et receive-email ne déposent pas
+//     (lib/lectureAuDepot.ts, `REFUS_D_UN_BORDEREAU_LU`) ; l'image, elle, est passée par Textract ;
 //   - un PDF que pdf.js n'ouvre pas (abîmé, protégé par un mot de passe) : ce qui ne se lit pas ne se reconnaît pas, il part
 //     comme hier (BOR6-Q1) ;
 //   - l'état des paiements de l'assurance maladie (le « bordereau » du payé, par journée comptable) et l'export CSV des
@@ -42,6 +43,23 @@ export const REFUS_D_UN_BORDEREAU =
   'ce fichier a la forme d’un bordereau de télétransmission : il porte des noms de patients et ne se dépose pas au dossier, '
   + 'qui n’est pas hébergé pour des données de santé ; ses totaux s’importent dans la section « Facturé à l’assurance maladie » '
   + 'de l’onglet Banque, où le fichier est lu sur cet ordinateur sans être envoyé'
+
+/**
+ * LE REFUS D'UN BORDEREAU RECONNU PAR LA LECTURE (BOR6, troisième partie, 27/11/2026 ; lib/lectureAuDepot.ts) : une photo ou un
+ * PDF numérisé, que seule la lecture d'`extract-piece` (Textract) reconnaît. Rien n'est déposé ni gardé ; la section du facturé
+ * ne lit qu'un PDF qui porte son texte, d'où le renvoi au PDF que le logiciel de télétransmission enregistre. Au cabinet, puis
+ * au client.
+ */
+export const REFUS_D_UN_BORDEREAU_LU =
+  'ce document a la forme d’un bordereau de télétransmission (reconnu à sa lecture) : il porte des noms de patients et ne se '
+  + 'dépose pas au dossier, qui n’est pas hébergé pour des données de santé ; rien n’en a été gardé. Ses totaux s’importent '
+  + 'depuis le PDF du bordereau, tel que le logiciel de télétransmission l’enregistre, dans la section « Facturé à l’assurance '
+  + 'maladie » de l’onglet Banque'
+
+export const REFUS_D_UN_BORDEREAU_LU_AU_CLIENT =
+  'ce document a la forme d’un bordereau de télétransmission (reconnu à sa lecture) : il porte des noms de patients, il ne se '
+  + 'dépose donc pas ici, et rien n’en a été gardé ; pour en importer les totaux, enregistre le bordereau en PDF depuis ton '
+  + 'logiciel de télétransmission, puis ouvre « Ma banque », section « Facturé à l’assurance maladie »'
 
 /** Le même refus, aux mots du client (le tutoiement de l'espace client) : sa banque est « Ma banque ». */
 export const REFUS_D_UN_BORDEREAU_AU_CLIENT =
