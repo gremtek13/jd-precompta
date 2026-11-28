@@ -596,6 +596,26 @@ describe('restauration', () => {
     expect(ecritures).toEqual([])
   })
 
+  it('refuse de commencer la sauvegarde d’un dossier du cabinet qui porte des honoraires, tant que leurs gardes ne s’ouvrent pas à la restauration (HR-Q1)', async () => {
+    // Relecture adverse du 28/11/2026 : la désignation du dossier du cabinet n'est d'aucune sauvegarde, et les gardes de
+    // `honoraires_factures` et de `honoraires_deposes` l'exigent pour tout auteur — la base refusait le premier lien (23514)
+    // après le dossier, ses lettres et ses factures écrits. Avant ce refus, la restauration commençait.
+    baseVide()
+    const sauvegarde = {
+      manifeste: { ...manifesteVide(), dossierId: DOSSIER, cabinetId: CABINET },
+      contenu: {
+        dossiers: [{ id: DOSSIER, cabinet_id: CABINET }],
+        lettres_de_mission: [{ id: 'l1', dossier_id: DOSSIER, modele_id: null, remplace_id: null, document_signe_id: null }],
+        factures_emises: [{ id: 'f1', dossier_id: DOSSIER, numero: 1, facture_origine_id: null }],
+        honoraires_factures: [{ id: 'h1', dossier_id: DOSSIER, facture_id: 'f1', lettre_id: 'l1' }],
+        honoraires_deposes: [{ id: 'd1', dossier_id: DOSSIER, facture_id: 'f1' }],
+      },
+    }
+    await expect(restaurerSauvegarde(sauvegarde)).rejects.toThrow(
+      /Restauration refusée, rien n'a été écrit :\n- La sauvegarde porte 1 ligne\(s\) de « honoraires_factures » [^\n]*\n- La sauvegarde porte 1 ligne\(s\) de « honoraires_deposes »/)
+    expect(ecritures).toEqual([])
+  })
+
   it('refuse d’écrire par-dessus un dossier qui existe déjà', async () => {
     // Soit on se trompe de base, soit quelqu'un a recréé le dossier entre-temps. Dans les deux cas,
     // écrire dessus détruit ce qui existe, et c'est irréversible.

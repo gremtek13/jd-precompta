@@ -283,7 +283,13 @@ begin
   r := pg_temp.essayer(super, format('insert into honoraires_deposes (dossier_id, facture_id, depot, dossier_client_id, piece_id, empreinte, auteur) values (%L, %L, 1, %L, gen_random_uuid(), %L, %L) returning 1', k, fb, c, e4, super));
   perform pg_temp.noter(46, 'la restauration : pas un brouillon', '23514:Seule une facture ou un avoir validé du dossier du cabinet se dépose chez le client.', r);
   r := pg_temp.essayer(super, format('insert into honoraires_deposes (dossier_id, facture_id, depot, dossier_client_id, piece_id, empreinte, auteur) values (%L, %L, 1, %L, gen_random_uuid(), %L, %L) returning 1', c, f2, c, e4, super));
-  perform pg_temp.noter(47, 'la restauration : depuis le dossier du cabinet seul', '23514:Une facture d''honoraires se dépose depuis le dossier du cabinet.', r);
+  -- HR-Q1 (la préparée `honoraires_restaures_avant_la_designation`) : la restauration ne juge plus la désignation, que la
+  -- base d'arrivée n'a pas encore ; la facture d'un autre dossier se refuse alors au rang suivant (honorairesRestaures.sql).
+  perform pg_temp.noter(47, 'la restauration : depuis le dossier de la facture seul',
+    case when (select md5(replace(p.prosrc, chr(13), '')) from pg_proc p where p.oid = 'public.garder_honoraires_deposes()'::regprocedure)
+              = '1159501c7f11ba9dd1e27421b6bb1a9a'
+         then '23514:Seule une facture ou un avoir validé du dossier du cabinet se dépose chez le client.'
+         else '23514:Une facture d''honoraires se dépose depuis le dossier du cabinet.' end, r);
   r := pg_temp.essayer(super, format('insert into honoraires_deposes (dossier_id, facture_id, depot, dossier_client_id, piece_id, empreinte, auteur) values (%L, %L, 7, %L, %L, %L, %L) returning 1', k, f2, c, p1, e4, super));
   perform pg_temp.noter(48, 'la restauration : la pièce présente d''une autre facture se refuse (la clé de la pièce)', '23505', r);
   insert into pieces (id, dossier_id, storage_path, nom_fichier, type_piece, statut) values (gen_random_uuid(), c, c || '/lm8-vente.pdf', 'vente.pdf', 'vente', 'a_valider') returning id into p3;

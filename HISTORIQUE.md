@@ -55716,3 +55716,27 @@ pas le texte OCR (l'empreinte du texte n'attrape pas deux exports d'une facture 
 remplacée reste au stockage (PIECE-Q2). Écartés : la réservation des empreintes en vol, le chemin hors du dossier, le plafond des lectures au
 jour de Paris (le PDF de plus de 10 Mio reçu par e-mail compte une lecture que la borne refuse avant Textract : sans dépense). La validation en
 lot sans version lue relève de l'audit des mises à jour en cours. `receive-email` à redéployer.
+
+### 28/11/2026 — LA RELECTURE ADVERSE DES HONORAIRES DU CABINET (LIGNE 47 : LM1, LM3, LM4, LM5-Q2, LM7, LM8)
+
+(Agent architecte ; rien en production, aucun outil de la base ; une copie de `replique_227` portée à 261 par l'export, supprimée.)
+**Établi et corrigé (HR-Q1)** : la restauration d'un dossier du cabinet s'arrêtait à son premier lien d'honoraires. La désignation
+(`cabinets.dossier_du_cabinet`) n'est d'aucune sauvegarde et un dossier restauré n'est jamais désigné ; or les gardes de
+`honoraires_factures` et de `honoraires_deposes` l'exigent pour tout auteur, la restauration comprise (LM3 avait excepté le
+super-administrateur, LM7 et LM8 non) : 23514 après le dossier, ses lettres et ses factures écrits ; et, le dossier désigné ensuite,
+la période dont le lien était perdu se facturait une seconde fois (constaté sur la réplique). `restauration.sql` ne le voyait pas :
+son dossier n'est pas le dossier du cabinet. La préparée `20261128100000_honoraires_restaures_avant_la_designation` (par l'outil,
+deux gardes remplacées à l'octet près plus la condition `and not public.is_super_admin()`, empreintes `079ede9a…`/`8ad5dec2…` →
+`4163f6b9…`/`1159501c…`, retour en 20261128100100) ; l'essai neuf `honorairesRestaures.sql` (14 étapes, le défaut constaté sans
+elle, corrigé avec elle, son retour rend l'état d'avant) ; `depotDesHonoraires.sql` (étape 47 suit la migration, 68/68),
+`honorairesFactures.sql` 75/75, `fichesLieesAuxDossiers.sql` 76/76, `dossierDuCabinet.sql` 31/31, `rls.sql` 297 invariants, 0 en
+faute, 178 mutations sur 178. D'ici au collage, la restauration REFUSE de commencer une sauvegarde qui porte des liens ou des dépôts
+d'honoraires (`lib/honorairesALaRestauration.ts`, `HONORAIRES_RESTAURES_AVANT_LA_DESIGNATION_PREVUS` baissé ; test rouge avant, vert
+après). **Établi à la lecture, non corrigé (LM7R-Q1)** : un avenant qui change la périodicité d'un forfait (mensuel → trimestriel), d'effet dans une
+période déjà facturée par la version d'avant (à échoir, ou avenant rétroactif), se facture de nouveau sur ces jours : la garde et
+`lienQuiCouvre` ne comparent d'une version à l'autre que les forfaits de même périodicité, et la carte « À facturer » le propose coché.
+**Plausible (LM7R-Q2)** : une résiliation dont la date de fin tombe dans une période déjà facturée ne se signale nulle part.
+**Écartés** : l'accès aux honoraires (lecture `admin_du_dossier` du seul dossier du cabinet, aucun accès client, les six fonctions
+jugeant l'accès avant toute lecture, sans fuite par le message) ; l'unicité, la suppression et le rattachement du dossier du cabinet ;
+l'acceptation en ligne (fermée pour tout auteur, restauration comprise) ; le dépôt (pièce « à valider » de son dossier, valeurs lues
+de la facture figée, une seule présente, l'avoir négatif après sa facture) ; le prorata et les dates (en entiers, au jour de Paris).
