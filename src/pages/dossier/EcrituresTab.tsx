@@ -93,6 +93,7 @@ import {
   AUCUNE_PIECE_CITEE, exemplairesDesSources, facturesSourcesDe, horsDesExemplairesDesSources, marquerLesPiecesCitees,
   type FacturesSources,
 } from '../../lib/facturesSources'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 // Aucune facture source : celles d'un dossier qui n'a pas basculé (étape VF6a). La base refuse qu'une facture y soit source
 // de sa vente (`fixer_source_de_la_vente`), et qu'un dossier qui en porte une revienne en arrière
@@ -312,7 +313,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // levé et lues en partie, aucun export (`ecrituresLibresDesExports` nul).
   const [lectureLibres, setLectureLibres] = useState<LectureDesEcrituresLibres | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
@@ -396,6 +400,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       // Ne rejette jamais ; le drapeau des écritures libres (EL2) baissé, ne touche pas au réseau.
       lireLesEcrituresLibres(dossierId),
     ])
+    if (!courante()) return
     setLectureLibres(lectureDesLibres)
     setLectureOuverture(lectureDeLOuverture)
     setLectureReprises(lectureDesReprises)

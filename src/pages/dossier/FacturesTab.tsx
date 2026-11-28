@@ -73,6 +73,7 @@ import { lireLeMandataire } from '../../lib/mandataireLecture'
 import { lireLesModelesDeNumerotation } from '../../lib/numerotationContinueLecture'
 import type { ModeleDeLaSerie } from '../../lib/validationDeLaFacture'
 import type { LectureDuMandataire } from '../../lib/mentionsFigeesVue'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 // QUI REGARDE (espace client, étape P4a) : le cabinet, depuis l'onglet Factures d'un dossier, qui peut aussi enregistrer
 // l'adresse du dossier depuis une facture ; ou le client qui porte la case « Ventes », depuis « Mes ventes › Factures »,
@@ -211,8 +212,11 @@ export default function FacturesTab(props: Props) {
   const acompteDe = (factureId: string): AcompteDeLaFacture =>
     ACOMPTES_PREVUS ? acompteDeLaFacture(acomptesCourants, factureId) : SANS_ACOMPTE
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   // Rend les factures lues : la facture tirée d'un devis s'ouvre sur la liste relue (`ouvrirLaFactureTiree`).
   async function load(): Promise<FactureEmise[]> {
+    const courante = commencerLecture()
     setLoading(true)
     // Les lectures de l'onglet, que l'accueil du client compte aussi (lib/ventesLecture.ts) : la suite LÉGALE des
     // factures, leurs transmissions, leurs encaissements, leurs déclarations, l'historique de Super PDP et les statuts lus.
@@ -221,6 +225,8 @@ export default function FacturesTab(props: Props) {
       ACOMPTES_PREVUS ? lireLesAcomptesDesFactures(dossierId) : null,
       RELANCES_EXPORTEES ? lireLesRelances(dossierId) : null,
     ])
+    // Périmée, la lecture rend encore ce qu'elle a lu à qui l'attend (`ouvrirLaFactureTiree`), sans l'écrire à l'écran.
+    if (!courante()) return lu.factures
     if (acomptes) setAcomptesLus(acomptes)
     if (relances) setRelancesLues({ dossierId, lecture: relances })
     setFactures(lu.factures)

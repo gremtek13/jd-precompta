@@ -40,6 +40,7 @@ import {
   type IdentiteRendue, type SaisieIdentite,
 } from '../../lib/identiteLegaleVue'
 import { LIBELLE_ADRESSE_IDENTITE, LIBELLE_DENOMINATION_IDENTITE, LIBELLE_RCS_VILLE_IDENTITE } from '../../lib/droitsAcces'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 // Informations déclaratives saisies une fois par le cabinet (ou récupérées auprès du client) plutôt
 // que déduites d'un document — un type de véhicule ou l'existence de tickets-restaurant ne se lit pas
@@ -198,9 +199,13 @@ export default function InformationsTab({
   // drapeau est levé, enregistrer écraserait ce qu'on ignore (voir lib/informationsDossier.ts).
   const [erreurChargement, setErreurChargement] = useState<string | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     setLoading(true)
     const { informations, erreur } = await chargerInformationsDossier(dossierId)
+    if (!courante()) return
     setErreurChargement(erreur)
     if (informations) {
       setVehiculeType(informations.vehicule_type)

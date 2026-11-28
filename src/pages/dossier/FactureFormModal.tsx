@@ -247,7 +247,11 @@ export default function FactureFormModal(props: Props) {
   // laissé croire : un refus RLS rend zéro ligne SANS erreur (mesuré, voir lib/informationsDossier).
   useEffect(() => {
     if (!facture) return
+    // Une lecture partie pour une facture ou un statut de TVA d'avant ne remplit pas le formulaire d'après (audit des courses
+    // du 28/11/2026) : la dernière demandée seule l'écrit.
+    let annule = false
     supabase.from('facture_lignes').select('*').eq('facture_id', facture.id).order('ordre').then(({ data, error: lectureError }) => {
+      if (annule) return
       if (lectureError) {
         setLignesIllisibles(messageErreur(lectureError, "Les lignes de cette facture n'ont pas pu être lues."))
         setChargementLignes(false)
@@ -274,6 +278,7 @@ export default function FactureFormModal(props: Props) {
       }
       setChargementLignes(false)
     })
+    return () => { annule = true }
   }, [facture, statutTva])
 
   // Les articles : lus à l'ouverture, jamais avant que l'espace les ouvre (`ARTICLES_EXPORTES`). Une réponse arrivée après un

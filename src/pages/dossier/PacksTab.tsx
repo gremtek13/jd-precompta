@@ -7,6 +7,7 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import type { Pack, Piece } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
 import { ouvrirApercu } from '../../lib/apercu'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 // Période proposée par défaut : le mois précédent en entier. Calculée sur le calendrier civil plutôt
 // que via `Date.toISOString()`, qui rendait la veille du bon jour à Paris (minuit local = 22 h UTC la
@@ -50,11 +51,15 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   const generationEnCours = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function loadPacks() {
+    const courante = commencerLecture()
     const lecture = await lireTout<Pack>((debut, fin) =>
       supabase.from('packs').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('generated_at', { ascending: false }).order('id').range(debut, fin),
     )
+    if (!courante()) return
     setPacks(lecture.lignes)
     setMotifPacks(lecture.complete ? null : lecture.motif)
     setChargementPacks(false)

@@ -55755,3 +55755,20 @@ leur table, `mentions_identite`, `mode_reglement`, l'identité légale de l'atel
 voiles fixes que rien ne déclare `aria-modal`. La validation d'un exercice reste hors du banc, à dessein. **Relevé** : un seuil refusé
 remet son champ à la valeur relue, à dessein et testé (GESTES-Q2) ; le focus retombe sur le document (GESTES-Q1). Pas servis : le
 devis côté client, la transmission par une plateforme, le remplacement des journées d'un import, les retraits d'imports.
+
+### 28/11/2026 — LES COURSES DE LECTURE DES ÉCRANS
+
+(Agent architecte, sans base ni migration.) Recensé en partant de toute la source des pages et des composants : 498 fonctions ou
+effets qui attendent une lecture puis écrivent un état. **Les 99 effets** : 93 portaient déjà leur drapeau (`let annule`, `fermee`,
+`estPerimee`) ; 6 n'en avaient pas — l'assistant, l'import des relevés, l'aperçu, l'avoir et le formulaire d'une facture, la
+transmission —, tous remontés par leur clé dans l'usage d'aujourd'hui, durcis quand même (l'aperçu passé à une autre facture sans se
+démonter imprimait les lignes de la première, `FactureApercu.course.test.tsx`, rouge avant). **Les 37 fonctions de lecture qu'un
+effet appelle** (`load`, `charger`, `relire…`) : 12 avaient un compteur ; 25 non, dont 22 qu'un geste appelle aussi — Banque,
+Écritures, Cotisations, Immobilisations, Documents, Factures, Informations, Checklist, Statistiques, Véhicules, Virements,
+Suppléments, Packs, Super PDP, la transmission, la liste des dossiers, l'équipe, la charte, le super-administrateur, l'accueil et
+les informations du client. Deux relectures s'y chevauchaient sans que la clé de l'effet change : Cotisations, un avis rattaché
+puis une échéance ajoutée pendant la relecture, la plus ancienne revenait après et l'échéance écrite disparaissait de l'écran
+(`CotisationsTab.ecritures.test.tsx`, rouge avant). Remède commun : `lib/derniereLecture.ts` (`useDerniereLecture`, le démontage
+périme aussi), `if (!courante()) return` après chaque attente. Gardé par `coursesDeLecture.test.ts` (part de tout `src/`, place du
+témoin vérifiée, une exception comptée : la session d'`AuthContext`, hors des écrans ; défauts plantés). Restent, non jugées par le
+scanner : vingt relectures qu'aucun effet n'appelle, sérialisées par le verrou de leur geste.

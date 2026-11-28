@@ -22,6 +22,7 @@ import { libelleDUnePiece } from '../../lib/libellesDesVentes'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { biensFiges, dateFigee } from '../../lib/validationExercice'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 const DUREE_DEFAUT_ANNEES = 5
 const COMPTE_IMMOBILISATION_DEFAUT = '218000'
@@ -128,10 +129,13 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
   // plus et des dates d'acquisition qui ne s'inscrivent plus au registre ; les exercices validés, de la phrase qui le dit.
   const { frontiere, anneesValidees } = useExercicesValides()
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   // `loading` ne repasse pas à vrai au rechargement : après une écriture, l'écran garde ce qu'il montrait —
   // bouton grisé sous le verrou — jusqu'à ce que la relecture revienne, au lieu de vider la carte qu'on
   // vient d'utiliser. Un autre dossier remonte l'onglet (`AnneeProvider key`), donc repart à vrai.
   async function load() {
+    const courante = commencerLecture()
     const [lecturePieces, lectureImmobilisations, lectureNatures, lectureDotations, lectureOuverture, lectureValidees, lectureCategories] = await Promise.all([
       // Lue par tranches (voir lib/lectureComplete.ts) : c'est parmi ces pièces qu'on choisit celle
       // à immobiliser, et une liste tronquée ne paraît pas tronquée.
@@ -172,6 +176,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
       ),
     ])
+    if (!courante()) return
     setPiecesValidees(lecturePieces.lignes)
     setCategories(lectureCategories.lignes)
     setImmobilisations(lectureImmobilisations.lignes)

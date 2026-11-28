@@ -17,6 +17,7 @@ import {
   CONSOMMATION_TENUE_PAR_LA_FONCTION, consommationsParCabinet, debutDuMoisUtc, type LigneConsommation,
 } from '../lib/consommationDeLAssistant'
 import type { LectureComplete, TrancheLue } from '../lib/lectureComplete'
+import { useDerniereLecture } from '../lib/derniereLecture'
 
 interface CabinetApercu {
   id: string
@@ -90,7 +91,10 @@ export default function SuperAdminPage() {
   // La clé de relecture des modules des cabinets (OPT4) : un cabinet créé ou supprimé change la liste qu'ils lisent.
   const [relectureDesOptions, setRelectureDesOptions] = useState(0)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     setLoading(true)
     // CET ÉCRAN LIT TOUT LE PARC, tous cabinets confondus : c'est la lecture la plus large du
     // projet, et `agent_conversations` grandit d'une ligne à chaque message de l'assistant — donc
@@ -149,6 +153,7 @@ export default function SuperAdminPage() {
         })
         : nonLue<LigneConsommation>(),
     ])
+    if (!courante()) return
     const plafonds = plafondsParCabinet(lecturePlafonds.lignes)
     const consommations = consommationsParCabinet(lectureConsommations.lignes)
 

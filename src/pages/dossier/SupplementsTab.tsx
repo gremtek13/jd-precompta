@@ -10,6 +10,7 @@ import {
 } from '../../lib/cca'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 interface FactureOption { id: string; numero: string | null; tiers_nom: string }
 
@@ -30,7 +31,10 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
   const [editingCompte, setEditingCompte] = useState<CompteCourantAssocie | 'new' | null>(null)
   const [compteOuvert, setCompteOuvert] = useState<CompteCourantAssocie | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     setLoading(true)
     const [lectureSupplements, lectureComptes, lectureFactures] = await Promise.all([
       lireTout<Supplement>((debut, fin) =>
@@ -46,6 +50,7 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
           .eq('dossier_id', dossierId).order('date_emission', { ascending: false }).order('id').range(debut, fin),
       ),
     ])
+    if (!courante()) return
     setSupplements(lectureSupplements.lignes)
     setComptes(lectureComptes.lignes)
     setFacturesDispo(lectureFactures.lignes)
@@ -62,6 +67,7 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
         supabase.from('mouvements_cca').select('*', { count: 'exact' })
           .in('compte_id', comptesIds).order('date', { ascending: false }).order('id').range(debut, fin),
       )
+      if (!courante()) return
       setMouvements(lectureMouvements.lignes)
       // Écrasé seulement quand CETTE lecture manque : une lecture complète ne doit pas effacer
       // l'incomplétude déjà constatée sur les trois autres. Et c'est la plus coûteuse des quatre —

@@ -116,7 +116,10 @@ export default function FactureAvoirModal(props: Props) {
   // coûte est plus étroit et reste réel : la seule façon légale de corriger une facture validée
   // (CLAUDE.md) paraît impossible, sur un motif faux, et rien ne dit à l'opérateur de réessayer.
   useEffect(() => {
+    // Les lignes d'une facture quittée ne s'écrivent pas sous une autre (audit des courses du 28/11/2026).
+    let annule = false
     supabase.from('facture_lignes').select('*').eq('facture_id', factureOrigine.id).order('ordre').then(({ data, error: lectureError }) => {
+      if (annule) return
       if (lectureError) {
         setLignesIllisibles(messageErreur(lectureError, "Les lignes de la facture d'origine n'ont pas pu être lues."))
         setChargement(false)
@@ -134,6 +137,7 @@ export default function FactureAvoirModal(props: Props) {
       })))
       setChargement(false)
     })
+    return () => { annule = true }
   }, [factureOrigine.id])
 
   // CE QUE LA VALIDATION DE L'AVOIR FIGE (étape A7b) : l'identité du dossier et les versions de ses paramètres, lues EN ENTIER à

@@ -30,6 +30,7 @@ import { useEcrituresLibres } from '../../lib/useEcrituresLibres'
 import { ecrituresLibresPourLesMoteurs } from '../../lib/ecrituresLibresVue'
 import { marquesDesEcrituresLibres } from '../../lib/ecrituresLibresDuDetail'
 import { NumerosEntiers } from '../../components/NumerosEntiers'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 // Aucune vente facturée à ranger : un dossier en trésorerie, ou dont le brouillon n'en porte aucune.
 const SANS_FACTURE: FacturesDesLignes = { factures: [], encaissements: [] }
@@ -123,9 +124,12 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
   const { anneesValidees } = useExercicesValides()
   const [recherche, setRecherche] = useState('')
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   // Le premier rendu porte déjà `loading` ; une relecture après un lettrage garde la vue affichée le temps qu'elle
   // revienne, le verrou retenant tout geste jusque-là. L'onglet se remonte d'un dossier à l'autre (`key` du dossier).
   const charger = useCallback(async () => {
+    const courante = commencerLecture()
     const [brouillon, lectureCategories, lecturePieces, lectureANouveaux, lectureLettrages, lectureReportes] = await Promise.all([
       // Lues par tranches, triées sur un ordre TOTAL : PostgREST plafonne le nombre de lignes
       // rendues sans le signaler, et cet écran affiche des TOTAUX (voir lib/lectureComplete.ts).
@@ -153,11 +157,13 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
       ),
       lireLesSoldesReportes(dossierId),
     ])
+    if (!courante()) return
     // Seulement en engagement — la carte n'existe qu'en engagement — et seulement si le brouillon porte une ligne d'une
     // facture ou d'un encaissement : un dossier qui n'a pas basculé n'en a aucune, et rien n'est relu pour rien.
     const lectureFactures = modeComptable === 'engagement' && brouillon.lignes.some(porteUneSourceDeVente)
       ? await lireLesFacturesDesLignes(dossierId)
       : { etat: 'lue' as const, ventes: SANS_FACTURE }
+    if (!courante()) return
     setFacturesDesLignes(lectureFactures.etat === 'lue' ? lectureFactures.ventes : SANS_FACTURE)
     setLectureFacturesIncomplete(lectureFactures.etat === 'lue' ? null : lectureFactures.motif)
     setEcritures(brouillon.lignes)
@@ -173,7 +179,7 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
     setLectureCategoriesIncomplete(lectureCategories.motif)
     setLectureLettragesIncomplete(lectureLettrages.motif)
     setLoading(false)
-  }, [dossierId, modeComptable])
+  }, [dossierId, modeComptable, commencerLecture])
 
   useEffect(() => { charger() }, [charger])
 

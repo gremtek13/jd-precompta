@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useBanquesDuDossier } from '../../lib/useBanquesDuDossier'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 import { planDuMouvement } from '../../lib/banqueDuMouvement'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
@@ -151,7 +152,11 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   const [erreurGeste, setErreurGeste] = useState<string | null>(null)
   const [reunionInachevee, setReunionInachevee] = useState<ReunionInachevee | null>(null)
 
+  // La lecture de l'ouverture et celles d'après chaque geste se chevauchent (un rattachement de document n'attend pas la
+  // sienne) : seule la dernière partie écrit (lib/derniereLecture.ts, audit des courses du 28/11/2026).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     setLoading(true)
     const [lectureCotisations, lectureDocuments, lecturePaiements, lectureEcritures, lectureOuverture] = await Promise.all([
       // Tri TOTAL : `echeance` n'est pas unique, donc `id` départage — sans lui, deux tranches
@@ -185,6 +190,7 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
           .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
       ),
     ])
+    if (!courante()) return
     setCotisations(lectureCotisations.lignes)
     setCotisationsIncompletes(lectureCotisations.complete ? null : lectureCotisations.motif)
     setDocumentsCotisation(lectureDocuments.lignes)

@@ -82,6 +82,8 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
         supabase.from('agent_conversations').select('conversation_id, role, texte, outils_utilises, created_at, id', { count: 'exact' })
           .eq('dossier_id', dossierId).order('created_at', { ascending: true }).order('id').range(debut, fin),
       )
+      // L'onglet se remonte d'un dossier à l'autre ; le drapeau couvre le démontage pendant la lecture (audit du 28/11/2026).
+      if (annule) return
       const lignes = lecture.lignes
       setLectureIncomplete(lecture.complete ? null : lecture.motif)
       setTous(lignes)
@@ -90,7 +92,9 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
       setConversationId((actuel) => actuel ?? (lignes.length > 0 ? lignes[lignes.length - 1].conversation_id : crypto.randomUUID()))
       setChargement(false)
     }
+    let annule = false
     charger()
+    return () => { annule = true }
   }, [dossierId])
 
   // Un fil par conversation_id, le plus récent en premier — regroupé côté client à partir de la même

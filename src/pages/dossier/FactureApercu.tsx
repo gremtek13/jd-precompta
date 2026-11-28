@@ -106,8 +106,11 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
   // bien présents — une facture qui se contredit elle-même, sur le seul document légal que cet
   // écran produise. On dit qu'on n'a pas lu, plutôt que d'imprimer un vide qui ressemble à zéro.
   useEffect(() => {
+    // Les lignes d'une facture quittée ne s'écrivent pas sous une autre (audit des courses du 28/11/2026).
+    let annule = false
     supabase.from('facture_lignes').select('*').eq('facture_id', facture.id).order('ordre')
       .then(({ data, error }) => {
+        if (annule) return
         if (error) {
           setLignesIllisibles(messageErreur(error, "Les lignes n'ont pas pu être lues."))
           return
@@ -115,6 +118,7 @@ export default function FactureApercu({ facture, dossier, onClose }: { facture: 
         setLignesIllisibles(null)
         setLignes((data ?? []) as FactureLigne[])
       })
+    return () => { annule = true }
   }, [facture.id])
 
   // Le numéro de la facture corrigée : sur un avoir, c'est une référence qui part au client. Une

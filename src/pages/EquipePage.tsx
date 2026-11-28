@@ -13,6 +13,7 @@ import {
   refusAConfirmerLEntree,
 } from '../lib/creationDesComptes'
 import { LONGUEUR_MINIMALE_MOT_DE_PASSE, REGLE_DU_MOT_DE_PASSE, refusDeLaRegle } from '../lib/recuperationMotDePasse'
+import { useDerniereLecture } from '../lib/derniereLecture'
 
 // Gestion de l'équipe du cabinet — réservée aux chefs de cabinet (voir Layout, lien affiché seulement
 // si estChef) : un "comptable en chef" voit tous les dossiers du cabinet, un simple "comptable"
@@ -50,7 +51,10 @@ export default function EquipePage() {
 
   const [gestionDossiersDe, setGestionDossiersDe] = useState<CabinetAdmin | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     if (!monCabinetId) return
     setLoading(true)
     // Les trois grandissent avec le cabinet : membres, clients, et le produit des deux pour les
@@ -70,6 +74,7 @@ export default function EquipePage() {
           .order('id').range(debut, fin),
       ),
     ])
+    if (!courante()) return
     setMembres(lectureMembres.lignes)
     setDossiers(lectureDossiers.lignes)
     setAssignations(lectureAssignations.lignes)

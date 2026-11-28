@@ -10,6 +10,7 @@ import { POLICES_CABINET } from '../lib/polices'
 import { extensionDuLogo, poids, preparerLogo, refusDUnLogo, TAILLE_MAX } from '../lib/bornesStockage'
 import { MODELE_DU_CABINET_PREVU } from '../lib/modeleDuCabinet'
 import ModeleDuCabinetCarte from './ModeleDuCabinetCarte'
+import { useDerniereLecture } from '../lib/derniereLecture'
 
 // Polices proposées, pas de champ libre : chacune est servie par l'application elle-même
 // (lib/polices.ts), donc un nom hors de la liste ne se chargerait pas. La police par défaut est
@@ -52,7 +53,10 @@ export default function CabinetBrandingPage() {
   // on ne sait pas ce que le cabinet porte, donc on n'enregistre pas par-dessus.
   const [erreurChargement, setErreurChargement] = useState<string | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function charger() {
+    const courante = commencerLecture()
     if (!monCabinetId) return
     setLoading(true)
     // Les colonnes de `Cabinet`, nommées : jamais `*`, qui demanderait aussi les plafonds de l'assistant, fermés aux rôles de
@@ -60,6 +64,7 @@ export default function CabinetBrandingPage() {
     const { data, error: chargeError } = await supabase.from('cabinets')
       .select('id, nom, couleur_primaire, couleur_primaire_claire, police_google_font, logo_storage_path, created_at')
       .eq('id', monCabinetId).maybeSingle()
+    if (!courante()) return
     setErreurChargement(chargeError ? messageErreur(chargeError, "La charte du cabinet n'a pas pu être lue.") : null)
     if (data) {
       setCabinet(data)

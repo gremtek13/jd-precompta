@@ -19,6 +19,7 @@ import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { exerciceQuiFige } from '../../lib/validationExercice'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 // Cadre 7 du 2035-B, « Barèmes kilométriques ». Sans ces lignes, la case BJ du 2035-A (ligne 23,
 // frais de véhicules) reste vide alors que le bas du 2035-B dit « Total A à reporter ligne 23 de
@@ -109,6 +110,8 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
   // lien avec l'année saute aux yeux.
   const exercice = typeof annee === 'number' ? annee : null
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   // Tous les exercices du dossier en une requête, filtrés ensuite en mémoire : quelques véhicules par
   // dossier, et cela donne gratuitement la liste des exercices déjà pourvus, qu'il faut de toute
   // façon proposer — et les forfaits de TOUS les exercices, que la carte écrit d'un coup.
@@ -116,6 +119,7 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
   // `chargement` ne repasse pas à vrai au rechargement : après une écriture, la carte garde ce qu'elle montrait
   // — boutons grisés sous le verrou — jusqu'à ce que la relecture revienne, au lieu de se vider.
   async function charger() {
+    const courante = commencerLecture()
     const [lectureVehicules, lectureEcritures, lectureOuverture] = await Promise.all([
       // Tri TOTAL : ni `annee` ni `created_at` ne sont uniques, donc `id` départage.
       lireTout<VehiculeDossier>((debut, fin) =>
@@ -133,6 +137,7 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
           .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
       ),
     ])
+    if (!courante()) return
     setVehicules(lectureVehicules.lignes)
     setEcrituresForfaits(lectureEcritures.lignes)
     setOuverture(lectureOuverture.lignes[0]?.date ?? null)

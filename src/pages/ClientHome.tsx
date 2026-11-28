@@ -33,6 +33,7 @@ import { destinataireDuClient } from '../lib/changementDeRib'
 import { useDernierChangementDeRib } from '../lib/changementDeRibLecture'
 import { fichierDeLaPiece, fichierDuDocument } from '../lib/ouvertureDeMesPieces'
 import DerniersEnvoisAccueil, { type EnvoiDeLAccueil } from './DerniersEnvoisAccueil'
+import { useDerniereLecture } from '../lib/derniereLecture'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -116,7 +117,10 @@ export default function ClientHome() {
   const [clotureInconnue, setClotureInconnue] = useState<string | null>(null)
   const [captureError, setCaptureError] = useState<string | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     if (!dossierId) return
     setChargement(true)
     const [{ data: dossierData }, lecturePieces, lectureDocuments, lectureLignes, lectureCotisations, clotures] =
@@ -145,6 +149,7 @@ export default function ClientHome() {
         ),
         lireAnneesCloturees(dossierId),
       ])
+    if (!courante()) return
     setDossier(dossierData ?? null)
     setPieces(lecturePieces.lignes)
     setDocuments(lectureDocuments.lignes)

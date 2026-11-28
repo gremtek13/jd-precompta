@@ -21,6 +21,7 @@ import { pourLEspace, pourLEspaceSiTexte } from '../../lib/espaceVentes'
 import {
   ACCES_SANS_OBJET, PAR_LE_CLIENT, TITRES_PAR_LE_CLIENT, estLeClient, type AccesDuDossier,
 } from '../../lib/auteursVentes'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 // Ce que la fenêtre lit d'un statut lu sur la plateforme du client : de quoi dire un refus, et où.
 type StatutAnnulant = Pick<StatutLu, 'id' | 'facture_id' | 'code' | 'hote' | 'emis_le' | 'lu_le'>
@@ -90,39 +91,52 @@ export default function TransmissionFactureModal(props: Props) {
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
+  // Seule la dernière lecture partie de chaque groupe écrit : une relecture plus ancienne, revenue après, ne remplace rien
+  // (lib/derniereLecture.ts) ; un compteur par groupe, que les autres ne périment pas.
+  const commencerLectureDesTransmissions = useDerniereLecture()
   // Ses transmissions, lues EN ENTIER : une liste tronquée ne dirait pas si la facture est déjà partie.
   async function lireTransmissions() {
+    const courante = commencerLectureDesTransmissions()
     const lecture = await lireTout<TransmissionFacture>((debut, fin) =>
       supabase.from('transmissions_factures').select(COLONNES_TRANSMISSION, { count: 'exact' })
         .eq('facture_id', facture.id).order('cree_le').order('id').range(debut, fin),
     )
+    if (!courante()) return
     setTransmissions(lecture.complete ? lecture.lignes : null)
     setLuesA(Date.now())
     setLectureRatee(lecture.complete ? null : lecture.motif)
   }
 
+  const commencerLectureDesEvenements = useDerniereLecture()
   async function lireEvenements() {
+    const courante = commencerLectureDesEvenements()
     const { data, error } = await supabase.from('facture_superpdp_events').select('*')
       .eq('facture_id', facture.id).order('occurred_at', { ascending: true })
+    if (!courante()) return
     setEvenementsErreur(error ? messageErreur(error, "L'historique de Super PDP n'a pas pu être lu.") : null)
     setEvenements(error ? null : (data ?? []) as FactureSuperpdpEvent[])
   }
 
+  const commencerLectureDesStatuts = useDerniereLecture()
   // Les statuts de la facture lus sur la plateforme du client, EN ENTIER : un refus qu'on ne verrait pas laisserait
   // proposer un envoi que la base refuserait. Tri total.
   async function lireStatuts() {
+    const courante = commencerLectureDesStatuts()
     const lecture = await lireTout<StatutAnnulant>((debut, fin) =>
       supabase.from('statuts_factures_recus').select('id, facture_id, code, hote, emis_le, lu_le', { count: 'exact' })
         .eq('dossier_id', dossierId).eq('facture_id', facture.id).order('lu_le').order('id').range(debut, fin),
     )
+    if (!courante()) return
     setStatuts(lecture.complete ? lecture.lignes : null)
     setStatutsErreur(lecture.complete ? null : lecture.motif ?? 'lecture incomplète')
   }
 
+  const commencerLectureDeLOrigine = useDerniereLecture()
   // La facture que l'avoir corrige a-t-elle été rejetée (une transmission `rejete`), refusée chez Super PDP (210, 213),
   // ou refusée ou rejetée sur la plateforme du client (210, 213 lus, étape d7) ? Les mêmes questions que la base pose
   // avant toute transmission de l'avoir.
   async function lireAnnulationDeLOrigine(origineId: string) {
+    const courante = commencerLectureDeLOrigine()
     const [rejets, refus, statutsLus] = await Promise.all([
       supabase.from('transmissions_factures').select('id', { count: 'exact', head: true })
         .eq('facture_id', origineId).eq('etat', 'rejete'),
@@ -131,21 +145,27 @@ export default function TransmissionFactureModal(props: Props) {
       supabase.from('statuts_factures_recus').select('id', { count: 'exact', head: true })
         .eq('facture_id', origineId).in('code', [...STATUTS_ANNULATION_PLATEFORME]),
     ])
+    if (!courante()) return
     const erreur = rejets.error ?? refus.error ?? statutsLus.error
     if (erreur) setLectureRatee(messageErreur(erreur, 'Les transmissions de la facture corrigée n’ont pas pu être lues.'))
     else setAvoirInterne((rejets.count ?? 0) > 0 || (refus.count ?? 0) > 0 || (statutsLus.count ?? 0) > 0)
   }
 
+  const commencerLectureDesCanaux = useDerniereLecture()
   async function lireCanaux() {
+    const courante = commencerLectureDesCanaux()
     const [plateforme, statutSuperpdp] = await Promise.all([
       lireConnexionPlateforme(dossierId),
       supabase.functions.invoke<{ configured?: boolean }>('superpdp-credentials', { body: { dossierId, action: 'status' } }),
     ])
+    if (!courante()) return
     setConnexion(plateforme.erreur === null ? plateforme.donnees.connexion : undefined)
     setConnexionErreur(plateforme.erreur)
     if (statutSuperpdp.error || !statutSuperpdp.data) {
       setSuperpdp(undefined)
-      setSuperpdpErreur(await extraireErreurFonction(statutSuperpdp.error, 'La configuration de Super PDP n’a pas pu être lue.'))
+      const motif = await extraireErreurFonction(statutSuperpdp.error, 'La configuration de Super PDP n’a pas pu être lue.')
+      if (!courante()) return
+      setSuperpdpErreur(motif)
     } else {
       setSuperpdp(statutSuperpdp.data.configured === true)
       setSuperpdpErreur(null)
@@ -153,9 +173,12 @@ export default function TransmissionFactureModal(props: Props) {
   }
 
   useEffect(() => {
+    // La fenêtre est clée par facture ; le drapeau couvre sa fermeture pendant la lecture (audit des courses du 28/11/2026).
+    let annule = false
     supabase.from('facture_lignes').select('ordre, designation, quantite, prix_unitaire_ht, taux_tva, unite, reference')
       .eq('facture_id', facture.id).order('ordre')
       .then(({ data, error }) => {
+        if (annule) return
         if (error) setLectureRatee(messageErreur(error, 'Les lignes de la facture n’ont pas pu être lues.'))
         else setLignes((data ?? []) as LigneCii[])
       })
@@ -163,6 +186,7 @@ export default function TransmissionFactureModal(props: Props) {
       const origineId = facture.facture_origine_id
       supabase.from('factures_emises').select('numero, date_emission').eq('id', origineId).maybeSingle()
         .then(({ data, error }) => {
+          if (annule) return
           if (error) setLectureRatee(messageErreur(error, 'La facture que l’avoir corrige n’a pas pu être lue.'))
           else setOrigine(data ? { numero: data.numero, date_emission: data.date_emission } : null)
         })
@@ -174,6 +198,7 @@ export default function TransmissionFactureModal(props: Props) {
     // L'historique de Super PDP se lit toujours : la facture peut y être partie sans en porter le numéro, que sa
     // transmission a gardé si son écriture a échoué après l'envoi. Il ne s'affiche que pour une facture partie par lui.
     lireEvenements()
+    return () => { annule = true }
   }, [facture.id])
 
   useEffect(() => {

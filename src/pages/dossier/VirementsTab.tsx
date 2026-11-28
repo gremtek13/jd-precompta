@@ -15,6 +15,7 @@ import { compteDuDirigeant, ecritureDuVirementPersonnel, virementsPersonnelsAEcr
 import { messageErreur } from '../../lib/messageErreur'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee } from '../../lib/validationExercice'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 // Les virements entre le compte pro et le compte personnel de l'exploitant, marqués depuis l'onglet
 // Banque (bouton « Virement personnel » sur un mouvement non rapproché) : ses prélèvements, et ses
@@ -50,7 +51,10 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
   // lui-même, sans attente ; comptes en cours de lecture ou illisibles, le geste se suspend.
   const { banques, relireLesComptes } = useBanquesDuDossier(dossierId, modele.plan)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     setLoading(true)
     // Lue par tranches (voir lib/lectureComplete.ts) : cette liste est petite aujourd'hui, mais
     // elle porte un TOTAL — et un total calculé sur une lecture tronquée a l'air d'un total.
@@ -69,6 +73,7 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
           .order('id').range(debut, fin),
       ),
     ])
+    if (!courante()) return
     setLignes(lecture.lignes)
     setLectureIncomplete(lecture.complete ? null : lecture.motif)
     setEcritures(lectureDesEcritures.lignes)

@@ -1263,7 +1263,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   verrou ou une enveloppe (`sousVerrou`, `agir`) (`verrousEcritures.test.ts`) → « Un verrou d'exécution est un
   `useRef` », « LES GESTIONNAIRES D'ÉCRITURE SANS VERROU ».
 - **Une lecture plus lente écrit en dernier** : le drapeau d'annulation se pose avant la première écriture → « UNE
-  LECTURE PLUS LENTE ÉCRIT EN DERNIER ». `AuthContext` ne relit les rôles qu'au changement d'IDENTIFIANT → « UN RETOUR
+  LECTURE PLUS LENTE ÉCRIT EN DERNIER » ; une fonction de lecture qu'un effet appelle prend un numéro (`useDerniereLecture`,
+  `lib/derniereLecture.ts`), `if (!courante()) return` après chaque attente (`coursesDeLecture.test.ts`) → « LES COURSES DE
+  LECTURE DES ÉCRANS ». `AuthContext` ne relit les rôles qu'au changement d'IDENTIFIANT → « UN RETOUR
   SUR L'ONGLET RECHARGEAIT ». Banque : un seul verrou de rapprochement (`ecritureEnCours`) → « LE VOLET A OUVERT UNE
   COURSE ».
 - **Une recherche filtre l'affichage, jamais un total ni un export** (`recherchesEtTotaux.test.ts`). Un état qui porte
