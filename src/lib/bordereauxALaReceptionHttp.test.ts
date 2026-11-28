@@ -60,7 +60,11 @@ describe('la constante de receive-email', () => {
 })
 
 describe('receive-email servie (constante levée) : le bordereau écarté avant tout dépôt', () => {
-  it.each([0, 1, 2, 3, 4, 5])('scénario %i', async (i) => {
+  it('chaque scénario de la constante levée est joué ci-dessous', () => {
+    expect(scenariosDesBordereauxLeves(pdf)).toHaveLength(7)
+  })
+
+  it.each([0, 1, 2, 3, 4, 5, 6])('scénario %i', async (i) => {
     const s = scenariosDesBordereauxLeves(pdf)[i]
     expect(await jugerScenario(contrat, s, contexte, servie()), s.nom).toEqual([])
   })

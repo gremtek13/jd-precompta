@@ -55699,3 +55699,20 @@ après par cas distinct. Gardé par `src/lib/misesAJourAvecLeurVersion.test.ts` 
 12 exceptions nommées et comptées à l'intégration (15 sur la branche de l'audit : les trois de Cotisations et d'Immobilisations traitées par `8e88fee1` en sortent), Suppléments, charte du cabinet, Équipe,
 super-administrateur, restauration, la redate du brouillon). Questions : VERS-Q1 (une colonne de version tenue par la base), VERS-Q2
 (le véhicule écrit à chaque frappe).
+### 28/11/2026 — RELECTURE ADVERSE DU CHEMIN D'UNE PIÈCE, DU DÉPÔT À LA VALIDATION (MVP)
+
+Les quatre chemins du dépôt (client, cabinet, fiche, e-mail) relus angle par angle sur ce qui a changé depuis le 05/11/2026. Trois défauts
+établis, corrigés, chacun rouge avant et vert après. (1) `receive-email` écrivait les montants que la lecture rend dans la monnaie du
+document : une facture en dollars entrait ses dollars écrits en euros, là où les trois autres dépôts convertissent (`montantsPourPiece`).
+Elle s'écrit désormais comme la conversion au taux introuvable — euros nuls, devise et montant d'origine gardés, la fiche convertissant au
+taux de la BCE d'un clic —, sans appel tiers ; la devise se lit par une copie de `deviseDuTexte` (bloc de `lib/devises.ts`,
+`deviseDuTexteCopie.test.ts`), le scénario HTTP « une facture en dollars » la garde. (2) La fiche d'une pièce et le dépôt d'un avis de
+Cotisations laissaient au stockage le fichier déposé dont la base refusait la ligne (une pièce figée, une policy) — les trois autres le
+retirent ; retiré désormais, sur une RÉPONSE de la base seulement (`refusRenduParLaBase`, `lib/stockage.ts`) : une coupure laisse l'écriture
+incertaine, et un orphelin vaut mieux qu'une ligne sans fichier. (3) Un bordereau renommé « .csv » ou « .jpg » prenait le type de son
+extension et n'était pas lu ; en « .csv », rien ne le lisait plus, il entrait en relevé bancaire : le navigateur (`sansBordereau`) et
+`receive-email` lisent tout fichier dont les premiers octets sont ceux d'un PDF. Plausibles, laissés au cabinet : `receive-email` n'enregistre
+pas le texte OCR (l'empreinte du texte n'attrape pas deux exports d'une facture reçue par e-mail, PIECE-Q1), l'ancien fichier d'une pièce
+remplacée reste au stockage (PIECE-Q2). Écartés : la réservation des empreintes en vol, le chemin hors du dossier, le plafond des lectures au
+jour de Paris (le PDF de plus de 10 Mio reçu par e-mail compte une lecture que la borne refuse avant Textract : sans dépense). La validation en
+lot sans version lue relève de l'audit des mises à jour en cours. `receive-email` à redéployer.

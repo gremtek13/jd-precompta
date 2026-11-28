@@ -36,6 +36,7 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee } from '../../lib/validationExercice'
 import { preparerPiece } from '../../lib/bornesStockage'
+import { refusRenduParLaBase, retirerFichiers } from '../../lib/stockage'
 import { remplacementsDesPrevisionnelles, texteDeLAmbiguite, texteDuRemplacement } from '../../lib/previsionnelles'
 import {
   candidatesALaReunion, jugerLaModification, raisonDeNePasReunir, refusDeLaReunion, refusDesMontantsDeLEcheance,
@@ -582,7 +583,12 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
         nom_fichier: file.name,
         categorie: 'cotisation',
       })
-      if (insertError) throw insertError
+      if (insertError) {
+        // Le fichier vient d'être déposé et la base refuse la ligne qui le désigne : il est retiré, comme aux autres dépôts
+        // (relecture adverse du chemin d'une pièce, 28/11/2026) — sur une réponse de la base seulement (`refusRenduParLaBase`).
+        if (refusRenduParLaBase(insertError)) await retirerFichiers('pieces', [path], 'CotisationsTab', dossierId)
+        throw insertError
+      }
       load()
       const extraction = lecture.etat === 'lue' ? lecture.extraction : null
       setEcheancesProposees(extraction?.lecture_cotisation.echeances ?? [])

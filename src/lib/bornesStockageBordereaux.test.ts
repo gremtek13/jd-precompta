@@ -85,6 +85,18 @@ describe('drapeau levé : le bordereau se refuse avant tout envoi', () => {
     expect(lectures.n).toBe(PREPARATEURS.length)
   })
 
+  // UNE EXTENSION QUI MENT (relecture adverse du chemin d'une pièce, 28/11/2026) : un bordereau renommé « .csv » ou « .jpg »
+  // partait sous le type de son extension, sans être lu — et sous « .csv », rien d'autre ne le lisait.
+  it('un bordereau renommé « .csv » ou « .jpg » se reconnaît à ses premiers octets, et se refuse', async () => {
+    drapeau.leve = true
+    const bordereau = await bordereauFictifEnPdf()
+    for (const nom of ['releve.csv', 'photo.jpg', 'scan.png']) {
+      const issue = await preparerPiece(new File([bordereau.slice(0)], nom, { type: '' }))
+      expect([nom, 'refus' in issue && issue.refus.raison]).toEqual([nom, 'bordereau'])
+    }
+    expect(lectures.n).toBe(3)
+  })
+
   it('une facture ordinaire part ; une image et un CSV partent sans être lus ; un PDF trop lourd se refuse sur son poids, sans lecture', async () => {
     drapeau.leve = true
     expect('corps' in await preparerPiece(fichier(await factureFictive(), 'facture.pdf'))).toBe(true)

@@ -10,6 +10,10 @@
 // FIGÉ sur la pièce au moment de la conversion, jamais recalculé à l'affichage : un montant comptable
 // ne doit pas changer parce qu'on rouvre l'écran six mois plus tard.
 
+// ── DÉBUT COPIE deviseDuTexte ────────────────────────────────────────────────────────────────────────────────────────
+// LA DEVISE LUE SUR LE TEXTE D'UNE PIÈCE. L'original vit ici ; il est copié À L'IDENTIQUE dans receive-email, auto-portée (la
+// pièce jointe reçue par e-mail, qui écrivait en euros les montants d'une facture en dollars : relecture du 28/11/2026), et
+// deviseDuTexteCopie.test.ts compare la copie au caractère près et l'exécute contre l'original.
 export const DEVISE_PIVOT = 'EUR'
 
 // Les devises que la BCE cote et qu'on peut rencontrer sur une facture de fournisseur courant. La
@@ -43,6 +47,7 @@ export function deviseDuTexte(texte: string | null | undefined): string | null {
   }
   return null
 }
+// ── FIN COPIE deviseDuTexte ──────────────────────────────────────────────────────────────────────────────────────────
 
 export interface Cotation {
   date: string
