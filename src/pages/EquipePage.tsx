@@ -7,7 +7,7 @@ import type { CabinetAdmin, Dossier, DossierAssignation, RoleCabinetAdmin } from
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import ConfirmationArticle from './dossier/ConfirmationArticle'
-import { messageErreur } from '../lib/messageErreur'
+import { finDePhrase, messageErreur } from '../lib/messageErreur'
 import {
   LIBELLE_DU_ROLE, avisDuMembreAjoute, compteDeLaReponse, confirmationDeLEntree, copieDuRefus, corpsDuMembre,
   refusAConfirmerLEntree,
@@ -192,7 +192,7 @@ export default function EquipePage() {
       ? await supabase.from('dossier_assignations').delete().eq('user_id', userId).eq('dossier_id', dossierId)
       : await supabase.from('dossier_assignations').insert({ user_id: userId, dossier_id: dossierId })
     if (erreurAssignation) {
-      window.alert(`L’assignation n’a pas pu être ${assigne ? 'retirée' : 'ajoutée'} : ${messageErreur(erreurAssignation, 'refus de la base')}.`)
+      window.alert(`L’assignation n’a pas pu être ${assigne ? 'retirée' : 'ajoutée'} : ${finDePhrase(messageErreur(erreurAssignation, 'refus de la base'))}`)
     }
     load()
   }

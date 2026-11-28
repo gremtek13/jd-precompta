@@ -34,7 +34,7 @@ import { propositionsDuReleve } from '../../lib/propositionsDuReleve'
 import { EnTeteTriable, SelecteurDeTri } from '../../components/EnTeteTriable'
 import { trierLignes, type ColonneTriable } from '../../lib/triDesTableaux'
 import { useTriDuTableau } from '../../lib/useTriDuTableau'
-import { controlerSolde, phraseDesSoldes } from '../../lib/soldeReleve'
+import { controlerSolde, phraseDesSoldes, phraseDuReleveQuiNeBouclePas } from '../../lib/soldeReleve'
 import {
   colonneDeLaDateDeValeurDuReleve, decoderReleve, lireReleveOfxQif, NOM_DU_FORMAT, phraseDesSensDouteux, phraseDuSoldeAnnonce,
   REGLAGE_OFX_QIF, type ReleveOfxQifLu,
@@ -102,7 +102,7 @@ import PanneauDroit from '../../components/PanneauDroit'
 import ConnexionBancaireCard from './ConnexionBancaireCard'
 import { usePanneauDroit } from '../../lib/panneauDroit'
 import FicheMouvement from './FicheMouvement'
-import { messageErreur } from '../../lib/messageErreur'
+import { finDePhrase, messageErreur } from '../../lib/messageErreur'
 import {
   ACCES_DU_RELEVE_EN_COURS, AIDE_FILTRE_PROPOSES, ENVOIS_EN_COURS, LIBELLE_FILTRE_PROPOSES, PASTILLE_PROPOSE, etatDuFiltreProposes,
   gardeParLeFiltre, mouvementsProposesParLeClient, type AccesDuReleve, type EnvoisDuClient,
@@ -1549,7 +1549,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     const { error: erreurRetrait } = await supabase.from('regles_bancaires_ignorees').delete().eq('id', id)
     // Refusé, le retrait se DIT : la règle resterait active, et continuerait d'ignorer les prochains mouvements
     // importés que l'opérateur croit désormais à traiter.
-    if (erreurRetrait) window.alert(`La règle n’a pas pu être retirée : ${messageErreur(erreurRetrait, 'refus de la base')}.`)
+    if (erreurRetrait) window.alert(`La règle n’a pas pu être retirée : ${finDePhrase(messageErreur(erreurRetrait, 'refus de la base'))}`)
     load()
   }
 
@@ -3326,7 +3326,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const suitePdf = controlePdf ? phraseDeLaSuiteDuFichier(controlesDuCompte, [...lignesDuCompte, ...insereesPdf], controleDuFichier(sourceFileName, controlePdf))
         : soldesDesignes.length > 0 ? phraseDeLaSuiteDuFichier(controlesDuCompte, lignesDuCompte, null) : null
       const alertePdf = controlePdf && !controlePdf.coherent
-        ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controlePdf.soldeInitial.toFixed(2)} € + mouvements ${controlePdf.sommeMouvements.toFixed(2)} € = ${controlePdf.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controlePdf.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controlePdf.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
+        ? `\n\n${phraseDuReleveQuiNeBouclePas(controlePdf)}`
         : ''
 
       setPdfRows(null)
@@ -3441,7 +3441,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const suite = controle ? phraseDeLaSuiteDuFichier(controlesDuCompte, [...lignesDuCompte, ...aInserer], controleDuFichier(sourceFileName, controle))
         : soldes.length > 0 ? phraseDeLaSuiteDuFichier(controlesDuCompte, lignesDuCompte, null) : null
       const alerte = controle && !controle.coherent
-        ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controle.soldeInitial.toFixed(2)} € + mouvements ${controle.sommeMouvements.toFixed(2)} € = ${controle.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controle.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controle.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
+        ? `\n\n${phraseDuReleveQuiNeBouclePas(controle)}`
         : ''
       const ignoresDites = phraseDesIgnores(aInserer, regles)
       const finDite = finNonPosee === null ? '' : `\n\nLa fin de l’identifiant de ce relevé OFX n’a pas pu être retenue sur son compte `

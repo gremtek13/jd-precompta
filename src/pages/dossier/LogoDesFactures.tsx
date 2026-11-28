@@ -8,7 +8,7 @@ import {
   refusDuFichierChoisi, refusDuNouveauLogo,
 } from '../../lib/logoDesFacturesVue'
 import { TEXTE_ROMPUE } from '../../lib/parametresFacturationVue'
-import { messageErreur } from '../../lib/messageErreur'
+import { finDePhrase, messageErreur } from '../../lib/messageErreur'
 import type { ParametresFacturation } from '../../lib/types'
 
 // « LOGO DES FACTURES » (espace client, étape A5c2a) : un bloc de la carte « Paramètres en cours » de la vue « Paramètres »,
@@ -110,7 +110,7 @@ export default function LogoDesFactures({
     try {
       issue = await logoPret(dossierId, fichier)
     } catch (err) {
-      if (choixCourant.current === fichier) setRefusDuChoix(`Ce fichier n’a pas pu être lu : ${messageErreur(err, 'lecture impossible')}.`)
+      if (choixCourant.current === fichier) setRefusDuChoix(`Ce fichier n’a pas pu être lu : ${finDePhrase(messageErreur(err, 'lecture impossible'))}`)
       return
     }
     // Un choix remplacé pendant la lecture : la réponse du premier ne dit plus rien.

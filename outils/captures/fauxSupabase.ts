@@ -5,7 +5,8 @@
 // Il ne simule que ce qu'un écran LIT : les filtres `eq`/`in`/`is`/`gte`/`lte` s'appliquent quand la
 // colonne existe dans la ligne, `range` pagine et `count` annonce le total — sans quoi `lireTout`
 // déclarerait chaque lecture incomplète et les écrans afficheraient leur bandeau au lieu de leurs
-// données. Les écritures ne font rien. Une table absente d'ici est lue vide.
+// données. Les écritures ne font rien, sauf sous le levier `banc-ecritures` (voir `appliquerEcriture`). Une table absente d'ici est
+// lue vide.
 //
 // Les dossiers de la VALIDATION (d9, d10) tirent leurs écritures, leur numérotation et la 2035 gardée du
 // code même de l'application (voir `dossierDeValidation`) : écrits à la main, ils montreraient un écart
@@ -2930,6 +2931,190 @@ function connexionBancaire(corps: Ligne): { data: unknown; error: unknown } {
 
 type Filtre = (l: Ligne) => boolean
 
+// LES ÉCRITURES TENUES EN MÉMOIRE (levier `banc-ecritures`, 28/11/2026). Sans lui, `insert`, `update`, `upsert` et `delete` ne
+// changent rien et les fonctions d'écriture répondent `false` : un geste qui écrit partait sans erreur, et l'écran relu restait
+// tel quel (« Associer cette pièce », le mouvement toujours « Non rapproché »). Levier posé (lu à chaque appel), l'écriture
+// s'applique aux lignes servies, le temps de la page — un rechargement rend le banc d'origine —, et un `select` qui la suit rend
+// les lignes écrites, comme PostgREST (`count` aussi, quand l'appel le demande).
+//
+// LE BANC N'EST PAS LA BASE. Il n'y a ici ni RLS, ni contrainte, ni déclencheur, ni garde : une écriture que la base refuserait
+// passe, et une valeur que la base poserait d'elle-même (un défaut de colonne, un déclencheur) n'est imitée que par le gabarit
+// ci-dessous (la forme d'une ligne déjà servie de la table, ses colonnes à nul, ses booléens à faux). Ce mode juge l'ÉCRAN — ce
+// qu'il envoie, ce qu'il relit, ce qu'il dit après —, jamais ce que la base accepterait : les refus se jugent par les essais de
+// `supabase/essais/`. Un filtre que le banc ne sait pas appliquer à une écriture (`or`, `like`, `match`…) n'arrête rien : il est
+// nommé au journal (`window.__ecrituresDuBanc`), que `gestes.mjs` relit et dit, pour qu'une écriture trop large ne passe pas
+// pour juste.
+const ecrituresTenues = (): boolean => levierDuBanc('banc-ecritures') === '1'
+// LE REFUS JOUÉ (levier `banc-ecritures-refus`, une liste de tables et de fonctions séparées par des virgules) : l'écriture visée
+// ne s'applique pas et rend une erreur comme PostgREST rend celle d'une fonction qui lève (`P0001`, un message en français, comme
+// les refus de la base). Il éprouve le chemin de l'échec d'un geste — le message dit, le verrou relâché, l'écran inchangé —, jamais
+// un refus réel : le banc ne sait pas ce que la base refuserait.
+const ERREUR_DU_BANC = { message: 'Refus joué par le banc : cette écriture n’a pas été enregistrée.', code: 'P0001', details: null, hint: null }
+const refuseeParLeBanc = (cible: string): boolean => ecrituresTenues()
+  && (levierDuBanc('banc-ecritures-refus') ?? '').split(',').map((c) => c.trim()).includes(cible)
+type EcritureDuBanc = { genre: string; table: string; lignes: number; filtresNonTenus: string[] }
+const JOURNAL_DES_ECRITURES: EcritureDuBanc[] = []
+if (typeof window !== 'undefined') (window as unknown as { __ecrituresDuBanc: EcritureDuBanc[] }).__ecrituresDuBanc = JOURNAL_DES_ECRITURES
+// L'identifiant d'une ligne neuve, comme la base le tire (`gen_random_uuid`) : la page du banc est servie sur 127.0.0.1, contexte sûr.
+const idDuBanc = (): string => crypto.randomUUID()
+// Ce que la base poserait sur une ligne neuve, imité au plus près sans la connaître : la forme d'une ligne déjà servie de la table.
+function gabaritDe(table: string): Ligne {
+  const modele = (TABLES[table] ?? [])[0]
+  if (!modele) return {}
+  const maintenant = new Date().toISOString()
+  return Object.fromEntries(Object.entries(modele).map(([k, v]) => [
+    k, typeof v === 'boolean' ? false : ['created_at', 'updated_at', 'cree_le'].includes(k) ? maintenant : null,
+  ]))
+}
+function ligneNeuve(table: string, valeurs: Ligne): Ligne {
+  return { ...gabaritDe(table), id: idDuBanc(), ...valeurs }
+}
+type OperationDuBanc = { genre: 'insert' | 'update' | 'upsert' | 'delete'; valeurs: unknown; options?: Ligne }
+// L'écriture, appliquée à la table (pas à la copie que `lignesDuBanc` décore : les deux ont le même ordre et la même longueur,
+// sauf `comptes_bancaires` sans le levier `banc-comptes`, dont les lignes sont fabriquées à la lecture — une écriture y est
+// tenue et reste invisible, ce que le journal dit par son nombre de lignes). Rend les lignes écrites, telles que relues.
+function appliquerEcriture(table: string, op: OperationDuBanc, filtres: readonly Filtre[], nonTenus: readonly string[]): Ligne[] {
+  const base = TABLES[table] ?? []
+  TABLES[table] = base
+  const decorees = lignesDuBanc(table)
+  const retenus = decorees.length === base.length
+    ? base.map((_, i) => i).filter((i) => filtres.every((f) => f(decorees[i])))
+    : []
+  const relue = (l: Ligne): Ligne => lignesDuBanc(table).find((x) => x.id === l.id) ?? l
+  let ecrites: Ligne[] = []
+  if (op.genre === 'insert' || op.genre === 'upsert') {
+    const valeurs = (Array.isArray(op.valeurs) ? op.valeurs : [op.valeurs]) as Ligne[]
+    const conflit = String(op.options?.onConflict ?? 'id').split(',').map((c) => c.trim())
+    for (const v of valeurs) {
+      const existante = op.genre === 'upsert'
+        ? base.findIndex((l) => conflit.every((c) => c in v && l[c] === v[c]))
+        : -1
+      if (existante >= 0) {
+        if (op.options?.ignoreDuplicates === true) continue
+        base[existante] = { ...base[existante], ...v }
+        ecrites.push(base[existante])
+      } else {
+        const neuve = ligneNeuve(table, v)
+        base.push(neuve)
+        ecrites.push(neuve)
+      }
+    }
+  } else if (op.genre === 'update') {
+    for (const i of retenus) {
+      base[i] = { ...base[i], ...(op.valeurs as Ligne) }
+      ecrites.push(base[i])
+    }
+  } else {
+    const partantes = new Set(retenus)
+    ecrites = retenus.map((i) => base[i])
+    TABLES[table] = base.filter((_, i) => !partantes.has(i))
+  }
+  JOURNAL_DES_ECRITURES.push({ genre: op.genre, table, lignes: ecrites.length, filtresNonTenus: [...nonTenus] })
+  if (nonTenus.length > 0) console.warn(`[banc] ${op.genre} sur ${table} : filtre(s) non tenu(s) par le banc — ${nonTenus.join(', ')}`)
+  return op.genre === 'delete' ? ecrites : ecrites.map(relue)
+}
+
+// LES FONCTIONS D'ÉCRITURE QUE LES GESTES DU PARCOURS APPELLENT (levier `banc-ecritures`), imitées au plus juste de leur EFFET — ce
+// que la fonction en base change aux lignes que l'écran relit —, d'après leur texte exporté (`supabase/schema/`) : jamais leurs
+// refus, leurs vérifications ni leurs contrôles d'équilibre (le banc n'est pas la base, voir plus haut). Une fonction absente d'ici
+// répond comme sans le levier.
+function lignesDuBrouillonDe(dossierId: unknown, date: unknown, ecritures: unknown, lien: Ligne): Ligne[] {
+  const maintenant = new Date().toISOString()
+  return ((Array.isArray(ecritures) ? ecritures : []) as Ligne[]).map((e) => ligneNeuve('ecritures_brouillon', {
+    dossier_id: dossierId, piece_id: null, ligne_bancaire_id: null, date, compte: e.compte, libelle: e.libelle ?? '',
+    montant: Number(e.montant), sens: e.sens, statut: 'proposee', created_at: maintenant, ...lien,
+  }))
+}
+// Le brouillon PROPRE à un mouvement (`lignesPropresAuMouvement.test.ts`) : ni d'une pièce, ni d'une facture, ni d'un encaissement.
+const propreAuMouvement = (b: Ligne, ligneId: unknown) =>
+  b.ligne_bancaire_id === ligneId && b.piece_id == null && b.facture_id == null && b.encaissement_id == null
+function rpcDesGestes(nom: string, args?: Ligne): { data: unknown; error: null } | null {
+  if (!ecrituresTenues() || !args) return null
+  const journal = (lignes: number) => JOURNAL_DES_ECRITURES.push({ genre: `rpc ${nom}`, table: '', lignes, filtresNonTenus: [] })
+  const mouvements = () => TABLES.lignes_bancaires ?? []
+  const brouillon = () => TABLES.ecritures_brouillon ?? []
+  // `affecter_mouvement_bancaire`, `rapprocher_cotisation` : le mouvement rapproché (sa catégorie et son taux, ou son échéance),
+  // son brouillon propre remplacé par l'écriture proposée, à sa date.
+  const classer = (ligneId: unknown, champs: Ligne, ecritures: unknown): number => {
+    const ligne = mouvements().find((l) => l.id === ligneId)
+    if (!ligne) return 0
+    TABLES.lignes_bancaires = mouvements().map((l) => (l.id === ligneId ? { ...l, ...champs, statut: 'rapprochee' } : l))
+    const neuves = lignesDuBrouillonDe(ligne.dossier_id, ligne.date, ecritures, { ligne_bancaire_id: ligneId })
+    TABLES.ecritures_brouillon = [...brouillon().filter((b) => !propreAuMouvement(b, ligneId)), ...neuves]
+    return neuves.length
+  }
+  // Leurs retraits : le mouvement remis « à traiter », son brouillon sans pièce retiré.
+  const declasser = (ligneId: unknown, champs: Ligne): number => {
+    TABLES.lignes_bancaires = mouvements().map((l) => (l.id === ligneId ? { ...l, ...champs, statut: 'non_rapprochee' } : l))
+    const avant = brouillon().length
+    TABLES.ecritures_brouillon = brouillon().filter((b) => !(b.ligne_bancaire_id === ligneId && b.piece_id == null))
+    return avant - TABLES.ecritures_brouillon.length
+  }
+  let data: unknown = null
+  switch (nom) {
+    case 'affecter_mouvement_bancaire':
+      data = classer(args.p_ligne_bancaire_id, { categorie_id: args.p_categorie_id, taux_tva: args.p_taux_tva ?? null }, args.p_ecritures)
+      break
+    case 'affecter_mouvements_bancaires':
+      data = ((args.p_affectations ?? []) as Ligne[]).reduce((n, a) => {
+        classer(a.ligne_bancaire_id, { categorie_id: a.categorie_id, taux_tva: a.taux_tva ?? null }, a.ecritures)
+        return n + 1
+      }, 0)
+      break
+    case 'retirer_affectation_mouvement_bancaire':
+      data = declasser(args.p_ligne_bancaire_id, { categorie_id: null, taux_tva: null })
+      break
+    case 'rapprocher_cotisation':
+      data = classer(args.p_ligne_bancaire_id, { cotisation_id: args.p_cotisation_id }, args.p_ecritures)
+      break
+    case 'retirer_rapprochement_cotisation':
+      data = declasser(args.p_ligne_bancaire_id, { cotisation_id: null })
+      break
+    // `enregistrer_operation_caisse` rend l'opération écrite ; ses lignes au brouillon la citent (`operation_caisse_id`), à sa date.
+    case 'enregistrer_operation_caisse': {
+      const operation = ligneNeuve('operations_caisse', {
+        dossier_id: args.p_dossier_id, genre: args.p_genre, date: args.p_date, montant: args.p_montant, categorie_id: args.p_categorie_id ?? null,
+        taux_tva: args.p_taux_tva ?? null, encaissements_du_jour: args.p_genre === 'recette' ? (args.p_encaissements_du_jour ?? []) : null,
+        piece_id: null, origine: CLIENT_DU_BANC ? 'client' : 'cabinet', remplace_id: null, cree_par: session.user.id,
+        cree_le: new Date().toISOString(), retire_le: null, retire_par: null,
+      })
+      TABLES.operations_caisse = [...(TABLES.operations_caisse ?? []), operation]
+      TABLES.ecritures_brouillon = [...brouillon(), ...lignesDuBrouillonDe(args.p_dossier_id, args.p_date, args.p_ecritures, { operation_caisse_id: operation.id })]
+      data = operation
+      break
+    }
+    // `regler_piece_par_la_caisse` : le paiement d'une pièce par la caisse, une opération `paiement` qui cite la pièce, au montant
+    // signé que l'écran envoie. Ses lignes au brouillon, la base ne les écrit pas ici (la génération de la pièce les répartit) : rien.
+    case 'regler_piece_par_la_caisse': {
+      const operation = ligneNeuve('operations_caisse', {
+        dossier_id: args.p_dossier_id, genre: 'paiement', date: args.p_date, montant: args.p_montant, categorie_id: null, taux_tva: null,
+        encaissements_du_jour: null, piece_id: args.p_piece_id, origine: CLIENT_DU_BANC ? 'client' : 'cabinet', remplace_id: null,
+        cree_par: session.user.id, cree_le: new Date().toISOString(), retire_le: null, retire_par: null,
+      })
+      TABLES.operations_caisse = [...(TABLES.operations_caisse ?? []), operation]
+      data = operation
+      break
+    }
+    case 'retirer_operation_caisse':
+      TABLES.operations_caisse = (TABLES.operations_caisse ?? []).map((o) => (o.id === args.p_operation_id
+        ? { ...o, retire_le: new Date().toISOString(), retire_par: session.user.id } : o))
+      TABLES.ecritures_brouillon = brouillon().filter((b) => b.operation_caisse_id !== args.p_operation_id)
+      data = null
+      break
+    default:
+      return null
+  }
+  journal(typeof data === 'number' ? data : 1)
+  return { data, error: null }
+}
+
+// Les fonctions que le banc jouait avant le levier (les paramètres, les écritures libres, les réglages de l'export) écrivent avec ou
+// sans lui ; sous lui, elles se disent aussi au journal.
+function journaliserLaFonction<T>(nom: string, rendu: T | null): T | null {
+  if (rendu !== null && ecrituresTenues()) JOURNAL_DES_ECRITURES.push({ genre: `rpc ${nom}`, table: '', lignes: 1, filtresNonTenus: [] })
+  return rendu
+}
+
 function requete(table: string) {
   const filtres: Filtre[] = []
   let tete = false
@@ -2939,9 +3124,23 @@ function requete(table: string) {
   const sur = (col: string, test: (v: unknown) => boolean): Filtre => (l) => !(col in l) || test(l[col])
   const chaine: Record<string, unknown> = {}
   const soi = () => chaine
+  // Sous le levier `banc-ecritures` seulement (voir `appliquerEcriture`) : l'écriture demandée, ses filtres que le banc ne tient
+  // pas, et si un `select` la suit. Sans lui, rien de tout cela n'est posé et la chaîne répond comme hier.
+  let operation: OperationDuBanc | null = null
+  let retour = false
+  const nonTenus: string[] = []
+  const ecriture = (genre: OperationDuBanc['genre']) => (valeurs?: unknown, options?: Ligne) => {
+    if (ecrituresTenues()) operation = genre === 'delete' ? { genre, valeurs: null, options: valeurs as Ligne | undefined } : { genre, valeurs, options }
+    return chaine
+  }
+  const nonTenu = (nom: string) => (...a: unknown[]) => {
+    if (operation) nonTenus.push(`${nom}(${a.map((x) => JSON.stringify(x)).join(', ')})`)
+    return chaine
+  }
+  const compare = (x: unknown, v: unknown) => (typeof x === 'number' && typeof v === 'number' ? x - v : String(x).localeCompare(String(v)))
   Object.assign(chaine, {
-    select: (_c?: string, options?: { head?: boolean }) => { tete = !!options?.head; return chaine },
-    insert: soi, update: soi, upsert: soi, delete: soi,
+    select: (_c?: string, options?: { head?: boolean }) => { tete = !!options?.head; retour = true; return chaine },
+    insert: ecriture('insert'), update: ecriture('update'), upsert: ecriture('upsert'), delete: ecriture('delete'),
     // LA JOINTURE DES LIGNES DE FACTURE (étape VF4c2) : `facture_lignes` se filtre sur une colonne de SA facture
     // (`factures_emises.dossier_id`, `factures_emises.source_de_la_vente` — lib/ventesFactureesLecture.ts), qu'une ligne ne
     // porte pas. `sur` laissait passer toute colonne absente : chaque lecture des ventes facturées recevait les lignes de
@@ -2959,12 +3158,28 @@ function requete(table: string) {
     not: (c: string, op: string, v: unknown) => { filtres.push(sur(c, (x) => (op === 'is' ? x !== v : true))); return chaine },
     gte: (c: string, v: string) => { filtres.push(sur(c, (x) => x == null || String(x) >= v)); return chaine },
     lte: (c: string, v: string) => { filtres.push(sur(c, (x) => x == null || String(x) <= v)); return chaine },
-    gt: soi, lt: soi, like: soi, ilike: soi, or: soi, filter: soi, match: soi, contains: soi, order: soi, limit: soi,
+    // Une écriture tient `gt` et `lt` ; une lecture les ignore, comme hier. Les autres filtres d'une écriture sont nommés au journal.
+    gt: (c: string, v: unknown) => { if (operation) filtres.push(sur(c, (x) => x != null && compare(x, v) > 0)); return chaine },
+    lt: (c: string, v: unknown) => { if (operation) filtres.push(sur(c, (x) => x != null && compare(x, v) < 0)); return chaine },
+    like: nonTenu('like'), ilike: nonTenu('ilike'), or: nonTenu('or'), filter: nonTenu('filter'), match: nonTenu('match'),
+    contains: nonTenu('contains'), order: soi, limit: soi,
     range: (d: number, f: number) => { debut = d; fin = f; return chaine },
     single: () => { unique = 'single'; return chaine },
     maybeSingle: () => { unique = 'maybe'; return chaine },
     then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
       if (table === 'ecritures_libres' || table === 'ecritures_brouillon') ecrituresFigeesDuBanc()
+      if (operation && refuseeParLeBanc(table)) {
+        JOURNAL_DES_ECRITURES.push({ genre: `${operation.genre} refusé`, table, lignes: 0, filtresNonTenus: [] })
+        operation = null
+        return Promise.resolve({ data: null, error: ERREUR_DU_BANC, count: null, status: 400, statusText: 'Bad Request' }).then(suite, echec)
+      }
+      if (operation) {
+        const ecrites = appliquerEcriture(table, operation, filtres, nonTenus)
+        const data = !retour ? null : unique ? (ecrites[0] ?? null) : ecrites
+        const compte = operation.options?.count === 'exact' ? ecrites.length : null
+        operation = null
+        return Promise.resolve({ data, error: null, count: compte, status: 200, statusText: 'OK' }).then(suite, echec)
+      }
       const lignes = lignesDuBanc(table).filter((l) => filtres.every((f) => f(l)))
       let reponse: unknown
       if (unique) reponse = { data: lignes[0] ?? null, error: null }
@@ -3292,7 +3507,9 @@ export const supabase = {
   },
   // « Vérifier l'empreinte » d'un exercice validé répond « intacte » ; la couverture du relevé et les droits de
   // l'appelant (espace client, étape P7), comme leurs fonctions en base ; tout autre appel, faux.
-  rpc: (nom: string, args?: { p_dossier_id?: string } & Ligne) => (nom === 'caisse_du_client'
+  rpc: (nom: string, args?: { p_dossier_id?: string } & Ligne) => (refuseeParLeBanc(nom)
+    ? Promise.resolve((JOURNAL_DES_ECRITURES.push({ genre: `rpc ${nom} refusé`, table: '', lignes: 0, filtresNonTenus: [] }), { data: null, error: ERREUR_DU_BANC }))
+    : nom === 'caisse_du_client'
     ? caisseDuClientDuBanc(args)
     : nom === 'plafonds_de_l_assistant'
       ? plafondsDuBanc()
@@ -3311,7 +3528,8 @@ export const supabase = {
       // en entier » et ne se calculait pas. Le dossier basculé (d12) n'est pas servi : sa simulation le dit.
       : nom === 'ventes_facturees_de_la_simulation' && (TABLES.dossiers ?? []).some((d) => d.id === args?.p_dossier_id && d.ventes_par_les_factures !== true)
         ? Promise.resolve({ data: { par_mois: {}, sources: [] }, error: null })
-      : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDesEcrituresLibres(nom, args) ?? rpcDesReglagesDExport(nom, args)
+      : Promise.resolve(journaliserLaFonction(nom, rpcDesParametres(nom, args) ?? rpcDesEcrituresLibres(nom, args) ?? rpcDesReglagesDExport(nom, args))
+        ?? rpcDesGestes(nom, args)
         ?? rpcDuBanc(nom, args?.p_dossier_id))),
   from: (table: string) => requete(table),
   storage: {

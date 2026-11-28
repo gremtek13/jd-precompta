@@ -59,3 +59,10 @@ function refusDuStockage(erreur: object): string | null {
   }
   return null
 }
+
+// UNE PHRASE QUI FINIT DÉJÀ N'EN REPREND PAS UN SECOND POINT (28/11/2026, vu au banc des gestes). Un refus de la base est une
+// phrase française finie (`raise exception '…plus.'`), et l'écran qui l'enchâssait dans la sienne en y ajoutant son propre point final
+// disait « …n’a pas été enregistrée.. ». Le point s'ajoute ici, seulement quand le message ne finit pas déjà une phrase.
+export function finDePhrase(message: string): string {
+  return /[.!?…]\s*$/.test(message) ? message.trimEnd() : `${message}.`
+}

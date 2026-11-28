@@ -1077,6 +1077,18 @@ describe('PiecesTab — une écriture refusée se dit', () => {
     expect(screen.getByRole('button', { name: 'Valider la sélection (2)' })).toBeTruthy()
   })
 
+  // UN REFUS DE LA BASE FINIT DÉJÀ SA PHRASE (28/11/2026, vu au banc des gestes) : une fonction qui lève le fait en français, point
+  // final compris, et l'alerte en ajoutait un second — « …n’a pas été enregistrée.. ».
+  it('« Valider la sélection » refusée par une phrase finie ne double pas son point', async () => {
+    poser(deuxPieces())
+    faux.refusMaj = 'Une pièce figée ne se valide plus.'
+    const dites = alertes()
+    await toutSelectionner()
+    await act(async () => { screen.getByRole('button', { name: /Valider la sélection/ }).click() })
+
+    expect(dites).toEqual(['La sélection n’a pas pu être validée : Une pièce figée ne se valide plus.'])
+  })
+
   it('« Valider la sélection » acceptée ne dit rien, et vide la sélection', async () => {
     poser(deuxPieces())
     const dites = alertes()

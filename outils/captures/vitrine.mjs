@@ -4,6 +4,14 @@
 //   npx vite --config outils/captures/vite.config.ts        # sert l'application sur 127.0.0.1:5199
 //   npm i --no-save playwright-core@1.56.1                   # hors package.json : outil, pas dépendance
 //   node outils/captures/vitrine.mjs [filtre]                # images dans outils/captures/sorties/
+//   node outils/captures/debordements.mjs [largeur] …        # ce qui déborde, visite par visite (son en-tête)
+//   node outils/captures/gestes.mjs [largeur]                # les gestes qui ÉCRIVENT, joués et jugés à l'écran (son en-tête)
+//
+// Le faux Supabase (fauxSupabase.ts) ne fait rien d'une écriture, sauf sous le levier `banc-ecritures` (localStorage, que
+// gestes.mjs pose) : `insert`, `update`, `upsert` et `delete` s'appliquent alors aux lignes servies, le temps de la page, et
+// les fonctions d'écriture du parcours imitent leur effet (`rpcDesGestes`) ; `banc-ecritures-refus` en rend certaines en
+// erreur. Le banc n'est pas la base : ni RLS, ni contrainte, ni refus. `BANC_PORT=5200` sert et visite un second banc à côté
+// du premier (une autre copie de travail) ; vitrine.mjs reste sur 5199.
 //
 // PIÈGE, payé une fois : ne pas donner au navigateur le mandataire de l'environnement (HTTPS_PROXY).
 // Il y enverrait AUSSI le serveur local, et la capture montrerait la page d'erreur du relais au lieu

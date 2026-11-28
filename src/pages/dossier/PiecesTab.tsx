@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT, LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesTvaImpossible } from '../../lib/controles'
-import { messageErreur } from '../../lib/messageErreur'
+import { finDePhrase, messageErreur } from '../../lib/messageErreur'
 import { DEVISE_PIVOT } from '../../lib/devises'
 import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
 import { badgeDeLaPieceNonLue, pieceNonLue, rangSousAValider } from '../../lib/lectureDesPieces'
@@ -764,7 +764,7 @@ export default function PiecesTab({
       const { error } = await supabase.from('pieces').update({ statut: 'validee' }).in('id', ids)
       // Refusée, la sélection est GARDÉE : vidée, il faudrait la refaire pièce par pièce pour réessayer.
       if (error) {
-        window.alert(`La sélection n’a pas pu être validée : ${messageErreur(error, 'refus de la base')}.`)
+        window.alert(`La sélection n’a pas pu être validée : ${finDePhrase(messageErreur(error, 'refus de la base'))}`)
       } else {
         const restees = new Set(ecartesDeLaSelection.map((e) => e.piece.id))
         setSelected(new Set([...selected].filter((id) => restees.has(id))))

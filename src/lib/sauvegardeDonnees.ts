@@ -3,7 +3,7 @@ import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { ORIGINAUX_DES_IMPORTS_PREVUS } from './bornesStockage'
 import { lireLeLogo } from './logoDesFacturesLecture'
 import { deposerLeLogo } from './logoDesFacturesEcriture'
-import { messageErreur } from './messageErreur'
+import { finDePhrase, messageErreur } from './messageErreur'
 import { HORS_PERIMETRE_DES_SECRETS, RestaurationInterrompue, type DossierPartiel } from './restaurationInterrompue'
 import {
   EXPLICATION_DEJA_LA, EXPLICATION_REDEPOSE, VERSION_SAUVEGARDE, bilanDesLogos, ecartsDesLogos, explicationDuDepotEchoue,
@@ -608,7 +608,7 @@ export async function restaurerSauvegarde(
 // src/lib/restaurationInterrompue.ts, la tentative n'y a rien déposé et ce qui s'y trouve est ce qu'elle vient rejoindre.
 export async function retirerDossierPartiel(partiel: DossierPartiel): Promise<void> {
   const { data, error } = await supabase.from('dossiers').delete().eq('id', partiel.id).select('id').maybeSingle()
-  if (error) throw new Error(`Le dossier partiel n’a pas été retiré : ${messageErreur(error, 'la base a refusé la suppression')}.`)
+  if (error) throw new Error(`Le dossier partiel n’a pas été retiré : ${finDePhrase(messageErreur(error, 'la base a refusé la suppression'))}`)
   if (!data) {
     throw new Error(
       'Le dossier partiel n’a pas été retiré : la base n’a rendu aucune ligne supprimée (droit refusé, ou dossier déjà parti). Relis la base avant de relancer la restauration.',

@@ -3,7 +3,7 @@ import {
 } from './bornesStockage'
 import { refusDeLaPublication } from './documentsEtDemandes'
 import { empreinteSha256 } from './logoDesFactures'
-import { messageErreur } from './messageErreur'
+import { finDePhrase, messageErreur } from './messageErreur'
 import { supabase } from './supabase'
 import type { DocumentDuCabinet } from './documentsEtDemandesVue'
 
@@ -40,7 +40,7 @@ export async function deposerEtPublierUnDocument(
     upsert: false, contentType: pret.type,
   })
   if (erreurDuDepot) {
-    return { ok: false, message: `Le fichier n’est pas déposé : ${messageErreur(erreurDuDepot, 'refus du stockage')}.` }
+    return { ok: false, message: `Le fichier n’est pas déposé : ${finDePhrase(messageErreur(erreurDuDepot, 'refus du stockage'))}` }
   }
   const { data, error } = await supabase.rpc('publier_document_du_cabinet', {
     p_dossier_id: dossierId, p_document_id: documentId, p_titre: saisie.titre, p_nature: saisie.nature,

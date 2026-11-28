@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { controlerSolde, lignesDeSolde } from './soldeReleve'
+import { controlerSolde, lignesDeSolde, phraseDuReleveQuiNeBouclePas } from './soldeReleve'
+import { formatMoney } from './format'
 import type { ColumnMapping } from './csv'
 
 const mapping: ColumnMapping = { colDate: 0, colMontant: 1, colLibelle: 4, hasHeader: false }
@@ -141,5 +142,22 @@ describe('controlerSolde — dates des soldes', () => {
     )
     expect(c?.dateInitiale).toBe('2025-01-01')
     expect(c?.dateFinale).toBe('2025-12-31')
+  })
+})
+
+describe('phraseDuReleveQuiNeBouclePas', () => {
+  // Les montants comme l'écran les écrit, jamais `toFixed` (« 1000.00 € ») ; l'écart en valeur absolue, dans les deux sens.
+  it('dit les quatre montants et l’écart en euros écrits à la française', () => {
+    const controle = controlerSolde([{ date: '2025-06-01', montant: 1000 }, { date: '2025-06-30', montant: 1050 }], [{ montant: -100 }, { montant: 250 }])
+    expect(controle?.coherent).toBe(false)
+    const phrase = phraseDuReleveQuiNeBouclePas(controle!)
+    expect(phrase).toBe(`⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${formatMoney(1000)} + mouvements ${formatMoney(150)} = ${formatMoney(1150)}, `
+      + `alors que le solde de clôture indique ${formatMoney(1050)}.\nÉcart de ${formatMoney(100)} : il manque probablement des opérations dans le fichier.`)
+    expect(phrase).not.toMatch(/\d\.\d{2} €/)
+  })
+
+  it('dit un écart négatif (une sortie de trop) sans son signe', () => {
+    const controle = controlerSolde([{ date: '2025-06-01', montant: 1000 }, { date: '2025-06-30', montant: 1200 }], [{ montant: 150 }])
+    expect(phraseDuReleveQuiNeBouclePas(controle!)).toContain(`Écart de ${formatMoney(50)} :`)
   })
 })
