@@ -1,0 +1,4 @@
+dateOp;dateVal;label;category;categoryParent;supplierFound;amount;accountNum;accountLabel;accountBalance
+28/11/26;28/11/26;"VIR SEPA CPAM FICTIVE";"Remboursements";"Revenus";"cpam";312,80;00000000000;"COMPTE FICTIF";1 204,30
+20/11/26;20/11/26;"PRLV SEPA URSSAF FICTIVE";"Cotisations";"Impots";"urssaf";-98,00;00000000000;"COMPTE FICTIF";1 204,30
+05/11/26;05/11/26;"CARTE 04/11/26 PHARMACIE FICTIVE";"Sante";"Sante";"pharmacie";-12,50;00000000000;"COMPTE FICTIF";1 204,30

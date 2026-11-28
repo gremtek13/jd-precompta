@@ -4,13 +4,13 @@ import { estOuvert } from '../../lib/modulesDuCabinet'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
-import { colonneDeLaDateDeValeur, detectColumnMapping, lignesDeDonnees, parseCsv, type FormatDesMontants } from '../../lib/csv'
+import { colonneDeLaDateDeValeur, detectColumnMapping, lignesDeDonnees, parseCsv, refusDeLaDevise, type FormatDesMontants } from '../../lib/csv'
 import { DATE_DE_VALEUR_PREVUE, ECART_MAXIMAL_DE_LA_DATE_DE_VALEUR, phraseDesDatesDeValeur } from '../../lib/dateDeValeur'
 import { argumentsDuMode, MODE_DE_REGLEMENT_PREVU, modeDeLaFiche, type ModeDUnMouvement } from '../../lib/modeDeReglement'
 import { type EncodageLu } from '../../lib/decodageTexte'
 import {
   AUCUNE_DECISION, douteDuSens, interpreterReleve, operationsDuPdf, partagerParMultiplicite, phraseDesEcartees,
-  phraseDesRecouvrements, recouvrements, refusDesLignesATrancher, refusDuReglage, type DecisionDeSolde, type Recouvrement,
+  phraseDesRecouvrements, recouvrements, refusDesLignesATrancher, refusDesTableauxSuivants, refusDuReglage, type DecisionDeSolde, type Recouvrement,
   type ReglageDeLImport,
 } from '../../lib/importReleve'
 import { extractPdfLignes } from '../../lib/pdfText'
@@ -3151,7 +3151,12 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   )
   // Deux refus dits avant le clic, le bouton grisé : un réglage qui ferait entrer de faux montants, et une ligne qui dit
   // « solde » sans que le cabinet ait tranché ce qu'elle est.
-  const refusReglage = rows ? (refusDuReglage(reglage) ?? (interpretation ? refusDesLignesATrancher(interpretation.aTrancher) : null)) : null
+  // Deux refus du fichier lui-même (28/11/2026) : un second tableau sous son propre en-tête (un autre compte, une carte), et
+  // une colonne « Devise » qui dit une autre monnaie que l'euro.
+  const refusReglage = rows
+    ? (refusDesTableauxSuivants(dataRows) ?? refusDeLaDevise(rows, dataRows) ?? refusDuReglage(reglage)
+      ?? (interpretation ? refusDesLignesATrancher(interpretation.aTrancher) : null))
+    : null
   function decider(ligne: readonly string[], decision: DecisionDeSolde | null) {
     setDecisions((avant) => {
       const apres = new Map(avant)
@@ -3355,7 +3360,8 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
     try {
       if (!interpretation) return
       // Un réglage qui ferait entrer de faux montants (le solde courant pris pour un montant) se refuse, et le dit.
-      const refus = refusDuReglage(reglage) ?? refusDesLignesATrancher(interpretation.aTrancher)
+      const refus = (rows ? refusDesTableauxSuivants(dataRows) ?? refusDeLaDevise(rows, dataRows) : null)
+        ?? refusDuReglage(reglage) ?? refusDesLignesATrancher(interpretation.aTrancher)
       if (refus) throw new Error(refus)
       // Les opérations d'un OFX dont le signe contredit le type, dites dans l'aperçu, se confirment encore au clic : elles
       // entrent avec le signe du montant, jamais retourné, et aucun écran ne retire un mouvement importé.

@@ -1,0 +1,3 @@
+Status,Settlement date (UTC),Operation date (UTC),Total amount (incl. VAT),Currency,Counterparty name,Payment method
+settled,30-11-2026 23:30:00,30-11-2026 23:29:12,-12.50,EUR,PHARMACIE FICTIVE,card
+settled,28-11-2026 09:15:00,28-11-2026 09:15:00,312.80,EUR,CPAM FICTIVE,transfer

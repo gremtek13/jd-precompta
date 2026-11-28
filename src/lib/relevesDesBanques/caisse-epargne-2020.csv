@@ -1,0 +1,10 @@
+Code de la banque : 00000;Code de l'agence : 00000;Date de début de téléchargement : 01/11/2026;Date de fin de téléchargement : 30/11/2026;;
+Numéro de compte : 00000000000;Nom du compte : CPT DEPOT PROF.;Devise : EUR;;;
+;;;;;
+Solde en fin de période;;;;2350,03;
+Date;Numéro d'opération;Libellé;Débit;Crédit;Détail
+30/11/2026;3011202620261130-10.48.46.000001 -;VIR SEPA CPAM FICTIVE;;+312,8;
+25/11/2026;2511202620261125-02.48.30.000002 -;PRLV URSSAF FICTIVE;-98;;URSSAF FICTIVE COTISATIONS
+12/11/2026;1211202620261112-16.52.37.000003 -;CB PHARMACIE FICT;-12,5;;
+05/11/2026;0511202620261105-10.43.15.000004 -;VIR SEPA PATIENT FICTIF;;43,4;
+Solde en début de période;;;;2104,33;

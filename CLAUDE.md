@@ -1435,8 +1435,11 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   même interprétation, montrée signée avant le clic ; un montant illisible s'écarte et se compte, jamais zéro ; le
   dédoublonnage compte par multiplicité ; un solde se reconnaît à sa forme ; un recouvrement se confirme ; l'OFX et le
   QIF se lisent au contenu, sans réglage de colonnes, par le même aval (`lib/releveOfxQif.ts`), et ce qui n'est pas sûr
-  se refuse (plusieurs comptes, une carte, une autre devise, un ordre jour/mois non prouvé) → « L'IMPORT D'UN RELEVÉ PAR
-  FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN », « LE RELEVÉ IMPORTÉ EN OFX OU EN QIF (LIGNE 26.6, MVP) ». **La date de valeur**
+  se refuse (plusieurs comptes, une carte, une autre devise, un ordre jour/mois non prouvé) ; un CSV aussi, sous un second
+  en-tête ou une « Devise » autre que l'euro, et son en-tête nommé fait foi pour le libellé et la date comptable (BANQ-Q1), éprouvé
+  contre les exports des banques (`importReleveBanques.test.ts`) → « L'IMPORT D'UN RELEVÉ PAR
+  FICHIER, CORRIGÉ AVANT L'ANNÉE 2025 DU PRATICIEN », « LE RELEVÉ IMPORTÉ EN OFX OU EN QIF (LIGNE 26.6, MVP) », « L'IMPORT D'UN
+  RELEVÉ PAR FICHIER ÉPROUVÉ CONTRE LES EXPORTS RÉELS DES BANQUES ». **La date de valeur**
   (EXP58-Q4, en production depuis le 17/11/2026 (237), `DATE_DE_VALEUR_PREVUE` levé) : `lignes_bancaires.date_valeur` nullable, à 92 jours au plus
   de la date d'opération, figée avec le mouvement ; gardée à l'import (en-tête ou choix du cabinet, DTAVAIL d'un OFX), écartée et
   comptée, hors du dédoublonnage ; aucun moteur ne la lit avant L4 → « EXP58-Q4 : LA DATE DE VALEUR GARDÉE À L'IMPORT », « EXP58-Q4 EN PRODUCTION ». **Une

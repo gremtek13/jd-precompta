@@ -1,0 +1,11 @@
+Numéro Compte   ;0000000X000
+Type         ;CCP
+Compte tenu en  ;euros
+Date            ;30/11/2026
+Solde (EUROS)   ;2905,12
+Solde (FRANCS)  ;19056,34
+
+Date;Libellé;Montant(EUROS);Montant(FRANCS)
+27/11/2026;"VIREMENT DE CPAM FICTIVE                  REF 0000000000                              ";312,80;2051,82
+20/11/2026;"PRELEVEMENT DE URSSAF FICTIVE REF : 0000000000 COTISATIONS                                    ";-98,00;-642,84
+05/11/2026;"ACHAT CB PHARMACIE FICT  04.11.26 CARTE NUMERO                000  ";-12,5;-82,00
