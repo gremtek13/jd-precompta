@@ -190,6 +190,26 @@ describe('les refus, avant tout fichier', () => {
     }
   })
 
+  it('deux comptes distincts du FEC que le bourrage de zéros rendrait égaux : nommés, jamais réunis en silence (28/11/2026)', () => {
+    // « 512 » (un à-nouveau repris d'une balance à trois chiffres) et « 512000 » (la banque du plan) deviennent tous deux
+    // « 51200000 » à huit : un seul compte du logiciel, sous deux CompteLib — et deux postes de la 2035 pour « 6064 » et « 606400 ».
+    const r = mettreEnFormePourAcd(fec18(
+      ligne18({ journal: 'AN', num: 'AN00001', compte: '512' }), ligne18({ journal: 'AN', num: 'AN00001', compte: '101000', debit: '0,00', credit: '100,00' }),
+      ligne18(), ligne18({ compte: '6064', debit: '0,00', credit: '100,00' }),
+      ligne18({ num: 'BQ00002', compte: '606400' }), ligne18({ num: 'BQ00002', debit: '0,00', credit: '100,00' }),
+    ), reglages())
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.refus).toEqual([
+        expect.stringMatching(/^Les comptes 512 et 512000 du FEC deviendraient tous deux 51200000 dans le fichier/),
+        expect.stringMatching(/^Les comptes 6064 et 606400 du FEC deviendraient tous deux 60640000 dans le fichier/),
+      ])
+    }
+    // Sans les à-nouveaux, le « 512 » ne part pas : seul le second couple se refuse.
+    const sans = mettreEnFormePourAcd(fec18(ligne18({ journal: 'AN', num: 'AN00001', compte: '512' }), ligne18()), reglages({ sansANouveaux: true }))
+    expect(sans.ok).toBe(true)
+  })
+
   it('un FEC sans ses colonnes ou sans écriture', () => {
     expect(mettreEnFormePourAcd('n’importe quoi', reglages()).ok).toBe(false)
     expect(mettreEnFormePourAcd(fec18(ligne18({ journal: 'AN', num: 'AN00001' })), reglages({ sansANouveaux: true })))
@@ -230,6 +250,21 @@ describe('les justificatifs', () => {
     expect(j.ecartes.at(-1)).toMatch(/^Écriture BQ00008 : son chemin de stockage n’est pas dans ce dossier/)
     expect(j.ecartes.join(' ')).not.toMatch(/Ordonnance|Mme|autre\//)
     expect(j.ecrituresSansJustificatif).toBe(5)
+  })
+
+  it('une écriture dont la pièce est écartée reste sans justificatif, sur chacune de ses lignes et dans toute autre écriture qui la cite (28/11/2026)', () => {
+    const n = numerotation([
+      ligne({ ecriture: ecriture({ id: 'a', piece_id: 'p2' }), numero: 1, pieceRef: 'Ordonnance de Mme X.pdf' }),
+      ligne({ ecriture: ecriture({ id: 'b', piece_id: 'p2' }), numero: 1, pieceRef: 'Ordonnance de Mme X.pdf' }),
+      ligne({ ecriture: ecriture({ id: 'c', piece_id: 'p2' }), numero: 2, pieceRef: 'Ordonnance de Mme X.pdf' }),
+      ligne({ ecriture: ecriture({ id: 'd', piece_id: 'p4' }), numero: 3, pieceRef: '20260107-bbbbbbbb' }),
+      ligne({ ecriture: ecriture({ id: 'e', piece_id: 'p4' }), numero: 3, pieceRef: '20260107-bbbbbbbb' }),
+    ])
+    const numeros = new Map(['BQ00001', 'BQ00002', 'BQ00003'].map((k, i) => [k, i + 1]))
+    const j = justificatifsDeLExport('d', n, pieces, numeros)
+    expect(j.aJoindre.map((x) => x.pieceId)).toEqual(['p4'])
+    expect(j.ecartes).toHaveLength(1)
+    expect(j.ecrituresSansJustificatif).toBe(2)
   })
 
   it('l’extension d’après le type que l’application décide, et le nom de l’archive', () => {

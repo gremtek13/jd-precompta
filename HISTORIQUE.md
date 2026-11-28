@@ -55501,3 +55501,18 @@ forme « dossier », manquait à la liste tenue à la main (85 observées, 84 at
 `gardesDeSuppressionAttendues.test.ts` (109 gardes BEFORE … DELETE ; défauts plantés). Aucune préparée n'a dérivé. Ordre
 recommandé : NOE4R-Q1 maintenant, NOE4R-Q2 après elle (NOE4RQ2-Q1 à Q4), puis les seize, la double authentification en dernier.
 Le tableau : la conception 60 ; question : REPET3-Q1.
+### 28/11/2026 — LA RELECTURE ADVERSE DES EXPORTS VERS LES LOGICIELS COMPTABLES : TROIS DÉFAUTS CORRIGÉS
+
+(Agent architecte ; sans base, sans migration, aucun drapeau levé — `PROFIL_QUADRA_OFFERT` et `PROFIL_TRA_OFFERT` restent
+baissés.) Relus contre le FEC qu'ils remettent en forme : ACD, Quadra, TRA, les justificatifs et le ZIP. **Établis et corrigés**,
+chacun rouge avant, vert après : (1) le bourrage de zéros réunissait EN SILENCE deux comptes distincts du FEC — « 512 » (un
+à-nouveau, que `a_nouveaux` admet dès trois chiffres) et « 512000 », ou deux catégories « 6064 » et « 606400 » (`^[67][0-9]{2}`) —
+en un seul compte du logiciel : un solde, un poste de la 2035, et pour ACD deux CompteLib sous un même CompteNum, ce que la
+validation refuse au FEC lui-même ; `comptesConfondus` (lib/profilsDExport.ts) les nomme et les trois profils refusent ; (2) une
+pièce écartée des justificatifs comptait son écriture « justifiée » dès sa deuxième ligne (et toute autre écriture qui la
+citait) : « n écriture(s) n'en ont pas » le taisait ; (3) Quadra et le TRA ne confrontaient que les pièces COUPÉES entre elles :
+une référence intacte de vingt (ou trente-cinq) caractères égale à la coupe d'une autre passait. **Plausibles, laissés** : la
+coupe à vingt de Quadra refuse deux « Compte personnel du … » de dates différentes, sans remède à l'écran (EXPR-Q1) ; un
+caractère hors de Windows-1252 dans un libellé d'à-nouveau repris ne se corrige pas dans l'application. **Écartés** : montants
+toujours positifs au FEC (contrainte `montant > 0`), lignes d'une écriture contiguës (`ordonnerLignes`), aucun nom de client
+particulier au FEC (`nomDuClientEcrit`), noms du ZIP sur la seule référence neutre. Question : EXPR-Q1, EXPR-Q2.

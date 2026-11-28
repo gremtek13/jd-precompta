@@ -199,6 +199,23 @@ describe('les refus avant tout fichier', () => {
     expect(zone(r.texte, 'compte')).toBe('606100  ')
   })
 
+  it('un numéro de pièce de vingt caractères, intact, que la coupe d’un autre rendrait égal : refusé aussi (28/11/2026)', () => {
+    const vingt = 'Relevés au 31/12/202'
+    expect([...vingt]).toHaveLength(20)
+    for (const ordre of [[vingt, `${vingt}5`], [`${vingt}5`, vingt]]) {
+      const r = mettreEnFormePourQuadra(fec(ligne({ ref: ordre[0] }), ligne({ num: 'AC00002', ref: ordre[1] })), reglages())
+      expect(r.ok, ordre.join(' / ')).toBe(false)
+      if (!r.ok) expect(r.refus).toEqual([expect.stringMatching(/^Ligne 2 du fichier \(écriture AC00002\) : coupés à vingt caractères/)])
+    }
+  })
+
+  it('deux comptes distincts que le bourrage de zéros rendrait égaux : refusés, nommés (28/11/2026)', () => {
+    const r = mettreEnFormePourQuadra(fec(ligne({ compte: '6064' }), ligne({ compte: '606400', num: 'AC00002' }),
+      ligne({ compte: '512000', debit: '0,00', credit: '200,00' })), reglages())
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.refus).toEqual([expect.stringMatching(/^Les comptes 6064 et 606400 du FEC deviendraient tous deux 60640000/)])
+  })
+
   it('deux numéros de pièce que la coupe à vingt confondrait se refusent ; un libellé long se coupe et se compte', () => {
     const r = mettreEnFormePourQuadra(fec(
       ligne({ ref: 'Compte personnel du 31/12/2025', lib: 'Un libellé de bien plus de trente caractères' }),
