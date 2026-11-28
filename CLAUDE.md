@@ -191,6 +191,7 @@ PLAN_DE_REPRISE.md  quoi faire quand quelque chose a disparu ; RGPD.md, les trai
 .github/workflows/  tests.yml (verifier : tests multi-fuseaux, lint, build), deploy.yml.
 outils/captures/  banc VERSIONNÉ : l'application et un faux Supabase sous Playwright (mode d'emploi en tête de
                   vitrine.mjs) ; les visites `ereporting/*` (horloge au 5/11/2027) restent EN FIN de `VISITES`.
+                  gestes.mjs : les gestes qui écrivent, sous le levier `banc-ecritures` du faux (l'effet seul, jamais un refus de la base).
 outils/cotisations/  oracle.mjs : les cas de référence Urssaf (moteur installé à la demande, jamais en dépendance).
 outils/facturation/  valider.mjs, cdar/valider.mjs, ereporting/valider.mjs : les exemples fictifs jugés par les
                   instruments officiels (hors du dépôt, à leur empreinte), confrontés par leurs tests.

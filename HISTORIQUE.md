@@ -55740,3 +55740,18 @@ période déjà facturée par la version d'avant (à échoir, ou avenant rétroa
 jugeant l'accès avant toute lecture, sans fuite par le message) ; l'unicité, la suppression et le rattachement du dossier du cabinet ;
 l'acceptation en ligne (fermée pour tout auteur, restauration comprise) ; le dépôt (pièce « à valider » de son dossier, valeurs lues
 de la facture figée, une seule présente, l'avoir négatif après sa facture) ; le prorata et les dates (en entiers, au jour de Paris).
+### 28/11/2026 — LE BANC DES GESTES, SECONDE PASSE : LA VENTE, LA BANQUE, LA CAISSE, LES INFORMATIONS, L'ASSURANCE MALADIE
+
+(Agent dev ; rien en production, aucun code de l'application changé.) Le faux Supabase imite, sous le seul levier `banc-ecritures`,
+l'effet de trente et une fonctions de plus, d'après leur texte exporté : la facture (`enregistrer_facture` : le numéro de la série du
+mandataire ou du client par `MODELES_PAR_DEFAUT`, les mentions figées lues du dossier), l'avoir, l'encaissement, sa
+contre-passation et son retrait, le devis (`enregistrer_devis`, `decider_devis`, et l'acompte puis la finale par le module même,
+`preparerAcompte` et `lignesDeLaFinale`), `send-email` ; la ventilation, le virement personnel, le compte de bilan, le règlement
+groupé, l'échéance d'emprunt, `retirer_proposition`, `poser_modes_de_reglement` ; « Saisir un mois », `remplacer_operation_caisse`,
+`remplacer_paiement_par_la_caisse` ; le seuil du chiffre d'affaires, `changer_droits_acces` ; l'import des paiements de l'assurance
+maladie, l'association et son retrait, l'import du facturé. Il sème une fois ce qu'il ne servait pas (les comptes bancaires lus de
+leur table, `mentions_identite`, `mode_reglement`, l'identité légale de l'atelier) : sans lui, aucun formulaire de facture n'offrait
+« Valider ». `gestes.mjs` joue 63 gestes à 1 440 et 390 px, cabinet et client, refus compris — tous verts ; il compte aussi les
+voiles fixes que rien ne déclare `aria-modal`. La validation d'un exercice reste hors du banc, à dessein. **Relevé** : un seuil refusé
+remet son champ à la valeur relue, à dessein et testé (GESTES-Q2) ; le focus retombe sur le document (GESTES-Q1). Pas servis : le
+devis côté client, la transmission par une plateforme, le remplacement des journées d'un import, les retraits d'imports.

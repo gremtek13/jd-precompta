@@ -25,6 +25,7 @@ import { CHAMPS_BNC_NON_EXPORTES, numeroterFec } from '../../src/lib/fec'
 import { ecritureDuForfait } from '../../src/lib/forfaitKilometrique'
 import { aPayerDe, declarationDeLaCa3, ecritureDeLaLiquidation, ecritureDuPaiementTva } from '../../src/lib/liquidationTva'
 import { calculerTotaux } from '../../src/lib/montantsFacture'
+import { lignesDeLaFinale, preparerAcompte, type AcompteValide, type DemandeAcompte, type LigneDuDevisPourAcompte } from '../../src/lib/acompteDevis'
 import { repartitionProposee, ttcParTaux } from '../../src/lib/encaissementsFactures'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { partDuRythme, periodeDuRaccord } from '../../src/lib/planTresorerie'
@@ -2339,6 +2340,28 @@ const COMPTE_PRINCIPAL_DU_BANC: Ligne = {
   libelle: 'Compte courant professionnel', principal: true, compte: null, compte_propre_depuis: null, ouvert_le: null, clos_le: null,
   fin_d_identifiant: null, created_by: 'u1', created_at: MAINTENANT,
 }
+// CE QUE LE LEVIER `banc-ecritures` SÈME, UNE FOIS, à la première lecture (seconde passe du 28/11/2026) : sans lui, rien de ceci, et
+// les visites de debordements.mjs mesurent les écrans d'hier.
+// - Les comptes bancaires que le banc fabrique à la lecture (un principal par dossier, ou ceux de `banc-comptes`), semés dans leur
+//   table puis lus d'elle : un compte ajouté, modifié ou retiré se relit (la carte « Comptes bancaires » de l'onglet Informations).
+// - `dossiers.mentions_identite` (A7a), que la validation d'une facture lit avec l'identité légale : le banc ne la servait pas, et le
+//   formulaire n'offrait jamais « Valider la facture » (« la colonne mentions_identite du dossier n'a pas été rendue »). Nulle, sauf
+//   pour d6, qui ne porte à dessein aucune colonne de l'identité. L'atelier (d7) reçoit aussi son identité légale et son adresse,
+//   sans lesquelles un accès « Ventes » ne valide pas (A7Q-Q1).
+// - `lignes_bancaires.mode_reglement` (EXP58-Q1), que la fiche d'un mouvement lit pour offrir son mode : nul.
+let semeSousLeLevier = false
+function semerSousLeLevier(): void {
+  if (semeSousLeLevier) return
+  semeSousLeLevier = true
+  const levier = levierDuBanc('banc-comptes')
+  TABLES.comptes_bancaires = levier === '1' ? COMPTES_DU_BANC.map((c) => ({ ...c }))
+    : (TABLES.dossiers ?? []).map((d) => ({ ...COMPTE_PRINCIPAL_DU_BANC, id: `cb-${String(d.id)}-1`, dossier_id: d.id }))
+  TABLES.dossiers = (TABLES.dossiers ?? []).map((d) => (d.id === 'd6' ? d : {
+    mentions_identite: null, ...d,
+    ...(d.id === 'd7' ? { denomination_imprimee: 'ATELIER BERNARD CONSEIL', forme_juridique: '5499', capital: 5000, rcs_ville: 'Lyon', adresse: '4 rue des Tanneurs\n69002 Lyon' } : {}),
+  }))
+  TABLES.lignes_bancaires = (TABLES.lignes_bancaires ?? []).map((l) => ({ mode_reglement: null, ...l }))
+}
 function lignesDuBanc(table: string): Ligne[] {
   const base = TABLES[table] ?? []
   // SANS LE LEVIER, UN COMPTE PRINCIPAL PAR DOSSIER (28/11/2026). En base, chaque dossier a son compte principal et chaque mouvement,
@@ -2347,6 +2370,10 @@ function lignesDuBanc(table: string): Ligne[] {
   // la lecture n'avait pas rendu, et taisait le solde, les mois, « Mon année » et « Comparer les années » à chaque visite (vu au
   // parcours du MVP). Un seul compte : les écrans se lisent comme avant les comptes multiples.
   const levier = typeof localStorage === 'undefined' ? null : localStorage.getItem('banc-comptes')
+  if (ecrituresTenues()) {
+    semerSousLeLevier()
+    if (table === 'comptes_bancaires') return TABLES.comptes_bancaires
+  }
   if (levier !== '1') {
     if (table === 'comptes_bancaires') return (TABLES.dossiers ?? []).map((d) => ({ ...COMPTE_PRINCIPAL_DU_BANC, id: `cb-${String(d.id)}-1`, dossier_id: d.id }))
     if (table === 'lignes_bancaires' || table === 'controles_releves_bancaires') {
@@ -2974,6 +3001,7 @@ type OperationDuBanc = { genre: 'insert' | 'update' | 'upsert' | 'delete'; valeu
 // sauf `comptes_bancaires` sans le levier `banc-comptes`, dont les lignes sont fabriquées à la lecture — une écriture y est
 // tenue et reste invisible, ce que le journal dit par son nombre de lignes). Rend les lignes écrites, telles que relues.
 function appliquerEcriture(table: string, op: OperationDuBanc, filtres: readonly Filtre[], nonTenus: readonly string[]): Ligne[] {
+  lignesDuBanc(table) // sème la table d'abord, quand le banc la fabrique à la lecture (les comptes bancaires)
   const base = TABLES[table] ?? []
   TABLES[table] = base
   const decorees = lignesDuBanc(table)
@@ -3030,6 +3058,7 @@ const propreAuMouvement = (b: Ligne, ligneId: unknown) =>
   b.ligne_bancaire_id === ligneId && b.piece_id == null && b.facture_id == null && b.encaissement_id == null
 function rpcDesGestes(nom: string, args?: Ligne): { data: unknown; error: null } | null {
   if (!ecrituresTenues() || !args) return null
+  semerSousLeLevier()
   const journal = (lignes: number) => JOURNAL_DES_ECRITURES.push({ genre: `rpc ${nom}`, table: '', lignes, filtresNonTenus: [] })
   const mouvements = () => TABLES.lignes_bancaires ?? []
   const brouillon = () => TABLES.ecritures_brouillon ?? []
@@ -3070,17 +3099,119 @@ function rpcDesGestes(nom: string, args?: Ligne): { data: unknown; error: null }
     case 'retirer_rapprochement_cotisation':
       data = declasser(args.p_ligne_bancaire_id, { cotisation_id: null })
       break
-    // `enregistrer_operation_caisse` rend l'opération écrite ; ses lignes au brouillon la citent (`operation_caisse_id`), à sa date.
-    case 'enregistrer_operation_caisse': {
-      const operation = ligneNeuve('operations_caisse', {
-        dossier_id: args.p_dossier_id, genre: args.p_genre, date: args.p_date, montant: args.p_montant, categorie_id: args.p_categorie_id ?? null,
-        taux_tva: args.p_taux_tva ?? null, encaissements_du_jour: args.p_genre === 'recette' ? (args.p_encaissements_du_jour ?? []) : null,
-        piece_id: null, origine: CLIENT_DU_BANC ? 'client' : 'cabinet', remplace_id: null, cree_par: session.user.id,
-        cree_le: new Date().toISOString(), retire_le: null, retire_par: null,
+    // LES AUTRES CLASSEMENTS D'UN MOUVEMENT (seconde passe du 28/11/2026), d'après `jambe_de_banque_par_compte` et
+    // `lignes_propres_au_mouvement` : le mouvement et ses champs, son brouillon propre remplacé par l'écriture que l'écran compose ;
+    // leurs retraits, le mouvement remis « à traiter ».
+    case 'ventiler_mouvement_bancaire': {
+      const ligne = mouvements().find((l) => l.id === args.p_ligne_bancaire_id)
+      data = classer(args.p_ligne_bancaire_id, { ventilee: true }, args.p_ecritures)
+      TABLES.ventilations_bancaires = [
+        ...(TABLES.ventilations_bancaires ?? []).filter((v) => v.ligne_bancaire_id !== args.p_ligne_bancaire_id),
+        ...((args.p_parts ?? []) as Ligne[]).map((p) => ligneNeuve('ventilations_bancaires', {
+          dossier_id: ligne?.dossier_id, ligne_bancaire_id: args.p_ligne_bancaire_id, categorie_id: p.categorie_id ?? null,
+          part_personnelle: p.part_personnelle === true, montant: p.montant, taux_tva: p.taux_tva ?? null,
+        })),
+      ]
+      break
+    }
+    case 'retirer_ventilation_mouvement_bancaire':
+      data = declasser(args.p_ligne_bancaire_id, { ventilee: false })
+      TABLES.ventilations_bancaires = (TABLES.ventilations_bancaires ?? []).filter((v) => v.ligne_bancaire_id !== args.p_ligne_bancaire_id)
+      break
+    case 'classer_virement_personnel':
+      data = classer(args.p_ligne_bancaire_id, { prelevement_personnel: true }, args.p_ecritures)
+      TABLES.lignes_bancaires = mouvements().map((l) => (l.id === args.p_ligne_bancaire_id ? { ...l, statut: 'ignoree' } : l))
+      break
+    case 'retirer_virement_personnel':
+      data = declasser(args.p_ligne_bancaire_id, { prelevement_personnel: false })
+      break
+    case 'ecrire_mouvement_compte_bilan':
+      data = classer(args.p_ligne_bancaire_id, { compte_bilan: args.p_compte }, args.p_ecritures)
+      break
+    case 'retirer_mouvement_compte_bilan':
+      data = declasser(args.p_ligne_bancaire_id, { compte_bilan: null })
+      break
+    case 'rapprocher_echeance_emprunt': {
+      const debit = Number(mouvements().find((l) => l.id === args.p_ligne_bancaire_id)?.montant ?? 0) < 0
+      data = classer(args.p_ligne_bancaire_id, {
+        emprunt_id: args.p_emprunt_id, emprunt_echeance: debit ? args.p_echeance : null,
+        emprunt_interets: debit ? args.p_interets ?? 0 : 0, emprunt_assurance: debit ? args.p_assurance ?? 0 : 0,
+      }, args.p_ecritures)
+      break
+    }
+    case 'retirer_echeance_emprunt':
+      data = declasser(args.p_ligne_bancaire_id, { emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null })
+      break
+    // Le règlement groupé : ses parts, le mouvement rapproché ; la génération des pièces écrit leurs lignes (l'écran la relance).
+    case 'regler_pieces_par_mouvement': {
+      const ligne = mouvements().find((l) => l.id === args.p_ligne_bancaire_id)
+      TABLES.lignes_bancaires = mouvements().map((l) => (l.id === args.p_ligne_bancaire_id ? { ...l, statut: 'rapprochee', reglement_groupe: true } : l))
+      TABLES.reglements_groupes = [
+        ...(TABLES.reglements_groupes ?? []).filter((r) => r.ligne_bancaire_id !== args.p_ligne_bancaire_id),
+        ...((args.p_parts ?? []) as Ligne[]).map((p) => ligneNeuve('reglements_groupes', {
+          dossier_id: ligne?.dossier_id, ligne_bancaire_id: args.p_ligne_bancaire_id, piece_id: p.piece_id, montant: p.montant,
+        })),
+      ]
+      TABLES.ecritures_brouillon = brouillon().filter((b) => !(b.ligne_bancaire_id === args.p_ligne_bancaire_id && b.facture_id == null && b.encaissement_id == null))
+      data = null
+      break
+    }
+    case 'retirer_reglement_groupe':
+      TABLES.lignes_bancaires = mouvements().map((l) => (l.id === args.p_ligne_bancaire_id ? { ...l, statut: 'non_rapprochee', reglement_groupe: false } : l))
+      TABLES.reglements_groupes = (TABLES.reglements_groupes ?? []).filter((r) => r.ligne_bancaire_id !== args.p_ligne_bancaire_id)
+      TABLES.ecritures_brouillon = brouillon().filter((b) => !(b.ligne_bancaire_id === args.p_ligne_bancaire_id && b.facture_id == null && b.encaissement_id == null))
+      data = null
+      break
+    // « Écarter la proposition » du client : marquée retirée, jamais supprimée (`banque_du_client`).
+    case 'retirer_proposition':
+      TABLES.justificatifs_proposes = (TABLES.justificatifs_proposes ?? []).map((j) => (j.id === args.p_proposition_id
+        ? { ...j, retire_le: new Date().toISOString(), retire_par: session.user.id } : j))
+      data = null
+      break
+    // Le mode de règlement, posé mouvement par mouvement, rendu comme la fonction le rend.
+    case 'poser_modes_de_reglement': {
+      const lignes = (args.p_lignes ?? []) as string[]
+      const modes = (args.p_modes ?? []) as string[]
+      TABLES.lignes_bancaires = mouvements().map((l) => {
+        const i = lignes.indexOf(String(l.id))
+        return i >= 0 ? { ...l, mode_reglement: modes[i] } : l
       })
-      TABLES.operations_caisse = [...(TABLES.operations_caisse ?? []), operation]
-      TABLES.ecritures_brouillon = [...brouillon(), ...lignesDuBrouillonDe(args.p_dossier_id, args.p_date, args.p_ecritures, { operation_caisse_id: operation.id })]
-      data = operation
+      data = lignes.map((id, i) => ({ ligne_bancaire_id: id, mode_de_reglement: modes[i] }))
+      break
+    }
+    // `enregistrer_operation_caisse` rend l'opération écrite ; ses lignes au brouillon la citent (`operation_caisse_id`), à sa date.
+    case 'enregistrer_operation_caisse':
+      data = operationDeCaisseEcrite(args.p_dossier_id, {
+        genre: args.p_genre, date: args.p_date, montant: args.p_montant, categorie_id: args.p_categorie_id,
+        taux_tva: args.p_taux_tva, encaissements_du_jour: args.p_encaissements_du_jour, ecritures: args.p_ecritures,
+      }, null)
+      break
+    // « Saisir un mois » (C12A-Q1) : tout le mois d'un seul tenant, chaque opération comme la précédente ; la fonction rend leurs
+    // identifiants. `remplacer_operation_caisse` : l'ancienne marquée retirée, la nouvelle qui la cite (`remplace_id`).
+    case 'enregistrer_operations_de_caisse':
+      data = ((args.p_operations ?? []) as Ligne[]).map((o) => (operationDeCaisseEcrite(args.p_dossier_id, o, null) as Ligne).id)
+      break
+    case 'remplacer_operation_caisse': {
+      const ancienne = (TABLES.operations_caisse ?? []).find((o) => o.id === args.p_operation_id)
+      if (!ancienne) return null
+      retirerLOperation(args.p_operation_id)
+      data = operationDeCaisseEcrite(args.p_dossier_id, {
+        genre: args.p_genre, date: args.p_date, montant: args.p_montant, categorie_id: args.p_categorie_id,
+        taux_tva: args.p_taux_tva, encaissements_du_jour: args.p_encaissements_du_jour, ecritures: args.p_ecritures,
+      }, ancienne.id)
+      break
+    }
+    // « Corriger » un paiement par la caisse (C12B-Q1) : le paiement d'origine retiré, le nouveau qui cite la même pièce.
+    case 'remplacer_paiement_par_la_caisse': {
+      const ancien = (TABLES.operations_caisse ?? []).find((o) => o.id === args.p_operation_id)
+      if (!ancien) return null
+      retirerLOperation(args.p_operation_id)
+      const nouveau = ligneNeuve('operations_caisse', {
+        ...ancien, id: idDuBanc(), date: args.p_date, montant: args.p_montant, origine: CLIENT_DU_BANC ? 'client' : 'cabinet',
+        remplace_id: ancien.id, cree_par: session.user.id, cree_le: new Date().toISOString(), retire_le: null, retire_par: null,
+      })
+      TABLES.operations_caisse = [...(TABLES.operations_caisse ?? []), nouveau]
+      data = nouveau
       break
     }
     // `regler_piece_par_la_caisse` : le paiement d'une pièce par la caisse, une opération `paiement` qui cite la pièce, au montant
@@ -3096,15 +3227,318 @@ function rpcDesGestes(nom: string, args?: Ligne): { data: unknown; error: null }
       break
     }
     case 'retirer_operation_caisse':
-      TABLES.operations_caisse = (TABLES.operations_caisse ?? []).map((o) => (o.id === args.p_operation_id
-        ? { ...o, retire_le: new Date().toISOString(), retire_par: session.user.id } : o))
-      TABLES.ecritures_brouillon = brouillon().filter((b) => b.operation_caisse_id !== args.p_operation_id)
+      retirerLOperation(args.p_operation_id)
       data = null
       break
+    // Le seuil d'un sens (`regler_seuil_du_chiffre_d_affaires`, CA2-Q1) : la ligne du dossier créée au premier réglage, le seul seuil
+    // visé changé avec son auteur et son instant ; rend le seuil écrit.
+    case 'regler_seuil_du_chiffre_d_affaires': {
+      const sens = args.p_sens === 'baisse' ? 'baisse' : 'hausse'
+      const maintenant = new Date().toISOString()
+      const seuils = TABLES.seuils_du_chiffre_d_affaires ?? []
+      const existant = seuils.find((s) => s.dossier_id === args.p_dossier_id)
+      const champs = {
+        [`seuil_de_${sens}`]: args.p_seuil, [`seuil_de_${sens}_regle_par`]: session.user.id, [`seuil_de_${sens}_regle_le`]: maintenant,
+        regle_par: session.user.id, regle_le: maintenant,
+      }
+      TABLES.seuils_du_chiffre_d_affaires = existant
+        ? seuils.map((s) => (s === existant ? { ...s, ...champs } : s))
+        : [...seuils, {
+          id: idDuBanc(), dossier_id: args.p_dossier_id, seuil_de_hausse: null, seuil_de_baisse: null,
+          seuil_de_hausse_regle_par: null, seuil_de_hausse_regle_le: null, seuil_de_baisse_regle_par: null, seuil_de_baisse_regle_le: null,
+          ...champs,
+        }]
+      // Rendu tel quel : un seuil est un nombre, que le journal ne doit pas prendre pour un nombre de lignes écrites.
+      journal(1)
+      return { data: args.p_seuil ?? null, error: null }
+    }
+    // LES PAIEMENTS ET LE FACTURÉ DE L'ASSURANCE MALADIE (NOE3, NOE5, BOR3), d'après leur texte exporté : l'import et ses agrégats,
+    // les paiements déjà importés écartés (même journée, régime, caisse, part et organisme) ; l'association d'un crédit, et son
+    // retrait ; le facturé par lot, dont le banc ne garde aucune empreinte (la clé du dossier n'est pas imitée).
+    case 'importer_paiements_assurance_maladie': {
+      const imp = (args.p_import ?? {}) as { paiements?: Ligne[]; rejets?: Ligne }
+      const deja = TABLES.paiements_assurance_maladie ?? []
+      const meme = (p: Ligne, e: Ligne) => p.dossier_id === args.p_dossier_id && p.date_journee_comptable === e.date_journee_comptable
+        && (p.regime ?? null) === (e.regime ?? null) && (p.caisse ?? null) === (e.caisse ?? null) && p.part === e.part
+        && (p.organisme_complementaire ?? null) === (e.organisme_complementaire ?? null)
+      const paiements = imp.paiements ?? []
+      const dates = paiements.map((e) => String(e.date_journee_comptable)).sort()
+      const importLigne = {
+        id: idDuBanc(), dossier_id: args.p_dossier_id, periode_du: dates[0] ?? null, periode_au: dates[dates.length - 1] ?? null,
+        nombre_de_rejets: Number(imp.rejets?.nombre ?? 0), montant_rejete_centimes: Number(imp.rejets?.montant_centimes ?? 0),
+        importe_par: session.user.id, importe_le: new Date().toISOString(),
+      }
+      TABLES.imports_assurance_maladie = [...(TABLES.imports_assurance_maladie ?? []), importLigne]
+      TABLES.paiements_assurance_maladie = [...deja, ...paiements.filter((e) => !deja.some((p) => meme(p, e))).map((e) => ligneNeuve('paiements_assurance_maladie', {
+        dossier_id: args.p_dossier_id, import_id: importLigne.id, date_journee_comptable: e.date_journee_comptable, regime: e.regime ?? null,
+        caisse: e.caisse ?? null, organisme_complementaire: e.organisme_complementaire ?? null, part: e.part,
+        montant_centimes: e.montant_centimes, regularisations_centimes: e.regularisations_centimes ?? 0, nombre_de_factures: e.nombre_de_factures,
+      }))]
+      data = importLigne
+      break
+    }
+    case 'associer_paiements_assurance_maladie': {
+      const paiements = (args.p_paiements ?? []) as string[]
+      const lignes = (args.p_lignes ?? []) as string[]
+      const neuves = paiements.map((p, i) => ({
+        id: idDuBanc(), dossier_id: args.p_dossier_id, paiement_id: p, ligne_bancaire_id: lignes[i], associe_par: session.user.id,
+        associe_le: new Date().toISOString(),
+      }))
+      TABLES.paiements_assurance_maladie_mouvements = [...(TABLES.paiements_assurance_maladie_mouvements ?? []), ...neuves]
+      data = neuves
+      break
+    }
+    case 'defaire_association_assurance_maladie': {
+      const toutes = TABLES.paiements_assurance_maladie_mouvements ?? []
+      data = toutes.filter((a) => a.ligne_bancaire_id === args.p_ligne_bancaire_id)
+      TABLES.paiements_assurance_maladie_mouvements = toutes.filter((a) => a.ligne_bancaire_id !== args.p_ligne_bancaire_id)
+      break
+    }
+    case 'importer_factures_assurance_maladie': {
+      const imp = (args.p_import ?? {}) as { lots?: Ligne[]; agregats?: Ligne[] }
+      const lots = imp.lots ?? []
+      const dates = lots.map((l) => String(l.cree_le)).sort()
+      const importLigne = {
+        id: idDuBanc(), dossier_id: args.p_dossier_id, premier_lot_le: dates[0] ?? null, dernier_lot_le: dates[dates.length - 1] ?? null,
+        nombre_de_lots: lots.length, nombre_de_factures: lots.reduce((s, l) => s + Number(l.nombre_de_factures ?? 0), 0),
+        importe_par: session.user.id, importe_le: new Date().toISOString(),
+      }
+      TABLES.imports_factures_assurance_maladie = [...(TABLES.imports_factures_assurance_maladie ?? []), importLigne]
+      TABLES.factures_assurance_maladie = [...(TABLES.factures_assurance_maladie ?? []), ...(imp.agregats ?? []).map((t) => ligneNeuve('factures_assurance_maladie', {
+        dossier_id: args.p_dossier_id, import_id: importLigne.id, date_creation_lot: t.date_creation_lot, part: t.part, regime: t.regime ?? null,
+        caisse: t.caisse ?? null, organisme_complementaire: t.organisme_complementaire ?? null, montant_centimes: t.montant_centimes,
+        nombre_de_lots: t.nombre_de_lots, nombre_de_factures: t.nombre_de_factures,
+      }))]
+      data = importLigne
+      break
+    }
+    // `changer_droits_acces` : chaque droit non nul posé sur l'accès, les autres inchangés ; rend l'accès tel qu'écrit. La trace des
+    // droits (P1-trace) n'est pas imitée.
+    case 'changer_droits_acces': {
+      const colonnes: Record<string, string> = {
+        p_ventes: 'droit_ventes', p_banque: 'droit_banque', p_caisse: 'droit_caisse', p_comptes: 'droit_comptes',
+        p_achats: 'droit_achats', p_frais: 'droit_frais', p_documents: 'droit_documents',
+      }
+      const champs = Object.fromEntries(Object.entries(colonnes).filter(([p]) => typeof args[p] === 'boolean').map(([p, c]) => [c, args[p]]))
+      TABLES.memberships = (TABLES.memberships ?? []).map((m) => (m.id === args.p_membership_id ? { ...m, ...champs } : m))
+      data = (TABLES.memberships ?? []).find((m) => m.id === args.p_membership_id) ?? null
+      break
+    }
     default:
       return null
   }
   journal(typeof data === 'number' ? data : 1)
+  return { data, error: null }
+}
+// Une opération de caisse écrite (`enregistrer_operation_caisse`, et chaque opération d'un mois), ses lignes au brouillon citant
+// l'opération, à sa date ; `remplace` : l'opération qu'elle remplace, ou nul.
+function operationDeCaisseEcrite(dossierId: unknown, o: Ligne, remplace: unknown): Ligne {
+  const operation = ligneNeuve('operations_caisse', {
+    dossier_id: dossierId, genre: o.genre, date: o.date, montant: o.montant, categorie_id: o.categorie_id ?? null,
+    taux_tva: o.taux_tva ?? null, encaissements_du_jour: o.genre === 'recette' ? (o.encaissements_du_jour ?? []) : null,
+    piece_id: null, origine: CLIENT_DU_BANC ? 'client' : 'cabinet', remplace_id: remplace ?? null, cree_par: session.user.id,
+    cree_le: new Date().toISOString(), retire_le: null, retire_par: null,
+  })
+  TABLES.operations_caisse = [...(TABLES.operations_caisse ?? []), operation]
+  TABLES.ecritures_brouillon = [...(TABLES.ecritures_brouillon ?? []), ...lignesDuBrouillonDe(dossierId, o.date, o.ecritures, { operation_caisse_id: operation.id })]
+  return operation
+}
+function retirerLOperation(operationId: unknown): void {
+  TABLES.operations_caisse = (TABLES.operations_caisse ?? []).map((o) => (o.id === operationId
+    ? { ...o, retire_le: new Date().toISOString(), retire_par: session.user.id } : o))
+  TABLES.ecritures_brouillon = (TABLES.ecritures_brouillon ?? []).filter((b) => b.operation_caisse_id !== operationId)
+}
+
+// LES FONCTIONS DE LA VENTE (levier `banc-ecritures`, seconde passe du 28/11/2026) : la facture, son avoir, ses encaissements et leur
+// contre-passation ; le devis, sa réponse, la facture et l'acompte qu'on en tire. Même règle que `rpcDesGestes` : l'EFFET seul, d'après
+// le texte exporté (`enregistrer_facture` de `dossier_du_cabinet`, `annuler_encaissement` de `registre_virement_mixte`, les fonctions du
+// devis de `devis_citent_un_contact` et `devis_du_client`), jamais un refus ni un contrôle de montant. Le numéro suit le modèle par
+// défaut de la série (`MODELES_PAR_DEFAUT`) : le cabinet valide dans celle du mandataire, le client dans la sienne, comme
+// `attribuer_numero_facture` ; le compteur est le plus grand numéro servi de ce début, plus un.
+function numeroDuBanc(table: string, dossierId: unknown, modele: string, annee: string): string {
+  const prefixe = modele.split('{N')[0].replace('{AAAA}', annee)
+  const servis = (TABLES[table] ?? []).filter((f) => f.dossier_id === dossierId && typeof f.numero === 'string' && f.numero.startsWith(prefixe))
+    .map((f) => Number(String(f.numero).slice(prefixe.length))).filter((n) => Number.isInteger(n))
+  return `${prefixe}${String(Math.max(0, ...servis) + 1).padStart(4, '0')}`
+}
+// Les lignes d'une facture, remplacées en entier (`delete` puis `insert`, comme la fonction), dans l'ordre reçu.
+function lignesDeLaFactureEcrites(factureId: unknown, lignes: unknown): void {
+  const recues = (Array.isArray(lignes) ? lignes : []) as Ligne[]
+  TABLES.facture_lignes = [
+    ...(TABLES.facture_lignes ?? []).filter((l) => l.facture_id !== factureId),
+    ...recues.map((l, i) => ligneNeuve('facture_lignes', { facture_id: factureId, ordre: i + 1, reprise_facture_id: null, ...l })),
+  ]
+}
+// Ce que la validation fige d'une facture (A7a), lu comme la base le lit : le statut de TVA du dossier, sa dénomination, la version
+// en vigueur de ses paramètres et son RIB, le mandataire quand le cabinet valide. Le logo n'est pas servi : aucun ne se fige.
+function mentionsFigeesDuBanc(dossierId: unknown): Ligne {
+  const dossier = (TABLES.dossiers ?? []).find((d) => d.id === dossierId) ?? {}
+  const versions = (TABLES.parametres_facturation ?? []).filter((v) => v.dossier_id === dossierId)
+  const courante = versions[versions.length - 1] ?? {}
+  return {
+    mentions_figees: true, statut_tva: dossier.statut_tva ?? null, article_exoneration: dossier.article_exoneration ?? null,
+    numero_tva_attribue: dossier.numero_tva_attribue ?? false, numero_tva_imprime: null,
+    denomination_imprimee: dossier.denomination_imprimee ?? null, forme_juridique: dossier.forme_juridique ?? null,
+    capital: dossier.capital ?? null, rcs_ville: dossier.rcs_ville ?? null, mentions_identite: dossier.mentions_identite ?? null,
+    parametres_id: courante.id ?? null, moyen_prefere: courante.moyen_prefere ?? null, escompte: courante.escompte ?? null,
+    penalites: courante.penalites ?? null, mentions_complementaires: courante.mentions_complementaires ?? null,
+    pied_de_page: courante.pied_de_page ?? null, logo_chemin: null, logo_sha256: null,
+    rib_parametres_id: null, iban_imprime: null, bic_imprime: null, titulaire_imprime: null,
+    mandataire_nom: CLIENT_DU_BANC ? null : 'JD Consult',
+  }
+}
+function rpcDesVentes(nom: string, args?: Ligne): { data: unknown; error: null } | null {
+  if (!ecrituresTenues() || !args) return null
+  semerSousLeLevier()
+  const maintenant = new Date().toISOString()
+  const factures = () => TABLES.factures_emises ?? []
+  const emetteur = CLIENT_DU_BANC ? 'client' : 'mandataire'
+  let data: unknown = null
+  switch (nom) {
+    case 'enregistrer_facture': {
+      const p = (args.p_facture ?? {}) as Ligne
+      let id = args.p_facture_id as string | null
+      if (id == null) {
+        // Un avoir reprend de sa facture ses parties et ce qu'elle dit de l'opération ; l'appelant donne la date, le motif, les
+        // mentions et les montants.
+        const origine = p.type === 'avoir' ? factures().find((f) => f.id === p.facture_origine_id) : undefined
+        const reprises = origine ? Object.fromEntries(Object.entries(origine).filter(([k]) => /^(tiers_|livraison_|type_client|code_service|numero_engagement|nature_operation|date_prestation|periode_|emetteur_|contact_id)/.test(k))) : {}
+        const neuve = ligneNeuve('factures_emises', {
+          ...reprises, ...p, dossier_id: args.p_dossier_id, type: p.type ?? 'facture', statut: 'brouillon', numero: null,
+          source_de_la_vente: false, acompte: false, created_by: session.user.id, created_at: maintenant,
+        })
+        TABLES.factures_emises = [...factures(), neuve]
+        id = String(neuve.id)
+      } else {
+        TABLES.factures_emises = factures().map((f) => (f.id === id ? { ...f, ...p } : f))
+      }
+      lignesDeLaFactureEcrites(id, args.p_lignes)
+      let numero: string | null = null
+      if (args.p_valider === true) {
+        const facture = factures().find((f) => f.id === id) ?? {}
+        const type = facture.type === 'avoir' ? 'avoir' : 'facture'
+        numero = numeroDuBanc('factures_emises', args.p_dossier_id, MODELES_PAR_DEFAUT[emetteur][type], String(facture.date_emission ?? '').slice(0, 4))
+        TABLES.factures_emises = factures().map((f) => (f.id === id ? {
+          ...f, statut: 'validee', numero, validated_at: maintenant, valide_par: session.user.id, option_debits: false,
+          ...mentionsFigeesDuBanc(args.p_dossier_id),
+        } : f))
+      }
+      data = [{ facture_id: id, numero }]
+      break
+    }
+    case 'supprimer_brouillon_facture':
+      TABLES.factures_emises = factures().filter((f) => f.id !== args.p_facture_id)
+      TABLES.facture_lignes = (TABLES.facture_lignes ?? []).filter((l) => l.facture_id !== args.p_facture_id)
+      data = args.p_facture_id
+      break
+    // `enregistrer_encaissement` : l'encaissement et ses parts par taux, telles que l'écran les envoie.
+    case 'enregistrer_encaissement': {
+      const encaissement = ligneNeuve('encaissements_factures', {
+        dossier_id: args.p_dossier_id, facture_id: args.p_facture_id, date_encaissement: args.p_date, montant: args.p_montant,
+        moyen: args.p_moyen, ligne_bancaire_id: args.p_ligne_bancaire_id ?? null, annule_id: null, motif: null,
+        cree_par: session.user.id, cree_le: maintenant, retire_le: null, retire_par: null, compte_contrepartie: null,
+      })
+      TABLES.encaissements_factures = [...(TABLES.encaissements_factures ?? []), encaissement]
+      TABLES.encaissements_factures_taux = [...(TABLES.encaissements_factures_taux ?? []),
+        ...((args.p_repartition ?? []) as Ligne[]).map((r) => ({ encaissement_id: encaissement.id, dossier_id: args.p_dossier_id, taux: r.taux, montant: r.montant }))]
+      data = encaissement.id
+      break
+    }
+    // `annuler_encaissement` : la contre-passation, montant pour montant, qui cite l'encaissement qu'elle défait, et ses parts opposées.
+    case 'annuler_encaissement': {
+      const cible = (TABLES.encaissements_factures ?? []).find((e) => e.id === args.p_encaissement_id)
+      if (!cible) return null
+      const annulation = ligneNeuve('encaissements_factures', {
+        ...cible, id: idDuBanc(), date_encaissement: args.p_date, montant: -Number(cible.montant), annule_id: cible.id, motif: args.p_motif,
+        ligne_bancaire_id: args.p_ligne_bancaire_id ?? null, cree_par: session.user.id, cree_le: maintenant, retire_le: null, retire_par: null,
+      })
+      TABLES.encaissements_factures = [...(TABLES.encaissements_factures ?? []), annulation]
+      TABLES.encaissements_factures_taux = [...(TABLES.encaissements_factures_taux ?? []),
+        ...(TABLES.encaissements_factures_taux ?? []).filter((t) => t.encaissement_id === cible.id)
+          .map((t) => ({ ...t, encaissement_id: annulation.id, montant: -Number(t.montant) }))]
+      data = annulation.id
+      break
+    }
+    case 'retirer_encaissement':
+      TABLES.encaissements_factures = (TABLES.encaissements_factures ?? []).map((e) => (e.id === args.p_encaissement_id
+        ? { ...e, retire_le: maintenant, retire_par: session.user.id } : e))
+      break
+    // `enregistrer_devis` : le brouillon créé ou réécrit (ses lignes dans la colonne `lignes`), émis avec son numéro quand on l'émet.
+    case 'enregistrer_devis': {
+      const p = (args.p_devis ?? {}) as Ligne
+      const devis = () => TABLES.devis ?? []
+      let id = args.p_devis_id as string | null
+      if (id == null) {
+        const neuf = ligneNeuve('devis', {
+          ...p, dossier_id: args.p_dossier_id, numero: null, statut: 'brouillon', lignes: args.p_lignes, cree_par: session.user.id, cree_le: maintenant,
+          emis_par: null, emis_le: null, reponse: null, date_reponse: null, decide_par: null, decide_le: null,
+        })
+        TABLES.devis = [...devis(), neuf]
+        id = String(neuf.id)
+      } else TABLES.devis = devis().map((d) => (d.id === id ? { ...d, ...p, lignes: args.p_lignes } : d))
+      let numero: string | null = null
+      if (args.p_emettre === true) {
+        const ecrit = devis().find((d) => d.id === id) ?? {}
+        numero = numeroDuBanc('devis', args.p_dossier_id, 'D{AAAA}-{N:4}', String(ecrit.date_emission ?? '').slice(0, 4))
+        TABLES.devis = devis().map((d) => (d.id === id ? { ...d, statut: 'emis', numero, emis_par: session.user.id, emis_le: maintenant } : d))
+      }
+      data = [{ devis_id: id, numero }]
+      break
+    }
+    case 'supprimer_brouillon_devis':
+      TABLES.devis = (TABLES.devis ?? []).filter((d) => d.id !== args.p_devis_id)
+      data = args.p_devis_id
+      break
+    case 'decider_devis':
+      TABLES.devis = (TABLES.devis ?? []).map((d) => (d.id === args.p_devis_id
+        ? { ...d, reponse: args.p_reponse, date_reponse: args.p_date, decide_par: session.user.id, decide_le: maintenant } : d))
+      data = (TABLES.devis ?? []).find((d) => d.id === args.p_devis_id) ?? null
+      break
+    // `facturer_devis` et `facturer_acompte_devis` : un brouillon de facture tiré du devis, lié au devis par `devis_factures` sous son
+    // rôle. Ses lignes, par le module que la base redit (lib/acompteDevis.ts) : l'acompte par `preparerAcompte`, la finale par
+    // `lignesDeLaFinale`, qui reprend chaque acompte validé du devis.
+    case 'facturer_devis':
+    case 'facturer_acompte_devis': {
+      const devis = (TABLES.devis ?? []).find((d) => d.id === args.p_devis_id)
+      if (!devis) return null
+      const acompte = nom === 'facturer_acompte_devis'
+      const lignesDevis = (devis.lignes ?? []) as unknown as LigneDuDevisPourAcompte[]
+      const acomptesValides: AcompteValide[] = (TABLES.devis_factures ?? []).filter((l) => l.devis_id === devis.id && l.role === 'acompte')
+        .map((l) => factures().find((f) => f.id === l.facture_id && f.statut === 'validee')).filter((f): f is Ligne => f != null)
+        .map((f) => ({
+          id: String(f.id), numero: String(f.numero), date: String(f.date_emission),
+          lignes: (TABLES.facture_lignes ?? []).filter((x) => x.facture_id === f.id) as unknown as AcompteValide['lignes'],
+        }))
+      let lignes: Ligne[]
+      if (acompte) {
+        const prepare = preparerAcompte({
+          numeroDevis: String(devis.numero ?? ''), lignesDevis, acomptesValides, demande: args.p_demande as DemandeAcompte,
+          etat: { accepte: true, finaleActive: false, acompteEnBrouillon: false, mode: 'tresorerie' },
+        })
+        if (!prepare.ok) return null
+        lignes = prepare.lignes as unknown as Ligne[]
+      } else lignes = lignesDeLaFinale(lignesDevis, acomptesValides) as unknown as Ligne[]
+      const totaux = calculerTotaux(lignes as never)
+      const parties = Object.fromEntries(Object.entries(devis).filter(([k]) => /^(tiers_|livraison_|type_client|code_service|numero_engagement|nature_operation|date_prestation|periode_|emetteur_|contact_id|mentions_legales)/.test(k)))
+      const facture = ligneNeuve('factures_emises', {
+        ...parties, dossier_id: args.p_dossier_id, type: 'facture', statut: 'brouillon', numero: null, date_emission: maintenant.slice(0, 10),
+        source_de_la_vente: false, acompte, date_versement_acompte: acompte ? (args.p_date_versement ?? null) : null,
+        montant_ht: totaux.montant_ht, montant_tva: totaux.montant_tva, montant_ttc: totaux.montant_ttc,
+        created_by: session.user.id, created_at: maintenant,
+      })
+      TABLES.factures_emises = [...factures(), facture]
+      lignesDeLaFactureEcrites(facture.id, lignes)
+      TABLES.devis_factures = [...(TABLES.devis_factures ?? []), {
+        id: idDuBanc(),
+        dossier_id: args.p_dossier_id, devis_id: devis.id, facture_id: facture.id, cree_par: session.user.id, cree_le: maintenant, role: acompte ? 'acompte' : 'finale',
+      }]
+      data = facture.id
+      break
+    }
+    default:
+      return null
+  }
+  JOURNAL_DES_ECRITURES.push({ genre: `rpc ${nom}`, table: '', lignes: 1, filtresNonTenus: [] })
   return { data, error: null }
 }
 
@@ -3530,6 +3964,7 @@ export const supabase = {
         ? Promise.resolve({ data: { par_mois: {}, sources: [] }, error: null })
       : Promise.resolve(journaliserLaFonction(nom, rpcDesParametres(nom, args) ?? rpcDesEcrituresLibres(nom, args) ?? rpcDesReglagesDExport(nom, args))
         ?? rpcDesGestes(nom, args)
+        ?? rpcDesVentes(nom, args)
         ?? rpcDuBanc(nom, args?.p_dossier_id))),
   from: (table: string) => requete(table),
   storage: {
@@ -3562,6 +3997,17 @@ export const supabase = {
   // (voir CONNEXION_PLATEFORME_D7). Tout le reste reste une maquette.
   functions: {
     invoke: (nom: string, options?: { body?: Ligne }) => {
+      // Sous le levier `banc-ecritures` : une fonction se refuse comme une écriture (le levier `banc-ecritures-refus` la nomme), et
+      // `send-email` répond l'envoi fait, sans rien envoyer — le journal le dit.
+      if (refuseeParLeBanc(nom)) {
+        JOURNAL_DES_ECRITURES.push({ genre: `invoke ${nom} refusé`, table: '', lignes: 0, filtresNonTenus: [] })
+        const reponse = new Response(JSON.stringify({ error: ERREUR_DU_BANC.message }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+        return Promise.resolve({ data: null, error: { name: 'FunctionsHttpError', message: 'Edge Function returned a non-2xx status code', context: reponse } })
+      }
+      if (nom === 'send-email' && ecrituresTenues()) {
+        JOURNAL_DES_ECRITURES.push({ genre: `invoke ${nom}`, table: '', lignes: 1, filtresNonTenus: [] })
+        return Promise.resolve({ data: { ok: true }, error: null })
+      }
       if (nom === 'proposer-categorie') {
         return Promise.resolve({ data: { issue: 'retenue', categorieId: 'c8', indice: 'Abonnement mensuel LogiSoins Premium — gestion des tournées et télétransmission' }, error: null })
       }
