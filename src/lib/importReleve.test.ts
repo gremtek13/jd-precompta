@@ -229,7 +229,9 @@ describe('les exports des banques (fictifs)', () => {
       '05/03/2025;1234567;CB PHARMACIE;-12,50;;CB PHARMACIE 04/03;',
       '07/03/2025;1234568;VIR CPAM;;120,00;VIR SEPA CPAM;',
     ].join('\n')))
-    expect(r.detection).toMatchObject({ format: 'debit_credit', colDebit: 3, colCredit: 4, colLibelle: 5 })
+    // La colonne que l'en-tête nomme « Libellé » l'emporte sur la plus dense (28/11/2026, `importReleveBanques.test.ts`) : le
+    // « Détail », souvent vide, ou le numéro d'opération, plus long, n'est plus pris pour le libellé.
+    expect(r.detection).toMatchObject({ format: 'debit_credit', colDebit: 3, colCredit: 4, colLibelle: 2 })
     expect(r.releve.operations.map((o) => o.montant)).toEqual([-12.5, 120])
   })
 

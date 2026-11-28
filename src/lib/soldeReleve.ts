@@ -94,6 +94,12 @@ export function lignesDeSolde(rows: string[][], mapping: ColumnMapping): LigneDe
   const frequences = new Map<number, number>()
   for (const row of rows) frequences.set(row.length, (frequences.get(row.length) ?? 0) + 1)
   const largeurHabituelle = [...frequences.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0]
+  // Plus courte, une ligne ne l'est que s'il lui manque une colonne que l'import LIT (la date, le libellé, un montant) — le cas
+  // du relevé réel, dont les soldes n'ont pas de libellé (28/11/2026). Le Crédit Agricole termine une ligne de crédit par un
+  // point-virgule qu'il n'écrit pas après un débit (« …";45,60; » contre « …";;76,00; », OpenFlyers, « Modèle d'import de
+  // relevé bancaire CSV Crédit Agricole avec point-virgule ») : quand les crédits étaient les plus nombreux — un praticien
+  // payé par ses patients —, chaque débit, plus court d'une cellule vide, était pris pour un solde et ne s'importait pas.
+  const derniereLue = Math.max(mapping.colDate, mapping.colMontant, mapping.colLibelle, ...(mapping.autresMontants ?? []))
 
   const trouvees: LigneDeSolde[] = []
   rows.forEach((row, index) => {
@@ -101,7 +107,7 @@ export function lignesDeSolde(rows: string[][], mapping: ColumnMapping): LigneDe
       trouvees.push({ index, motif: 'libellé de solde' })
       return
     }
-    if (row.length < largeurHabituelle) {
+    if (row.length < largeurHabituelle && row.length <= derniereLue) {
       trouvees.push({ index, motif: 'ligne plus courte que les opérations' })
     }
   })

@@ -55598,3 +55598,20 @@ d'écriture n'est bornée, et l'exercice d'une date mal lue (1999) se proposait 
 (rouge avant, vert après). À l'inverse, 50 préalables bloquants sont « écran seul » (l'API validerait), chacun avec sa raison,
 deux « en partie ». Gardé par `src/lib/refusDeLaValidation.test.ts`, qui part de tout et vire au rouge sur un refus, un
 déclencheur ou un préalable bloquant neuf (mutations plantées). Question : VALREF-Q1.
+
+### 28/11/2026 — L'IMPORT D'UN RELEVÉ PAR FICHIER ÉPROUVÉ CONTRE LES EXPORTS RÉELS DES BANQUES
+
+(Agent architecte, sans base ni migration.) Dix-huit exports FICTIFS, écrits d'après la forme publique de ceux des banques (wiki de
+Gestan, modèles d'import d'OpenFlyers, connecteur Boursorama de Cozy, aides de BoursoBank et de Qonto), rejoués par la chaîne même
+de l'écran, de l'octet au dédoublonnage (`importReleveBanques.test.ts`, jeux dans `src/lib/relevesDesBanques/`). Lus justes tels
+quels : La Banque Postale (point-virgule et tabulations, la colonne des francs), BNP Paribas (sans en-tête, point décimal), LCL (le
+contrôle de solde tombe juste), CIC, Crédit Mutuel (UTF-8 à marque d'ordre), Boursorama à tabulations. **Corrigés** : un débit du
+Crédit Agricole, plus court d'une cellule vide que les crédits, était pris pour un solde dès que les crédits étaient les plus nombreux
+(une ligne n'est « plus courte » que s'il lui manque une colonne lue) ; un fichier du Crédit Agricole à deux comptes faisait entrer
+le second au relevé du premier (un second en-tête refuse l'import) ; la Caisse d'Épargne entrait sous son numéro d'opération (le
+« Libellé » nommé l'emporte sur la colonne la plus dense) ; la date de comptabilisation des Banques Populaires et des Caisses
+d'Épargne l'emporte sur la date de l'achat par carte (BANQ-Q1) ; une colonne « Devise » autre que l'euro refuse l'import ; l'en-tête
+anglais de BoursoBank est reconnu ; la suite d'un libellé (Société Générale) se compte « texte seul », un solde sans date « solde
+sans date ». Restent au cabinet : les soldes sans date de la Caisse d'Épargne (BANQ-Q2) et les dates universelles de Qonto (BANQ-Q3),
+refusés en attendant ; IMPORT-Q1 inchangée (le CIC et le Crédit Mutuel montrent un solde courant qui suit l'arithmétique). Six
+mutations mordent.

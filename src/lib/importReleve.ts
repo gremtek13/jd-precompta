@@ -1,7 +1,7 @@
-import { libelleDeLigne, montantDeLigne, parseDateBancaire, type ColumnMapping, type ReglageDesMontants } from './csv'
+import { enTetesSuivants, libelleDeLigne, montantDeLigne, parseDateBancaire, type ColumnMapping, type ReglageDesMontants } from './csv'
 import { lireDateDeValeur, type DatesDeValeurDuFichier, type LectureDeLaDateDeValeur } from './dateDeValeur'
 import { formatDate } from './format'
-import { lignesATrancher, lignesDeSolde } from './soldeReleve'
+import { aLaFormeDUnSolde, lignesATrancher, lignesDeSolde } from './soldeReleve'
 
 // L'IMPORT D'UN RELEVÉ BANCAIRE PAR FICHIER, ce qui se décide avant d'écrire : l'interprétation des lignes (opérations,
 // soldes, lignes écartées et leur raison), le dédoublonnage contre le relevé déjà en base, le recouvrement d'une période
@@ -55,9 +55,16 @@ export function mappingDuReglage(r: ReglageDeLImport): ColumnMapping {
 }
 
 // Pourquoi une ligne du fichier ne s'importe pas. « montant nul » : une opération à 0,00 € n'est pas un mouvement (une
-// ligne de solde, elle, peut valoir zéro).
-export type RaisonDEcart = 'date illisible' | 'sans montant' | 'montant illisible' | 'débit et crédit à la fois' | 'montant nul'
-const ORDRE_DES_RAISONS: readonly RaisonDEcart[] = ['date illisible', 'sans montant', 'montant illisible', 'débit et crédit à la fois', 'montant nul']
+// ligne de solde, elle, peut valoir zéro). Deux raisons qui distinguent, parmi les lignes sans date, celles qui ne pouvaient
+// pas être un mouvement (28/11/2026) : « texte seul », ni date ni montant — la suite d'un libellé que la Société Générale
+// écrit sur les lignes suivantes (« ;DE: … », « ;MOTIF: … », OpenFlyers et wiki de Gestan) —, et « solde sans date », une
+// ligne qui a la forme d'un solde sans en porter la date (« Solde en début de période;;;;50544,01; » de la Caisse
+// d'Épargne) : comptées « date illisible », elles faisaient craindre au cabinet des opérations perdues.
+export type RaisonDEcart =
+  | 'date illisible' | 'texte seul' | 'solde sans date' | 'sans montant' | 'montant illisible' | 'débit et crédit à la fois' | 'montant nul'
+const ORDRE_DES_RAISONS: readonly RaisonDEcart[] = [
+  'date illisible', 'texte seul', 'solde sans date', 'sans montant', 'montant illisible', 'débit et crédit à la fois', 'montant nul',
+]
 
 // `valeur` : sur une opération, ce que la colonne de la date de valeur en dit — absente quand le réglage n'en lit aucune.
 export type LigneInterpretee =
@@ -123,7 +130,18 @@ export function interpreterReleve(
     // texte depuis les autres colonnes (hors date et montants) ; le générique ne sert que si rien d'autre ne dit la ligne.
     const libelle = libelleDeLigne(row, mapping) || 'Mouvement bancaire'
     const lecture = montantDeLigne(row, reglage)
-    if (!date) { ecarter(index, libelle, 'date illisible'); continue }
+    if (!date) {
+      // Sans montant non plus, la ligne ne pouvait pas être un mouvement ; avec un montant, elle l'est peut-être, et reste
+      // « date illisible » — sauf la ligne qui a la forme d'un solde et ne porte aucune date.
+      const raison: RaisonDEcart = 'ecart' in lecture && lecture.ecart === 'absent' ? 'texte seul'
+        // Le mot peut être dans la colonne de la date elle-même (« Solde en début de période;;;;2104,33; »), que le libellé
+        // reconstitué ne reprend pas.
+        : 'montant' in lecture && (aLaFormeDUnSolde(libelle) || aLaFormeDUnSolde(row[reglage.colDate] ?? ''))
+          && !/\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}/.test(row[reglage.colDate] ?? '') ? 'solde sans date'
+        : 'date illisible'
+      ecarter(index, libelle, raison)
+      continue
+    }
     if ('ecart' in lecture) {
       ecarter(index, libelle, lecture.ecart === 'absent' ? 'sans montant' : lecture.ecart === 'illisible' ? 'montant illisible' : 'débit et crédit à la fois')
       continue
@@ -159,6 +177,17 @@ export function interpreterReleve(
   }
   const ecartees = ORDRE_DES_RAISONS.filter((r) => compte.has(r)).map((raison) => ({ raison, nombre: compte.get(raison)! }))
   return { lignes, operations, soldes, soldesNommes, aTrancher, ecartees, ...(colValeur == null ? {} : { datesDeValeur }) }
+}
+
+// Le refus d'un fichier qui porte un second tableau sous son propre en-tête (`enTetesSuivants`, 28/11/2026) : les opérations
+// d'un autre compte, ou d'une carte, entreraient au relevé de ce compte. Comme un OFX à deux comptes (`releveOfxQif.ts`),
+// rien ne se devine : le cabinet exporte un compte à la fois. `donnees` : les lignes après l'en-tête (`lignesDeDonnees`).
+export function refusDesTableauxSuivants(donnees: readonly (readonly string[])[]): string | null {
+  const suivants = enTetesSuivants(donnees)
+  if (suivants.length === 0) return null
+  const ligne = donnees[suivants[0]].map((c) => c.trim()).filter(Boolean).join(' ; ')
+  return `Le fichier porte un second tableau, sous son propre en-tête (« ${ligne.length > 60 ? `${ligne.slice(0, 60)}…` : ligne} ») : `
+    + 'les opérations d’un autre compte ou d’une carte entreraient au relevé de ce compte. Exporte un compte à la fois.'
 }
 
 // Le refus de l'import tant qu'une ligne à trancher ne l'est pas, dit avant le clic.

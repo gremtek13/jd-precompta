@@ -266,7 +266,17 @@ export function montantDeLigne(row: string[], reglage: ReglageDesMontants): Lect
 // deux en positif, et une colonne de SOLDE COURANT d'une colonne de montants. Sans elle, la colonne du solde — remplie sur
 // TOUTES les lignes, là où Débit et Crédit ne le sont qu'à moitié — gagnait le compte des montants (export CIC ou Crédit
 // Mutuel « Date;Date de valeur;Débit;Crédit;Libellé;Solde ») : chaque mouvement entrait au solde du compte.
-type RoleDeColonne = 'date' | 'date_valeur' | 'debit' | 'credit' | 'solde' | 'montant'
+// « date_comptable » : la date à laquelle la banque PASSE le mouvement au compte (« Date de comptabilisation » des Banques
+// Populaires et des Caisses d'Épargne, « Date comptable ») — celle du relevé imprimé, de ses soldes et du 31 décembre. Quand
+// l'en-tête la nomme à côté d'une « Date opération » (le jour de l'achat par carte, un à trois jours plus tôt), c'est elle
+// qui date le mouvement, quel que soit l'ordre des colonnes (28/11/2026, BANQ-Q1) : datée de l'achat, une dépense par carte
+// du 31 décembre passée le 2 janvier tombait dans l'exercice d'avant, et la banque au 31 décembre ne se confrontait plus au
+// solde imprimé du relevé. « devise » : la colonne qui dit la monnaie de chaque mouvement (« Devise », « Monnaie »).
+// « libelle » : la colonne que l'en-tête nomme comme le libellé ; nommée, elle l'emporte sur la colonne la plus dense en
+// texte (28/11/2026) — la Caisse d'Épargne fait précéder son « Libellé » d'un « Numéro d'opération » plus long
+// (« 3009202020200930-10.48.46.198613 - », wiki de Gestan), et chaque mouvement entrait sous son numéro. « Libellé
+// interbancaire » (Société Générale) n'est pas le libellé : c'est la famille de l'opération (« AUTRES VIREMENTS RECUS »).
+type RoleDeColonne = 'date' | 'date_comptable' | 'date_valeur' | 'debit' | 'credit' | 'solde' | 'montant' | 'devise' | 'libelle'
 
 // « Débit euros », « Crédit (EUR) », « Montant (€) », « Date d'opération » : sans accents, sans casse, sans la devise.
 function normaliserEntete(v: string): string {
@@ -280,13 +290,20 @@ function normaliserEntete(v: string): string {
 
 function roleDeLEntete(v: string): RoleDeColonne | null {
   const t = normaliserEntete(v)
-  if (/^date (de )?valeur$/.test(t)) return 'date_valeur'
-  if (/^date( (d |de l |de )?operation| comptable| compta| ope?)?$/.test(t)) return 'date'
+  // « dateVal » de l'export CSV de BoursoBank, écrit d'un seul mot.
+  if (/^date (de )?valeur$/.test(t) || t === 'dateval') return 'date_valeur'
+  if (/^date( (de )?(comptabilisation|comptable|compta))$/.test(t)) return 'date_comptable'
+  // « dateOp » de BoursoBank, d'un seul mot comme « dateVal ».
+  if (/^date( (d |de l |de )?operation| ope?)?$/.test(t) || t === 'dateop') return 'date'
   if (/^(montant )?debits?$/.test(t)) return 'debit'
   if (/^(montant )?credits?$/.test(t)) return 'credit'
-  // « Solde », « Solde courant », « Nouveau solde », « Solde après opération ».
-  if (/^(nouveau )?soldes?\b/.test(t)) return 'solde'
-  if (/^(montant|somme)( (d |de l |de )?operation)?$/.test(t)) return 'montant'
+  // « Solde », « Solde courant », « Nouveau solde », « Solde après opération » ; « accountbalance » de BoursoBank, le solde
+  // du compte, qui n'est jamais le montant d'un mouvement.
+  if (/^(nouveau )?soldes?\b/.test(t) || t === 'accountbalance') return 'solde'
+  // « amount » : l'en-tête anglais de BoursoBank.
+  if (/^(montant|somme)( (d |de l |de )?operation)?$/.test(t) || t === 'amount') return 'montant'
+  if (/^(devise|monnaie|currency)$/.test(t)) return 'devise'
+  if (/^(libelle( (d |de l |de )?operation)?|label|nature (d |de l |de )?operation)$/.test(t)) return 'libelle'
   return null
 }
 
@@ -298,22 +315,65 @@ export interface EnteteReconnue {
   credit: number | null
   solde: number | null
   montant: number | null
+  // La colonne de la monnaie de chaque mouvement, ou `null` (`refusDeLaDevise`).
+  devise: number | null
+  libelle: number | null
+}
+
+// Une ligne lue comme un en-tête, ou `null` : elle nomme au moins deux colonnes, dont une de montants. À rôle répété, la
+// première colonne l'emporte ; la date comptable, nommée, l'emporte sur la date d'opération.
+function enTeteDeLaLigne(row: readonly string[], ligne: number): EnteteReconnue | null {
+  const trouve: EnteteReconnue = {
+    ligne, date: null, dateValeur: null, debit: null, credit: null, solde: null, montant: null, devise: null, libelle: null,
+  }
+  let comptable: number | null = null
+  let reconnues = 0
+  row.forEach((cellule, col) => {
+    const role = roleDeLEntete(cellule)
+    if (!role) return
+    if (role === 'date_comptable') {
+      if (comptable === null) { comptable = col; reconnues++ }
+      return
+    }
+    const cle = role === 'date_valeur' ? 'dateValeur' : role
+    if (trouve[cle] === null) { trouve[cle] = col; reconnues++ }
+  })
+  if (comptable !== null) trouve.date = comptable
+  return reconnues >= 2 && (trouve.montant !== null || trouve.debit !== null || trouve.credit !== null) ? trouve : null
 }
 
 // La ligne d'en-tête, cherchée dans les dix premières lignes (certaines banques, Société Générale ou LCL, font précéder la
-// leur d'un préambule : numéro de compte, période, date d'export). Une ligne est un en-tête quand elle nomme au moins deux
-// colonnes, dont une de montants. À rôle répété, la première colonne l'emporte.
+// leur d'un préambule : numéro de compte, période, date d'export).
 export function colonnesParEntete(rows: string[][]): EnteteReconnue | null {
   for (const [ligne, row] of rows.slice(0, 10).entries()) {
-    const trouve: EnteteReconnue = { ligne, date: null, dateValeur: null, debit: null, credit: null, solde: null, montant: null }
-    let reconnues = 0
-    row.forEach((cellule, col) => {
-      const role = roleDeLEntete(cellule)
-      if (!role) return
-      const cle = role === 'date_valeur' ? 'dateValeur' : role
-      if (trouve[cle] === null) { trouve[cle] = col; reconnues++ }
-    })
-    if (reconnues >= 2 && (trouve.montant !== null || trouve.debit !== null || trouve.credit !== null)) return trouve
+    const trouve = enTeteDeLaLigne(row, ligne)
+    if (trouve) return trouve
+  }
+  return null
+}
+
+// Les lignes de DONNÉES qui ont la forme d'un en-tête (28/11/2026) : un second tableau dans le même fichier. Le Crédit
+// Agricole écrit dans un seul fichier les opérations de plusieurs comptes, chacune sous son propre « Date;Libellé;Débit
+// euros;Crédit euros; » (wiki de Gestan, « Crédit Agricole nouveau format 2020 ») : lues à la suite, les opérations du second
+// compte entraient au relevé du premier. Rendues par leur numéro dans `donnees` ; l'import se refuse (`refusDesTableauxSuivants`).
+export function enTetesSuivants(donnees: readonly (readonly string[])[]): number[] {
+  return donnees.flatMap((row, i) => (enTeteDeLaLigne(row, i) ? [i] : []))
+}
+
+// La devise d'un mouvement que la colonne « Devise » ou « Monnaie » nomme, quand ce n'est pas l'euro (28/11/2026) : comme un
+// OFX d'une autre devise (`releveOfxQif.ts`), le relevé d'un compte tenu en une autre monnaie ne s'importe pas — ses montants
+// entreraient comme des euros. Une cellule vide ne dit rien ; « EUR », « EURO(S) » et « € » sont l'euro. Seules les lignes
+// datées comptent : une ligne de suite de libellé (Société Générale) n'est pas un mouvement.
+export function refusDeLaDevise(rows: string[][], donnees: readonly string[][]): string | null {
+  const entete = colonnesParEntete(rows)
+  if (entete?.devise == null || entete.date === null) return null
+  const col = entete.devise
+  for (const row of donnees) {
+    if (!parseDateBancaire(row[entete.date] ?? '')) continue
+    const devise = (row[col] ?? '').trim()
+    if (devise === '' || /^(eur|euros?|€)$/i.test(devise)) continue
+    return `La colonne ${col + 1} dit une autre monnaie que l’euro (« ${devise.slice(0, 12)} ») : le relevé d’un compte tenu en `
+      + 'une autre devise ne s’importe pas, ses montants entreraient comme des euros.'
   }
   return null
 }
@@ -436,7 +496,8 @@ export function detectColumnMapping(rows: string[][]): DetectionDesColonnes {
     ?? null
   const autresMontants = [...(format === 'signe' ? [] : [colDebit, colCredit]), ...(colSolde === null ? [] : [colSolde])]
 
-  const colLibelle = scores
+  const colLibelle = (entete?.libelle != null && entete.libelle !== colDate && !utilisees.includes(entete.libelle) && entete.libelle !== colSolde
+    ? entete.libelle : null) ?? scores
     .filter((s) => s.col !== colDate && s.col !== entete?.dateValeur && !utilisees.includes(s.col) && s.col !== colSolde)
     .reduce((best, s) => (s.densiteTexte > (best?.densiteTexte ?? -1) ? s : best), null as Score | null)?.col ?? Math.min(2, nbColonnes - 1)
 

@@ -1,0 +1,4 @@
+Date de comptabilisation;Libelle simplifie;Libelle operation;Reference;Informations complementaires;Type operation;Categorie;Sous categorie;Debit;Credit;Date operation;Date de valeur;Pointage operation
+02/01/2027;PHARMACIE FICT;PHARMACIE FICTIVE;;FR VILLE-;Carte bancaire;Sante;Pharmacie;-12,50;;31/12/2026;04/01/2027;0
+30/12/2026;CPAM FICTIVE;VIR SEPA CPAM FICTIVE;;;Virement recu;Revenus;Remboursements;;+312,80;30/12/2026;30/12/2026;0
+28/12/2026;URSSAF FICTIVE;PRLV SEPA URSSAF FICTIVE;;;Prelevement;Impots et taxes;Cotisations;-98,00;;28/12/2026;28/12/2026;0
