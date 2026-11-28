@@ -153,9 +153,9 @@ export const CLES_DES_FONCTIONS: Record<string, { colonnes: string[]; raison: st
   consommation_de_l_assistant: {
     colonnes: ['cabinet_id'],
     raison: 'une ligne par cabinet : `from consommations_de_l_assistant c … group by c.cabinet_id`, sans jointure '
-      + '(supabase/preparees/20261127230000_consommations_de_l_assistant.sql) — l’écran du super-administrateur la lit, le drapeau '
+      + '(supabase/preparees/20261127232000_consommations_de_l_assistant.sql) — l’écran du super-administrateur la lit, le drapeau '
       + '`CONSOMMATION_TENUE_PAR_LA_FONCTION` levé (ASSIST-Q1).',
-    preparee: 'supabase/preparees/20261127230000_consommations_de_l_assistant.sql',
+    preparee: 'supabase/preparees/20261127232000_consommations_de_l_assistant.sql',
   },
   identites_des_fiches_liees: {
     colonnes: ['contact_id'],

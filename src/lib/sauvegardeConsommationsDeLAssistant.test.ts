@@ -22,7 +22,7 @@ import {
 
 const TABLE = 'consommations_de_l_assistant'
 const MIGRATION = readFileSync(
-  new URL('../../supabase/preparees/20261127230000_consommations_de_l_assistant.sql', import.meta.url), 'utf8')
+  new URL('../../supabase/preparees/20261127232000_consommations_de_l_assistant.sql', import.meta.url), 'utf8')
 
 describe('le filtre du plan, côté journal de consommation', () => {
   it('la table n’est au plan que le drapeau levé ; toute autre l’est toujours', () => {

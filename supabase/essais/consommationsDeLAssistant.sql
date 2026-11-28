@@ -1,5 +1,5 @@
 -- LE JOURNAL DE CONSOMMATION DE L'ASSISTANT (ASSIST-Q1 (A) ; la migration `consommations_de_l_assistant`, préparée le
--- 27/11/2026 : supabase/preparees/20261127230000_consommations_de_l_assistant.sql). Le récit : HISTORIQUE.md, « 27/11/2026 —
+-- 27/11/2026 : supabase/preparees/20261127232000_consommations_de_l_assistant.sql). Le récit : HISTORIQUE.md, « 27/11/2026 —
 -- ASSIST-Q1 : LE JOURNAL DE CONSOMMATION DE L'ASSISTANT (PRÉPARÉE, PAS APPLIQUÉE) ». À rejouer par `execute_sql` après toute
 -- migration qui touche la table, sa garde, `consommation_de_l_assistant`, `is_super_admin`, `cabinets` ou `dossiers`. La sortie
 -- d'une ligne (la cascade du cabinet, la mise à nul du dossier retiré, une sortie directe refusée) se joue dans son compagnon,

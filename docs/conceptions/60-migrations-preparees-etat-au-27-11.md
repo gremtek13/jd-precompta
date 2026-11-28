@@ -154,3 +154,15 @@ s'appliquaient seules et en chaîne (275 migrations ; `rls.sql` 346 · 1 692 · 
 (258, collée) et `ouverture_eclatee_a_la_validation` (259). **Le soir**, quatre préparées de plus, chacune éprouvée seule sur 259 —
 SECU4-Q1 (la relecture adverse de sécurité des migrations 218 à 259), MCBR-Q2, NOE4R-Q1 et NOE4R-Q2 — puis la répétition
 ci-dessus, pendant laquelle SECU4-Q1 (260) et MCBR-Q2 (261) sont passées en production.
+
+## Trois préparées d'après la répétition (27/11/2026 au soir)
+
+Écrites pendant la répétition à 261, chacune jouée SEULE sur une copie portée à 261, pas encore en chaîne avec les autres :
+
+| Préparée | Chantier | Drapeau | Mode | Après |
+| --- | --- | --- | --- | --- |
+| `20261127230000_ni_piece_ni_document_ne_change_de_dossier` | SECU4-Q2, ni une pièce ni un document ne change de dossier | aucun | voir son en-tête | — |
+| `20261127231000_banque_partagee_a_la_validation` | MCBR2-Q2, le 512 du principal partagé retient la validation | voir son en-tête | voir son en-tête | — |
+| `20261127232000_consommations_de_l_assistant` | ASSIST-Q1, le journal de consommation de l'assistant | `CONSOMMATION_TENUE_PAR_LA_FONCTION` (l'application et `agent-comptable`) | par l'outil | — |
+
+Leur récit : HISTORIQUE.md, aux entrées du 27/11/2026 qui portent ces noms.

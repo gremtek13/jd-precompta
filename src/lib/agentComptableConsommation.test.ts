@@ -25,7 +25,7 @@ const levee = () => consommationTenueLevee(servie())
 const baisse = contratDeLAgentComptable(false)
 const leve = contratDeLAgentComptable(true)
 const MIGRATION = readFileSync(
-  new URL('../../supabase/preparees/20261127230000_consommations_de_l_assistant.sql', import.meta.url), 'utf8')
+  new URL('../../supabase/preparees/20261127232000_consommations_de_l_assistant.sql', import.meta.url), 'utf8')
 const propreALEtat = (nom: string) => nom.endsWith('(ASSIST-Q1)')
 
 beforeAll(() => { prechauffer(servie()); prechauffer(levee()) })
