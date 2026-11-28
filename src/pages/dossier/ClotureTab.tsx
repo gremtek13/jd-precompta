@@ -719,7 +719,7 @@ export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, mo
             paiement — si l'une a été réglée une autre année, la rapprocher de son mouvement dans
             l'onglet Banque la fera changer d'exercice.
           </p>
-          <p className="muted">{rappelDuReleveSuivant(sansPaiement.map((s) => s.annee), nomsDesComptes(lectureDesComptes))}</p>
+          <p className="muted">{rappelDuReleveSuivant(sansPaiement.map((s) => s.annee), nomsDesComptes(lectureDesComptes, sansPaiement.map((s) => s.annee)))}</p>
           {nbSansPaiementEnDoublon > 0 && (
             <p style={{ marginTop: 0 }}>
               <span className="badge badge-warning">Doublon probable</span>{' '}

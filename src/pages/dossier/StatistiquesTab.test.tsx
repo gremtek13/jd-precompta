@@ -207,6 +207,50 @@ describe('StatistiquesTab — Balance des comptes', () => {
       .toEqual([null, 'Total débit', 'Total crédit', 'Équilibre'])
   })
 
+  // L'ÉQUILIBRE SE JUGE AU CENTIME (relecture adverse du 28/11/2026). Le badge comparait deux sommes de flottants sous une
+  // tolérance de deux centimes : une balance qui portait un ou deux centimes de plus au débit qu'au crédit se disait
+  // « équilibrée », alors que le FEC de ces écritures ne l'est pas. Les totaux se comptent désormais en centimes entiers :
+  // un centime d'écart se dit, et le bruit des flottants (0,10 + 0,20) n'en fabrique aucun.
+  it.each([
+    [[ecriture('606100', 'debit', 120.01), ecriture('512000', 'credit', 120)], 'écart'],
+    [[ecriture('606100', 'debit', 120), ecriture('512000', 'credit', 120.02)], 'écart'],
+    [[ecriture('606100', 'debit', 0.1), ecriture('606200', 'debit', 0.2), ecriture('512000', 'credit', 0.3)], 'équilibré'],
+  ])('juge l’équilibre au centime (%#)', async (lignes, attendu) => {
+    faux.plafond = null
+    faux.parTable.ecritures_brouillon = lignes
+    faux.parTable.categories = []
+    faux.parTable.pieces = []
+    render(
+      <ContexteDossier valides={faux.valides} annee="toutes">
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('tresorerie')} />
+      </ContexteDossier>,
+    )
+    await screen.findByText('606100')
+    const badge = piedDuTableau().children[3].textContent ?? ''
+    expect(badge).toContain(attendu)
+    if (attendu === 'écart') expect(badge.replace(/\s/g, ' ')).toMatch(/écart -?0,0[12] €/)
+  })
+
+  // UNE LECTURE PARTIELLE N'AFFIRME PAS L'ÉQUILIBRE (relecture adverse du 28/11/2026) : sur une ouverture lue en partie, le badge
+  // disait « équilibré » sous le bandeau qui annonçait que les totaux portaient sur une partie du dossier. Il ne juge plus.
+  it('ne dit pas « équilibré » quand l’ouverture n’a pas été lue en entier', async () => {
+    faux.plafond = null
+    faux.parTable.ecritures_brouillon = [ecriture('606100', 'debit', 120), ecriture('512000', 'credit', 120)]
+    faux.parTable.categories = []
+    faux.parTable.pieces = []
+    faux.erreurs.a_nouveaux = 'permission denied'
+    render(
+      <ContexteDossier valides={faux.valides} annee="toutes">
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modele={modeleDeTest('tresorerie')} />
+      </ContexteDossier>,
+    )
+    await screen.findByText('606100')
+    const badge = piedDuTableau().children[3].textContent ?? ''
+    expect(badge).not.toContain('équilibré')
+    expect(badge).not.toContain('écart')
+    expect(badge).toContain('non jugé')
+  })
+
   it('réduit les lignes affichées sans toucher aux totaux ni fabriquer un écart', async () => {
     faux.plafond = null
     faux.parTable.ecritures_brouillon = [

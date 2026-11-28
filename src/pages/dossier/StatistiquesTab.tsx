@@ -335,11 +335,19 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
   // balance n'est équilibrée que prise en entier : sommer un sous-ensemble (« 606 ») donne forcément
   // un écart, et le badge ci-dessous passait alors au rouge — le même badge qui signale un vrai
   // brouillon cassé. La recherche ne doit jamais fabriquer cette alerte.
-  const totalDebit = balance.reduce((sum, l) => sum + l.totalDebit, 0)
-  const totalCredit = balance.reduce((sum, l) => sum + l.totalCredit, 0)
-  // Tolérance identique à analyserEcritures — un écart ici signale la même chose qu'un groupe
-  // déséquilibré dans Écritures, mais vu depuis l'angle du compte plutôt que de la pièce.
-  const desequilibre = Math.abs(totalDebit - totalCredit) > 0.02
+  // EN CENTIMES ENTIERS, AU CENTIME (relecture adverse du 28/11/2026). Le badge comparait deux sommes de flottants sous la
+  // tolérance de deux centimes d'analyserEcritures : une balance qui portait un ou deux centimes de plus d'un côté se disait
+  // « équilibrée », quand le FEC de ces écritures ne l'est pas. Chaque ligne a deux décimales (`numeric` en base) : le total
+  // d'un compte, rendu en centimes, est exact, et le bruit des flottants (0,10 + 0,20) ne fabrique aucun écart.
+  const totalDebitCentimes = balance.reduce((sum, l) => sum + Math.round(l.totalDebit * 100), 0)
+  const totalCreditCentimes = balance.reduce((sum, l) => sum + Math.round(l.totalCredit * 100), 0)
+  const totalDebit = totalDebitCentimes / 100
+  const totalCredit = totalCreditCentimes / 100
+  const desequilibre = totalDebitCentimes !== totalCreditCentimes
+  // UNE LECTURE PARTIELLE N'AFFIRME PAS L'ÉQUILIBRE : le brouillon, la reprise ou les soldes reportés lus en partie, les totaux
+  // portent sur une partie du dossier — « équilibré » rassurerait à tort, comme « écart » alarmerait. Le badge ne juge pas, et
+  // les bandeaux disent ce qui manque.
+  const equilibreNonJuge = lectureIncomplete !== null || lectureANouveauxIncomplete !== null || lectureReportesIncomplete !== null
 
   return (
     <>
@@ -505,8 +513,10 @@ export default function StatistiquesTab({ dossierId, onNavigate, modele }: {
                 <td data-libelle={recherche.trim() ? 'Total débit (tous les comptes)' : 'Total débit'}>{formatMoney(totalDebit)}</td>
                 <td data-libelle={recherche.trim() ? 'Total crédit (tous les comptes)' : 'Total crédit'}>{formatMoney(totalCredit)}</td>
                 <td data-libelle="Équilibre">
-                  {desequilibre
-                    ? <span className="badge badge-danger">écart {formatMoney(totalDebit - totalCredit)}</span>
+                  {equilibreNonJuge
+                    ? <span className="badge badge-neutral">non jugé (lecture partielle)</span>
+                    : desequilibre
+                    ? <span className="badge badge-danger">écart {formatMoney((totalDebitCentimes - totalCreditCentimes) / 100)}</span>
                     : <span className="badge badge-ok">équilibré</span>}
                 </td>
               </tr>

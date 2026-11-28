@@ -142,8 +142,24 @@ describe('le rappel du relevé de janvier', () => {
   it('à un compte, les mots d’hier ; dès deux, chacun nommé', () => {
     expect(rappelDuReleveSuivant([2025], [])).toMatch(/importer et rapprocher le relevé de janvier 2026 avant de valider 2025\. /)
     expect(rappelDuReleveSuivant([2025], ['A', 'B'])).toMatch(/le relevé de janvier 2026 de chacun des comptes « A » et « B » avant de valider 2025\./)
-    expect(nomsDesComptes(lus(P))).toEqual([])
-    expect(nomsDesComptes(lus(P, B))).toEqual(['Principal', 'Livret pro'])
-    expect(nomsDesComptes(SANS)).toEqual([])
+    expect(nomsDesComptes(lus(P), [2025])).toEqual([])
+    expect(nomsDesComptes(lus(P, B), [2025])).toEqual(['Principal', 'Livret pro'])
+    expect(nomsDesComptes(SANS, [2025])).toEqual([])
+  })
+  // UN COMPTE QUI N'A PAS DE RELEVÉ DE JANVIER NE S'EN RÉCLAME PAS (relecture adverse du 28/11/2026) : clos avant le 1er janvier
+  // suivant, ou ouvert après ce mois, il était nommé parmi « chacun des comptes » dont importer le relevé de janvier — un relevé
+  // qui n'existe pas. Il se nomme dès qu'un des exercices de la carte l'attend ; un seul compte qui l'attend ne se nomme pas.
+  it('ne réclame pas le relevé de janvier d’un compte clos avant lui, ni d’un compte ouvert après lui', () => {
+    const C = compte('C', { libelle: 'Compte clos', clos_le: '2025-09-30' })
+    const O = compte('O', { libelle: 'Compte ouvert en mars', ouvert_le: '2026-03-01' })
+    expect(nomsDesComptes(lus(P, B, C), [2025])).toEqual(['Principal', 'Livret pro'])
+    expect(nomsDesComptes(lus(P, C), [2025])).toEqual([])
+    expect(nomsDesComptes(lus(P, O), [2025])).toEqual([])
+    // Clos le 15 janvier : son relevé de janvier existe.
+    expect(nomsDesComptes(lus(P, compte('J', { libelle: 'Clos en janvier', clos_le: '2026-01-15' })), [2025])).toEqual(['Principal', 'Clos en janvier'])
+    // Deux exercices : le compte ouvert en mars 2026 attend le relevé de janvier 2027.
+    expect(nomsDesComptes(lus(P, O), [2025, 2026])).toEqual(['Principal', 'Compte ouvert en mars'])
+    // Le compte clos en 2025 n'attend aucun des deux.
+    expect(nomsDesComptes(lus(P, B, C), [2025, 2026])).toEqual(['Principal', 'Livret pro'])
   })
 })

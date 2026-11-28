@@ -55634,3 +55634,19 @@ candidate lue par `parseInt` (« 2.5 » → 2) : un entier, la règle de `refusB
 l'appelé même quand le versé (0 €, un crédit de la caisse) ou un remboursement dit autre chose (MONECH-Q1) ; le rattachement d'un avis ne
 retient pas son état lu. **Écartés** : la carte des paramètres des cotisations (lecture entière, version passée à la fonction, verrou) ;
 le bien repris, le cumul repris et le retrait d'un bien (refus dits avant le clic, la base juge le figé) ; aucun montant sans « Banque ».
+
+### 28/11/2026 — RELECTURE ADVERSE DE LA RÉVISION, DE LA CLÔTURE, DE LA BALANCE ET DU BILAN D'UN BNC EN TRÉSORERIE
+
+(Agent architecte, sans base ni migration ; les préalables de la validation hors du champ, confrontés la veille.) **Deux défauts
+établis, corrigés, rouges avant, verts après.** La Balance des comptes jugeait son équilibre sur deux sommes de flottants sous la
+tolérance de deux centimes d'`analyserEcritures` : un ou deux centimes de plus d'un côté se disaient « équilibré », quand le FEC de
+ces écritures ne l'est pas ; les totaux se comptent en centimes entiers et le badge juge au centime (le bruit de 0,10 + 0,20 n'en
+fabrique aucun). Le même badge disait « équilibré » sous le bandeau d'une reprise, d'un brouillon ou de soldes reportés lus en
+partie : il dit « non jugé (lecture partielle) » (`StatistiquesTab.test.tsx`). Le rappel du relevé de janvier suivant (Clôture)
+nommait parmi « chacun des comptes » un compte clos avant le 1er janvier, ou ouvert après ce mois, réclamant un relevé qui n'existe
+pas : `nomsDesComptes` reçoit les exercices de la carte et ne nomme que les comptes qui attendent l'un de leurs relevés de janvier
+(`releveParCompte.test.ts`). **Plausible, laissé au cabinet** : un cycle conclu « anomalie » puis revu reste « revu » quand un solde
+du cycle change après la revue, la cause n'entrant que dans « révisé » (REVCYC-Q1). **Écartés après lecture** : la preuve du relevé
+(un 512 propre routé vers elle, plusieurs relevés d'un compte jamais additionnés, un compte sans relevé « inconnu »), l'état d'une
+décision dont le solde a changé, la variation sur un précédent nul, l'équilibre et les rubriques du bilan (sans compensation, deux
+512 posés chacun), la colonne N−1 recalculée, la confrontation de l'ouverture, les verrous et les relectures des gestes.
