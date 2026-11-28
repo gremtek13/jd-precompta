@@ -101,6 +101,8 @@ export function supabaseFaux() {
       // Le cadrage par dossier n'est pas appliqué : le jeu d'essai ne porte qu'un dossier.
       const predicats: Predicat[] = []
       const tris: { colonne: string; croissant: boolean }[] = []
+      let valeurMaj: Partial<CotisationDeclaree> = {}
+      let unSeul = false
       Object.assign(c, {
         select: () => c,
         // Une échéance insérée entre en base : la relecture la rend.
@@ -113,7 +115,10 @@ export function supabaseFaux() {
           }
           return c
         },
-        update: (valeur: unknown) => { operation = 'update'; faux.misesAJour.push({ table, valeur }); return c },
+        update: (valeur: unknown) => { operation = 'update'; valeurMaj = valeur as Partial<CotisationDeclaree>; faux.misesAJour.push({ table, valeur }); return c },
+        // `.select('id').maybeSingle()` après une mise à jour (la confirmation d'une prévisionnelle, qui retient sa version) :
+        // la ligne écrite, ou rien quand la version a changé.
+        maybeSingle: () => { unSeul = true; return c },
         eq: (colonne: string, valeur: unknown) => {
           if (colonne !== 'dossier_id') predicats.push(predicatEq(colonne, valeur))
           return c
@@ -125,6 +130,13 @@ export function supabaseFaux() {
         then: (suite: (r: { data: unknown[]; error: { message: string } | null; count: number }) => unknown) => {
           if (operation === 'update' && table === 'cotisations_declarees' && faux.erreurMiseAJour) {
             return Promise.resolve({ data: [], error: { message: faux.erreurMiseAJour }, count: 0 }).then(suite)
+          }
+          // La mise à jour d'une échéance s'APPLIQUE sous ses filtres de version, et rend ce qu'elle a écrit.
+          if (operation === 'update' && table === 'cotisations_declarees') {
+            const visees = filtrer(faux.cotisations, predicats)
+            faux.cotisations = faux.cotisations.map((x) => (visees.includes(x) ? { ...x, ...valeurMaj } : x))
+            const rendues = visees.map((x) => ({ id: x.id }))
+            return Promise.resolve({ data: (unSeul ? rendues[0] ?? null : rendues) as unknown[], error: null, count: 0 }).then(suite)
           }
           if (operation !== 'select') return Promise.resolve({ data: [], error: null, count: 0 }).then(suite)
           const source: readonly object[] =

@@ -256,24 +256,10 @@ export function jugerLaModification(
   if (dateNeuve) return { refus: { message: `${dateNeuve} : une échéance ne s’y ajoute plus.` } }
 
   const montant = montantDeLEcheance(v)
-  if (v.montant_csg_crds != null && centimes(Math.abs(v.montant_csg_crds)) > centimes(Math.abs(montant))) {
-    return {
-      refus: {
-        message: `La CSG-CRDS (${formatMoney(Math.abs(v.montant_csg_crds))}) dépasse le montant de l’échéance (${formatMoney(Math.abs(montant))}).`,
-      },
-    }
-  }
-  // La part « autres impôts », avec la CSG-CRDS que l'écriture sépare (en trésorerie), ne dépasse pas l'échéance : la base la
-  // refuserait au paiement, et l'écriture n'aurait plus de cotisation à porter.
   const apres = { ...c, ...v }
+  const refusDesMontants = refusDesMontantsDeLEcheance(apres, ctx.mode)
+  if (refusDesMontants) return { refus: { message: refusDesMontants } }
   const part = autresImpotsDeLEcriture(apres)
-  if (part > 0 && centimes(csgDeLEcriture(apres, ctx.mode)) + centimes(part) > centimes(Math.abs(montant))) {
-    return {
-      refus: {
-        message: `La part « autres impôts » (${formatMoney(part)})${csgDeLEcriture(apres, ctx.mode) > 0 ? ', avec la CSG-CRDS,' : ''} dépasse le montant de l’échéance (${formatMoney(Math.abs(montant))}).`,
-      },
-    }
-  }
 
   const effets: string[] = []
   let reecriture: { ligne: MouvementBancaire; ecritures: LigneEcritureMouvement[] } | null = null
@@ -334,6 +320,28 @@ export function jugerLaModification(
     }
   }
   return { valeurs: v, effets, reecriture }
+}
+
+/**
+ * CE QUE LES MONTANTS D'UNE ÉCHÉANCE NE PEUVENT PAS PORTER, sur l'échéance telle qu'elle partirait — « Modifier » comme
+ * « Ajouter » (relecture adverse du 28/11/2026 : l'ajout acceptait une CSG-CRDS plus forte que l'échéance, que « Modifier »
+ * refusait et que `rapprocher_cotisation` refuse au rapprochement). Une CSG-CRDS qui dépasse l'échéance ; la part « autres
+ * impôts », avec la CSG-CRDS que l'écriture sépare (en trésorerie), qui la dépasse : la base la refuserait au paiement, et
+ * l'écriture n'aurait plus de cotisation à porter. Nul quand rien ne s'y oppose.
+ */
+export function refusDesMontantsDeLEcheance(
+  v: Pick<CotisationDeclaree, 'montant_appele' | 'montant_verse' | 'montant_csg_crds'> & Partial<Pick<CotisationDeclaree, 'montant_autres_impots'>>,
+  mode: ModeComptable,
+): string | null {
+  const montant = montantDeLEcheance(v)
+  if (v.montant_csg_crds != null && centimes(Math.abs(v.montant_csg_crds)) > centimes(Math.abs(montant))) {
+    return `La CSG-CRDS (${formatMoney(Math.abs(v.montant_csg_crds))}) dépasse le montant de l’échéance (${formatMoney(Math.abs(montant))}).`
+  }
+  const part = autresImpotsDeLEcriture({ montant_autres_impots: v.montant_autres_impots ?? null })
+  if (part > 0 && centimes(csgDeLEcriture(v, mode)) + centimes(part) > centimes(Math.abs(montant))) {
+    return `La part « autres impôts » (${formatMoney(part)})${csgDeLEcriture(v, mode) > 0 ? ', avec la CSG-CRDS,' : ''} dépasse le montant de l’échéance (${formatMoney(Math.abs(montant))}).`
+  }
+  return null
 }
 
 /**

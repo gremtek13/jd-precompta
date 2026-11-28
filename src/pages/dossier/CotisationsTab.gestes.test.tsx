@@ -230,3 +230,97 @@ describe('CotisationsTab — « Réunir » deux échéances', () => {
     }
   })
 })
+
+// RELECTURE ADVERSE DU 28/11/2026 : un geste parti d'une liste lue avant qu'une autre session change le rapprochement d'une
+// échéance. `rapprocher_cotisation` n'exige pas que le mouvement paie DÉJÀ l'échéance : « Écrire » et la réécriture de
+// « Modifier » RÉTABLISSAIENT un rapprochement annulé depuis ; `supprimer_echeance_cotisation` ne prend pas de version : « Retirer »
+// et la seconde écriture de « Réunir » défaisaient un rapprochement posé depuis, que la confirmation n'avait pas nommé.
+describe('CotisationsTab — le rapprochement relu avant chaque geste qui en dépend', () => {
+  const annule = () => { faux.lignes = faux.lignes.map((l) => ({ ...l, statut: 'non_rapprochee', cotisation_id: null })) }
+
+  it('« Écrire cette échéance » ne rétablit pas un rapprochement annulé depuis la lecture', async () => {
+    faux.cotisations = [cotisation()]
+    faux.lignes = [ligne()]
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Écrire cette échéance' })
+    annule()
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs).toEqual([])
+    expect(alerte).toHaveBeenCalledWith(expect.stringContaining(
+      'l’échéance du 20/03/2026 ne s’écrit pas : son rapprochement du prélèvement du 21/03/2026 a changé depuis la lecture de la liste',
+    ))
+    expect(faux.lignes[0].cotisation_id).toBeNull()
+  })
+
+  it('« Modifier » n’écrit rien quand le mouvement qui la paie a changé depuis la lecture', async () => {
+    faux.cotisations = [cotisation()]
+    faux.lignes = [ligne()]
+    monter()
+    await cliquer(await ligneDe('20/03/2026'), 'Modifier')
+    fireEvent.change(within(fenetre()).getByLabelText('dont CSG-CRDS'), { target: { value: '450' } })
+    annule()
+    await act(async () => { within(fenetre()).getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(await within(fenetre()).findByText(/^L’échéance n’a pas été modifiée : son rapprochement du prélèvement du 21\/03\/2026 a changé/)).toBeTruthy()
+    expect(faux.misesAJour).toEqual([])
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('« Retirer » ne défait pas un rapprochement posé depuis la lecture, que la confirmation n’a pas nommé', async () => {
+    faux.cotisations = [cotisation()]
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter()
+    const ligneEcheance = await ligneDe('20/03/2026')
+    faux.lignes = [ligne()]
+    await cliquer(ligneEcheance, 'Retirer')
+    expect(await screen.findByText(/^L’échéance n’a pas été retirée : un mouvement la paie depuis la lecture de la liste/)).toBeTruthy()
+    expect(faux.rpcs).toEqual([])
+    expect(faux.cotisations).toHaveLength(1)
+  })
+
+  it('« Réunir » s’arrête avant toute écriture quand l’échéance à retirer est rapprochée depuis', async () => {
+    faux.cotisations = [
+      cotisation({ id: 'cot-1', echeance: '2026-03-20', montant_appele: 800, montant_csg_crds: 300 }),
+      cotisation({ id: 'cot-2', echeance: '2026-03-15', montant_appele: 1200, montant_csg_crds: 450 }),
+    ]
+    monter()
+    await cliquer(await ligneDe('20/03/2026'), 'Réunir…')
+    fireEvent.click(within(fenetre()).getByLabelText(/^15\/03\/2026/))
+    faux.lignes = [ligne({ cotisation_id: 'cot-2', montant: -1200 })]
+    await act(async () => { within(fenetre()).getByRole('button', { name: 'Réunir' }).click() })
+    expect(await screen.findByText(/^Rien n’a été réuni : l’échéance du 15\/03\/2026 — un mouvement la paie depuis la lecture/)).toBeTruthy()
+    expect(faux.misesAJour).toEqual([])
+    expect(faux.rpcs).toEqual([])
+  })
+})
+
+describe('CotisationsTab — la réunion inachevée et l’ajout (relecture adverse du 28/11/2026)', () => {
+  it('l’échéance qu’une réunion inachevée doit retirer ne se réunit plus : la gardée porte déjà sa somme', async () => {
+    faux.cotisations = [
+      cotisation({ id: 'cot-1', echeance: '2026-03-20', montant_appele: 800, montant_csg_crds: 300 }),
+      cotisation({ id: 'cot-2', echeance: '2026-03-15', montant_appele: 1200, montant_csg_crds: 450 }),
+    ]
+    faux.erreursRpc = { supprimer_echeance_cotisation: 'JWT expired' }
+    monter()
+    await cliquer(await ligneDe('20/03/2026'), 'Réunir…')
+    fireEvent.click(within(fenetre()).getByLabelText(/^15\/03\/2026/))
+    await act(async () => { within(fenetre()).getByRole('button', { name: 'Réunir' }).click() })
+    await screen.findByText(/^Réunion inachevée/)
+    // Ni la gardée (sa seule candidate est la retirée), ni la retirée n'offrent « Réunir… » : la somme compterait une fois de plus.
+    expect(within(await ligneDe('20/03/2026')).queryByRole('button', { name: 'Réunir…' })).toBeNull()
+    expect(within(await ligneDe('15/03/2026')).queryByRole('button', { name: 'Réunir…' })).toBeNull()
+  })
+
+  it('« Ajouter » refuse avant le clic une CSG-CRDS plus forte que l’échéance, comme « Modifier »', async () => {
+    monter()
+    await screen.findByText(/Ajouter une échéance/)
+    fireEvent.change(screen.getByLabelText('Échéance'), { target: { value: '2026-04-20' } })
+    fireEvent.change(screen.getByLabelText('Montant appelé'), { target: { value: '800' } })
+    fireEvent.change(screen.getByLabelText('dont CSG-CRDS'), { target: { value: '900' } })
+    expect(screen.getByText(/^La CSG-CRDS \(/).textContent).toBe(`La CSG-CRDS (${formatMoney(900)}) dépasse le montant de l’échéance (${formatMoney(800)}).`)
+    const ajouter = screen.getByRole('button', { name: 'Ajouter' })
+    expect(ajouter.hasAttribute('disabled')).toBe(true)
+    await act(async () => { fireEvent.submit(ajouter.closest('form')!) })
+    expect(faux.cotisations).toEqual([])
+  })
+})

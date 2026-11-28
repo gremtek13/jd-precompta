@@ -106,10 +106,14 @@ vi.mock('../../lib/supabase', async () => {
         // sauf le cadrage par dossier, que le jeu d'essai ne renseigne pas. Accepté sans effet, le filtre
         // `.not('cotisation_id', 'is', null)` retiré laisserait ce test vert.
         const predicats: Predicat[] = []
+        let valeurMaj: Record<string, unknown> = {}
+        let unSeul = false
         Object.assign(c, {
           select: () => c,
           insert: (valeur: unknown) => { operation = 'insert'; faux.insertions.push({ table, valeur }); return c },
-          update: (valeur: unknown) => { operation = 'update'; faux.misesAJour.push({ table, valeur }); return c },
+          update: (valeur: unknown) => { operation = 'update'; valeurMaj = valeur as Record<string, unknown>; faux.misesAJour.push({ table, valeur }); return c },
+          // `.select('id').maybeSingle()` après une mise à jour qui retient sa version : la ligne écrite, ou rien.
+          maybeSingle: () => { unSeul = true; return c },
           delete: () => { operation = 'delete'; return c },
           eq: (colonne: string, valeur: unknown) => {
             if (colonne !== 'dossier_id') predicats.push(predicatEq(colonne, valeur))
@@ -125,6 +129,13 @@ vi.mock('../../lib/supabase', async () => {
               const repondre = () => ({ data: [], error: faux.erreurInsertion, count: 0 })
               return (faux.porteInsertion ? faux.porteInsertion.then(repondre) : Promise.resolve(repondre())).then(suite)
             }
+            // La mise à jour d'une échéance s'APPLIQUE sous ses filtres de version, et rend ce qu'elle a écrit.
+            if (operation === 'update' && table === 'cotisations_declarees') {
+              const visees = filtrer(faux.cotisations, predicats)
+              faux.cotisations = faux.cotisations.map((x) => (visees.includes(x) ? { ...x, ...valeurMaj } as CotisationDeclaree : x))
+              const rendues = visees.map((x) => ({ id: x.id }))
+              return Promise.resolve({ data: (unSeul ? rendues[0] ?? null : rendues) as unknown[], error: null, count: 0 }).then(suite)
+            }
             if (operation !== 'select') return Promise.resolve({ data: [], error: null, count: 0 }).then(suite)
             const source: readonly unknown[] =
               table === 'cotisations_declarees' ? faux.cotisations
@@ -134,7 +145,9 @@ vi.mock('../../lib/supabase', async () => {
                       : []
             const toutes = filtrer(source, predicats)
             const rendu = toutes.slice(debut, Math.min(fin + 1, toutes.length, faux.muetApres[table] ?? Infinity))
-            return (faux.retenue ?? Promise.resolve())
+            // Une lecture retenue est celle de la LISTE (`load` lit tout ensemble : retenir ses échéances la retient entière) ; la
+            // relecture du paiement d'une échéance, juste avant chaque écriture (`paiementChangeDepuisLaLecture`), passe.
+            return (table === 'cotisations_declarees' ? faux.retenue ?? Promise.resolve() : Promise.resolve())
               .then(() => ({ data: rendu, error: null, count: toutes.length }))
               .then(suite)
           },
@@ -1113,6 +1126,24 @@ describe('CotisationsTab — l’appel définitif à une autre date que sa prév
     await deposerLAvis()
     expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees')).toEqual([])
     expect(echeancesComptees('2026-01-20')).toBe(1)
+  })
+
+  // RELECTURE ADVERSE DU 28/11/2026 : la mise à jour retient la prévisionnelle telle que lue. Corrigée dans une autre session
+  // entre la lecture et le clic, elle était écrasée par le montant de l'avis, sans un mot.
+  it('une prévisionnelle changée depuis la lecture n’est pas écrasée par l’avis, et le dit', async () => {
+    faux.cotisations = [cotisation({ id: 'prev', echeance: '2026-01-20', montant_appele: 300, previsionnel: true })]
+    faux.echeancesLues = [{ date: '2026-01-20', montant: 320, previsionnel: false }]
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    monter()
+    await screen.findByText('Prévisionnel')
+    const champ = document.querySelector('input[type=file][accept=".pdf,.jpg,.jpeg,.png"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'avis.pdf', { type: 'application/pdf' })] } }) })
+    const bouton = await screen.findByRole('button', { name: 'Créer ces 1 échéance(s)' })
+    // Une autre session la corrige et la rend définitive.
+    faux.cotisations = [cotisation({ id: 'prev', echeance: '2026-01-20', montant_appele: 310, previsionnel: false })]
+    await act(async () => { bouton.click() })
+    expect(faux.cotisations[0].montant_appele).toBe(310)
+    expect(alerte).toHaveBeenCalledWith(expect.stringContaining('1 prévisionnelle(s) non mise(s) à jour : changée(s) depuis la lecture'))
   })
 
   it('à une AUTRE date du même mois, l’appel remplace la prévisionnelle, dit avant le clic, et rien ne s’ajoute', async () => {

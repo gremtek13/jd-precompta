@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { banquesDuDossier } from './banqueDuMouvement'
 import {
   candidatesALaReunion, confirmationDeLaReunion, jugerLaModification, lireLaSaisie, raisonDeNePasReunir, refusDeLaReunion,
-  refusDuPaiementPersonnel, reunionInacheveeDite, saisieDe, valeursReunies, type ContexteDesGestes, type SaisieDeLEcheance,
+  refusDesMontantsDeLEcheance, refusDuPaiementPersonnel, reunionInacheveeDite, saisieDe, valeursReunies, type ContexteDesGestes, type SaisieDeLEcheance,
 } from './gestesDesEcheances'
 import { refusRapprochementCotisation } from './cotisationRapprochee'
 import { formatMoney } from './format'
@@ -262,5 +262,30 @@ describe('« Réunir »', () => {
       + `mais celle du 15/11/2026 (${formatMoney(1200)} appelés, dont ${formatMoney(450)} de CSG-CRDS) n’a pas pu être retirée : JWT expired. `
       + `Tant qu’elle reste, ses ${formatMoney(1200)} comptent deux fois. Retire l’échéance du 15/11/2026 pour finir.`,
     )
+  })
+})
+
+// « AJOUTER » ET « MODIFIER » SOUS UNE MÊME RÈGLE DES MONTANTS (relecture adverse du 28/11/2026) : l'ajout acceptait une CSG-CRDS
+// plus forte que l'échéance, que « Modifier » refusait et que `rapprocher_cotisation` refuse au rapprochement.
+describe('refusDesMontantsDeLEcheance', () => {
+  const v = (o: Partial<CotisationDeclaree> = {}) => ({ montant_appele: 800, montant_verse: null, montant_csg_crds: null, ...o })
+
+  it('refuse une CSG-CRDS plus forte que l’échéance, le versé faisant foi', () => {
+    expect(refusDesMontantsDeLEcheance(v({ montant_csg_crds: 800.01 }), 'tresorerie'))
+      .toBe(`La CSG-CRDS (${formatMoney(800.01)}) dépasse le montant de l’échéance (${formatMoney(800)}).`)
+    expect(refusDesMontantsDeLEcheance(v({ montant_csg_crds: 800 }), 'tresorerie')).toBeNull()
+    expect(refusDesMontantsDeLEcheance(v({ montant_verse: 500, montant_csg_crds: 600 }), 'engagement'))
+      .toBe(`La CSG-CRDS (${formatMoney(600)}) dépasse le montant de l’échéance (${formatMoney(500)}).`)
+    // Un remboursement : les valeurs absolues.
+    expect(refusDesMontantsDeLEcheance(v({ montant_appele: -200, montant_csg_crds: 150 }), 'tresorerie')).toBeNull()
+  })
+
+  it('la part « autres impôts » se borne avec la CSG-CRDS en trésorerie, seule en engagement', () => {
+    const avecPart = v({ montant_csg_crds: 300, montant_autres_impots: 600 })
+    expect(refusDesMontantsDeLEcheance(avecPart, 'tresorerie'))
+      .toBe(`La part « autres impôts » (${formatMoney(600)}), avec la CSG-CRDS, dépasse le montant de l’échéance (${formatMoney(800)}).`)
+    expect(refusDesMontantsDeLEcheance(avecPart, 'engagement')).toBeNull()
+    expect(refusDesMontantsDeLEcheance(v({ montant_autres_impots: 801 }), 'engagement'))
+      .toBe(`La part « autres impôts » (${formatMoney(801)}) dépasse le montant de l’échéance (${formatMoney(800)}).`)
   })
 })
