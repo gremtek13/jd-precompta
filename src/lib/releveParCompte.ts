@@ -247,7 +247,18 @@ export function rappelDuReleveSuivant(annees: readonly number[], comptes: readon
     + 'validation, qui fige ensuite l’échéance à sa date.'
 }
 
-/** Les libellés des comptes bancaires que le rappel du relevé de janvier nomme : dès deux comptes lus ; aucun sinon. */
-export function nomsDesComptes(lecture: LectureDesComptes): string[] {
-  return lecture.etat === 'lus' && lecture.comptes.length > 1 ? lecture.comptes.map((c) => c.libelle) : []
+/**
+ * Les libellés des comptes bancaires que le rappel du relevé de janvier nomme : dès deux comptes lus qui ATTENDENT un relevé de
+ * janvier suivant l'un des exercices `annees` ; aucun sinon. Un compte clos avant le 1er janvier suivant, ou ouvert après ce
+ * mois, n'en a pas (relecture adverse du 28/11/2026) : le nommer réclamait un relevé qui n'existe pas. Sans date d'ouverture ni
+ * de clôture, un compte l'attend, comme hier.
+ */
+export function nomsDesComptes(lecture: LectureDesComptes, annees: readonly number[]): string[] {
+  if (lecture.etat !== 'lus') return []
+  const attendent = lecture.comptes.filter((c) => annees.some((a) => {
+    const premier = `${a + 1}-01-01`
+    const dernier = `${a + 1}-01-31`
+    return (c.clos_le === null || c.clos_le >= premier) && (c.ouvert_le === null || c.ouvert_le <= dernier)
+  }))
+  return attendent.length > 1 ? attendent.map((c) => c.libelle) : []
 }
