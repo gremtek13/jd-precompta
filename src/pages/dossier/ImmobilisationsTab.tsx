@@ -317,9 +317,12 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
   }
 
   async function enregistrer(piece: Piece) {
-    const duree = parseInt(durees[piece.id] ?? String(DUREE_DEFAUT_ANNEES), 10)
-    if (!duree || duree < 1) {
-      setError('Durée invalide.')
+    // Un nombre ENTIER d'années, la règle de `refusBien` (relecture adverse du 28/11/2026) : `parseInt` lisait « 2.5 » 2 et
+    // « 3 ans » 3, et le bien s'inscrivait sur une durée que personne n'avait saisie.
+    const texteDuree = (durees[piece.id] ?? String(DUREE_DEFAUT_ANNEES)).trim()
+    const duree = /^\d+$/.test(texteDuree) ? Number(texteDuree) : Number.NaN
+    if (!Number.isInteger(duree) || duree < 1) {
+      setError('La durée d’amortissement est un nombre entier d’années, au moins un.')
       return
     }
     // Seconde ceinture : le bouton d'une candidate figée n'est pas rendu.
@@ -529,10 +532,21 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
       return
     }
     const origine = immobilisations.find((x) => x.id === edition.id)
+    // Le bien n'est plus dans la liste relue (retiré depuis) : rien à écrire, et la fiche se ferme sur une liste à jour.
+    if (!origine) {
+      setError('Ce bien n’est plus au registre : il a été retiré depuis la lecture de la liste.')
+      setEdition(null)
+      return
+    }
     ecritureEnCours.current = true
     setEnCours(true)
     try {
-      const { error: erreurModification } = await supabase.from('immobilisations').update({
+      // LA MISE À JOUR RETIENT LE BIEN TEL QUE LU (relecture adverse du 28/11/2026) : tout ce que la fiche réécrit — libellé,
+      // nature, valeur, dates, durée, et le cumul repris quand la fiche le porte. Sans elle, une fiche ouverte dans un second
+      // onglet ÉCRASAIT, champ par champ, un bien modifié depuis ; et une mise à jour que la base n'applique pas ne lève rien,
+      // la fiche se fermait sur « enregistré ». La ligne rendue dit qu'elle l'a été ; aucune, qu'elle ne l'a pas été.
+      const avecCumul = cumulDansLaFiche(origine, b)
+      let requete = supabase.from('immobilisations').update({
         libelle: b.libelle.trim(),
         nature_id: b.natureId || null,
         valeur: Math.round(valeurSaisie(b.valeur) * 100) / 100,
@@ -541,10 +555,27 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva, plan }: { 
         duree_annees: Number(b.duree),
         // Le cumul repris, quand la fiche le montre (le champ vide le retire) ; sinon rien de lui ne part — le drapeau baissé,
         // les colonnes n'existent pas encore.
-        ...(origine && cumulDansLaFiche(origine, b) ? champsDuCumulRepris(b.cumulRepris, ouverture) : {}),
-      }).eq('id', edition.id)
+        ...(avecCumul ? champsDuCumulRepris(b.cumulRepris, ouverture) : {}),
+      }).eq('id', origine.id).eq('libelle', origine.libelle).eq('valeur', origine.valeur)
+        .eq('date_acquisition', origine.date_acquisition).eq('duree_annees', origine.duree_annees)
+      requete = origine.nature_id == null ? requete.is('nature_id', null) : requete.eq('nature_id', origine.nature_id)
+      requete = origine.date_mise_en_service == null
+        ? requete.is('date_mise_en_service', null)
+        : requete.eq('date_mise_en_service', origine.date_mise_en_service)
+      // Les deux colonnes du cumul, seulement quand la fiche les écrit et que la lecture les porte.
+      if (avecCumul && origine.cumul_repris !== undefined && origine.cumul_repris_au !== undefined) {
+        requete = origine.cumul_repris == null ? requete.is('cumul_repris', null) : requete.eq('cumul_repris', origine.cumul_repris)
+        requete = origine.cumul_repris_au == null ? requete.is('cumul_repris_au', null) : requete.eq('cumul_repris_au', origine.cumul_repris_au)
+      }
+      const { data: modifie, error: erreurModification } = await requete.select('id').maybeSingle()
       if (erreurModification) {
         setError(`Le bien n’a pas pu être modifié : ${messageErreur(erreurModification, 'raison inconnue')}`)
+        return
+      }
+      if (!modifie) {
+        setError('Le bien n’a pas été modifié : il a changé depuis sa lecture, ou la base ne l’a pas laissé écrire. La liste est relue : vérifiez-le, puis recommencez.')
+        setEdition(null)
+        await load()
         return
       }
       setError(null)

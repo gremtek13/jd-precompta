@@ -47,7 +47,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIs, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   type Predicat = (ligne: Record<string, unknown>) => boolean
   // Ce que font les deux fonctions de la base (supabase/schema/20261001152738_…) : la dotation d'un exercice
   // remplace celle qui y était écrite — une écriture vide la retire —, et le retrait d'un bien emporte ses
@@ -86,6 +86,8 @@ vi.mock('../../lib/supabase', async () => {
         // filtre `.not('immobilisation_id', 'is', null)` retiré laisserait ce test vert.
         const predicats: Predicat[] = []
         let statutDemande: unknown = undefined
+        // `.select('id').maybeSingle()` après une mise à jour : la ligne écrite, ou rien quand la version a changé.
+        let unSeul = false
         Object.assign(c, {
           select: () => c,
           insert: (v: Record<string, unknown>) => { operation = 'insert'; valeur = v; faux.inserees.push({ table, valeur: v }); return c },
@@ -96,6 +98,8 @@ vi.mock('../../lib/supabase', async () => {
             return c
           },
           or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
+          is: (colonne: string, v: null) => { predicats.push(predicatIs(colonne, v)); return c },
+          maybeSingle: () => { unSeul = true; return c },
           not: (colonne: string, operateur: string, v: unknown) => { predicats.push(predicatNot(colonne, operateur, v)); return c },
           order: () => c,
           range: (d: number, f: number) => { debut = d; fin = f; return c },
@@ -109,11 +113,14 @@ vi.mock('../../lib/supabase', async () => {
             }
             if (operation === 'update') {
               if (faux.refusModification) return Promise.resolve({ data: null, error: faux.refusModification, count: 0 }).then(suite)
+              const visees = table === 'immobilisations'
+                ? faux.immobilisations.filter((i) => predicats.every((p) => p(i as unknown as Record<string, unknown>)))
+                : []
               if (table === 'immobilisations') {
-                faux.immobilisations = faux.immobilisations.map((i) =>
-                  predicats.every((p) => p(i as unknown as Record<string, unknown>)) ? { ...i, ...valeur } : i)
+                faux.immobilisations = faux.immobilisations.map((i) => (visees.includes(i) ? { ...i, ...valeur } : i))
               }
-              return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
+              const rendues = visees.map((i) => ({ id: i.id }))
+              return Promise.resolve({ data: unSeul ? (rendues[0] ?? null) as never : null, error: null, count: 0 }).then(suite)
             }
             const source: readonly unknown[] =
               table === 'pieces' ? faux.pieces
@@ -666,6 +673,21 @@ describe('ImmobilisationsTab — modifier un bien', () => {
     expect(faux.modifiees[0].valeur.date_mise_en_service).toBeNull()
   })
 
+  // RELECTURE ADVERSE DU 28/11/2026 : la mise à jour retient le bien tel que lu. Ouverte dans un second onglet, la fiche
+  // écrasait, champ par champ, un bien modifié depuis — et la fermait sur un « enregistré » muet.
+  it('un bien changé depuis sa lecture n’est pas écrasé, et le dit', async () => {
+    poser([immobilisation()])
+    monter()
+    const formulaire = await ouvrir()
+    // Une autre session le renomme entre la lecture et le clic.
+    faux.immobilisations = faux.immobilisations.map((i) => ({ ...i, libelle: 'Ordinateur portable' }))
+    fireEvent.change(formulaire.getByLabelText('Durée (années)'), { target: { value: '4' } })
+    fireEvent.click(formulaire.getByRole('button', { name: 'Enregistrer' }))
+    await screen.findByText('Le bien n’a pas été modifié : il a changé depuis sa lecture, ou la base ne l’a pas laissé écrire. La liste est relue : vérifiez-le, puis recommencez.')
+    expect(faux.immobilisations[0].libelle).toBe('Ordinateur portable')
+    expect(faux.immobilisations[0].duree_annees).toBe(5)
+  })
+
   // Le refus de la base se DIT, et le formulaire reste ouvert sur la saisie : le bien n'a pas changé, et
   // fermer le formulaire sans un mot ferait croire le contraire.
   it('dit le refus de la base, et garde la saisie', async () => {
@@ -764,6 +786,18 @@ describe('ImmobilisationsTab — enregistrer une candidate', () => {
   async function choisirNature() {
     fireEvent.change(await screen.findByLabelText('Nature de MATÉRIEL MÉDICAL'), { target: { value: 'n-propre' } })
   }
+
+  // Relecture adverse du 28/11/2026 : `parseInt` lisait « 2.5 » 2, et le bien s'inscrivait sur une durée que personne n'avait
+  // saisie. La règle de `refusBien` : un nombre entier d'années.
+  it.each(['2.5', '0', ''])('refuse une durée « %s », sans rien inscrire', async (duree) => {
+    poser([], { pieces: [candidate] })
+    monter()
+    await choisirNature()
+    fireEvent.change(screen.getByLabelText('Durée de MATÉRIEL MÉDICAL'), { target: { value: duree } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer comme immobilisation' }))
+    await screen.findByText('La durée d’amortissement est un nombre entier d’années, au moins un.')
+    expect(faux.inserees).toHaveLength(0)
+  })
 
   it('demande la nature avant d’enregistrer : c’est elle qui donne le compte d’amortissement', async () => {
     poser([], { pieces: [candidate] })

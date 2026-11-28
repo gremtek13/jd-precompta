@@ -38,8 +38,8 @@ import { dateFigee } from '../../lib/validationExercice'
 import { preparerPiece } from '../../lib/bornesStockage'
 import { remplacementsDesPrevisionnelles, texteDeLAmbiguite, texteDuRemplacement } from '../../lib/previsionnelles'
 import {
-  candidatesALaReunion, jugerLaModification, raisonDeNePasReunir, refusDeLaReunion, reunionInacheveeDite, valeursReunies,
-  type ContexteDesGestes, type ReunionInachevee, type SaisieDeLEcheance, type ValeursDeLEcheance,
+  candidatesALaReunion, jugerLaModification, raisonDeNePasReunir, refusDeLaReunion, refusDesMontantsDeLEcheance,
+  reunionInacheveeDite, valeursReunies, type ContexteDesGestes, type ReunionInachevee, type SaisieDeLEcheance, type ValeursDeLEcheance,
 } from '../../lib/gestesDesEcheances'
 import ModifierEcheanceModal from './ModifierEcheanceModal'
 import ChampsDeLaDescription from './ChampsDeLaDescription'
@@ -204,10 +204,33 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
 
   useEffect(() => { load() }, [dossierId])
 
+  // LE PAIEMENT D'UNE ÉCHÉANCE RELU JUSTE AVANT UN GESTE QUI EN DÉPEND (relecture adverse du 28/11/2026). `rapprocher_cotisation`
+  // n'exige pas que le mouvement paie DÉJÀ l'échéance (c'est la fonction du rapprochement de l'onglet Banque) : « Écrire les N » ou
+  // la réécriture de « Modifier », partis d'une liste lue avant qu'une autre session annule ce rapprochement, le RÉTABLISSAIENT en
+  // silence — ou ramenaient sur l'échéance un mouvement rapproché d'une autre depuis. Et `supprimer_echeance_cotisation` ne prend
+  // pas de version : « Retirer » ou la seconde écriture de « Réunir » défaisaient un rapprochement posé depuis, que la
+  // confirmation n'avait pas nommé. Le geste part donc seulement si les mouvements rapprochés de l'échéance sont, à l'identifiant
+  // près, ceux que l'onglet a lus (`lu` : celui qui la paie, ou aucun) ; sinon il ne part pas, le dit, et la liste se relit. Il
+  // reste la fenêtre de la relecture à l'appel, quelques millisecondes : la fermer demanderait une version dans les deux
+  // fonctions (COTR-migration). Rend nul quand rien n'a changé, sinon la raison.
+  async function paiementChangeDepuisLaLecture(c: CotisationDeclaree, lu: LigneBancaire | null): Promise<string | null> {
+    const relu = await lireTout<Pick<LigneBancaire, 'id'>>((debut, fin) =>
+      supabase.from('lignes_bancaires').select('id', { count: 'exact' })
+        .eq('dossier_id', dossierId).eq('statut', 'rapprochee').eq('cotisation_id', c.id)
+        .order('id').range(debut, fin),
+    )
+    if (!relu.complete) return `le mouvement qui la paie n’a pas pu être relu (${relu.motif}) ; recharge la page`
+    const ids = relu.lignes.map((l) => l.id)
+    if (ids.length === (lu ? 1 : 0) && (lu === null || ids[0] === lu.id)) return null
+    return lu
+      ? `son rapprochement du ${lu.montant > 0 ? 'remboursement' : 'prélèvement'} du ${formatDate(lu.date)} a changé depuis la lecture de la liste, relue depuis ; vérifie-le, puis recommence`
+      : 'un mouvement la paie depuis la lecture de la liste, relue depuis ; vérifie-le, puis recommence'
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     // Seconde ceinture : le bouton est grisé sur une échéance d'un exercice figé, et la raison déjà dite au-dessus.
-    if (refusAjout || refusDescription || refusPart) return
+    if (refusAjout || refusDescription || refusPart || refusMontantsAjout) return
     // Posé avant le `try` : dedans, le `return` du deuxième envoi sortirait par le `finally` et relâcherait le verrou du
     // premier, encore en cours.
     if (saisieEnCours.current) return
@@ -266,8 +289,15 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
     ecritureEnCours.current = true
     setEnCours(true)
     try {
-      const { error: erreurRetrait } = await supabase.rpc('supprimer_echeance_cotisation', { p_cotisation_id: c.id })
-      if (erreurRetrait) setError(`L’échéance n’a pas pu être retirée : ${messageErreur(erreurRetrait, 'raison inconnue')}`)
+      // La confirmation a nommé le mouvement LU (ou aucun) : un rapprochement posé ou défait depuis ne se défait pas sans elle.
+      // Sur un relevé lu en partie, elle n'en a nommé aucun avec certitude : rien à retenir.
+      const change = paiementsIncomplets === null ? await paiementChangeDepuisLaLecture(c, paiementDe.get(c.id) ?? null) : null
+      if (change) {
+        setError(`L’échéance n’a pas été retirée : ${change}.`)
+      } else {
+        const { error: erreurRetrait } = await supabase.rpc('supprimer_echeance_cotisation', { p_cotisation_id: c.id })
+        if (erreurRetrait) setError(`L’échéance n’a pas pu être retirée : ${messageErreur(erreurRetrait, 'raison inconnue')}`)
+      }
       await load()
     } finally {
       ecritureEnCours.current = false
@@ -288,6 +318,9 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
       for (const { ligne, cotisation } of aEcrire) {
         const duMouvement = planDuMouvement(modele.plan, ligne, banques)
         if ('refus' in duMouvement) { echecs.push(duMouvement.refus); continue }
+        // Le rapprochement encore tel que lu : sinon la fonction le RÉTABLIRAIT (voir `paiementChangeDepuisLaLecture`).
+        const change = await paiementChangeDepuisLaLecture(cotisation, ligne)
+        if (change) { echecs.push(`l’échéance du ${formatDate(cotisation.echeance)} ne s’écrit pas : ${change}`); continue }
         const { error: erreurEcriture } = await supabase.rpc('rapprocher_cotisation', {
           p_ligne_bancaire_id: ligne.id,
           p_cotisation_id: cotisation.id,
@@ -412,7 +445,9 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
     setErreurModification(null)
     setErreurGeste(null)
     try {
-      const refusMaj = await mettreAJourLEcheance(c, jugement.valeurs)
+      // Le jugement (ses effets, sa réécriture) a lu le mouvement qui la paie : encore lui, ou rien n'est écrit.
+      const refusMaj = await paiementChangeDepuisLaLecture(c, paiementDe.get(c.id) ?? null)
+        ?? await mettreAJourLEcheance(c, jugement.valeurs)
       if (refusMaj) {
         setErreurModification(`L’échéance n’a pas été modifiée : ${refusMaj}.`)
         await load()
@@ -457,6 +492,16 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
     setErreurGeste(null)
     try {
       const valeurs = valeursReunies(gardee, retiree)
+      // Ni l'une ni l'autre n'était payée à la lecture : un mouvement rapproché de l'une depuis arrête la réunion AVANT toute
+      // écriture — sinon le retrait de la seconde défaisait ce rapprochement, que la confirmation n'avait pas nommé.
+      for (const c of [gardee, retiree]) {
+        const change = await paiementChangeDepuisLaLecture(c, null)
+        if (change) {
+          setErreurReunion(`Rien n’a été réuni : l’échéance du ${formatDate(c.echeance)} — ${change}.`)
+          await load()
+          return
+        }
+      }
       const refusMaj = await mettreAJourLEcheance(gardee, valeurs)
       if (refusMaj) {
         setErreurReunion(`Rien n’a été réuni : l’échéance du ${formatDate(gardee.echeance)} n’a pas été modifiée — ${refusMaj}.`)
@@ -611,30 +656,42 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
         if (insertError) throw insertError
         ecrit = true
       }
-      for (const { e, existante } of aMettreAJour) {
-        const { error: updateError } = await supabase
-          .from('cotisations_declarees')
-          .update({ montant_appele: e.montant, previsionnel: false })
-          .eq('id', existante.id)
+      // LA MISE À JOUR RETIENT LA PRÉVISIONNELLE TELLE QUE LUE (relecture adverse du 28/11/2026) : sa date, son montant, son
+      // marqueur, et — pour un remplacement, que le plan ne propose que sur une prévisionnelle sans versé ni paiement
+      // personnel — leur absence. Sans elle, une prévisionnelle corrigée ou rendue définitive dans une autre session depuis la
+      // lecture était écrasée par le montant de l'avis ; et une mise à jour que la base n'applique pas ne lève rien. La ligne
+      // rendue dit qu'elle l'a été ; aucune, qu'elle n'est pas écrite — comptée, et dite.
+      let nonEcrites = 0
+      const mettreAJourSiInchangee = async (
+        existante: CotisationDeclaree, valeur: Partial<CotisationDeclaree>, sansVerseNiPaiement: boolean,
+      ) => {
+        let requete = supabase.from('cotisations_declarees').update(valeur)
+          .eq('id', existante.id).eq('echeance', existante.echeance).eq('montant_appele', existante.montant_appele)
+          .eq('previsionnel', true)
+        if (sansVerseNiPaiement) requete = requete.is('montant_verse', null).is('paiement_personnel_le', null)
+        const { data, error: updateError } = await requete.select('id').maybeSingle()
         if (updateError) throw updateError
-        ecrit = true
+        if (data) ecrit = true
+        else nonEcrites += 1
+      }
+      for (const { e, existante } of aMettreAJour) {
+        await mettreAJourSiInchangee(existante, { montant_appele: e.montant, previsionnel: false }, false)
       }
       for (const { e, prevue } of aRemplacer) {
-        const { error: updateError } = await supabase
-          .from('cotisations_declarees')
-          .update({ echeance: e.date, montant_appele: e.montant, previsionnel: false })
-          .eq('id', prevue.id)
-        if (updateError) throw updateError
-        ecrit = true
+        await mettreAJourSiInchangee(prevue, { echeance: e.date, montant_appele: e.montant, previsionnel: false }, true)
       }
 
       const figees = echeancesProposees.length - proposeesOuvertes.length + aConfirmer.length - aMettreAJour.length - payeesPersonnellement.length
       const ignorees = proposeesOuvertes.length - aInserer.length - aConfirmer.length - aRemplacer.length
       setEcheancesProposees([])
-      load()
-      if (ignorees > 0 || figees > 0 || payeesPersonnellement.length > 0) {
+      // Relue AVANT de relâcher le verrou : un second clic sur une liste d'avant réinsérerait ce qui vient d'être créé.
+      await load()
+      if (ignorees > 0 || figees > 0 || payeesPersonnellement.length > 0 || nonEcrites > 0) {
         window.alert(
-          `${aInserer.length + aMettreAJour.length + aRemplacer.length} échéance(s) prise(s) en compte`
+          `${aInserer.length + aMettreAJour.length + aRemplacer.length - nonEcrites} échéance(s) prise(s) en compte`
+          + (nonEcrites > 0
+            ? `, ${nonEcrites} prévisionnelle(s) non mise(s) à jour : changée(s) depuis la lecture, ou refusée(s) par la base — vérifie-la(les) dans la liste, et corrige-la(les) avec « Modifier »`
+            : '')
           + (ignorees > 0 ? `, ${ignorees} déjà à jour (ignorée(s))` : '')
           + (figees > 0 ? `, ${figees} d’un exercice validé (ignorée(s)) : une échéance ne s’y ajoute plus` : '')
           + (payeesPersonnellement.length > 0
@@ -700,6 +757,16 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   // La part « autres impôts » telle qu'elle partirait (EXP58-Q6), jugée avant le clic ; le drapeau baissé, rien.
   const partLue = AUTRES_IMPOTS_DES_COTISATIONS_PREVUS ? lireLaPartAutresImpots(montantAutresImpots) : null
   const refusPart = partLue && !partLue.ok ? partLue.message : null
+  // Les montants tels qu'ils partiraient (`parseFloat`, comme l'insertion), sous la règle de « Modifier » : une CSG-CRDS, ou une
+  // part « autres impôts » avec elle, plus forte que l'échéance se refuse avant le clic (relecture adverse du 28/11/2026). Un
+  // appelé illisible : rien à juger, le champ requis le dit.
+  const montantLu = (texte: string) => (texte.trim() === '' ? null : parseFloat(texte))
+  const refusMontantsAjout = Number.isFinite(appeleQuiPartirait)
+    ? refusDesMontantsDeLEcheance({
+      montant_appele: appeleQuiPartirait, montant_verse: montantLu(montantVerse), montant_csg_crds: montantLu(montantCsgCrds),
+      montant_autres_impots: partLue?.ok ? partLue.valeur : null,
+    }, modeComptable)
+    : null
   const refusAjout = echeance && dateFigee(echeance, anneesValidees)
     ? `${dateFigee(echeance, anneesValidees)} : une échéance ne s’y ajoute plus.`
     : null
@@ -742,11 +809,15 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
   }
   const echeanceAModifier = modificationDe === null ? null : cotisations.find((c) => c.id === modificationDe) ?? null
   const echeanceGardee = reunionAvec === null ? null : cotisations.find((c) => c.id === reunionAvec) ?? null
-  const candidatesDe = (c: CotisationDeclaree) => candidatesALaReunion(c, cotisations, contexteDesGestes)
   const avisDe = (c: CotisationDeclaree) => documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)?.nom_fichier ?? null
   // La réunion inachevée tient tant que l'échéance à retirer est encore là ; retirée (par le bouton qui la finit ou par
   // « Retirer »), l'avis se tait.
   const inachevee = reunionInachevee && cotisations.some((c) => c.id === reunionInachevee.retiree.id) ? reunionInachevee : null
+  // L'échéance qu'une réunion inachevée doit retirer n'entre dans AUCUNE autre réunion (relecture adverse du 28/11/2026) : la
+  // gardée porte déjà sa somme, et la lui réunir de nouveau la compterait une fois de plus. Son seul geste est « Retirer ».
+  const candidatesDe = (c: CotisationDeclaree) => (c.id === inachevee?.retiree.id
+    ? []
+    : candidatesALaReunion(c, cotisations.filter((x) => x.id !== inachevee?.retiree.id), contexteDesGestes))
   const retireeInachevee = inachevee ? cotisations.find((c) => c.id === inachevee.retiree.id) ?? null : null
   const attenteDesGestes = loading
     ? 'Les échéances du dossier sont en cours de lecture : le geste attend leur retour.'
@@ -885,10 +956,11 @@ export default function CotisationsTab({ dossierId, modele }: { dossierId: strin
           )}
           {refusDescription && <p className="error-text">{refusDescription}</p>}
           {refusPart && <p className="error-text">{refusPart}</p>}
+          {refusMontantsAjout && <p className="error-text">{refusMontantsAjout}</p>}
           {refusAjout && <p className="error-text">{refusAjout}</p>}
           {error && <p className="error-text">{error}</p>}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={saving || refusAjout !== null || refusDescription !== null || refusPart !== null}>
+            <button className="btn btn-primary btn-sm" type="submit" disabled={saving || refusAjout !== null || refusDescription !== null || refusPart !== null || refusMontantsAjout !== null}>
               {saving ? 'Enregistrement…' : 'Ajouter'}
             </button>
             <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>

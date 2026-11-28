@@ -1334,7 +1334,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 - **Une échéance de cotisation se modifie et se réunit** (`lib/gestesDesEcheances.ts`, COT-Q1 et Q3, confirmées le
   04/11/2026) : la mise à jour retient la version lue ; rapprochée, le rapprochement reste et son écriture se réécrit
   dans le geste ; « Réunir » porte la gardée à la somme PUIS retire l'autre, un échec entre les deux se dit
-  « inachevée ». Un mouvement classé par une catégorie au poste « Cotisations sociales personnelles », que plus rien ne
+  « inachevée », sa retirée hors de toute autre réunion ; « Écrire », « Modifier », « Retirer » et « Réunir » relisent d'abord le
+  rapprochement de l'échéance et ne partent que s'il est celui qu'ils ont lu (`rapprocher_cotisation` le rétablirait). Un mouvement
+  classé par une catégorie au poste « Cotisations sociales personnelles », que plus rien ne
   propose, retient la validation (`cotisations-classees-par-categorie`, COT-Q2) → « LES COTISATIONS : RÉUNIR, MODIFIER,
   ET LE PRÉLÈVEMENT CLASSÉ PAR UNE CATÉGORIE (COT-Q1 À Q3) ».
 - **Un bien acquis avant l'ouverture s'inscrit sans pièce** (« Ajouter un bien repris », `bienReprisSansPiece`, IMMO-Q2,

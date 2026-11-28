@@ -67,7 +67,7 @@ export function supabaseFaux() {
     rpc: (nom: string, args: Record<string, unknown>) => executerRpc(nom, args),
     from: (table: string) => {
       const c: Record<string, unknown> = {}
-      let operation: 'select' | 'update' = 'select'
+      let operation: 'select' | 'update' | 'insert' = 'select'
       let valeurMaj: Record<string, unknown> = {}
       let unSeul = false
       let debut = 0
@@ -78,6 +78,12 @@ export function supabaseFaux() {
       Object.assign(c, {
         select: () => c,
         update: (valeur: Record<string, unknown>) => { operation = 'update'; valeurMaj = valeur; return c },
+        // Une échéance ajoutée entre en base (« Ajouter ») : la relecture la rend.
+        insert: (valeur: Record<string, unknown>) => {
+          operation = 'insert'
+          if (table === 'cotisations_declarees') faux.cotisations = [...faux.cotisations, cotisation({ ...valeur, id: `ins-${faux.cotisations.length}` })]
+          return c
+        },
         // Le cadrage par dossier n'est pas appliqué : le jeu d'essai ne porte qu'un dossier.
         eq: (colonne: string, valeur: unknown) => {
           if (colonne !== 'dossier_id') { predicats.push(predicatEq(colonne, valeur)); filtres.push(`${colonne}=eq.${String(valeur)}`) }
@@ -89,6 +95,7 @@ export function supabaseFaux() {
         range: (d: number, f: number) => { debut = d; fin = f; return c },
         maybeSingle: () => { unSeul = true; return c },
         then: (suite: (r: unknown) => unknown) => {
+          if (operation === 'insert') return Promise.resolve({ data: null, error: null }).then(suite)
           if (operation === 'update') {
             faux.misesAJour.push({ valeur: valeurMaj, filtres })
             if (faux.erreurMiseAJour) return Promise.resolve({ data: null, error: { message: faux.erreurMiseAJour } }).then(suite)

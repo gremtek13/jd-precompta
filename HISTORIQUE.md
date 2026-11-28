@@ -55615,3 +55615,22 @@ anglais de BoursoBank est reconnu ; la suite d'un libellé (Société Générale
 sans date ». Restent au cabinet : les soldes sans date de la Caisse d'Épargne (BANQ-Q2) et les dates universelles de Qonto (BANQ-Q3),
 refusés en attendant ; IMPORT-Q1 inchangée (le CIC et le Crédit Mutuel montrent un solde courant qui suit l'arithmétique). Six
 mutations mordent.
+### 28/11/2026 — RELECTURE ADVERSE DES ÉCRANS DES COTISATIONS ET DES IMMOBILISATIONS : LE RAPPROCHEMENT RELU AVANT CHAQUE GESTE
+
+(Agent architecte ; code seul, aucune migration, aucun outil de la base ; le calcul de la 2035 et de l'estimation hors du champ.)
+**Établi et corrigé**, chacun rouge avant, vert après : (1) `rapprocher_cotisation` n'exige pas que le mouvement paie DÉJÀ l'échéance
+(lu dans `autres_impots_des_cotisations`) — « Écrire les N » et la réécriture de « Modifier », partis d'une liste lue avant qu'une autre
+session annule le rapprochement, le RÉTABLISSAIENT en silence ; et `supprimer_echeance_cotisation` ne prend pas de version — « Retirer »
+et la seconde écriture de « Réunir » défaisaient un rapprochement posé depuis, que la confirmation n'avait pas nommé (le risque que
+l'entrée du 04/11/2026 laissait ouvert). L'onglet relit les mouvements rapprochés de l'échéance juste avant chacun de ces quatre gestes
+(`paiementChangeDepuisLaLecture`) et ne part que s'ils sont ceux qu'il a lus ; reste la fenêtre de la relecture à l'appel (COTR-migration).
+(2) La confirmation d'une prévisionnelle par un avis, et son remplacement, écrasaient une prévisionnelle changée depuis : la mise à jour
+retient sa date, son montant et son marqueur, lit la ligne rendue, et l'alerte compte ce qui n'est pas écrit. (3) « Ajouter » acceptait
+une CSG-CRDS (ou une part « autres impôts » avec elle) plus forte que l'échéance, que « Modifier » refusait : une règle,
+`refusDesMontantsDeLEcheance`, pour les deux. (4) Une réunion inachevée laissait sa retirée candidate d'une nouvelle réunion : la somme
+y serait comptée une fois de plus ; elle n'entre plus dans aucune. (5) La fiche d'un bien écrasait, champ par champ, un bien modifié
+dans un autre onglet et se fermait sur une mise à jour sans effet : elle retient le bien lu et lit la ligne rendue. (6) La durée d'une
+candidate lue par `parseInt` (« 2.5 » → 2) : un entier, la règle de `refusBien`. **Plausibles, laissés** : « Mon échéancier » montre
+l'appelé même quand le versé (0 €, un crédit de la caisse) ou un remboursement dit autre chose (MONECH-Q1) ; le rattachement d'un avis ne
+retient pas son état lu. **Écartés** : la carte des paramètres des cotisations (lecture entière, version passée à la fonction, verrou) ;
+le bien repris, le cumul repris et le retrait d'un bien (refus dits avant le clic, la base juge le figé) ; aucun montant sans « Banque ».
