@@ -20,6 +20,10 @@ let dossier = ''
 let bon = ''
 let faux = ''
 let pasUnPdf = ''
+type Lancement = Promise<{ code: number; sortie: string; erreurs: string }>
+// Les cinq lancements du vrai lanceur partent ENSEMBLE, dès la préparation des fichiers, et chaque test attend le sien :
+// cinq processus node l'un après l'autre faisaient passer les trois tests le plus lent à plus de 3 s sous la charge.
+let lancements: { bon: Lancement; faux: Lancement; pasUnPdf: Lancement; absent: Lancement; usage: Lancement } | null = null
 
 beforeAll(async () => {
   // Un nom de dossier qui porte un faux nom de personne : il ne doit pas s'afficher.
@@ -30,6 +34,13 @@ beforeAll(async () => {
   writeFileSync(bon, await bordereauFictifEnPdf({ destinataire: DESTINATAIRE_FICTIF }))
   writeFileSync(faux, await bordereauFictifEnPdf({ total: ['4 600,11', '4 403,91', '196,20', '0,00'] }))
   writeFileSync(pasUnPdf, 'ceci n’est pas un PDF')
+  lancements = {
+    bon: lancer(bon),
+    faux: lancer(faux),
+    pasUnPdf: lancer(pasUnPdf),
+    absent: lancer(join(dossier, 'absent.pdf')),
+    usage: lancer(),
+  }
 })
 
 afterAll(() => {
@@ -58,7 +69,7 @@ function sansValeurDUneLigne(texte: string) {
 
 describe('le lanceur, dans un processus à part, sur un PDF fictif', () => {
   it('un bordereau lu : l’en-tête, le régime, les totaux, et aucune valeur d’une ligne', async () => {
-    const r = await lancer(bon)
+    const r = await lancements!.bon
     expect(r.code).toBe(0)
     expect(r.erreurs).toBe('')
     expect(r.sortie).toContain('BORDEREAU LU : 1 lot')
@@ -71,11 +82,11 @@ describe('le lanceur, dans un processus à part, sur un PDF fictif', () => {
   }, 60_000)
 
   it('un bordereau refusé : sa raison seule ; un fichier qui n’est pas un PDF, une raison fixe', async () => {
-    const r = await lancer(faux)
+    const r = await lancements!.faux
     expect(r.code).toBe(1)
     expect(r.sortie).toContain('BORDEREAU REFUSÉ : bordereau 1 : la somme des lignes de la colonne « Total » diffère du total imprimé.')
     sansValeurDUneLigne(r.sortie)
-    const p = await lancer(pasUnPdf)
+    const p = await lancements!.pasUnPdf
     expect(p.code).toBe(1)
     expect(p.sortie).toContain('BORDEREAU REFUSÉ : le fichier ne s’ouvre pas comme un PDF.')
     sansValeurDUneLigne(p.sortie)
@@ -83,11 +94,11 @@ describe('le lanceur, dans un processus à part, sur un PDF fictif', () => {
 
   it('un chemin qui n’existe pas : une raison fixe, sans le chemin ; sans argument : l’usage', async () => {
     const absent = join(dossier, 'absent.pdf')
-    const r = await lancer(absent)
+    const r = await lancements!.absent
     expect(r.code).toBe(1)
     expect(r.sortie).toContain('Le fichier ne se lit pas')
     expect(r.sortie).not.toContain(absent)
-    const u = await lancer()
+    const u = await lancements!.usage
     expect(u.code).toBe(2)
     expect(u.sortie).toMatch(/^Usage : node outils\/bordereau\/lire\.mjs/)
   }, 60_000)

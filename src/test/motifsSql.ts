@@ -18,8 +18,22 @@ export class LecturePerdue extends Error {}
 // Après ces mots, une barre oblique ouvre un littéral d'expression régulière ; après toute autre valeur, c'est une division.
 const MOTS_AVANT_UNE_REGEX = new Set(['return', 'typeof', 'case', 'in', 'of', 'delete', 'void', 'throw', 'new', 'else', 'do'])
 
+// Le lexage d'un fichier se paie une fois : le contrôle des motifs et le plancher lisent les mêmes sept cents fichiers.
+// Clé par texte ET par jsx ; une lecture perdue lève et n'est pas retenue. Les jetons ne sont jamais modifiés par les appelants.
+const JETONS_LUS = new Map<string, Jeton[]>()
+
 /** Le texte lu en jetons, commentaires écartés. Lève `LecturePerdue` sur une chaîne, un gabarit ou un littéral ouvert. */
 export function lire(source: string, jsx = false): Jeton[] {
+  const cle = (jsx ? 'x' : 'j') + source
+  let jetons = JETONS_LUS.get(cle)
+  if (!jetons) {
+    jetons = lireSansMemoire(source, jsx)
+    JETONS_LUS.set(cle, jetons)
+  }
+  return jetons
+}
+
+function lireSansMemoire(source: string, jsx = false): Jeton[] {
   // `let` : un `${…}` lit ses jetons dans un tableau à lui, puis rend la main au tableau d'avant (`lireExpression`).
   let jetons: Jeton[] = []
   let i = 0

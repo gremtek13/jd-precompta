@@ -118,9 +118,17 @@ export function codeMort(virtuelles: Record<string, string> = {}): string[] {
   const luVrai = hote.readFile.bind(hote)
   hote.readFile = (nom) => (nom in virtuelles ? virtuelles[nom] : luVrai(nom))
 
-  return ts
-    .createProgram(racines, OPTIONS, hote)
-    .getSemanticDiagnostics()
+  const programme = ts.createProgram(racines, OPTIONS, hote)
+  // Une source virtuelle ne juge QUE ses propres fichiers : type-vérifier aussi les quatorze vraies fonctions, comme
+  // le fait l'appel sans source virtuelle (« n'en laisse aucun »), refaisait leur contrôle entier à chaque essai planté.
+  const diagnostics = Object.keys(virtuelles).length === 0
+    ? programme.getSemanticDiagnostics()
+    : Object.keys(virtuelles).flatMap((nom) => {
+        const fichier = programme.getSourceFile(nom)
+        if (!fichier) throw new Error(`source virtuelle absente du programme : ${nom}`)
+        return programme.getSemanticDiagnostics(fichier)
+      })
+  return diagnostics
     .filter((d) => CODE_MORT.has(d.code))
     .map((d) => {
       const ligne = d.file && d.start !== undefined
