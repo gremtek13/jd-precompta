@@ -55696,6 +55696,6 @@ comptable, la catégorie d'un document, un champ du véhicule, le code NAF, l'ad
 la date d'une relecture OCR (une date saisie pendant la relecture était remplacée) ; le règlement d'une pièce sur la banque. Les faux
 clients des tests APPLIQUENT désormais les filtres d'une mise à jour et ne rendent que la ligne écrite ; un test rouge avant, vert
 après par cas distinct. Gardé par `src/lib/misesAJourAvecLeurVersion.test.ts` (part de tout, plancher 45, défauts plantés) ; restent
-15 exceptions nommées et comptées (Cotisations et Immobilisations traitées par `8e88fee1`, Suppléments, charte du cabinet, Équipe,
+12 exceptions nommées et comptées à l'intégration (15 sur la branche de l'audit : les trois de Cotisations et d'Immobilisations traitées par `8e88fee1` en sortent), Suppléments, charte du cabinet, Équipe,
 super-administrateur, restauration, la redate du brouillon). Questions : VERS-Q1 (une colonne de version tenue par la base), VERS-Q2
 (le véhicule écrit à chaque frappe).
