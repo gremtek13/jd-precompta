@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { retenirLaVersionLue } from './versionLue'
 import { DEVISE_PIVOT, reglerSurMontantReel } from './devises'
 import { alignerMontantsSurBanque, ecartAvecBanque } from './alignementBanque'
 import type { LigneBancaire, Piece } from './types'
@@ -43,7 +44,10 @@ export async function reglerPieceSurBanque(piece: Piece, paiements: readonly Pic
     : reglerPieceEnEuros(piece, total)
   if (!regle) return piece
 
-  const { error } = await supabase
+  // La pièce telle que lue (audit du 28/11/2026) : ses montants et son change, d'où le règlement se calcule. Corrigée depuis
+  // un autre onglet, elle n'est pas réalignée sur des montants que personne ne regarde plus ; et la ligne rendue dit qu'elle
+  // l'a été — une mise à jour que la base n'applique pas ne lève rien.
+  const { data: reglee, error } = await retenirLaVersionLue(supabase
     .from('pieces')
     .update({
       montant_ht: regle.montant_ht,
@@ -53,13 +57,14 @@ export async function reglerPieceSurBanque(piece: Piece, paiements: readonly Pic
       // pour convertie — donc afficher un cours qui n'a jamais existé sur un document en euros.
       ...(regle.taux_change != null ? { taux_change: regle.taux_change, conversion_source: 'banque' } : {}),
     })
-    .eq('id', piece.id)
+    .eq('id', piece.id), piece as unknown as Record<string, unknown>, ['montant_ht', 'montant_tva', 'montant_ttc', 'devise', 'taux_change'])
+    .select('id').maybeSingle()
 
   // Échoue sans faire échouer le rapprochement, qui lui est déjà écrit : la pièce garde sa valeur
   // provisoire, ce qui est faux de quelques centimes, là où remonter l'erreur ici déferait un
   // rapprochement correct. L'écart reste visible — la pièce est toujours marquée « provisoire ».
-  if (error) {
-    console.error('Règlement de la pièce sur le montant bancaire échoué:', error)
+  if (error || !reglee) {
+    console.error('Règlement de la pièce sur le montant bancaire échoué:', error ?? 'la pièce a changé depuis sa lecture, ou la base l’a écartée')
     return piece
   }
 

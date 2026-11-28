@@ -59,6 +59,10 @@ type ItemChecklist = DocumentAttendu & { onToggle?: () => void }
 //
 // SES POINTS SE CALCULENT DANS lib/pointsDeLaChecklist.ts, ET SE LISENT PAR lib/checklistLecture.ts : l'onglet de la
 // révision (ligne 41, étape R3) range les mêmes points dans ses cycles, et deux copies auraient divergé.
+/** La coche d'un justificatif qu'aucune ligne n'a rendue : changée depuis la lecture, ou écartée par la base. */
+export const COCHE_CHANGEE_DEPUIS =
+  'Ce justificatif n’a pas été marqué : il a changé depuis la lecture de la Vue d’ensemble, ou la base ne l’a pas laissé écrire. La Vue d’ensemble est relue.'
+
 export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, statutTva, modele, ventesParLesFactures, codeNaf, onNavigate }: {
   dossierId: string
   codeNaf: string | null | undefined
@@ -109,9 +113,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   async function toggleJustificatif(champ: 'justificatif_tickets_restaurant_recu' | 'justificatif_cheques_vacances_recu') {
     const info = lecture?.info
     if (!info) return
-    const { error: erreurCoche } = await supabase.from('informations_dossier').update({ [champ]: !info[champ] }).eq('id', info.id)
+    // La coche lue se retient, et la ligne rendue se lit (audit du 28/11/2026) : inversée deux fois, depuis deux onglets, la
+    // coche revenait à son état d'origine pendant que chaque écran croyait l'avoir posée ; et une mise à jour que la base
+    // n'applique pas ne lève rien.
+    const { data: cochee, error: erreurCoche } = await supabase.from('informations_dossier').update({ [champ]: !info[champ] })
+      .eq('id', info.id).eq(champ, info[champ]).select('id').maybeSingle()
     // Refusée, la coche se DIT : la relecture la remet comme avant, et sans un mot on croirait le justificatif noté.
     if (erreurCoche) window.alert(`Ce justificatif n’a pas pu être marqué : ${finDePhrase(messageErreur(erreurCoche, 'refus de la base'))}`)
+    else if (!cochee) window.alert(COCHE_CHANGEE_DEPUIS)
     load()
   }
 

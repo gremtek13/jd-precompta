@@ -9,6 +9,7 @@ const etat = {
   telechargementsEnEchec: new Set<string>(),
   erreurEcriture: null as Error | null,
   aucuneLigneTouchee: false,
+  dateDejaPosee: false,
   // Mesure de concurrence : le faux `extractPiece` compte combien d'appels sont en vol en même temps.
   delaiMs: 0,
   enVol: 0,
@@ -32,9 +33,18 @@ vi.mock('./supabase', () => ({
             return chaine
           },
           is: (col: string, valeur: unknown) => { conditions.push(`${col} is ${String(valeur)}`); return chaine },
+          // La liste rendue (les montants d'une pièce non lue) ou la ligne (la date, audit du 28/11/2026 : écrite sur une pièce
+          // encore sans date seulement — `etat.dateDejaPosee` simule une date saisie entre-temps, que le filtre écarte).
           select: () => {
             journal.push({ action: 'update', cible, charge: ligne, conditions })
-            return Promise.resolve({ data: etat.aucuneLigneTouchee ? [] : [{ id: cible }], error: etat.erreurEcriture })
+            const reponse = { data: etat.aucuneLigneTouchee ? [] : [{ id: cible }], error: etat.erreurEcriture }
+            return {
+              then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => Promise.resolve(reponse).then(suite, echec),
+              maybeSingle: () => Promise.resolve({
+                data: etat.erreurEcriture || (etat.dateDejaPosee && conditions.includes('date_piece is null')) ? null : { id: cible },
+                error: etat.erreurEcriture,
+              }),
+            }
           },
           then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
             journal.push({ action: 'update', cible, charge: ligne })
@@ -157,6 +167,18 @@ describe('relireDocuments', () => {
     expect(journal.some((j) => j.action === 'update')).toBe(false)
     expect(r.datees).toEqual([])
     expect(r.textesArchives).toEqual(['facture.pdf'])
+  })
+
+  // AUDIT DU 28/11/2026 : une relecture dure des minutes. La date ne s'écrit que sur une pièce ENCORE sans date, et la ligne
+  // rendue se lit : une date saisie à la main entre-temps, dans un autre onglet, était remplacée par celle de l'OCR.
+  it('n’écrase pas une date saisie pendant la relecture, et ne la compte pas comme datée', async () => {
+    etat.extractions.set('facture.pdf', { date_piece: '2025-06-30' })
+    etat.dateDejaPosee = true
+    const r = await relireDocuments([piece({ id: 'p1' })], AUCUN_TEXTE)
+    etat.dateDejaPosee = false
+    expect(journal.find((j) => j.action === 'update')!.conditions).toEqual(['date_piece is null'])
+    expect(r.datees).toEqual([])
+    expect(r.echecs).toHaveLength(1)
   })
 
   it('recense les pièces restées sans date, avec ce que la lecture a vu', async () => {

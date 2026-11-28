@@ -71,6 +71,13 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
  * nombre d'écritures qu'elles reçoivent dans toute la source.
  */
 const CONSOMMATEURS: Record<string, { nombre: number; raison: string }> = {
+  retenirLaVersionLue: {
+    nombre: 8,
+    raison:
+      '`lib/versionLue.ts` ne fait qu’ajouter à la mise à jour les filtres de la version lue (`.eq`, `.is`) et rend la MÊME ' +
+      'requête : chaque appelant la poursuit par `.select(…).maybeSingle()` et lit `{ data, error }` — gardé par ' +
+      '`misesAJourAvecLeurVersion.test.ts` (audit du 28/11/2026)',
+  },
   memoriser: {
     nombre: 2,
     raison:

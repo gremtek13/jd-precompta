@@ -90,7 +90,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatNot, predicatOr, predicatIn } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIs, predicatNot, predicatOr, predicatIn } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     const c: Record<string, unknown> = {}
     let debut = 0
@@ -101,7 +101,10 @@ vi.mock('../../lib/supabase', async () => {
     const predicats: Predicat[] = []
     let operation = 'select'
     Object.assign(c, {
-      select: () => c, eq: () => c, order: () => c,
+      select: () => c, order: () => c,
+      // Les filtres d'une mise à jour s'APPLIQUENT (audit du 28/11/2026) : ce sont eux qui retiennent l'emprunt lu.
+      eq: (colonne: string, valeur: unknown) => { if (operation === 'update') predicats.push(predicatEq(colonne, valeur)); return c },
+      is: (colonne: string, valeur: null) => { predicats.push(predicatIs(colonne, valeur)); return c },
       delete: () => { operation = 'delete'; faux.suppressions.push({ table }); return c },
       update: (valeur: Record<string, unknown>) => { operation = 'update'; faux.misesAJour.push({ table, valeur }); return c },
       insert: (ligne: unknown) => { operation = 'insert'; faux.creations.push({ table, ligne }); return c },
@@ -111,9 +114,18 @@ vi.mock('../../lib/supabase', async () => {
       in: (colonne: string, valeurs: readonly unknown[]) => { predicats.push(predicatIn(colonne, valeurs)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
-      maybeSingle: () => (faux.porte ?? Promise.resolve()).then(() => (faux.refusees.has(table)
+      maybeSingle: () => (operation === 'update' && table === 'emprunts'
+        ? Promise.resolve((() => {
+          // La mise à jour d'un emprunt rend la ligne écrite — aucune quand il a changé depuis la lecture.
+          const visee = filtrer(faux.emprunts, predicats)[0]
+          // Remplacée, jamais modifiée en place : les jeux d'essai sont des constantes que d'autres tests relisent.
+          const valeur = faux.misesAJour[faux.misesAJour.length - 1].valeur
+          if (visee) faux.emprunts = faux.emprunts.map((e) => (e === visee ? { ...e, ...valeur } : e))
+          return { data: visee ? { id: visee.id } : null, error: null }
+        })())
+        : (faux.porte ?? Promise.resolve()).then(() => (faux.refusees.has(table)
         ? { data: null, error: { message: 'JWT expired' } }
-        : { data: null, error: null })),
+        : { data: null, error: null }))),
       then: (suite: (r: unknown) => unknown) => {
         if (operation === 'delete') {
           return Promise.resolve({ data: null, error: faux.erreurSuppression }).then(suite)

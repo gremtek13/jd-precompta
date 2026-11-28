@@ -6,7 +6,8 @@ import type { LigneBancaire, Piece } from './types'
 // alignement en euros » (le code tel qu'il était avant la décision du 23/09/2026) laissait les
 // seize tests du chantier au VERT. Le CALCUL était couvert (alignementBanque.test.ts), le SIGNAL
 // aussi (les deux écrans) ; ce que personne ne vérifiait est que la pièce soit réellement écrite.
-const faux = vi.hoisted(() => ({ maj: [] as Record<string, unknown>[], erreur: null as unknown }))
+// `base` : les pièces en base, chacune posée par `piece()` ; la mise à jour y APPLIQUE ses filtres (audit du 28/11/2026).
+const faux = vi.hoisted(() => ({ maj: [] as Record<string, unknown>[], erreur: null as unknown, base: new Map<string, Record<string, unknown>>() }))
 
 vi.mock('./supabase', () => ({
   supabase: {
@@ -15,7 +16,19 @@ vi.mock('./supabase', () => ({
       return {
         update: (payload: Record<string, unknown>) => {
           faux.maj.push(payload)
-          return { eq: () => Promise.resolve({ error: faux.erreur }) }
+          const predicats: ((l: Record<string, unknown>) => boolean)[] = []
+          const chaine = {
+            eq: (c: string, v: unknown) => { predicats.push((l) => l[c] === v); return chaine },
+            is: (c: string, v: null) => { predicats.push((l) => v === null && l[c] == null); return chaine },
+            select: () => chaine,
+            maybeSingle: () => {
+              if (faux.erreur) return Promise.resolve({ data: null, error: faux.erreur })
+              const visee = [...faux.base.values()].find((l) => predicats.every((p) => p(l)))
+              if (visee) Object.assign(visee, payload)
+              return Promise.resolve({ data: visee ? { id: visee.id } : null, error: null })
+            },
+          }
+          return chaine
         },
       }
     },
@@ -23,7 +36,7 @@ vi.mock('./supabase', () => ({
 }))
 
 function piece(o: Partial<Piece> = {}): Piece {
-  return {
+  const p: Piece = {
     id: 'p1', dossier_id: 'd1', uploaded_by: null, source: 'upload',
     storage_path: 'd1/f.pdf', nom_fichier: 'f.pdf', storage_hash: null,
     date_piece: '2026-03-10', tiers: 'Fournisseur', montant_ht: 100, montant_tva: 20,
@@ -33,6 +46,8 @@ function piece(o: Partial<Piece> = {}): Piece {
     identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     created_at: '2026-03-10T09:00:00Z', updated_at: '2026-03-10T09:00:00Z', ...o,
   }
+  faux.base.set(p.id, { ...p })
+  return p
 }
 
 function ligne(montant: number): LigneBancaire {
@@ -142,6 +157,17 @@ describe('reglerPieceSurBanque — une pièce en euros', () => {
 
   // Non bloquant : le rapprochement lui-même est déjà écrit, donc remonter l'erreur ici déferait
   // un rapprochement correct. La pièce garde son montant d'origine.
+  // AUDIT DU 28/11/2026 : les montants lus se retiennent. Corrigée depuis un autre onglet, la pièce était réalignée sur un
+  // règlement calculé des montants d'avant, qui remplaçaient sans un mot la correction.
+  it('une pièce corrigée depuis sa lecture n’est pas réalignée, et reste telle qu’on l’a lue', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const lue = piece()
+    faux.base.get('p1')!.montant_ttc = 150
+    const rendue = await reglerPieceSurBanque(lue, [ligne(-120.06)])
+    expect(rendue.montant_ttc).toBe(120)
+    expect(faux.base.get('p1')!.montant_ttc).toBe(150)
+  })
+
   it('rend la pièce intacte si l’écriture échoue', async () => {
     faux.erreur = { message: 'refusé' }
     vi.spyOn(console, 'error').mockImplementation(() => {})

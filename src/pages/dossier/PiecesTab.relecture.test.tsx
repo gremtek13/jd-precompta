@@ -26,7 +26,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatIn } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn, predicatIs } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     let operation = 'select'
     let unique = false
@@ -38,7 +38,9 @@ vi.mock('../../lib/supabase', async () => {
     const c: Record<string, unknown> = {}
     const soi = () => c
     Object.assign(c, {
-      select: soi, order: soi, neq: soi, gte: soi, lte: soi, lt: soi, gt: soi, is: soi, not: soi, or: soi, limit: soi,
+      select: soi, order: soi, neq: soi, gte: soi, lte: soi, lt: soi, gt: soi, not: soi,
+      // `.is` d'une mise à jour s'APPLIQUE (audit du 28/11/2026) : il retient la version lue.
+      is: (colonne: string, v: null) => { if (operation === 'update') predicats.push(predicatIs(colonne, v)); return c }, or: soi, limit: soi,
       eq: (colonne: string, v: unknown) => { if (colonne === 'id') ids.push(v); predicats.push(predicatEq(colonne, v)); return c },
       in: (colonne: string, valeurs: unknown[]) => { if (colonne === 'id') ids.push(...valeurs); predicats.push(predicatIn(colonne, valeurs)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
@@ -50,8 +52,11 @@ vi.mock('../../lib/supabase', async () => {
       then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
         if (operation === 'update') {
           faux.majs.push({ table, valeur, ids: [...ids] })
-          faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (ids.includes(l.id) ? { ...l, ...(valeur as object) } : l))
-          return Promise.resolve({ data: null, error: null }).then(suite, echec)
+          // Ses filtres APPLIQUÉS (audit du 28/11/2026) : seules les lignes qu'ils laissent passer s'écrivent, et se rendent.
+          const visees = filtrer(faux.parTable[table] ?? [], predicats)
+          faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (visees.includes(l) ? { ...l, ...(valeur as object) } : l))
+          const rendues = visees.map((l) => ({ id: l.id }))
+          return Promise.resolve({ data: unique ? (rendues[0] ?? null) : rendues, error: null, count: rendues.length }).then(suite, echec)
         }
         if (operation !== 'select' || unique) return Promise.resolve({ data: null, error: null }).then(suite, echec)
         const toutes = filtrer(faux.parTable[table] ?? [], predicats)

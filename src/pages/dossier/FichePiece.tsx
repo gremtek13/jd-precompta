@@ -43,6 +43,7 @@ import { preparerPiece, refusDUnePiece } from '../../lib/bornesStockage'
 import { confianceDeLExtraction, dateDeduite as estDateDeduite } from '../../lib/dateDeduite'
 import ReglementParLaCaisse, { type CaisseDeLaPiece } from './ReglementParLaCaisse'
 import AchatDeLaPiece from './AchatDeLaPiece'
+import { retenirLaVersionLue } from '../../lib/versionLue'
 import { ACHATS_DU_CLIENT_PREVUS } from '../../lib/achatsClient'
 import {
   etatDeLaCaisseDeLaFiche, refusDeLaDesignationParLaCaisse, refusDeSuppressionParLaCaisse, refusDuTypeDeLaPiece,
@@ -134,6 +135,10 @@ interface Props {
   // un refus : deux achats identiques existent, et le geste reste « Supprimer », sur la pièce en trop.
   doublonProbable?: string | null
 }
+
+/** Une mise à jour de la pièce qu'aucune ligne n'a rendue : changée depuis sa lecture, ou écartée par la base. */
+export const PIECE_CHANGEE_DEPUIS =
+  'La pièce n’a pas été enregistrée : elle a changé depuis sa lecture, ou la base ne l’a pas laissé écrire. La liste est relue : vérifiez la pièce, puis enregistrez de nouveau.'
 
 export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null, citeePar = null, remplacementRetenu = null, venteEmise = null, horsDeFrance, exemplaire = null, caisse = null, doublonProbable = null }: Props) {
   const fige = piece !== null && figeePar !== null
@@ -736,8 +741,17 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       }
 
       if (piece) {
-        const { error } = await supabase.from('pieces').update(payload).eq('id', piece.id)
+        // LA MISE À JOUR RETIENT LA PIÈCE TELLE QUE LUE (audit du 28/11/2026, lib/versionLue.ts) : tout ce que la fiche
+        // réécrit, sauf l'empreinte (le chemin du fichier la porte) et le nom. Sans elle, une fiche ouverte dans un second
+        // onglet écrasait, champ par champ, une pièce modifiée depuis ; et une mise à jour que la base n'applique pas ne
+        // lève rien, la fiche se fermait sur « enregistrée ». Aucune ligne rendue : rien n'est écrit, la liste se relit et la
+        // saisie reste, pour que l'opérateur la compare à la pièce relue.
+        const retenues = Object.keys(payload).filter((c) => c !== 'storage_hash' && c !== 'nom_fichier' && c !== 'dossier_id')
+        const { data: ecrite, error } = await retenirLaVersionLue(
+          supabase.from('pieces').update(payload).eq('id', piece.id), piece as unknown as Record<string, unknown>, retenues,
+        ).select('id').maybeSingle()
         if (error) throw error
+        if (!ecrite) { onSaved(); throw new Error(PIECE_CHANGEE_DEPUIS) }
       } else {
         const { error } = await supabase.from('pieces').insert({ ...payload, uploaded_by: userData.user!.id })
         if (error) throw error
@@ -800,10 +814,14 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     setError(null)
     try {
       await enregistrerLaNote()
-      const { error } = await supabase.from('pieces')
-        .update({ sous_dossier_id: sousDossierId || null })
-        .eq('id', piece.id)
+      // Le sous-dossier lu se retient, et la ligne rendue se lit (audit du 28/11/2026) : sans elle, un refus de la base
+      // fermait la fiche sur « enregistré ».
+      const { data: ecrite, error } = await retenirLaVersionLue(
+        supabase.from('pieces').update({ sous_dossier_id: sousDossierId || null }).eq('id', piece.id),
+        { sous_dossier_id: piece.sous_dossier_id ?? null }, ['sous_dossier_id'],
+      ).select('id').maybeSingle()
       if (error) throw error
+      if (!ecrite) { onSaved(); throw new Error(PIECE_CHANGEE_DEPUIS) }
       onModifiee?.(false)
       onSaved()
       onClose()

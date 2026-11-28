@@ -97,6 +97,13 @@ vi.mock('../../lib/supabase', async () => {
           not: (colonne: string, operateur: string, v: unknown) => { predicats.push(predicatNot(colonne, operateur, v)); return c },
           order: () => c,
           range: (d: number, f: number) => { debut = d; fin = f; return c },
+          // La mise à jour d'un champ rend la ligne écrite (`.select('id').maybeSingle()`, audit du 28/11/2026) — aucune
+          // quand ses filtres n'en désignent pas.
+          maybeSingle: () => {
+            const visee = faux.vehicules.find((x) => predicats.every((p) => p(x as unknown as Record<string, unknown>)))
+            if (operation === 'update') faux.vehicules = faux.vehicules.map((x) => (x === visee ? { ...x, ...valeur } : x))
+            return Promise.resolve({ data: visee ? { id: visee.id } : null, error: null })
+          },
           then: (suite: (r: { data: unknown[] | null; error: unknown; count: number }) => unknown) => {
             if (operation === 'update') {
               faux.vehicules = faux.vehicules.map((x) =>

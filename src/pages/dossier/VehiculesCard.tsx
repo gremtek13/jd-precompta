@@ -198,8 +198,13 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
     // dans chaque `onChange` garantit qu'aucun champ ajouté plus tard n'y échappera par oubli.
     const champs = completerModificationVehicule(demande)
     setVehicules((v) => v.map((x) => (x.id === id ? { ...x, ...champs } : x)))
-    const { error } = await supabase.from('vehicules').update(champs).eq('id', id)
-    if (error) { setErreur(messageErreur(error, 'Le véhicule n’a pas pu être modifié.')); charger() } else setErreur(null)
+    // La ligne rendue se lit (audit du 28/11/2026) : une mise à jour que la base n'applique pas ne lève rien, et le champ
+    // gardait sa valeur saisie. La version lue ne se retient pas ici : chaque frappe écrit, et deux écritures du même champ
+    // en vol se refuseraient l'une l'autre (question au cabinet, VERS-Q2).
+    const { data: modifie, error } = await supabase.from('vehicules').update(champs).eq('id', id).select('id').maybeSingle()
+    if (error) { setErreur(messageErreur(error, 'Le véhicule n’a pas pu être modifié.')); charger() }
+    else if (!modifie) { setErreur('Le véhicule n’a pas été modifié : la base ne l’a pas laissé écrire, ou il a été retiré depuis. La liste est relue.'); charger() }
+    else setErreur(null)
   }
 
   // PAR LA BASE, PLUS PAR UNE SUPPRESSION DIRECTE : la clé d'un forfait vers son véhicule est sans action, et

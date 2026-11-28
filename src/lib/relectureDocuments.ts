@@ -147,11 +147,17 @@ export async function relireDocuments(
 
       // Écriture vérifiée, jamais supposée : sans ce contrôle, une policy RLS refusant la mise à jour
       // laisserait l'écran annoncer « N pièces datées » sur des lignes restées vides en base.
-      const { error: erreurEcriture } = await supabase
+      // Sur une pièce encore sans date seulement, et la ligne rendue lue (audit du 28/11/2026) : une relecture dure des
+      // minutes, et une date saisie à la main entre-temps, dans un autre onglet, était remplacée par celle de l'OCR.
+      const { data: datee, error: erreurEcriture } = await supabase
         .from('pieces')
         .update({ date_piece: extraction.date_piece })
         .eq('id', piece.id)
+        .is('date_piece', null)
+        .select('id')
+        .maybeSingle()
       if (erreurEcriture) throw erreurEcriture
+      if (!datee) throw new Error('datée depuis la lecture, ou écartée par la base : sa date n’a pas été écrite')
 
       resultat.datees.push({
         nomFichier: piece.nom_fichier,

@@ -55680,3 +55680,22 @@ sortie du lanceur, dans une empreinte, et un motif en minuscules planté dans un
 TypeScript des 200 fichiers de production ; déjà mémoïsée, son `describe` porte 120 s ; un `beforeAll` la mettrait sous les 10 s du crochet, pire), le
 contrôle des quatorze fonctions de `edgeFunctionsCodeMort` (3 s seul, un seul programme TypeScript, 60 s au `describe`) et les lancements de processus de `bordereauOutilLocal`
 (60 s) ; les écrans et batteries entre 1 et 1,5 s seuls (`FacturesTabAcomptes`, `caisseDuClient`, `edgeFunctionsOptionDuCabinet`, `encaissementsFactures`).
+
+### 28/11/2026 — LES MISES À JOUR DU NAVIGATEUR LISENT LEUR LIGNE ET RETIENNENT LA VERSION LUE
+
+(Agent architecte, sans base ni migration ; suite de la relecture des cotisations du même jour, commit `8e88fee1`.) Recensé en
+partant de toute la source : 49 `.update(`, 16 `.upsert(` et 34 `.delete(` de PostgREST hors des tests. Une mise à jour que la base
+n'applique pas ne lève rien — zéro ligne, aucune erreur — et 34 mises à jour ne lisaient pas la ligne rendue (19 corrigées). **Corrigés**, chacun
+la ligne rendue lue (`.select('id').maybeSingle()`) et, quand une lecture a rempli ce qui part, la version lue retenue en filtres
+(`lib/versionLue.ts`, `retenirLaVersionLue`) : la fiche d'une pièce (classe a : deux onglets, le second écrasait le premier) et son
+sous-dossier ; un emprunt ; la remise « à traiter » d'un mouvement (rapproché d'une autre pièce entre-temps, il était délié et
+l'écriture d'une autre pièce retirée) ; la coche d'un justificatif (inversée deux fois, elle revenait à son état d'origine) ; la
+validation en lot, les catégories suggérées, la catégorisation par fournisseur (sur les pièces encore « à valider » ou sans
+catégorie) ; « Valider et rapprocher » (ses trois signaux retenus) ; la fin d'identifiant d'un OFX ; le régime de TVA, le modèle
+comptable, la catégorie d'un document, un champ du véhicule, le code NAF, l'adresse retenue d'une facture (son échec ne se tait plus) ;
+la date d'une relecture OCR (une date saisie pendant la relecture était remplacée) ; le règlement d'une pièce sur la banque. Les faux
+clients des tests APPLIQUENT désormais les filtres d'une mise à jour et ne rendent que la ligne écrite ; un test rouge avant, vert
+après par cas distinct. Gardé par `src/lib/misesAJourAvecLeurVersion.test.ts` (part de tout, plancher 45, défauts plantés) ; restent
+15 exceptions nommées et comptées (Cotisations et Immobilisations traitées par `8e88fee1`, Suppléments, charte du cabinet, Équipe,
+super-administrateur, restauration, la redate du brouillon). Questions : VERS-Q1 (une colonne de version tenue par la base), VERS-Q2
+(le véhicule écrit à chaque frappe).

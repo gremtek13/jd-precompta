@@ -5,6 +5,7 @@ import type { EcrituresLibresDesExports } from '../../lib/ecrituresLibresDesExpo
 import { banqueDesLecteurs } from '../../lib/banqueDuMouvement'
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
+import { retenirLaVersionLue } from '../../lib/versionLue'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
@@ -1256,11 +1257,28 @@ function EmpruntFormModal({ dossierId, emprunt, rapprochements, onClose, onSaved
         date_debut: dateDebut,
         duree_mois: parseInt(dureeMois, 10),
       }
-      const { error } = emprunt
-        ? await supabase.from('emprunts').update(payload).eq('id', emprunt.id)
-        : await supabase.from('emprunts').insert(payload)
+      // Une modification RETIENT L'EMPRUNT TEL QUE LU et lit la ligne rendue (audit du 28/11/2026) : ouverte dans un second
+      // onglet, la fiche écrasait, champ par champ, un emprunt modifié depuis ; et une mise à jour que la base n'applique pas
+      // ne lève rien, la fiche se fermait sur « enregistré ».
+      let error: { message: string } | null
+      let ecrit = true
+      if (emprunt) {
+        const { data: modifie, error: erreurModification } = await retenirLaVersionLue(
+          supabase.from('emprunts').update(payload).eq('id', emprunt.id), emprunt as unknown as Record<string, unknown>,
+          ['nom', 'organisme_preteur', 'capital_initial', 'taux_annuel', 'date_debut', 'duree_mois'],
+        ).select('id').maybeSingle()
+        error = erreurModification
+        ecrit = modifie !== null
+      } else {
+        const { error: erreurCreation } = await supabase.from('emprunts').insert(payload)
+        error = erreurCreation
+      }
       if (error) {
         setErreur(error.message)
+        return
+      }
+      if (!ecrit) {
+        setErreur('L’emprunt n’a pas été modifié : il a changé depuis sa lecture, ou la base ne l’a pas laissé écrire. Fermez la fiche pour relire la liste, puis recommencez.')
         return
       }
       onSaved()

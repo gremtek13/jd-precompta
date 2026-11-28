@@ -1152,6 +1152,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
 
 ### Lectures et écritures Supabase
 
+- **Une mise à jour lit la ligne qu'elle a écrite** (`.select('id').maybeSingle()` : aucune ligne = « changé depuis, ou refusé »,
+  jamais un succès) et, quand une lecture a rempli ce qui part, retient la version lue en filtres (`lib/versionLue.ts`) ; gardé par
+  `misesAJourAvecLeurVersion.test.ts`, exceptions comptées → « LES MISES À JOUR DU NAVIGATEUR LISENT LEUR LIGNE ».
 - **Une écriture est vérifiée**, jamais supposée réussie : `{ error }` lu et DIT (`ecrituresVerifiees.test.ts`,
   `edgeFunctionsEcritures.test.ts`) ; un `return` seul en fin de ligne JETTE l'écriture qui suit → « LES ÉCRITURES DU
   NAVIGATEUR LISENT LEUR ERREUR ».

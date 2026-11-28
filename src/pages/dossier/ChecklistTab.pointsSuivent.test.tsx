@@ -17,7 +17,8 @@ import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
 
 const D = 'dossier-de-test'
 
-const etat = vi.hoisted(() => ({ lecture: null as unknown, lectures: 0, calculs: 0, majs: [] as unknown[] }))
+// `infoEnBase` : la ligne des informations en base, que la coche met à jour — distincte de la lecture que l'écran reçoit.
+const etat = vi.hoisted(() => ({ lecture: null as unknown, lectures: 0, calculs: 0, majs: [] as unknown[], infoEnBase: null as Record<string, unknown> | null }))
 
 vi.mock('../../lib/checklistLecture', () => ({
   lireLaChecklist: () => { etat.lectures++; return Promise.resolve(etat.lecture) },
@@ -37,10 +38,27 @@ vi.mock('../../components/AvisChangementDeRib', () => ({ default: () => null }))
 vi.mock('../../lib/changementDeRibLecture', () => ({ useDernierChangementDeRib: () => null }))
 vi.mock('../../lib/supabase', () => ({
   supabase: {
-    from: () => ({ update: (valeur: unknown) => ({ eq: () => { etat.majs.push(valeur); return Promise.resolve({ error: null }) } }) }),
+    // La coche retient sa valeur lue (audit du 28/11/2026) : ses filtres s'appliquent à la ligne en base, et la ligne écrite
+    // se rend.
+    from: () => ({
+      update: (valeur: unknown) => {
+        const filtres: [string, unknown][] = []
+        const chaine = {
+          eq: (colonne: string, v: unknown) => { filtres.push([colonne, v]); return chaine },
+          select: () => chaine,
+          maybeSingle: () => {
+            const info = etat.infoEnBase
+            const visee = info !== null && filtres.every(([c, v]) => info[c] === v)
+            if (visee) { etat.majs.push(valeur); Object.assign(info, valeur) }
+            return Promise.resolve({ data: visee ? { id: info.id } : null, error: null })
+          },
+        }
+        return chaine
+      },
+    }),
   },
 }))
-afterEach(() => { cleanup(); etat.lecture = null; etat.lectures = 0; etat.calculs = 0; etat.majs = [] })
+afterEach(() => { cleanup(); etat.lecture = null; etat.lectures = 0; etat.calculs = 0; etat.majs = []; etat.infoEnBase = null })
 
 function piece(o: Partial<Piece> & Pick<Piece, 'id'>): Piece {
   return {
@@ -97,6 +115,7 @@ const SANS_CATEGORIE = /pièce\(s\) validée\(s\) sans catégorie/
 describe('ChecklistTab — les points suivent leurs données, et seulement elles', () => {
   it('un rendu sans donnée neuve ne recalcule pas les points ; la relecture qui range la pièce les recalcule, et l’écran la suit', async () => {
     etat.lecture = lecture({ piecesValidees: [piece({ id: 'p1' })] })
+    etat.infoEnBase = { ...INFO }
     const { rerender } = render(arbre())
     expect(await screen.findByText(SANS_CATEGORIE)).toBeTruthy()
     const apresLaLecture = etat.calculs

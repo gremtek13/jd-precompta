@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
-import PiecesTab from './PiecesTab'
+import PiecesTab, { phraseDesPiecesNonValidees } from './PiecesTab'
 import type { Piece } from '../../lib/types'
 import { REFUS_VALIDATION_D_UNE_VENTE } from '../../lib/exemplairesDesFactures'
 
@@ -24,7 +24,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatIn } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn, predicatIs } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     let operation = 'select'
     let unique = false
@@ -36,7 +36,9 @@ vi.mock('../../lib/supabase', async () => {
     const c: Record<string, unknown> = {}
     const soi = () => c
     Object.assign(c, {
-      select: soi, order: soi, neq: soi, gte: soi, lte: soi, lt: soi, gt: soi, is: soi, not: soi, or: soi, limit: soi,
+      select: soi, order: soi, neq: soi, gte: soi, lte: soi, lt: soi, gt: soi, not: soi,
+      // `.is` d'une mise à jour s'APPLIQUE (audit du 28/11/2026) : il retient la version lue.
+      is: (colonne: string, v: null) => { if (operation === 'update') predicats.push(predicatIs(colonne, v)); return c }, or: soi, limit: soi,
       eq: (colonne: string, v: unknown) => {
         if (colonne === 'id') ids.push(v)
         if (colonne.startsWith('factures_emises.')) {
@@ -60,8 +62,11 @@ vi.mock('../../lib/supabase', async () => {
         if (operation === 'update') {
           faux.majs.push({ table, valeur, ids: [...ids] })
           // Le serveur applique la mise à jour : la relecture qui suit la voit.
-          faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (ids.includes(l.id) ? { ...l, ...(valeur as object) } : l))
-          return Promise.resolve({ data: null, error: null }).then(suite, echec)
+          // Ses filtres APPLIQUÉS (audit du 28/11/2026) : seules les lignes qu'ils laissent passer s'écrivent, et se rendent.
+          const visees = filtrer(faux.parTable[table] ?? [], predicats)
+          faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (visees.includes(l) ? { ...l, ...(valeur as object) } : l))
+          const rendues = visees.map((l) => ({ id: l.id }))
+          return Promise.resolve({ data: unique ? (rendues[0] ?? null) : rendues, error: null, count: rendues.length }).then(suite, echec)
         }
         if (operation !== 'select' || unique) return Promise.resolve({ data: null, error: null }).then(suite, echec)
         const toutes = filtrer(faux.parTable[table] ?? [], predicats)
@@ -189,6 +194,22 @@ describe('dans un dossier basculé : la sélection écarte ce que G3 refuserait,
     expect(resume()).toEqual([])
     await act(async () => { bouton.click() })
     await waitFor(() => expect(validees()).toEqual([['achat', 'exemplaire', 'declaree']]))
+  })
+
+  // AUDIT DU 28/11/2026 : la validation en lot vise les pièces encore « à valider », et lit les lignes rendues. Une pièce
+  // validée depuis un autre onglet — ou que la base écarte — passait pour validée par ce clic, et quittait la sélection.
+  it('une pièce qui n’est plus à valider depuis la lecture se compte et se dit', async () => {
+    faux.parTable.pieces = faux.parTable.pieces.filter((p) => p.id !== 'vente-nue' && p.id !== 'jumelle')
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre(true)
+    await toutSelectionner()
+    const bouton = screen.getByRole('button', { name: 'Valider la sélection (3)' })
+    // Une autre session valide l'achat entre la lecture et le clic.
+    faux.parTable.pieces = faux.parTable.pieces.map((p) => (p.id === 'achat' ? { ...p, statut: 'validee' } : p))
+    await act(async () => { bouton.click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(phraseDesPiecesNonValidees(1, 3)))
+    // La base garde les deux autres validées, l'achat tel que l'autre session l'a laissé.
+    expect(faux.parTable.pieces.filter((p) => p.statut === 'validee').map((p) => p.id).sort()).toEqual(['achat', 'declaree', 'exemplaire'])
   })
 
   it('les transmissions lues en partie : aucune pièce de vente ne part, l’achat si — la raison le dit', async () => {

@@ -1015,8 +1015,12 @@ export default function FactureFormModal(props: Props) {
       // Hors transaction à dessein : mémoriser l'adresse sur le dossier est un confort, sans rapport
       // avec l'intégrité de la facture, et son échec ne doit pas la remettre en cause.
       if (onAdresseUpdated && enregistrerAdresseDossier && emetteurAdresse.trim()) {
-        const { error: adresseError } = await supabase.from('dossiers').update({ adresse: emetteurAdresse.trim() }).eq('id', dossierId)
-        if (!adresseError) onAdresseUpdated(emetteurAdresse.trim())
+        // La ligne rendue se lit, et un échec se DIT (audit du 28/11/2026) : la case cochée promettait l'adresse au dossier, et
+        // une mise à jour refusée ou que la base n'applique pas se taisait — la facture, elle, reste enregistrée.
+        const { data: adresseEcrite, error: adresseError } = await supabase.from('dossiers').update({ adresse: emetteurAdresse.trim() })
+          .eq('id', dossierId).select('id').maybeSingle()
+        if (!adresseError && adresseEcrite) onAdresseUpdated(emetteurAdresse.trim())
+        else window.alert(`La facture est enregistrée, mais l’adresse n’a pas été retenue sur le dossier : ${adresseError ? messageErreur(adresseError, 'refus de la base') : 'la base ne l’a pas laissé écrire'}.`)
       }
 
       onSaved()

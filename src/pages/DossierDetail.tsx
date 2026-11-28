@@ -309,9 +309,16 @@ function PageDuDossier() {
       window.alert("Profession introuvable pour ce SIRET (réseau indisponible ou SIRET non reconnu par la base SIRENE).")
       return
     }
-    const { error } = await supabase.from('dossiers').update({ code_naf: infos.codeNaf, libelle_naf: infos.libelleNaf }).eq('id', dossier.id)
+    // La ligne rendue se lit (audit du 28/11/2026) : une mise à jour que la base n'applique pas ne lève rien, et l'écran
+    // montrait une profession que le dossier ne porte pas.
+    const { data: ecrit, error } = await supabase.from('dossiers').update({ code_naf: infos.codeNaf, libelle_naf: infos.libelleNaf })
+      .eq('id', dossier.id).select('id').maybeSingle()
     if (error) {
       window.alert(error.message)
+      return
+    }
+    if (!ecrit) {
+      window.alert('La profession n’a pas été enregistrée : la base ne l’a pas laissé écrire.')
       return
     }
     modifierDossier(dossier.id, { code_naf: infos.codeNaf, libelle_naf: infos.libelleNaf })

@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContexteDossier } from '../../test/exercicesValides'
-import BanqueTab from './BanqueTab'
+import BanqueTab, { MOUVEMENT_CHANGE_DEPUIS } from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type {
   Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, LettrageManuel, LigneBancaire, OperationCaisse, Piece,
@@ -1415,6 +1415,24 @@ describe('BanqueTab — l’écriture suit le paiement', () => {
     await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
 
     expect(faux.updatesEcritures).toEqual([{ valeur: { date: '2025-06-01' }, filtres: ['piece_id=piece-1'] }])
+  })
+
+  // AUDIT DU 28/11/2026 : la remise « à traiter » retient le mouvement tel que lu — son statut et sa pièce. Rapproché d'une
+  // AUTRE pièce depuis un autre onglet, il était délié sans un mot, et l'écriture retirée était celle de la pièce lue ici.
+  it('un mouvement rapproché d’une autre pièce depuis la lecture n’est pas délié, et le dit', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1' })]
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await ouvrir()
+    faux.lignes = faux.lignes.map((l) => ({ ...l, piece_id: 'piece-2' }))
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(MOUVEMENT_CHANGE_DEPUIS))
+    expect(faux.lignes[0]).toMatchObject({ statut: 'rapprochee', piece_id: 'piece-2' })
+    expect(faux.updatesEcritures).toEqual([])
+    alerte.mockRestore()
   })
 
   it('levé : rapprocher date la pièce au paiement, la ligne d’une opération de caisse écartée de la redate', async () => {
