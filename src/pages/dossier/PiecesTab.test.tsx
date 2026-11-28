@@ -57,7 +57,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatNot } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatIn, predicatIs, predicatNot } = await import('../../test/filtresPostgrest')
   // Les décisions de la révision et leurs preuves aussi (ligne 41, étape R3) : celles d'un autre dossier ne citent rien ici.
   const TABLES_FILTREES = new Set(['factures_emises', 'transmissions_factures', 'revision_justifications', 'revision_preuves', 'dossier_permanent', 'ecritures_libres'])
   return {
@@ -74,6 +74,16 @@ vi.mock('../../lib/supabase', async () => {
       const predicats: Predicat[] = []
       // Les lignes que CETTE requête vise par leur identifiant (`.eq('id')` ou `.in('id')`).
       const idsVises: unknown[] = []
+      // Les filtres d'une mise à jour, APPLIQUÉS (audit du 28/11/2026) : ce sont eux qui retiennent la version lue, et la
+      // ligne rendue est celle qu'ils ont laissée passer.
+      const predicatsMaj: Predicat[] = []
+      // La mise à jour appliquée aux lignes qu'elle vise, après sa retenue éventuelle : elle rend ces lignes.
+      const appliquerMaj = async (): Promise<{ id: unknown }[]> => {
+        await (faux.retenueMaj ?? Promise.resolve())
+        const visees = filtrer(faux.parTable[table] ?? [], predicatsMaj) as { id: unknown }[]
+        faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (visees.includes(l as { id: unknown }) ? { ...(l as object), ...valeurMaj } : l))
+        return visees.map((l) => ({ id: l.id }))
+      }
       Object.assign(chaine, {
         select: () => chaine,
         delete: () => { operation = 'delete'; return chaine },
@@ -86,10 +96,15 @@ vi.mock('../../lib/supabase', async () => {
           // VALIDÉES, et les transmissions celles du dossier. Les autres tables ne les appliquent pas : leurs jeux d'essai,
           // plus anciens, ne portent pas toutes les colonnes filtrées.
           if (operation === 'select' && TABLES_FILTREES.has(table)) predicats.push(predicatEq(colonne, valeur))
+          if (operation === 'update') predicatsMaj.push(predicatEq(colonne, valeur))
           return chaine
         },
-        in: (colonne: string, valeurs: unknown[]) => { if (colonne === 'id') idsVises.push(...valeurs); return chaine },
-        is: () => chaine,
+        in: (colonne: string, valeurs: unknown[]) => {
+          if (colonne === 'id') idsVises.push(...valeurs)
+          if (operation === 'update') predicatsMaj.push(predicatIn(colonne, valeurs))
+          return chaine
+        },
+        is: (colonne: string, valeur: null) => { if (operation === 'update') predicatsMaj.push(predicatIs(colonne, valeur)); return chaine },
         not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
         or: () => chaine,
         order: () => chaine,
@@ -116,6 +131,10 @@ vi.mock('../../lib/supabase', async () => {
           if (operation === 'select' && table === 'dossiers') {
             return Promise.resolve({ data: { ventes_par_les_factures: false }, error: null })
           }
+          if (operation === 'update') {
+            if (faux.refusMaj) return Promise.resolve({ data: null, error: { message: faux.refusMaj } })
+            return appliquerMaj().then((rendues) => ({ data: rendues[0] ?? null, error: null }))
+          }
           if (operation !== 'delete') return Promise.resolve({ data: null, error: null })
           if (faux.refusSuppression) {
             return Promise.resolve({ data: null, error: { message: faux.refusSuppression, code: faux.codeRefusSuppression ?? undefined } })
@@ -138,21 +157,9 @@ vi.mock('../../lib/supabase', async () => {
             // Refusée, la mise à jour n'applique RIEN : la relecture montre la base telle qu'elle est restée.
             return Promise.resolve({ data: [], error: { message: faux.refusMaj }, count: 0 }).then(suite)
           }
-          if (operation === 'update' && idsVises.length > 1) {
-            faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (
-              idsVises.includes((l as { id: unknown }).id) ? { ...(l as object), ...valeurMaj } : l
-            ))
-            return Promise.resolve({ data: [], error: null, count: 0 }).then(suite)
-          }
           if (operation === 'update') {
-            // Le serveur applique vraiment la mise à jour, pour que la relecture qui suit la voie.
-            const derniere = faux.majPieces[faux.majPieces.length - 1]
-            return (faux.retenueMaj ?? Promise.resolve()).then(() => {
-              faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (
-                (l as { id: unknown }).id === derniere.id ? { ...(l as object), ...derniere.valeur } : l
-              ))
-              return { data: [], error: null, count: 0 }
-            }).then(suite)
+            // Le serveur applique vraiment la mise à jour, pour que la relecture qui suit la voie, et rend les lignes écrites.
+            return appliquerMaj().then((rendues) => ({ data: rendues, error: null, count: rendues.length })).then(suite)
           }
           const toutes = filtrer(faux.parTable[table] ?? [], predicats)
           const plafond = faux.muetApres[table]

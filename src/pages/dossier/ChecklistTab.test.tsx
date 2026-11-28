@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import ChecklistTab from './ChecklistTab'
+import ChecklistTab, { COCHE_CHANGEE_DEPUIS } from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
   ANouveau, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier,
@@ -142,7 +142,8 @@ vi.mock('../../lib/supabase', async () => {
           update: (valeur: Record<string, unknown>) => { valeurMaj = valeur; return chaine },
           eq: (colonne: string, valeur: string) => {
             if (colonne === 'statut') statut = valeur
-            if (filtrees.has(table)) predicats.push(predicatEq(colonne, valeur))
+            // Les filtres d'une mise à jour s'appliquent toujours (audit du 28/11/2026) : ce sont eux qui retiennent la coche lue.
+            if (filtrees.has(table) || valeurMaj) predicats.push(predicatEq(colonne, valeur))
             return chaine
           },
           is: () => chaine,
@@ -151,10 +152,20 @@ vi.mock('../../lib/supabase', async () => {
           order: () => chaine,
           range: (d: number, f: number) => { debut = d; fin = f; return chaine },
           // Les informations du dossier, lues à l'unité : c'est d'elles que viennent les points à cocher.
-          maybeSingle: () => Promise.resolve({
-            data: table === 'informations_dossier' ? (faux.parTable.informations_dossier?.[0] ?? null) : null,
-            error: null,
-          }),
+          maybeSingle: () => {
+            // La mise à jour d'une coche rend la ligne qu'elle a écrite — aucune quand la coche a changé depuis la lecture.
+            if (valeurMaj && table === 'informations_dossier') {
+              if (faux.refusMajInfos) return Promise.resolve({ data: null, error: { message: faux.refusMajInfos } })
+              const maj = valeurMaj
+              const visees = filtrer(faux.parTable.informations_dossier ?? [], predicats)
+              faux.parTable.informations_dossier = faux.parTable.informations_dossier.map((l) => (visees.includes(l) ? { ...(l as object), ...maj } : l))
+              return Promise.resolve({ data: visees[0] ? { id: (visees[0] as { id: string }).id } : null, error: null })
+            }
+            return Promise.resolve({
+              data: table === 'informations_dossier' ? (faux.parTable.informations_dossier?.[0] ?? null) : null,
+              error: null,
+            })
+          },
           then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number }) => unknown) => {
             if (valeurMaj && table === 'informations_dossier') {
               // Refusée, la mise à jour n'applique rien : la relecture rend la coche d'avant.
@@ -2522,6 +2533,22 @@ describe('ChecklistTab — la coche d’un justificatif', () => {
 
     expect(alerte).toHaveBeenCalledWith('Ce justificatif n’a pas pu être marqué : permission denied for table informations_dossier.')
     expect((faux.parTable.informations_dossier[0] as InformationsDossier).justificatif_tickets_restaurant_recu).toBe(false)
+  })
+
+  // AUDIT DU 28/11/2026 : la coche lue se retient. Cochée depuis un autre onglet, la coche INVERSÉE ici l'aurait décochée,
+  // pendant que chaque écran croyait l'avoir posée.
+  it('changée depuis la lecture, elle n’est pas inversée une seconde fois, et le dit', async () => {
+    poser({})
+    faux.parTable.informations_dossier = [infos()]
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    monter()
+    await screen.findByText('Justificatif titres-restaurant reçu')
+    faux.parTable.informations_dossier = [infos({ justificatif_tickets_restaurant_recu: true })]
+    const coche = screen.getByTitle('Cliquer pour marquer comme reçu/non reçu')
+    await act(async () => { coche.click() })
+
+    expect(alerte).toHaveBeenCalledWith(COCHE_CHANGEE_DEPUIS)
+    expect((faux.parTable.informations_dossier[0] as InformationsDossier).justificatif_tickets_restaurant_recu).toBe(true)
   })
 
   it('acceptée, elle ne dit rien, et la base la garde', async () => {

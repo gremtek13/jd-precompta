@@ -3,6 +3,7 @@ import { useModulesOuverts } from '../../context/ModulesOuverts'
 import { estOuvert } from '../../lib/modulesDuCabinet'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
+import { retenirLaVersionLue } from '../../lib/versionLue'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
 import { colonneDeLaDateDeValeur, detectColumnMapping, lignesDeDonnees, parseCsv, refusDeLaDevise, type FormatDesMontants } from '../../lib/csv'
 import { DATE_DE_VALEUR_PREVUE, ECART_MAXIMAL_DE_LA_DATE_DE_VALEUR, phraseDesDatesDeValeur } from '../../lib/dateDeValeur'
@@ -202,6 +203,10 @@ const COLONNES_DES_MOUVEMENTS: ColonneTriable<LigneBancaire>[] = [
   { cle: 'montant', libelle: 'Montant', type: 'montant', valeur: (l) => l.montant },
   { cle: 'statut', libelle: 'Statut', type: 'rang', valeur: (l) => l.statut, ordre: ['non_rapprochee', 'rapprochee', 'ignoree'] },
 ]
+
+/** Un mouvement qu'une remise « à traiter » n'a pas rendu : changé depuis la lecture du relevé, ou écarté par la base. */
+export const MOUVEMENT_CHANGE_DEPUIS =
+  'Le mouvement n’a pas été remis à traiter : il a changé depuis la lecture du relevé (rapproché, classé ou remis ailleurs), ou la base ne l’a pas laissé écrire. Relis le relevé, puis recommence.'
 
 export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLesFactures, statutTva, codeNaf }: {
   dossierId: string; modele: ModeleComptable; assujettiTva: boolean; ventesParLesFactures: boolean; statutTva: StatutTva | null
@@ -1107,13 +1112,20 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       if (error) { window.alert(`Le rapprochement n'a pas pu être annulé : ${messageErreur(error, 'raison inconnue')}`); return false }
       return true
     }
-    const ancienPieceId = ligne?.piece_id ?? null
+    // Le mouvement n'est plus dans le relevé lu : rien ne dit ce qu'il porte, rien ne part.
+    if (!ligne) { window.alert(MOUVEMENT_CHANGE_DEPUIS); return false }
+    const ancienPieceId = ligne.piece_id ?? null
     // Sans `cotisation_id` : un rapprochement d'échéance posé entre-temps ailleurs fait refuser cette mise à
     // jour (`lignes_bancaires_cotisation_rapprochee`), au lieu d'en orpheliner l'écriture.
-    const { error } = await supabase.from('lignes_bancaires').update({
-      statut: 'non_rapprochee', piece_id: null, prelevement_personnel: false,
-    }).eq('id', ligneId)
+    // LE MOUVEMENT TEL QUE LU (audit du 28/11/2026) : son statut et sa pièce. Rapproché d'une AUTRE pièce depuis un autre
+    // onglet, il était délié sans un mot, et l'écriture de banque retirée était celle de la pièce lue ici ; une mise à jour
+    // que la base n'applique pas ne lève rien. Aucune ligne rendue : rien n'est défait, et c'est dit.
+    const { data: remis, error } = await retenirLaVersionLue(
+      supabase.from('lignes_bancaires').update({ statut: 'non_rapprochee', piece_id: null, prelevement_personnel: false }).eq('id', ligneId),
+      { statut: ligne.statut, piece_id: ancienPieceId }, ['statut', 'piece_id'],
+    ).select('id').maybeSingle()
     if (error) { window.alert(`Le mouvement n'a pas pu être remis à traiter : ${error.message}`); return false }
+    if (!remis) { window.alert(MOUVEMENT_CHANGE_DEPUIS); return false }
     // Ici l'échec compte double : l'annulation est enregistrée mais la contrepartie banque reste,
     // donc une écriture de paiement subsiste pour un mouvement qui n'est plus rapproché.
     if (ancienPieceId) {
@@ -1763,8 +1775,17 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     await sousVerrou(setRapprochementAuto, async () => {
       const echecs: string[] = []
       for (const a of certainsAValider) {
-        const { error: errPiece } = await supabase.from('pieces').update({ statut: 'validee' }).eq('id', a.piece.id)
+        // La pièce telle que lue (audit du 28/11/2026) : ses trois signaux — montant, date, tiers — sont ceux que le lot a
+        // jugés ; changée depuis, elle ne se valide pas sur eux, et la ligne rendue le dit.
+        const { data: valide, error: errPiece } = await retenirLaVersionLue(
+          supabase.from('pieces').update({ statut: 'validee' }).eq('id', a.piece.id),
+          a.piece as unknown as Record<string, unknown>, ['montant_ttc', 'date_piece', 'tiers'],
+        ).select('id').maybeSingle()
         if (errPiece) { echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${errPiece.message}`); continue }
+        if (valide == null) {
+          echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : changée depuis la lecture, ou écartée par la base — ni validée ni rapprochée`)
+          continue
+        }
 
         // Le rapprochement n'est tenté qu'une fois la validation réellement écrite : l'inverse
         // laisserait un mouvement rapproché sur une pièce restée « à valider ».
@@ -3404,9 +3425,11 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const fin = finAPoser(finDuFichier, compteImport)
       let finNonPosee: string | null = null
       if (fin !== null && compteEcrit !== null) {
-        const { error: errFin } = await supabase.from('comptes_bancaires').update({ fin_d_identifiant: fin })
-          .eq('id', compteEcrit).is('fin_d_identifiant', null)
+        const { data: posee, error: errFin } = await supabase.from('comptes_bancaires').update({ fin_d_identifiant: fin })
+          .eq('id', compteEcrit).is('fin_d_identifiant', null).select('id').maybeSingle()
         if (errFin) finNonPosee = messageErreur(errFin, 'écriture refusée')
+        // Aucune ligne rendue (audit du 28/11/2026) : une fin a été posée depuis la lecture, ou la base l'a écartée.
+        else if (!posee) finNonPosee = 'une fin d’identifiant a été posée depuis la lecture, ou la base ne l’a pas laissé écrire'
       }
       setRows(null)
       setOfxQif(null)

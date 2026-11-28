@@ -50,6 +50,8 @@ const faux = vi.hoisted(() => ({
   tablesLues: [] as string[],
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   misesAJour: [] as { table: string; valeurs: Record<string, unknown> }[],
+  // Le dossier en base, tel que l'hôte le monte : la mise à jour de son régime le vise.
+  dossierEnBase: {} as Record<string, unknown>,
   // Non nul : l'appel à la base attend qu'on le libère, pour éprouver le verrou.
   suspendue: null as null | { liberer: () => void },
   // Non nul : la relecture des déclarations qui SUIT un appel à la base attend qu'on la libère.
@@ -115,21 +117,29 @@ vi.mock('../../lib/supabase', async () => {
             if (!suspendre) return Promise.resolve(reponse()).then(suite)
             return new Promise((resoudre) => { faux.relectureSuspendue!.liberer = () => resoudre(reponse()) }).then(suite)
           },
-          update: (valeurs: Record<string, unknown>) => ({
-            eq: () => {
-              faux.misesAJour.push({ table, valeurs })
-              const refus = { message: 'new row violates row-level security policy' }
-              const resultat = Promise.resolve(faux.miseAJourRefusee ? { error: refus } : { error: null })
-              // Le statut de TVA relit ce que la base a écrit : `assujetti_tva`, son déclencheur le déduit du statut.
-              return Object.assign(resultat, {
-                select: () => ({
-                  single: () => Promise.resolve(faux.miseAJourRefusee
-                    ? { data: null, error: refus }
-                    : { data: { ...valeurs, assujetti_tva: valeurs.statut_tva === 'redevable' }, error: null }),
-                }),
-              })
-            },
-          }),
+          update: (valeurs: Record<string, unknown>) => {
+            faux.misesAJour.push({ table, valeurs })
+            const refus = { message: 'new row violates row-level security policy' }
+            // Les filtres de la mise à jour s'APPLIQUENT au dossier en base (audit du 28/11/2026) : le régime lu qu'elle
+            // retient, l'identifiant — et la ligne écrite se rend (`.select(…).maybeSingle()`).
+            const filtres: [string, unknown][] = []
+            const chaine = {
+              eq: (colonne: string, v: unknown) => { filtres.push([colonne, v]); return chaine },
+              select: () => ({
+                // Le statut de TVA relit ce que la base a écrit : `assujetti_tva`, son déclencheur le déduit du statut.
+                single: () => Promise.resolve(faux.miseAJourRefusee
+                  ? { data: null, error: refus }
+                  : { data: { ...valeurs, assujetti_tva: valeurs.statut_tva === 'redevable' }, error: null }),
+                maybeSingle: () => {
+                  if (faux.miseAJourRefusee) return Promise.resolve({ data: null, error: refus })
+                  const visee = filtres.every(([c, v]) => faux.dossierEnBase[c] === v)
+                  if (visee) Object.assign(faux.dossierEnBase, valeurs)
+                  return Promise.resolve({ data: visee ? { id: faux.dossierEnBase.id } : null, error: null })
+                },
+              }),
+            }
+            return chaine
+          },
         })
         return lecture
       },
@@ -253,7 +263,10 @@ function Hote({
   valides?: readonly number[]
   espion?: (m: unknown) => void
 }) {
-  const [regime, setRegime] = useState({ tva_periodicite: periodicite, tva_sur_debits: surDebits })
+  const [regime, setRegime] = useState(() => {
+    faux.dossierEnBase = { id: dossier, tva_periodicite: periodicite, tva_sur_debits: surDebits }
+    return { tva_periodicite: periodicite, tva_sur_debits: surDebits }
+  })
   // Comme la page du dossier : ce que la base a écrit remplace le statut ET le booléen qu'elle en déduit.
   const [tva, setTva] = useState({
     statut_tva: statut === undefined ? (assujetti ? 'redevable' as const : null) : statut,
@@ -772,6 +785,16 @@ describe('l’onglet TVA', () => {
     await act(async () => { fireEvent.change(screen.getByLabelText('TVA des recettes due'), { target: { value: 'debits' } }) })
     expect((screen.getByLabelText('TVA des recettes due') as HTMLSelectElement).value).toBe('encaissements')
     expect(screen.getByText('new row violates row-level security policy')).toBeTruthy()
+  })
+
+  // AUDIT DU 28/11/2026 : le régime lu se retient, et la ligne rendue se lit. Réglé depuis un autre onglet, il était remplacé
+  // sans un mot ; écarté par la base sans erreur, l'écran le croyait enregistré.
+  it('un régime changé depuis la lecture n’est pas remplacé : l’écran revient, et le dit', async () => {
+    await afficher()
+    faux.dossierEnBase.tva_sur_debits = true
+    await act(async () => { fireEvent.change(screen.getByLabelText('TVA des recettes due'), { target: { value: 'debits' } }) })
+    expect((screen.getByLabelText('TVA des recettes due') as HTMLSelectElement).value).toBe('encaissements')
+    expect(screen.getByText(/Le régime de TVA n’a pas été enregistré : il a changé depuis la lecture du dossier/)).toBeTruthy()
   })
 
   it('dit la recette qu’aucun paiement ne rattache, au lieu de se taire sur elle', async () => {

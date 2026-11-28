@@ -3,6 +3,7 @@ import { useModulesOuverts } from '../../context/ModulesOuverts'
 import { estOuvert, LIBELLES_DES_MODULES, MOTS_DU_REFUS } from '../../lib/modulesDuCabinet'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { retenirLaVersionLue } from '../../lib/versionLue'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import { anneeDe, aujourdHuiAParis, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
@@ -342,10 +343,16 @@ export default function TvaTab({
     const avant = { tva_periodicite: periodicite, tva_sur_debits: surDebits }
     setErreurRegime(null)
     onRegimeUpdated(modification) // optimiste, annulé si l'enregistrement échoue
-    const { error } = await supabase.from('dossiers').update(modification).eq('id', dossierId)
-    if (error) {
+    // Le régime tel que lu se retient, et la ligne rendue se lit (audit du 28/11/2026) : réglé depuis un autre onglet, il était
+    // remplacé sans un mot ; une mise à jour que la base n'applique pas ne lève rien, et l'écran le croyait enregistré.
+    const { data: regle, error } = await retenirLaVersionLue(
+      supabase.from('dossiers').update(modification).eq('id', dossierId), avant, Object.keys(modification),
+    ).select('id').maybeSingle()
+    if (error || !regle) {
       onRegimeUpdated(avant)
-      setErreurRegime(messageErreur(error, "Le régime de TVA n'a pas pu être enregistré."))
+      setErreurRegime(error
+        ? messageErreur(error, "Le régime de TVA n'a pas pu être enregistré.")
+        : 'Le régime de TVA n’a pas été enregistré : il a changé depuis la lecture du dossier, ou la base ne l’a pas laissé écrire. Rechargez le dossier, puis recommencez.')
     } else {
       setStatutChange(true)
     }

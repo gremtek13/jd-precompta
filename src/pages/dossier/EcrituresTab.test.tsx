@@ -1643,6 +1643,8 @@ describe('EcrituresTab — un virement qui règle plusieurs pièces', () => {
 describe('EcrituresTab — le modèle comptable', () => {
   it('offre le choix sur un brouillon vide, l’enregistre sur le dossier, et montre alors les comptes de note de frais', async () => {
     poser({})
+    // Le dossier en base, tel que l'onglet le lit : la mise à jour retient le modèle lu (audit du 28/11/2026).
+    faux.parTable.dossiers = [{ id: 'dossier-de-test', mode_comptable: 'tresorerie', compte_notes_de_frais: '455000' }]
     monter()
 
     const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })

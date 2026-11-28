@@ -80,6 +80,14 @@ const SOURCES_NON_LUES: FacturesSources = new Set()
 // d'une pièce règle par la caisse dans un dossier en trésorerie, la migration `paiement_par_la_caisse` en base. Sans modèle
 // (un appelant qui ne le lit pas), la caisse ne se lit pas : la liste et la fiche sont celles d'hier.
 // `ficheDemandee` : la fiche qu'un autre onglet demande d'ouvrir (la Vue d'ensemble, BOR6T-Q2 (A)) ; absente, rien ne s'ouvre seul.
+/** Les pièces d'une validation en lot que la base n'a pas rendues : plus « à valider » depuis la lecture, ou écartées. */
+export function phraseDesPiecesNonValidees(nonEcrites: number, demandees: number): string {
+  const pluriel = nonEcrites > 1
+  return `${nonEcrites} pièce${pluriel ? 's' : ''} sur ${demandees} n’${pluriel ? 'ont' : 'a'} pas été validée${pluriel ? 's' : ''} : `
+    + `${pluriel ? 'elles ne sont' : 'elle n’est'} plus à valider depuis la lecture de la liste, ou la base ne l’a pas laissé écrire. `
+    + `${pluriel ? 'Elles restent sélectionnées' : 'Elle reste sélectionnée'} ; la liste est relue.`
+}
+
 export default function PiecesTab({
   dossierId, dossierSiret = null, ventesParLesFactures, modele = null, assujettiTva = false, ficheDemandee = null, onFicheDemandeePrise,
 }: {
@@ -726,12 +734,18 @@ export default function PiecesTab({
     setApplyingSuggestions(true)
     // Les résultats sont GARDÉS : jetés, une pièce refusée restait sans catégorie au milieu des autres,
     // sans un mot, et l'opérateur la croyait servie par le clic qu'il venait de faire.
+    // Sur une pièce encore sans catégorie seulement, et la ligne rendue lue (audit du 28/11/2026) : la suggestion a été
+    // jugée sur la liste LUE, et une catégorie posée depuis, dans un autre onglet, était écrasée sans un mot ; une mise à jour
+    // que la base n'applique pas ne lève rien.
     const resultats = await Promise.all(
-      piecesAvecSuggestion.map((p) => supabase.from('pieces').update({ categorie_id: suggestionPour(p) }).eq('id', p.id)),
+      piecesAvecSuggestion.map((p) => supabase.from('pieces').update({ categorie_id: suggestionPour(p) })
+        .eq('id', p.id).is('categorie_id', null).select('id').maybeSingle()),
     )
     setApplyingSuggestions(false)
     load()
-    const echecs = resultats.flatMap((r) => (r.error ? [messageErreur(r.error, 'refus de la base')] : []))
+    const echecs = resultats.flatMap((r) => (r.error
+      ? [messageErreur(r.error, 'refus de la base')]
+      : r.data ? [] : ['catégorisée depuis la lecture, ou écartée par la base']))
     if (echecs.length > 0) {
       window.alert(
         `${echecs.length} pièce(s) sur ${resultats.length} n’ont pas reçu leur catégorie : ${[...new Set(echecs)].join(' ; ')}.`,
@@ -761,12 +775,22 @@ export default function PiecesTab({
       // (lib/validationDeLaSelection.ts) ; Annuler n'envoie rien. Rien à nommer : l'envoi part comme hier.
       const confirmation = confirmationDeLaSelection(ids.length, validationDeLaSelection.aSignaler)
       if (confirmation !== null && !window.confirm(confirmation)) return
-      const { error } = await supabase.from('pieces').update({ statut: 'validee' }).in('id', ids)
+      // Sur les pièces encore « à valider » seulement, et les lignes rendues lues (audit du 28/11/2026) : la sélection a été
+      // jugée sur la liste LUE, et une pièce validée ou retirée depuis, ou que la base écarte, passait pour validée.
+      // Le compte se demande avec les lignes (`lecturesPaginees.test.ts`) : au-delà du plafond de PostgREST, les lignes rendues
+      // seraient tronquées, et le compte dit seul combien ont été écrites.
+      const { data: validees, count: nombreValidees, error } = await supabase.from('pieces').update({ statut: 'validee' }, { count: 'exact' })
+        .in('id', ids).eq('statut', 'a_valider').select('id')
       // Refusée, la sélection est GARDÉE : vidée, il faudrait la refaire pièce par pièce pour réessayer.
       if (error) {
         window.alert(`La sélection n’a pas pu être validée : ${finDePhrase(messageErreur(error, 'refus de la base'))}`)
       } else {
-        const restees = new Set(ecartesDeLaSelection.map((e) => e.piece.id))
+        const ecrites = new Set((validees ?? []).map((v) => v.id))
+        const nonEcrites = ids.filter((id) => !ecrites.has(id))
+        // Sans compte rendu, aucune n'est réputée validée ; sinon le compte fait foi, les lignes rendues désignant les restées.
+        const manquantes = nombreValidees == null ? ids.length : ids.length - nombreValidees
+        if (manquantes > 0) window.alert(phraseDesPiecesNonValidees(manquantes, ids.length))
+        const restees = new Set([...ecartesDeLaSelection.map((e) => e.piece.id), ...nonEcrites])
         setSelected(new Set([...selected].filter((id) => restees.has(id))))
       }
       await load()

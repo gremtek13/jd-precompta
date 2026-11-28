@@ -15,6 +15,7 @@ import ExportVersUnLogiciel from './ExportVersUnLogiciel'
 import { EXPORT_VERS_UN_LOGICIEL_OFFERT } from '../../lib/profilsDExport'
 import { INVENTAIRE_DU_PAQUET_SANS_OBJET, piecesCiteesParLExercice, piecesSansEmpreinte, type PisteDuPaquet } from '../../lib/paquetDArchive'
 import { supabase } from '../../lib/supabase'
+import { retenirLaVersionLue } from '../../lib/versionLue'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import {
   SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresAGenerer, ecrituresSansObjet, lignesOuvertes, lignesPourPiece, piecesAComptabiliser,
@@ -1178,8 +1179,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setChangementModele(true)
     setError(null)
     try {
-      const { error: updateError } = await supabase.from('dossiers').update(modification).eq('id', dossierId)
+      // Le modèle tel que lu se retient, et la ligne rendue se lit (audit du 28/11/2026) : réglé depuis un autre onglet, il
+      // était remplacé sans un mot ; une mise à jour que la base n'applique pas ne lève rien.
+      const lu: Record<string, unknown> = { mode_comptable: modele.mode, compte_notes_de_frais: modele.compteNotesDeFrais }
+      const { data: regle, error: updateError } = await retenirLaVersionLue(
+        supabase.from('dossiers').update(modification).eq('id', dossierId), lu, Object.keys(modification),
+      ).select('id').maybeSingle()
       if (updateError) throw updateError
+      if (!regle) throw new Error('Le modèle comptable n’a pas été enregistré : il a changé depuis la lecture du dossier, ou la base ne l’a pas laissé écrire. Rechargez le dossier, puis recommencez.')
       onModeleUpdated(modification)
     } catch (err) {
       setError(messageErreur(err, 'Le modèle comptable n’a pas pu être enregistré.'))

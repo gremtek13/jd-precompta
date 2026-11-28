@@ -113,6 +113,8 @@ vi.mock('../../lib/supabase', async () => {
         const partir = () => {
           if (ecriture) {
             faux.ecritures.push(`${table} ${ecriture}`)
+            // Une mise à jour rend les lignes que ses filtres désignent (audit du 28/11/2026) : la ligne écrite se lit.
+            if (ecriture === 'update') return { data: filtrer(faux.tables[table], predicats).map((l) => ({ id: l.id })), error: null }
             return { data: null, error: null }
           }
           faux.lectures.push(table)
@@ -495,6 +497,8 @@ describe('FacturesTab en mode client — les gestes du cabinet retirés', () => 
 
   it('le cabinet, lui, garde la case, et elle écrit l’adresse du dossier', async () => {
     await monter('cabinet')
+    // Le dossier en base : la mise à jour de son adresse rend sa ligne (audit du 28/11/2026).
+    faux.tables.dossiers = [{ id: 'd1' }]
     fireEvent.click(screen.getByRole('button', { name: '+ Nouvelle facture' }))
     fireEvent.change(screen.getByLabelText(/Adresse de l'émetteur/), { target: { value: '2 rue Fictive' } })
     fireEvent.click(screen.getByRole('checkbox', { name: /Enregistrer comme adresse du dossier/ }))

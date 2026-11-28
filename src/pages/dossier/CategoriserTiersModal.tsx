@@ -57,15 +57,22 @@ export default function CategoriserTiersModal({
     setEnCours(true)
     setErreur(null)
     try {
+      // Les pièces qu'une autre session a catégorisées depuis la lecture, ou que la base écarte (audit du 28/11/2026).
+      let nonEcrites = 0
       for (const groupe of retenus) {
         const categorieId = choix[groupe.tiersNormalise]
 
         // La catégorie des pièces d'abord : c'est le seul effet qui compte vraiment pour le
         // brouillon comptable. Vérifiée, jamais supposée — sans ce contrôle, un refus RLS laisserait
         // l'écran annoncer « N pièces catégorisées » sur des lignes restées vides.
-        const { error: erreurPieces } = await supabase
-          .from('pieces').update({ categorie_id: categorieId }).in('id', groupe.pieceIds)
+        // Sur les pièces encore sans catégorie seulement, et les lignes rendues lues (audit du 28/11/2026) : le groupe a été
+        // fait sur la liste LUE, et une catégorie posée depuis, dans un autre onglet, était écrasée sans un mot.
+        // Le nombre écrit se lit par son compte (une collection ne se lit qu'avec lui, `lecturesPaginees.test.ts`) ; sans compte
+        // rendu, rien n'est réputé écrit.
+        const { count: ecrites, error: erreurPieces } = await supabase
+          .from('pieces').update({ categorie_id: categorieId }, { count: 'exact' }).in('id', groupe.pieceIds).is('categorie_id', null)
         if (erreurPieces) throw erreurPieces
+        nonEcrites += groupe.pieceIds.length - (ecrites ?? 0)
 
         // Puis la règle, pour que le prochain import se catégorise tout seul. Volontairement après :
         // si elle échoue, les pièces sont déjà catégorisées et on n'a rien perdu d'irremplaçable.
@@ -88,6 +95,12 @@ export default function CategoriserTiersModal({
         }
       }
       onApplied()
+      // Une pièce non écrite se DIT, et la fenêtre reste : la liste relue montre ce que l'autre session a choisi.
+      if (nonEcrites > 0) {
+        setErreur(`${nonEcrites} pièce${nonEcrites > 1 ? 's n’ont' : ' n’a'} pas reçu ${nonEcrites > 1 ? 'leur' : 'sa'} catégorie : `
+          + 'catégorisée' + (nonEcrites > 1 ? 's' : '') + ' depuis la lecture de la liste, ou écartée' + (nonEcrites > 1 ? 's' : '') + ' par la base. Les autres sont catégorisées, et leurs règles retenues.')
+        return
+      }
       onClose()
     } catch (err) {
       setErreur(messageErreur(err))

@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import FichePiece from './FichePiece'
+import FichePiece, { PIECE_CHANGEE_DEPUIS } from './FichePiece'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT } from '../../lib/controles'
 import type { Categorie, DeclarationEreportingHorsApplication, Piece, SourceDeclarationEreporting, TiersCategorie } from '../../lib/types'
 import type { DonneesHorsDeFrance } from './FicheHorsDeFrance'
@@ -36,6 +36,10 @@ const faux = vi.hoisted(() => ({
   // second envoi arrive. La résoudre tout de suite supprimerait la fenêtre que le verrou ferme.
   resoudreInsert: null as null | ((v: unknown) => void),
   updates: [] as unknown[],
+  // LES PIÈCES EN BASE (audit du 28/11/2026) : chaque pièce que `pieceDeTest` fabrique y entre, sous son identifiant. La mise
+  // à jour de la fiche APPLIQUE ses filtres (`.eq`, `.is`) à ces lignes et ne rend que celle qu'elle a écrite — une pièce
+  // changée depuis la lecture n'en rend aucune, comme en base.
+  base: new Map<string, Record<string, unknown>>(),
   // Les appels aux Edge Functions, et la réponse programmée par chaque test — `null` la laisse EN
   // ATTENTE, pour ouvrir la fenêtre pendant laquelle un second clic arrive.
   invocations: [] as { nom: string; corps: unknown }[],
@@ -82,10 +86,21 @@ vi.mock('../../lib/supabase', () => ({
             faux.inserts.push(ligne)
             return new Promise((resolve) => { faux.resoudreInsert = resolve })
           },
-          update: (ligne: unknown) => {
+          update: (ligne: Record<string, unknown>) => {
             faux.updates.push(ligne)
             faux.ordre.push('pieces.update')
-            return { eq: () => Promise.resolve({ error: null }) }
+            const predicats: ((l: Record<string, unknown>) => boolean)[] = []
+            const chaine = {
+              eq: (colonne: string, valeur: unknown) => { predicats.push((l) => l[colonne] === valeur); return chaine },
+              is: (colonne: string, valeur: null) => { predicats.push((l) => valeur === null && l[colonne] == null); return chaine },
+              select: () => chaine,
+              maybeSingle: () => {
+                const visee = [...faux.base.values()].find((l) => predicats.every((p) => p(l)))
+                if (visee) Object.assign(visee, ligne)
+                return Promise.resolve({ data: visee ? { id: visee.id } : null, error: null })
+              },
+            }
+            return chaine
           },
           // La suppression rend la ligne supprimée (`.select('id').maybeSingle()`) : c'est elle qui autorise le retrait
           // des fichiers. Le cas où la base n'en supprime aucune est joué dans `FichePiece.ecritures.test.tsx`.
@@ -338,7 +353,7 @@ describe('FichePiece — le verrou de l’extraction automatique', () => {
 // 23/09/2026, aucune des cinq clés entrantes de `pieces` n'est en NO ACTION, donc 23503 ne peut pas
 // se lever ici.
 function pieceDeTest(o: Partial<Piece> = {}): Piece {
-  return {
+  const piece: Piece = {
     id: 'piece-1', dossier_id: 'd1', uploaded_by: null, source: 'upload',
     storage_path: 'd1/facture.pdf', nom_fichier: 'facture.pdf', storage_hash: null,
     date_piece: '2026-03-10', tiers: 'Fournisseur', montant_ht: null, montant_tva: null,
@@ -348,6 +363,9 @@ function pieceDeTest(o: Partial<Piece> = {}): Piece {
     identite_numero: null, identite_siren_vendeur: null, identite_date: null, identite_nature: null, facture_id: null, vente_hors_des_factures: false,
     created_at: '2026-03-10T09:00:00Z', updated_at: '2026-03-10T09:00:00Z', ...o,
   }
+  // Une COPIE en base : la fiche garde la pièce qu'elle a lue, la base la ligne qu'une autre session peut changer.
+  faux.base.set(piece.id, { ...piece })
+  return piece
 }
 
 function monterSurPieceExistante() {
@@ -842,6 +860,22 @@ describe('FichePiece — la note interne, hors de portée du client', () => {
     await act(async () => { screen.getByRole('button', { name: 'Relire la note' }).click() })
     expect(faux.lecturesNote).toHaveLength(2)
     expect(champNote()!.value).toBe('Relue.')
+  })
+
+  // AUDIT DU 28/11/2026 (lib/versionLue.ts) : la mise à jour retient la pièce telle que lue. Ouverte dans un second onglet,
+  // la fiche écrasait, champ par champ, une pièce modifiée depuis — et se fermait sur un « enregistrée » muet.
+  it('une pièce changée depuis sa lecture n’est pas écrasée : rien n’est écrit, la liste se relit, la fiche le dit', async () => {
+    faux.noteLue = { data: null, error: null }
+    const { fermee, enregistree } = monterNote()
+    await act(async () => {})
+    // Une autre session change le tiers entre la lecture et le clic.
+    Object.assign(faux.base.get('piece-1')!, { tiers: 'Autre fournisseur' })
+    await act(async () => { enregistrer().click() })
+    expect(faux.updates).toHaveLength(1)
+    expect(faux.base.get('piece-1')!.tiers).toBe('Autre fournisseur')
+    expect(screen.getByText(PIECE_CHANGEE_DEPUIS)).toBeTruthy()
+    expect(fermee).not.toHaveBeenCalled()
+    expect(enregistree).toHaveBeenCalledTimes(1)
   })
 
   it('illisible, l’enregistrement de la pièce part sans elle', async () => {

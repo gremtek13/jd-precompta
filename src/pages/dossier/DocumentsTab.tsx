@@ -51,6 +51,10 @@ const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
 // CotisationsTab). Alimentée automatiquement par le tri de AjouterDocumentsModal (même point d'entrée
 // que Pièces, voir PiecesTab) — reclassable et complétable ici à la main.
 // `ficheDemandee` : la fiche qu'un autre onglet demande d'ouvrir (la Vue d'ensemble, BOR6T-Q2 (A)) ; absente, rien ne s'ouvre seul.
+/** Le reclassement d'un document qu'aucune ligne n'a rendu : changé depuis la lecture, ou écarté par la base. */
+export const CATEGORIE_DU_DOCUMENT_CHANGEE =
+  'La catégorie du document n’a pas été changée : il a changé depuis la lecture de la liste, ou la base ne l’a pas laissé écrire. La liste est relue.'
+
 export default function DocumentsTab({ dossierId, ficheDemandee = null, onFicheDemandeePrise }: {
   dossierId: string; ficheDemandee?: FicheDemandee | null; onFicheDemandeePrise?: () => void
 }) {
@@ -325,12 +329,15 @@ export default function DocumentsTab({ dossierId, ficheDemandee = null, onFicheD
 
   async function changerCategorie(doc: DocumentDivers, categorie: CategorieDocument) {
     setErreurDe(doc.id)
-    const { error: erreurCategorie } = await supabase.from('documents_divers').update({ categorie }).eq('id', doc.id)
+    // La catégorie lue se retient, et la ligne rendue se lit (audit du 28/11/2026) : une mise à jour que la base n'applique
+    // pas ne lève rien, et un document reclassé depuis un autre onglet était reclassé ici sans que personne le voie.
+    const { data: reclasse, error: erreurCategorie } = await supabase.from('documents_divers').update({ categorie })
+      .eq('id', doc.id).eq('categorie', doc.categorie).select('id').maybeSingle()
     // Refusé, le choix se DIT : la relecture remet l'ancienne catégorie dans la liste, et sans un mot l'opérateur
     // croirait son choix pris — puis chercherait le document sous la nouvelle.
     setError(erreurCategorie
       ? `La catégorie du document n’a pas pu être changée : ${finDePhrase(messageErreur(erreurCategorie, 'refus de la base'))}`
-      : null)
+      : reclasse ? null : CATEGORIE_DU_DOCUMENT_CHANGEE)
     load()
   }
 

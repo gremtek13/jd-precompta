@@ -85,6 +85,12 @@ vi.mock('../../lib/supabase', async () => {
       then: (suite: (r: unknown) => unknown, echec?: (e: unknown) => unknown) => {
         if (operation !== 'select') {
           faux.ecritures.push({ table, operation, valeur, ids: [...ids] })
+          // Une mise à jour rend les lignes que ses filtres désignent (audit du 28/11/2026) : la version lue qu'elle retient, et
+          // la ligne qu'elle a écrite, lue par `.select('id').maybeSingle()`. Sans elles, l'écran la dit « changée depuis ».
+          if (operation === 'update') {
+            const rendues = filtrer(faux.parTable[table] ?? [], predicats).map((l) => ({ id: l.id }))
+            return Promise.resolve({ data: unique ? (rendues[0] ?? null) : rendues, error: null, ...(compteDemande ? { count: ids.length } : {}) }).then(suite, echec)
+          }
           return Promise.resolve({ data: null, error: null, ...(compteDemande ? { count: ids.length } : {}) }).then(suite, echec)
         }
         if (unique) return Promise.resolve({ data: null, error: null }).then(suite, echec)
