@@ -582,6 +582,16 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
 
   // ── Ce que la base refusera, avec ses mots. ─────────────────────────────────────────────────────────────
   const derniere = d.anneesValidees.length > 0 ? Math.max(...d.anneesValidees) : null
+  // HORS DE 2000 À 2100 (`valider_exercice`, « Exercice invalide. », 22023 ; `exercices_valides_annee`) : rien ne borne la date
+  // d'une pièce, d'un mouvement ni d'une écriture, et l'exercice d'une date mal lue (1999) se propose à la validation — la base
+  // le refuserait au clic, d'un mot que personne ne relierait à cette date (confrontation du 28/11/2026, refusDeLaValidation.test.ts).
+  if (d.annee < 2000 || d.annee > 2100) {
+    bloque({
+      id: 'exercice-hors-bornes', nb: null, cible: 'pieces', message: 'Exercice invalide.',
+      detail: `La base ne valide que les exercices de 2000 à 2100. Une pièce, un mouvement ou une écriture daté de ${d.annee} porte `
+        + 'sans doute une date mal lue : la corriger, et cet exercice ne se proposera plus.',
+    })
+  }
   if (d.annee >= d.anneeCourante) {
     bloque({ id: 'exercice-en-cours', nb: null, cible: 'cloture', message: `L'exercice ${d.annee} n'est pas terminé : il se valide une fois clos.` })
   }

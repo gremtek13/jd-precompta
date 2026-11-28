@@ -377,6 +377,20 @@ describe('prealablesDeValidation — ce que la base refusera, avec ses mots', ()
     expect(ids(donnees({ annee: 2025, anneeCourante: 2026 }))).not.toContain('exercice-en-cours')
   })
 
+  // `valider_exercice` refuse « Exercice invalide. » hors de 2000 à 2100 (et `exercices_valides_annee` le tient) ; rien ne borne
+  // la date d'une pièce, d'un mouvement ni d'une écriture, et un exercice de 1999 se propose dès qu'une date mal lue y tombe
+  // (`prochainExerciceAValider`). Après 2100, l'exercice est en cours : `exercice-en-cours` le dit déjà (28/11/2026).
+  it('refuse un exercice hors de 2000 à 2100, aux mots de la base, et rien à ses bornes', () => {
+    const avant = prealable(donnees({ annee: 1999, anneeCourante: 2026 }), 'exercice-hors-bornes')
+    expect(avant?.message).toBe('Exercice invalide.')
+    expect(avant?.bloquant).toBe(true)
+    expect(avant?.detail).toContain('1999')
+    expect(prealablesDeValidation(donnees({ annee: 1999, anneeCourante: 2026 })).validable).toBe(false)
+    expect(ids(donnees({ annee: 2000, anneeCourante: 2026 }))).not.toContain('exercice-hors-bornes')
+    expect(ids(donnees({ annee: 2101, anneeCourante: 2026 }))).toContain('exercice-hors-bornes')
+    expect(ids(donnees({ annee: 2100, anneeCourante: 2101 }))).not.toContain('exercice-hors-bornes')
+  })
+
   it('refuse un exercice déjà validé, ou pris hors de l’ordre', () => {
     expect(prealable(donnees({ anneesValidees: [2025] }), 'deja-valide')?.message).toBe("L'exercice 2025 est déjà validé, ou un exercice postérieur l'est.")
     expect(prealable(donnees({ anneesValidees: [2023] }), 'ordre')?.message).toBe("L'exercice 2024 n'est pas validé : les exercices se valident dans l'ordre.")

@@ -1412,8 +1412,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   les DEUX sens ; la banque fait foi sous `min(2 %, 5 €)` ; un mouvement n'a qu'un lien
   (`lignes_bancaires_un_seul_rapprochement`) → « LA BANQUE FAIT FOI, MAIS SOUS UN SEUIL ». **Un exercice validé se
   fige** par DÉCLENCHEURS, frontière au 31 décembre, deux sorties seulement (suppression du dossier, restauration) ; une
-  échéance de cotisation se fige à la date qui la compte ; préalables dits avant le clic (`prealablesValidation.ts`)
-  → « UN EXERCICE VALIDÉ SE FIGE EN BASE » ; depuis le 10/11/2026, son empreinte en forme 2 scelle aussi les pièces
+  échéance de cotisation se fige à la date qui la compte ; préalables dits avant le clic (`prealablesValidation.ts`), chaque
+  refus de `valider_exercice` et des déclencheurs de ses tables rangé dans `refusDeLaValidation.test.ts`, qui part de l'export
+  → « UN EXERCICE VALIDÉ SE FIGE EN BASE », « LES REFUS DE LA VALIDATION CONFRONTÉS AUX PRÉALABLES DE L'ÉCRAN » ; depuis le 10/11/2026, son empreinte en forme 2 scelle aussi les pièces
   citées et la 2035, et le stockage garde le fichier d'une pièce figée (`fichier_fige`) → « INAL1 ET INAL2 : LA PIÈCE
   FIGÉE DANS LE STOCKAGE ET L'EMPREINTE EN FORME 2 (PRÉPARÉES, PAS APPLIQUÉES) », et depuis le 26/11/2026 (254) celui d'une
   pièce qu'une écriture libre cite → « RA253 : LE FICHIER D'UNE PIÈCE CITÉE EN PRODUCTION (254) » ; la numérotation n'appelle plus les
