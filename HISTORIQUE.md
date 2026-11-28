@@ -55534,3 +55534,19 @@ signe de l'extourne et de la contre-passation, chaque écriture comptée une foi
 les verrous `useRef` et la relecture après chaque geste, la version lue, l'assistant (ni libellé, ni motif, ni `compte_lib`).
 **Plausibles, laissés** : l'état des écritures libres se télécharge sur des pièces lues en partie (« hors du jeu chargé ») ; le
 libellé saisi d'un compte part au FEC (CompteLib) sans l'avertissement du libellé de l'écriture. Questions : ELRA-Q1, ELRA-Q2.
+
+### 28/11/2026 — RELECTURE ADVERSE DE LA 2035 ET DES COTISATIONS D'UN BNC DE SANTÉ (DEPUIS LE 05/11/2026) : AUCUN DÉFAUT ÉTABLI
+
+(Agent architecte, sans base ni migration.) Relus : la part « autres impôts » (EXP58-Q6) de la composition à BT, BS, BV et DD ;
+la CSG-CRDS (6,8 sur 9,7 points, au total de l'année) ; la 2035-SD (ligne 1, tableau I, colonne 7 contre CH, ligne (B) du cadre
+7) ; le cumul repris (EXP58-Q5) et la dernière annuité ; la réunion des échéances (CSG, part, description) ; la régularisation
+(la CIPAV par `definitivesDeLUrssaf`) ; la 2035-E ; les écritures libres de la 2035 et de l'estimation ; `unCompteUnPoste`. La
+notice 2035-NOT-SD 2026 relue à son empreinte (`356e1e8d…257b`) : renvois (13), (24) à (26), ligne 13. Deux sondes jetables, à
+graine fixe, retirées après usage : 400 déclarations tirées (pièces, Madelin, PER, échéances avec CSG et part, biens) — aucun « dont »
+au-dessus de sa porteuse à l'euro, BR la somme de ses quinze cases, DD = CE − CN + BK + BV, le tableau I égal à CH ligne à
+ligne — et 3 000 biens repris (cumul monotone, borné, égal à la reprise au 31/12, plan = valeur − cumul). Rien n'a viré.
+Plausibles, posés au cabinet : DD baisse de la CFP et de la CURPS rangées en BS (la notice exclut « les cotisations et
+contributions sociales » de l'assiette, le renvoi (26) ne rend que BK et BV : REL2035-Q1) ; une écriture libre sous « Charges
+sociales personnelles » hors des cotisations de l'estimation, sous « Cotisations sociales personnelles » dedans, et jamais en
+BT (REL2035-Q2) ; les écritures libres hors de `comptes-sur-plusieurs-postes` (REL2035-Q3) ; la projection d'une première année
+divisée par les mois écoulés depuis le 1er janvier, pas depuis le début d'activité (REL2035-Q4).
