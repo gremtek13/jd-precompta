@@ -4,6 +4,8 @@
 // Les visites de debordements.mjs vivent dans le même document (une adresse qui ne change que par son fragment ne recharge pas la
 // page) : une saisie restée ouverte s'abandonne d'abord, et la table du faux garde d'une visite à l'autre ce qui a été passé,
 // jusqu'au retrait. Chaque vue de vitrine.mjs a son propre contexte : elle repart de la table vide.
+// L'adresse du banc : le port de `vite.config.ts`, 5199 sauf `BANC_PORT` (deux bancs à la fois, voir gestes.mjs).
+export const BASE_DU_BANC = `http://127.0.0.1:${process.env.BANC_PORT ?? 5199}/`
 export const SECTION_LIBRE = (page) => page.locator('.card', { has: page.getByRole('heading', { name: 'Écritures de l’expert-comptable' }) })
 export async function saisieLibreOuverte(page) {
   const section = SECTION_LIBRE(page)
@@ -59,7 +61,7 @@ export async function ecritureLibreRetiree(page) {
 // une charge constatée d'avance du 31 décembre, hors de la 2035 avec son extourne (le 486000 face au 618000). Idempotent dans un même
 // document : rien ne se repasse si la seconde est déjà dans la liste (les visites de debordements.mjs partagent la table du faux).
 export async function ecrituresLibresSemees(page, dossier = 'd1') {
-  await page.goto(`http://127.0.0.1:5199/#/dossiers/${dossier}/ecritures`)
+  await page.goto(`${BASE_DU_BANC}#/dossiers/${dossier}/ecritures`)
   const section = SECTION_LIBRE(page)
   await section.waitFor({ timeout: 10000 })
   await section.getByText(/^Aucune écriture libre dans l’exercice|EL\d{4}-\d{4}/).first().waitFor({ timeout: 10000 })
@@ -95,7 +97,7 @@ export async function panneauFerme(page) {
 // puis la Révision de 2025 et la fiche du cycle « Ensemble ». Idempotent dans un même document, comme `ecrituresLibresSemees`.
 export async function ensembleDeLExerciceClos(page) {
   await panneauFerme(page)
-  await page.goto('http://127.0.0.1:5199/#/dossiers/d8/ecritures')
+  await page.goto(`${BASE_DU_BANC}#/dossiers/d8/ecritures`)
   const section = SECTION_LIBRE(page)
   await section.waitFor({ timeout: 10000 })
   await page.getByText('2025', { exact: true }).first().click()
@@ -115,7 +117,7 @@ export async function ensembleDeLExerciceClos(page) {
     await section.getByRole('button', { name: 'Passer l’écriture', exact: true }).click()
     await section.getByRole('cell', { name: /EL2025-0001$/ }).waitFor({ timeout: 10000 })
   }
-  await page.goto('http://127.0.0.1:5199/#/dossiers/d8/revision')
+  await page.goto(`${BASE_DU_BANC}#/dossiers/d8/revision`)
   const ouvrir = page.getByRole('button', { name: /^Ouvrir le cycle Ensemble/ })
   await ouvrir.waitFor({ timeout: 10000 })
   await ouvrir.click()
@@ -132,9 +134,9 @@ export async function ensembleDeLExerciceClos(page) {
 export async function ecrituresFigeesOuvertes(page, exercice = '2025') {
   await panneauFerme(page)
   await page.evaluate(() => localStorage.setItem('banc-ecritures-figees', '1'))
-  await page.goto('http://127.0.0.1:5199/#/dossiers/d9/checklist')
+  await page.goto(`${BASE_DU_BANC}#/dossiers/d9/checklist`)
   await page.waitForTimeout(300)
-  await page.goto('http://127.0.0.1:5199/#/dossiers/d9/ecritures')
+  await page.goto(`${BASE_DU_BANC}#/dossiers/d9/ecritures`)
   const section = SECTION_LIBRE(page)
   await section.waitFor({ timeout: 10000 })
   await page.getByRole('tab', { name: exercice, exact: true }).first().click()
@@ -193,9 +195,9 @@ export async function contrePassationRetiree(page) {
 export async function pieceCiteeFigeeOuverte(page) {
   await panneauFerme(page)
   await page.evaluate(() => localStorage.setItem('banc-ecritures-figees', '1'))
-  await page.goto('http://127.0.0.1:5199/#/dossiers/d9/checklist')
+  await page.goto(`${BASE_DU_BANC}#/dossiers/d9/checklist`)
   await page.waitForTimeout(300)
-  await page.goto('http://127.0.0.1:5199/#/dossiers/d9/pieces')
+  await page.goto(`${BASE_DU_BANC}#/dossiers/d9/pieces`)
   await page.getByRole('tab', { name: '2026', exact: true }).first().click()
   const cellule = page.getByRole('cell', { name: 'SCI Les Platanes' }).first()
   await cellule.waitFor({ timeout: 10000 })
@@ -217,9 +219,9 @@ export async function exportOuvert(page, levier = null) {
     if (l === null) localStorage.removeItem('banc-reglages-export')
     else localStorage.setItem('banc-reglages-export', l)
   }, levier)
-  await page.goto('http://127.0.0.1:5199/#/dossiers/d1/checklist')
+  await page.goto(`${BASE_DU_BANC}#/dossiers/d1/checklist`)
   await page.waitForTimeout(300)
-  await page.goto('http://127.0.0.1:5199/#/dossiers/d1/ecritures')
+  await page.goto(`${BASE_DU_BANC}#/dossiers/d1/ecritures`)
   const bouton = page.getByRole('button', { name: 'Exporter vers un logiciel comptable', exact: true })
   await bouton.waitFor({ timeout: 10000 })
   await page.waitForFunction(() => {

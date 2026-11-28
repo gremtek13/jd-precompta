@@ -18,7 +18,7 @@ import type {
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import FraisSansPosteNonComptes from '../../components/FraisSansPosteNonComptes'
-import { messageErreur } from '../../lib/messageErreur'
+import { finDePhrase, messageErreur } from '../../lib/messageErreur'
 import { lectureDuDossier, lireLesVentesFacturees, type LectureVentesFacturees } from '../../lib/ventesFactureesLecture'
 import { lireLaCaisse, type LectureDeLaCaisse } from '../../lib/caisseLecture'
 import { paiementsParLaCaisseDuDossier } from '../../lib/paiementParLaCaisse'
@@ -383,7 +383,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
     if (!window.confirm('Retirer ce repère annuel ?')) return
     // Refusé, le retrait se DIT : la relecture remet le repère dans la liste, et sans un mot on le croirait parti.
     const { error: erreurRetrait } = await supabase.from('references_annuelles').delete().eq('id', id)
-    setError(erreurRetrait ? `Le repère annuel n’a pas pu être retiré : ${messageErreur(erreurRetrait, 'refus de la base')}.` : null)
+    setError(erreurRetrait ? `Le repère annuel n’a pas pu être retiré : ${finDePhrase(messageErreur(erreurRetrait, 'refus de la base'))}` : null)
     load()
   }
 
@@ -444,7 +444,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable, 
   async function supprimerPoste(id: string) {
     if (!window.confirm('Retirer ce poste ?')) return
     const { error: erreurRetrait } = await supabase.from('references_postes_annuels').delete().eq('id', id)
-    setError(erreurRetrait ? `Le poste n’a pas pu être retiré : ${messageErreur(erreurRetrait, 'refus de la base')}.` : null)
+    setError(erreurRetrait ? `Le poste n’a pas pu être retiré : ${finDePhrase(messageErreur(erreurRetrait, 'refus de la base'))}` : null)
     load()
   }
 

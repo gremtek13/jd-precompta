@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useModulesOuverts } from '../../context/ModulesOuverts'
 import { estOuvert } from '../../lib/modulesDuCabinet'
 import { supabase } from '../../lib/supabase'
-import { messageErreur } from '../../lib/messageErreur'
+import { finDePhrase, messageErreur } from '../../lib/messageErreur'
 import type { ModeleComptable } from '../../lib/engagement'
 import { ajouterJours, anneeEtMoisEcoules, aujourdHuiAParis, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
 import { SANS_IMPOT_SUR_LES_SOCIETES, echeanceDuModeComptable, estEcheanceDeLImpot, prochainesEcheancesDuDossier } from '../../lib/echeancesFiscales'
@@ -111,7 +111,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
     if (!info) return
     const { error: erreurCoche } = await supabase.from('informations_dossier').update({ [champ]: !info[champ] }).eq('id', info.id)
     // Refusée, la coche se DIT : la relecture la remet comme avant, et sans un mot on croirait le justificatif noté.
-    if (erreurCoche) window.alert(`Ce justificatif n’a pas pu être marqué : ${messageErreur(erreurCoche, 'refus de la base')}.`)
+    if (erreurCoche) window.alert(`Ce justificatif n’a pas pu être marqué : ${finDePhrase(messageErreur(erreurCoche, 'refus de la base'))}`)
     load()
   }
 

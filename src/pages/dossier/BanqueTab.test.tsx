@@ -14,6 +14,7 @@ import type { Predicat } from '../../test/filtresPostgrest'
 import { NON_VALIDEE } from '../../test/ecritures'
 import { PLAN_DECALE, PLAN_PAR_DEFAUT, PREFIXES_DECALES } from '../../lib/planComptable'
 import { LIBELLES_PAR_DEFAUT, PREFIXES_PAR_DEFAUT } from '../../test/modeles'
+import { formatMoney } from '../../lib/format'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
 // `validerEtRapprocherLot` juste au-dessus dans le fichier : il ne se désactivait que via
@@ -1566,6 +1567,26 @@ describe('BanqueTab — import d’un relevé', () => {
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
 
     expect(faux.insertions.filter((i) => i.table === 'lignes_bancaires')).toHaveLength(1)
+  })
+
+  // LE RELEVÉ QUI NE BOUCLE PAS SE DIT EN EUROS (28/11/2026, vu au banc des gestes) : l'alerte écrivait ses montants par
+  // `toFixed(2)` — « Solde d'ouverture 1000.00 € + mouvements 1204.50 € » —, à l'anglaise, quand tout l'écran les écrit
+  // « 1 000,00 € ». Le relevé : 1 000 € d'ouverture, 250 € reçus, 100 € payés, une clôture à 1 050 € (il manque 100 €).
+  it('dit le relevé qui ne boucle pas en montants écrits comme le reste de l’écran', async () => {
+    reinitialiser()
+    rendre()
+    const csv = 'Date;Libellé;Montant\n01/06/2025;SOLDE AU 31/05/2025;1 000,00\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n'
+      + '05/06/2025;VIR CLIENT MARTIN;250,00\n30/06/2025;SOLDE AU 30/06/2025;1 050,00\n'
+    const champ = document.querySelector('input[type=file][accept^=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File([csv], 'releve-juin-incomplet.csv', { type: 'text/csv' })] } }) })
+    const bouton = await screen.findByRole('button', { name: /Importer \d+ ligne\(s\)/ })
+    await act(async () => { bouton.click() })
+    await waitFor(() => expect(alertes.some((a) => a.includes('Ce relevé ne boucle pas'))).toBe(true))
+    const alerte = alertes.find((a) => a.includes('Ce relevé ne boucle pas')) ?? ''
+    expect(alerte).not.toMatch(/\d\.\d{2} €/)
+    expect(alerte).toContain(`Solde d'ouverture ${formatMoney(1000)} + mouvements ${formatMoney(150)} = ${formatMoney(1150)}`)
+    expect(alerte).toContain(`le solde de clôture indique ${formatMoney(1050)}`)
+    expect(alerte).toContain(`Écart de ${formatMoney(100)}`)
   })
 })
 

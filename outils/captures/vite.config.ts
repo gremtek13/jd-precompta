@@ -70,7 +70,8 @@ export default defineConfig({
   },
   server: {
     host: '127.0.0.1',
-    port: 5199,
+    // 5199, sauf `BANC_PORT` : un second banc (une autre copie de travail) se sert à côté du premier.
+    port: Number(process.env.BANC_PORT ?? 5199),
     strictPort: true,
     watch: { ignored: [sousLesCopiesDeTravail, '**/node_modules/**'] },
     // Une liste posée REMPLACE celle de Vite : la racine de l'espace de travail y revient, avec le dossier réel.

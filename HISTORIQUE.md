@@ -55650,3 +55650,18 @@ du cycle change après la revue, la cause n'entrant que dans « révisé » (REV
 (un 512 propre routé vers elle, plusieurs relevés d'un compte jamais additionnés, un compte sans relevé « inconnu »), l'état d'une
 décision dont le solde a changé, la variation sur un précédent nul, l'équilibre et les rubriques du bilan (sans compensation, deux
 512 posés chacun), la colonne N−1 recalculée, la confrontation de l'ouverture, les verrous et les relectures des gestes.
+### 28/11/2026 — LES GESTES QUI ÉCRIVENT, JOUÉS DANS UN VRAI NAVIGATEUR
+
+(Agent dev ; rien en production.) Le faux Supabase du banc tient les écritures en mémoire sous le levier `banc-ecritures` : `insert`,
+`update`, `upsert`, `delete` appliqués aux lignes servies, `select` et `count` rendus ; huit fonctions des gestes imitées par leur
+seul effet, d'après leur texte exporté (affecter, en lot, et le retrait ; une échéance de cotisation et le retrait ; une opération de
+caisse et son retrait ; une pièce réglée par la caisse), jamais leurs refus — le banc n'est pas la base ; un filtre d'écriture non
+tenu (`or`, `like`…) se nomme au journal `window.__ecrituresDuBanc` ; `banc-ecritures-refus` rend une écriture en erreur. Sans le
+levier, `debordements.mjs` rend le même compte au caractère près aux quatre largeurs (ses mesures sorties dans `mesures.mjs`) ;
+`BANC_PORT` sert un second banc. `gestes.mjs` joue 25 gestes à 1 440 et 390 px (rapprocher et défaire, affecter, ignorer, toujours
+ignorer, cotisation, import d'un relevé qui boucle, qui ne boucle pas, redéposé, les trois lots, valider une pièce et une sélection,
+une échéance, la caisse du cabinet et du praticien, une pièce payée en espèces, une écriture libre, huit refus) : état d'après à
+l'écran et dans un autre onglet, double clic du même instant écrit une fois, console, messages bruts, verrous — tous verts.
+**Corrigé** : les montants « 1000.00 € » de l'alerte d'un relevé qui ne boucle pas (`phraseDuReleveQuiNeBouclePas`) ; le second point
+d'un refus déjà fini, dans quatorze messages (`finDePhrase`). **Relevé** : le focus retombe sur le document après presque chaque
+geste (GESTES-Q1). Pas servis : la facture, la validation d'un exercice, la ventilation, le virement personnel, « Saisir un mois ».

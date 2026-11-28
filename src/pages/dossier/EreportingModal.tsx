@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiAParis, formatDate } from '../../lib/format'
 import { telechargerTexte } from '../../lib/fec'
-import { messageErreur } from '../../lib/messageErreur'
+import { finDePhrase, messageErreur } from '../../lib/messageErreur'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import type { DossierEreporting } from '../../lib/ereporting'
 import {
@@ -143,7 +143,7 @@ function saisieDuRegime(f: FormulaireRegime): SaisieRegime {
 }
 
 // Une lecture qui LÈVE (le réseau tombe) plutôt que de rendre une erreur : la fenêtre le dit, avec la raison.
-const raisonDeLecture = (err: unknown) => `L’e-reporting du dossier n’a pas pu être lu : ${messageErreur(err, 'raison inconnue')}.`
+const raisonDeLecture = (err: unknown) => `L’e-reporting du dossier n’a pas pu être lu : ${finDePhrase(messageErreur(err, 'raison inconnue'))}`
 
 const parDepuisDecroissant = (a: RegimeEreporting, b: RegimeEreporting) =>
   a.depuis < b.depuis ? 1 : a.depuis > b.depuis ? -1 : a.cree_le < b.cree_le ? 1 : a.cree_le > b.cree_le ? -1 : a.id < b.id ? 1 : -1

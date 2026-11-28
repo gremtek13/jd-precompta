@@ -1,4 +1,5 @@
 import { libelleDeLigne, type ColumnMapping } from './csv'
+import { formatMoney } from './format'
 
 // Lignes de solde d'un relevé bancaire, et contrôle de cohérence qui en découle.
 //
@@ -167,4 +168,12 @@ export function controlerSolde(
 
 function arrondi(n: number): number {
   return Number(n.toFixed(2))
+}
+
+// LE RELEVÉ QUI NE BOUCLE PAS, DIT APRÈS L'IMPORT (CSV et PDF, BanqueTab), ses montants comme tout l'écran les écrit (`formatMoney`) :
+// l'alerte les écrivait par `toFixed(2)`, à l'anglaise — « Solde d'ouverture 1000.00 € » (vu au banc des gestes, 28/11/2026).
+export function phraseDuReleveQuiNeBouclePas(controle: ControleSolde): string {
+  return `⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${formatMoney(controle.soldeInitial)} + mouvements ${formatMoney(controle.sommeMouvements)} `
+    + `= ${formatMoney(controle.attendu)}, alors que le solde de clôture indique ${formatMoney(controle.soldeFinal)}.\n`
+    + `Écart de ${formatMoney(Math.abs(controle.ecart))} : il manque probablement des opérations dans le fichier.`
 }

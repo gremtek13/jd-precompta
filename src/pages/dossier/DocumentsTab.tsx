@@ -17,7 +17,7 @@ import { documentsARelire, relireTextesDocuments } from '../../lib/relectureDocu
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { chargerDoublonsDeTexte } from '../../lib/doublonsTexte'
-import { messageErreur } from '../../lib/messageErreur'
+import { finDePhrase, messageErreur } from '../../lib/messageErreur'
 import { retirerFichiers } from '../../lib/stockage'
 import { AUCUNE_LIGNE_SUPPRIMEE, confirmationSuppression, messageBilanSuppression } from '../../lib/bilanSuppression'
 import { ouvrirApercu } from '../../lib/apercu'
@@ -329,7 +329,7 @@ export default function DocumentsTab({ dossierId, ficheDemandee = null, onFicheD
     // Refusé, le choix se DIT : la relecture remet l'ancienne catégorie dans la liste, et sans un mot l'opérateur
     // croirait son choix pris — puis chercherait le document sous la nouvelle.
     setError(erreurCategorie
-      ? `La catégorie du document n’a pas pu être changée : ${messageErreur(erreurCategorie, 'refus de la base')}.`
+      ? `La catégorie du document n’a pas pu être changée : ${finDePhrase(messageErreur(erreurCategorie, 'refus de la base'))}`
       : null)
     load()
   }
@@ -363,7 +363,7 @@ export default function DocumentsTab({ dossierId, ficheDemandee = null, onFicheD
         setDocuments((liste) => liste.map((d) => (
           d.id === doc.id && d.sous_dossier_id === sousDossierId ? { ...d, sous_dossier_id: avant } : d)))
         setError(erreurMaj
-          ? `Le sous-dossier du document n’a pas pu être changé : ${messageErreur(erreurMaj, 'refus de la base')}.`
+          ? `Le sous-dossier du document n’a pas pu être changé : ${finDePhrase(messageErreur(erreurMaj, 'refus de la base'))}`
           : 'Le sous-dossier du document n’a pas été changé : la base n’a modifié aucune ligne (le document a peut-être été retiré entre-temps).')
       } else {
         setError(null)

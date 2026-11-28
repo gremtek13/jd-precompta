@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { messageErreur } from './messageErreur'
+import { finDePhrase, messageErreur } from './messageErreur'
 
 // Le cas qui justifie tout le module est le PREMIER : une erreur Postgrest est un objet NU. Un test
 // qui ne poserait que des instances d'`Error` passerait au vert avec le défaut d'origine intact —
@@ -50,5 +50,18 @@ describe('messageErreur', () => {
     expect(messageErreur(null, "L'import a échoué.")).toBe("L'import a échoué.")
     // Et jamais à la place d'un message réel : le repli ne sert QUE faute de mieux.
     expect(messageErreur({ message: 'timeout' }, "L'import a échoué.")).toBe('timeout')
+  })
+})
+
+describe('finDePhrase', () => {
+  it('ajoute le point d’un message qui n’en a pas', () => {
+    expect(finDePhrase('permission denied for table pieces')).toBe('permission denied for table pieces.')
+  })
+  it('ne double pas le point, ni ne suit un point d’exclamation, d’interrogation ou de suspension', () => {
+    expect(finDePhrase('Une pièce figée ne se valide plus.')).toBe('Une pièce figée ne se valide plus.')
+    expect(finDePhrase('Refusé !')).toBe('Refusé !')
+    expect(finDePhrase('Vraiment ?')).toBe('Vraiment ?')
+    expect(finDePhrase('Et ensuite…')).toBe('Et ensuite…')
+    expect(finDePhrase('Fini. ')).toBe('Fini.')
   })
 })
