@@ -1,5 +1,5 @@
 -- LE RETOUR DE `consommations_de_l_assistant` (ASSIST-Q1 (A), préparée le 27/11/2026 :
--- supabase/preparees/20261127230000_consommations_de_l_assistant.sql). DESTRUCTIF : il retire la table et tout le journal de
+-- supabase/preparees/20261127232000_consommations_de_l_assistant.sql). DESTRUCTIF : il retire la table et tout le journal de
 -- consommation qu'elle porte, sa garde et la lecture du super-administrateur — jamais sans l'accord du cabinet. À COLLER (il
 -- retire une table et deux fonctions : l'outil d'application attendrait une confirmation), dans une transaction, avec sa ligne
 -- d'historique ; APRÈS que la constante `CONSOMMATION_TENUE_PAR_LA_FONCTION` de `agent-comptable` a été rebaissée et la

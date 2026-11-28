@@ -55467,7 +55467,7 @@ dans les quatre états, aucune faute neuve ; `rls.sql` 296/1 358/0/178 ; retours
 ### 27/11/2026 — ASSIST-Q1 : LE JOURNAL DE CONSOMMATION DE L'ASSISTANT (PRÉPARÉE, PAS APPLIQUÉE)
 
 (Agent architecte ; rien en production, aucun outil de la base, rien déployé.) ASSIST-Q1 (A) écrite. **La base** :
-`consommations_de_l_assistant` préparée (20261127230000, md5 `a6d0a668…`, 19 605 caractères, par l'outil ; retour 230100, à
+`consommations_de_l_assistant` préparée (20261127232000 depuis l'intégration, la 230000 étant prise par SECU4-Q2 ; md5 `92731bb6…` (son renvoi au retour corrigé), 19 605 caractères, par l'outil ; retour 232100, à
 coller, destructif) — une ligne par appel au modèle (cabinet en cascade, dossier mis à nul, compte de la session sans clé, instant
 posé par la garde, tokens entiers bornés à 10 M et 1 M), RLS sans policy et `revoke all` aux rôles de l'API (HR5 la met à part,
 le bloc CO juge l'inverse), une garde invoker (ni réécriture ni sortie hors des deux clés étrangères ; le dossier d'un autre cabinet

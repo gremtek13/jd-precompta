@@ -11,9 +11,9 @@ import { fichiersDuSchema } from '../test/schema'
 // bornes et la forme de ce que la lecture rend, et relit ces sommes pour l'écran des comptes. Les essais de la base
 // (supabase/essais/consommationsDeLAssistant.sql, sa suppression sur une réplique, le bloc CO de rls.sql) se jouent sur la base.
 
-const CHEMIN = 'supabase/preparees/20261127230000_consommations_de_l_assistant.sql'
+const CHEMIN = 'supabase/preparees/20261127232000_consommations_de_l_assistant.sql'
 const MIGRATION = readFileSync(new URL(`../../${CHEMIN}`, import.meta.url), 'utf8')
-const RETOUR = readFileSync(new URL('../../supabase/preparees/retour/20261127230100_retour_consommations_de_l_assistant.sql', import.meta.url), 'utf8')
+const RETOUR = readFileSync(new URL('../../supabase/preparees/retour/20261127232100_retour_consommations_de_l_assistant.sql', import.meta.url), 'utf8')
 const sansCommentaires = (t: string) => t.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n')
 
 describe('le module redit la migration', () => {

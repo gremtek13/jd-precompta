@@ -3,7 +3,7 @@
 // l'assistant se comptait sur les lignes `agent_conversations` que CET écran écrit après la réponse (AssistantTab,
 // `enregistrer`), avec les tokens qu'elle lui rend, et que tout le cabinet du dossier réécrit ou retire ; un appel direct de la
 // fonction, une réponse en erreur après le modèle, n'en écrivaient aucune. La migration préparée `consommations_de_l_assistant`
-// (supabase/preparees/20261127230000_…) pose le journal : une ligne par appel au modèle, écrite et lue sous la clé du service,
+// (supabase/preparees/20261127232000_…) pose le journal : une ligne par appel au modèle, écrite et lue sous la clé du service,
 // aucun droit aux rôles de l'API ; le super-administrateur en lit les sommes par `consommation_de_l_assistant(p_depuis)`. Le récit :
 // HISTORIQUE.md, « 27/11/2026 — ASSIST-Q1 : LE JOURNAL DE CONSOMMATION DE L'ASSISTANT (PRÉPARÉE, PAS APPLIQUÉE) ».
 //

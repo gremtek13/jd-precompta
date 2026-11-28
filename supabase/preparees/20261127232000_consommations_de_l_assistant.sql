@@ -2,7 +2,7 @@
 -- cabinet le 27/11/2026) — PRÉPARÉE le 27/11/2026, PAS APPLIQUÉE. Le constat : HISTORIQUE.md, « 27/11/2026 — RELECTURE ADVERSE
 -- DE SÉCURITÉ DES EDGE FUNCTIONS » (le défaut connu `plafondTenuParLeNavigateur`) ; le récit : « 27/11/2026 — ASSIST-Q1 : LE
 -- JOURNAL DE CONSOMMATION DE L'ASSISTANT (PRÉPARÉE, PAS APPLIQUÉE) ». Son retour :
--- supabase/preparees/retour/20261127230100_retour_consommations_de_l_assistant.sql. Ses essais :
+-- supabase/preparees/retour/20261127232100_retour_consommations_de_l_assistant.sql. Ses essais :
 -- supabase/essais/consommationsDeLAssistant.sql (joué en production), consommationsDeLAssistantSuppression.sql (sur une
 -- réplique), le bloc CO de supabase/essais/rls.sql. Le module qui la redit : src/lib/consommationDeLAssistant.ts
 -- (`CONSOMMATION_TENUE_PAR_LA_FONCTION`, baissé), confronté à ce texte par src/lib/consommationDeLAssistant.test.ts ; la

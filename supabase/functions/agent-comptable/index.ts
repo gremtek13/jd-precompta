@@ -3571,7 +3571,7 @@ function balanceDesComptes(
 
 // ── DÉBUT CONSOMMATION ───────────────────────────────────────────────────────────────────────────────────────────────
 // LE JOURNAL DE CONSOMMATION DE L'ASSISTANT, QUE CETTE FONCTION ÉCRIT SEULE (ASSIST-Q1 (A), tranchée par le cabinet le
-// 27/11/2026 ; la migration préparée `consommations_de_l_assistant`, supabase/preparees/20261127230000_…). Jusqu'ici le plafond
+// 27/11/2026 ; la migration préparée `consommations_de_l_assistant`, supabase/preparees/20261127232000_…). Jusqu'ici le plafond
 // mensuel se comptait sur les lignes `agent_conversations` que le NAVIGATEUR écrit après la réponse, avec les tokens qu'elle lui
 // rend, et que tout le cabinet du dossier réécrit ou retire ; un appel direct, une réponse en erreur après le modèle, n'en
 // écrivaient aucune (le défaut connu `plafondTenuParLeNavigateur`, src/test/contratsFonctions.ts). Levée, la constante fait
