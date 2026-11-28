@@ -7199,6 +7199,19 @@ describe('BanqueTab — la date de valeur d’un relevé (EXP58-Q4)', () => {
     expect(alertes).toEqual([expect.stringContaining('1 déjà présente(s), ignorée(s)')])
   })
 
+  // Les listes de choix des colonnes nomment chaque colonne par son numéro ET son titre lu dans l'en-tête (28/11/2026) : le cabinet
+  // ne compte plus les colonnes de l'aperçu. Sans en-tête, le numéro seul — la première ligne est alors une opération.
+  it('les colonnes se choisissent sous leur titre d’en-tête ; sans en-tête, sous leur numéro seul', async () => {
+    reinitialiser()
+    rendre()
+    await deposer()
+    const options = (id: string) => [...(document.getElementById(id) as HTMLSelectElement).options].map((o) => o.textContent)
+    expect(options('colDate')).toEqual(['Colonne 1 — Date', 'Colonne 2 — Date de valeur', 'Colonne 3 — Libellé', 'Colonne 4 — Montant'])
+    expect(options('colSolde')).toEqual(['Aucune', 'Colonne 1 — Date', 'Colonne 2 — Date de valeur', 'Colonne 3 — Libellé', 'Colonne 4 — Montant'])
+    await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: 'La première ligne est un en-tête' })) })
+    expect(options('colDate')).toEqual(['Colonne 1', 'Colonne 2', 'Colonne 3', 'Colonne 4'])
+  })
+
   it('drapeau levé : « Aucune » ne garde rien, et la colonne du libellé se refuse', async () => {
     reinitialiser()
     drapeauDateDeValeur.leve = true

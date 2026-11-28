@@ -284,6 +284,19 @@ describe('l’entrepreneur individuel : la dénomination proposée, et son capit
     expect(propositionDeDenomination(NOM, saisie({ forme: '1000', denomination: '  Jeanne Exemple EI ' }))).toBeNull()
   })
 
+  // Le nom du DOSSIER est souvent un nom commercial (« Cabinet infirmier Moreau ») : une dénomination déjà saisie qui porte la mention
+  // (« Claire Moreau EI ») ne se voit plus proposer de la remplacer par « Cabinet infirmier Moreau EI » (parcours du MVP, 28/11/2026).
+  it('ne propose rien quand la saisie porte déjà la mention, avant ou après le nom', () => {
+    for (const d of ['Claire Moreau EI', 'EI Claire Moreau', 'Claire Moreau entrepreneur individuel', 'Entrepreneur individuel Claire Moreau', ' Claire Moreau EI ']) {
+      expect(propositionDeDenomination('Cabinet infirmier Moreau', saisie({ forme: '1000', denomination: d }))).toBeNull()
+    }
+    // La mention au milieu du texte ne compte pas : l'article la veut collée au nom, au début ou à la fin.
+    expect(propositionDeDenomination('Cabinet infirmier Moreau', saisie({ forme: '1000', denomination: 'Claire EI Moreau' }))?.texte)
+      .toBe('Cabinet infirmier Moreau EI')
+    expect(propositionDeDenomination('Cabinet infirmier Moreau', saisie({ forme: '1000', denomination: 'Moreau SEI' }))?.texte)
+      .toBe('Cabinet infirmier Moreau EI')
+  })
+
   it('un nom déjà suivi de « EI » ne le reçoit pas deux fois ; un nom vide ne propose rien', () => {
     expect(propositionDeDenomination('Jeanne Exemple EI', saisie({ forme: '1000' }))?.texte).toBe('Jeanne Exemple EI')
     expect(propositionDeDenomination('Jeanne Exemple EI', saisie({ forme: '1000', denomination: 'Jeanne Exemple EI' }))).toBeNull()

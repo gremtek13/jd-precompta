@@ -241,6 +241,11 @@ h3 { font-size: 1.02rem; }
    les noms de clients, qui passent à la ligne entre deux mots, qui s'écrasent. Repliée en fiche, la ligne reprend la
    règle des pastilles de téléphone (voir `td .badge`) — un téléphone n'a pas toujours la place du plus long libellé. */
 .badge-une-ligne { white-space: nowrap; }
+/* La pastille d'un titre (« à vérifier », « à traiter », « bloquant ») ne se plie pas non plus (28/11/2026). Le titre d'une carte
+   la porte en `display: flex` ; à 390 px, la mise en page rétrécissait d'abord la pastille, et « à vérifier » devenait une bulle
+   de deux lignes collée au titre (Banque, « 2 montants ne correspondent à aucun mouvement bancaire »). C'est le texte du titre,
+   qui se coupe entre deux mots, qui cède la place. */
+:is(h2, h3, h4) > .badge { flex-shrink: 0; white-space: nowrap; }
 /* Plusieurs pastilles dans une même cellule (« Validée », puis l'état de la transmission) : l'une sous l'autre, alignées comme
    le reste de la colonne — à gauche dans un tableau, à droite une fois repliée en fiche, où toutes les valeurs le sont. */
 .pastilles-empilees { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
@@ -1690,6 +1695,8 @@ a.btn { text-decoration: none; }
 .check-dot.check-manque { background: var(--color-danger); }
 .check-dot.check-attention { background: var(--color-warning); }
 .check-dot.check-cliquable { cursor: pointer; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent); }
+/* « Ton dossier chez ton cabinet » (CarteEtatDuDossier) : une liste de lignes de check, sans la puce ni le retrait d'une liste. */
+.liste-etat-dossier { list-style: none; margin: 0; padding: 0; }
 
 /* L'ENCART « FACTURE ÉLECTRONIQUE » (accueil du client, Vue d'ensemble du cabinet ; étape A6b2) : des lignes en colonnes que la
    place de la CARTE répartit seule (`auto-fit`), chacune un lien ou un bouton qui MÈNE à son écran — aucune fenêtre ne s'ouvre
@@ -1960,7 +1967,9 @@ a.btn { text-decoration: none; }
   .stat-card .stat-value { font-size: 1.5rem; }
 
   .checklist-item { flex-wrap: wrap; padding: 12px 14px; }
-  .checklist-item .checklist-item-body { flex-basis: 100%; }
+  /* Le texte reste À CÔTÉ de sa pastille (14 px et l'écart de 12) : à 100 %, il passait sous elle, et chaque ligne de « Ce qu'il
+     reste à envoyer » (« Mes pièces ») commençait par un point seul sur sa ligne (28/11/2026). Un bouton passe dessous, aligné. */
+  .checklist-item .checklist-item-body { flex-basis: calc(100% - 26px); }
   .checklist-item .btn { margin-left: 26px; }
 
   .mini-progress { width: 46px; }

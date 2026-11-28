@@ -219,6 +219,12 @@ export function choixDeForme(courante: string): ChoixDeForme[] {
 export const RAISON_DENOMINATION_EI =
   'La dénomination d’un entrepreneur individuel incorpore son nom, précédé ou suivi immédiatement des initiales « EI » ou des mots « entrepreneur individuel » (C. com., art. R526-27).'
 
+/** La saisie porte « EI » ou « entrepreneur individuel » au début ou à la fin, séparé du nom par un blanc. */
+function porteLaMentionEi(denomination: string): boolean {
+  const t = sansBlancsAuxBords(denomination)
+  return /(^|\s)EI$/.test(t) || /^EI\s/.test(t) || /(^|\s)entrepreneur individuel$/i.test(t) || /^entrepreneur individuel\s/i.test(t)
+}
+
 /**
  * La dénomination que l'écran PROPOSE à un entrepreneur individuel, avec sa raison — jamais d'elle-même : un bouton la
  * reprend. Rien tant que la forme n'est pas connue (choisie parmi les catégories) ni quand elle est déjà celle de la saisie.
@@ -226,6 +232,9 @@ export const RAISON_DENOMINATION_EI =
 export function propositionDeDenomination(nom: string, s: SaisieIdentite): { texte: string; raison: string } | null {
   const texte = denominationProposee(nom, s.forme === '' ? null : s.forme)
   if (texte === null || texte === sansBlancsAuxBords(s.denomination)) return null
+  // Une dénomination saisie qui porte déjà la mention, collée au début ou à la fin, n'appelle aucune proposition : le nom du dossier
+  // est souvent un nom commercial, et la carte proposait de remplacer « Claire Moreau EI » par « Cabinet infirmier Moreau EI ».
+  if (porteLaMentionEi(s.denomination)) return null
   return { texte, raison: RAISON_DENOMINATION_EI }
 }
 

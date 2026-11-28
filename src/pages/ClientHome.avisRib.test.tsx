@@ -340,3 +340,21 @@ describe('ClientHome — la tuile « Ma trésorerie »', () => {
     expect(screen.queryByRole('link', { name: /Ma trésorerie/ })).toBeNull()
   })
 })
+
+// TROIS CARTES SŒURS SOUS LA MÊME CLÉ (28/11/2026, parcours du MVP sur le banc) : « À encaisser » des ventes, l'état du dossier et
+// « Mes prochaines échéances » sont des enfants du même `.bento`, chacun clé par la société affichée pour repartir de zéro quand elle
+// change. Sous la clé nue (`d1` trois fois), React disait « Encountered two children with the same key » à chaque accueil d'un
+// client « Ventes », et des sœurs de même clé peuvent être dupliquées ou omises au changement de société. Chacune a sa clé à elle.
+describe('ClientHome — les cartes clées par société ne partagent pas leur clé', () => {
+  it('« Ventes » ouvert : aucune clé en double dans la grille', async () => {
+    faux.droits = { 'dossier-a': { ...LES_DEUX, caisse: true } }
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await monter()
+      const doublons = erreurs.mock.calls.filter((c) => c.some((x) => /same key/.test(String(x))))
+      expect(doublons).toEqual([])
+    } finally {
+      erreurs.mockRestore()
+    }
+  })
+})

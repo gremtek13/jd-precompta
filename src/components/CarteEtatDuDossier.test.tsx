@@ -47,6 +47,17 @@ describe('la carte de l’état du dossier', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  // Le statut de chaque exercice se lit à une pastille (28/11/2026) : il n'était porté que par un attribut qu'aucun style ne lisait.
+  it('chaque exercice porte la pastille de son statut', async () => {
+    etat.rpc.mockResolvedValue({ data: [...exercices, { annee: 2024, phase: 'en_revision', valide_le: null, declaration_2035: false }], error: null })
+    render(<CarteEtatDuDossier dossierId="d1" />)
+    await screen.findByText('Exercice 2026')
+    const pastille = (annee: number) => screen.getByText(`Exercice ${annee}`).closest('li')!.querySelector('.check-dot')!.className
+    expect(pastille(2026)).toContain('check-attention')
+    expect(pastille(2025)).not.toMatch(/check-attention|check-neutre/)
+    expect(pastille(2024)).toContain('check-neutre')
+  })
+
   it('une lecture refusée se dit, sans exercice', async () => {
     etat.rpc.mockResolvedValue({ data: null, error: { message: 'Accès refusé à ce dossier.' } })
     render(<CarteEtatDuDossier dossierId="d1" />)
