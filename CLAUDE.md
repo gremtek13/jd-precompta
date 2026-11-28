@@ -117,7 +117,7 @@ L'expert-comptable ne se sollicite plus : ce qui manque se cherche dans les sour
   toute migration : y ajouter son fichier et rejouer les trois contrôles de `supabase/schema/README.md` (dérive, socle,
   inventaire).
 - **Edge Functions** (`supabase/functions/`, Deno, déployées par MCP `deploy_edge_function`) :
-  - `agent-comptable` — assistant IA (Bedrock), v64 depuis le 27/11/2026, plafond de coût mensuel par cabinet, compté demain sur un
+  - `agent-comptable` — assistant IA (Bedrock), v65 depuis le 27/11/2026 (au commit `17b569c9`), plafond de coût mensuel par cabinet, compté demain sur un
     journal que la fonction écrit seule, après chaque appel au modèle (ASSIST-Q1 (A), `consommations_de_l_assistant` préparée, sans policy ni
     droit d'API ; `CONSOMMATION_TENUE_PAR_LA_FONCTION` baissée, jumelle de `lib/consommationDeLAssistant.ts`) → « ASSIST-Q1 : LE JOURNAL DE CONSOMMATION » ; aucun
     nom de cabinet (`cabinetEnDur.test.ts`), la TVA selon `lib/statutTva.ts` (`agentComptableConsigne.test.ts`) ; devant
@@ -885,7 +885,7 @@ outils/references/  quatre dossiers fictifs que l'expert-comptable recalcule ; `
   facture vendues à des particuliers — e7 et e8 se construiront après le MVP, 28.5e-Q1 ; e9 : `fluxEreporting` recopié
   dans `plateforme-agreee`) → « L'E-REPORTING : LA CONCEPTION », « LE FICHIER D'UNE DÉCLARATION D'E-REPORTING », « UNE
   RÉPONSE DU CABINET : 28.5E-Q8 ».
-- **Défauts connus des Edge Functions** (0, `DEFAUTS_CONNUS` vide depuis le 12/11/2026, le décompte tenu au nombre
+- **Défauts connus des Edge Functions** (1 depuis le 27/11/2026 — `plafondTenuParLeNavigateur`, que lève ASSIST-Q1, préparée ; `DEFAUTS_CONNUS` vide du 12 au 27/11/2026, le décompte tenu au nombre
   près) : `taux-change-bce` contrôle son appelant comme `extract-piece`, déployée le 12/11/2026 (v6, par une ligne d'import ; 401 sans session) (ligne 23.4)
   → « TAUX-CHANGE-BCE CONTRÔLE SON APPELANT (LIGNE 23.4) » ; `receive-email` ne journalise plus que des comptes, ni
   objet, ni expéditeur, ni adresse, ni code de collecte (le contrat exige zéro recopie) → « RECEIVE-EMAIL NE JOURNALISE
