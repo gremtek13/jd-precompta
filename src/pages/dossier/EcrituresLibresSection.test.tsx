@@ -215,6 +215,33 @@ describe('EcrituresLibresSection (EL5)', () => {
     expect((faux.rpcs[0].args.p_ecriture as { id: string }).id).toBe('e1')
   })
 
+  // RELECTURE ADVERSE DU 28/11/2026 : le choix du poste ne se montre que sur une ligne de charge ou de produit ; le compte changé
+  // vers un compte de bilan (ou vers l'autre classe), le poste restait dans la saisie, invisible — le refus de la base se disait
+  // sous la ligne, et rien à l'écran ne permettait de le lever. Un poste devenu sans objet se remet à « hors de la 2035 ».
+  it('un compte changé vers une classe que le poste ne sert pas : le poste se remet à « hors de la 2035 », aucun refus caché', async () => {
+    monter(LUES)
+    fireEvent.click(screen.getByText('Modifier'))
+    saisir('crédit', 2, 'Compte', '401000')
+    expect(screen.queryByText(/Seule une ligne de charge ou de produit/)).toBeNull()
+    saisir('crédit', 2, 'Compte', '706000')
+    expect(screen.queryByText(/Ce poste n’est pas un poste de la 2035/)).toBeNull()
+    expect((screen.getByText('Remplacer l’écriture') as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => {
+      fireEvent.click(screen.getByText('Remplacer l’écriture'))
+      await new Promise((r) => setTimeout(r, 5))
+    })
+    const lignes = (faux.rpcs[0].args.p_ecriture as { lignes: { compte: string; poste_2035: string | null }[] }).lignes
+    expect(lignes[1]).toMatchObject({ compte: '706000', poste_2035: null })
+  })
+
+  it('un compte de la même classe garde son poste', () => {
+    monter(LUES)
+    fireEvent.click(screen.getByText('Modifier'))
+    saisir('crédit', 2, 'Compte', '626100')
+    const selects = screen.getByRole('group', { name: 'Ligne 2' }).querySelectorAll('select')
+    expect((selects[selects.length - 1] as HTMLSelectElement).value).toBe('Fournitures de bureau')
+  })
+
   describe('la pièce citée, facultative (EL-Q8 (A))', () => {
     async function passer() {
       await act(async () => {

@@ -266,8 +266,12 @@ export function calculerSituationIntermediaire(
   }
 
   const totalAmortissements = immobilisations.reduce((sum, i) => sum + dotationSurPeriode(i, periodeDebut, periodeFin), 0)
+  // AJOUTÉES à ce que le poste porte déjà, comme dans la 2035 (`ajouter`, lib/declaration2035.ts), jamais posées par-dessus :
+  // une écriture libre que l'expert compte sous « Amortissements », ou une pièce rangée sous ce poste, s'y perdait dès qu'une
+  // dotation tombait dans la période (relecture adverse du 28/11/2026). Sans rien d'autre au poste, le chiffre d'hier au centime.
   if (totalAmortissements > 0) {
-    totauxParPoste.set(POSTE_AMORTISSEMENTS, -Math.round(totalAmortissements * 100) / 100)
+    totauxParPoste.set(POSTE_AMORTISSEMENTS,
+      (totauxParPoste.get(POSTE_AMORTISSEMENTS) ?? 0) - Math.round(totalAmortissements * 100) / 100)
   }
 
   // LA PART « AUTRES IMPÔTS » D'UNE ÉCHÉANCE (la CFP et la CURPS, EXP58-Q6 ; lib/autresImpotsDesCotisations.ts) sort des
@@ -280,7 +284,8 @@ export function calculerSituationIntermediaire(
     centimesAutresImpots += Math.round((c.autresImpots ?? 0) * 100)
     return sum + c.montant - (c.autresImpots ?? 0)
   }, 0)
-  if (totalCotisations > 0) totauxParPoste.set(POSTE_COTISATIONS, -totalCotisations)
+  // De même ajoutées : une ligne d'écriture libre sous le poste des cotisations (EL4-Q1) s'y additionne, comme dans la 2035.
+  if (totalCotisations > 0) totauxParPoste.set(POSTE_COTISATIONS, (totauxParPoste.get(POSTE_COTISATIONS) ?? 0) - totalCotisations)
   if (centimesAutresImpots !== 0) {
     totauxParPoste.set(POSTE_AUTRES_IMPOTS, (totauxParPoste.get(POSTE_AUTRES_IMPOTS) ?? 0) - centimesAutresImpots / 100)
   }
