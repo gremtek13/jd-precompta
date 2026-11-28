@@ -1,5 +1,5 @@
 import {
-  encoderWindows1252, horsDeWindows1252, pointDeCode, REFUS_NOMMES_AU_PLUS, type CompteDeLExport,
+  comptesConfondus, encoderWindows1252, horsDeWindows1252, pointDeCode, REFUS_NOMMES_AU_PLUS, type CompteDeLExport,
 } from './profilsDExport'
 
 // LE PROFIL « TRA » DE L'EXPORT VERS UN LOGICIEL COMPTABLE (EXP4, 27/11/2026 ; la recherche :
@@ -480,7 +480,9 @@ export function mettreEnFormePourTra(
   const horsEncodage: string[] = []
   const comptes = new Map<string, string>()
   const numeros = new Map<string, number>()
-  const piecesCoupees = new Map<string, string>()
+  // Chaque valeur écrite dans la zone de la pièce, coupée OU intacte → la référence du FEC qui l'a donnée : une référence
+  // intacte égale à la coupe d'une autre les confondrait tout autant (relecture adverse du 28/11/2026).
+  const piecesEcrites = new Map<string, string>()
   const confondues = new Set<string>()
   const ecritures: string[] = []
   const sortie: string[] = []
@@ -561,14 +563,12 @@ export function mettreEnFormePourTra(
     if (libelle.coupe) libellesCoupes++
     const reference = c[i.PieceRef]
     const piece = couper(reference, ZONES_DE_L_ECRITURE.refInterne[1])
-    if (piece.coupe) {
-      nombreDePiecesCoupees++
-      const autre = piecesCoupees.get(piece.valeur)
-      if (autre !== undefined && autre !== reference && !confondues.has(piece.valeur)) {
-        confondues.add(piece.valeur)
-        refus.push(`${ou} : coupées à trente-cinq caractères, les pièces « ${autre} » et « ${reference} » se confondraient.`)
-      }
-      piecesCoupees.set(piece.valeur, reference)
+    if (piece.coupe) nombreDePiecesCoupees++
+    const autre = piecesEcrites.get(piece.valeur)
+    if (autre === undefined) piecesEcrites.set(piece.valeur, reference)
+    else if (autre !== reference && !confondues.has(piece.valeur)) {
+      confondues.add(piece.valeur)
+      refus.push(`${ou} : coupées à trente-cinq caractères, les pièces « ${autre} » et « ${reference} » se confondraient.`)
     }
     if (verifierLEncodage(ou, 'son libellé', libelle.valeur)) verifierLEncodage(ou, 'sa pièce', piece.valeur)
 
@@ -596,7 +596,7 @@ export function mettreEnFormePourTra(
   }
   if (documentEnAttente !== null) sortie.push(documentEnAttente)
 
-  const tousLesRefus = [...plafonner(refus), ...plafonner(horsEncodage)]
+  const tousLesRefus = [...plafonner(refus), ...plafonner(comptesConfondus(comptes)), ...plafonner(horsEncodage)]
   if (tousLesRefus.length > 0) return { ok: false, refus: tousLesRefus }
 
   const enTete = enregistrementTra(ZONES_DE_L_EN_TETE, {

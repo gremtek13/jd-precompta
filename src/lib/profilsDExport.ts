@@ -130,6 +130,29 @@ export const REGLAGES_PROPOSES_ACD: ReglagesDuProfil = {
   formeDesTiers: 'nos_auxiliaires',
 }
 
+/**
+ * Les comptes que le bourrage de zéros rendrait égaux (relecture adverse du 28/11/2026) : « 512 » — un à-nouveau repris d'une
+ * balance à trois chiffres, dont la table admet trois chiffres et plus — et « 512000 », la banque du plan, deviennent tous deux
+ * « 51200000 » à huit ; de même une catégorie « 6064 » et une autre « 606400 », que la base admet aussi (`^[67][0-9]{2}`). Le
+ * logiciel n'y verrait qu'UN compte : un seul solde, un seul poste de la 2035 là où l'application en tient deux, et, pour ACD,
+ * deux CompteLib sous un même CompteNum, ce que la validation refuse au FEC lui-même. Rien ne se réunit en silence : chaque
+ * compte du fichier qui en réunirait plusieurs se nomme, et l'export se refuse. `comptes` : nos comptes → ceux du fichier.
+ */
+export function comptesConfondus(comptes: ReadonlyMap<string, string>): string[] {
+  const parCompteDuFichier = new Map<string, string[]>()
+  for (const [nous, eux] of comptes) parCompteDuFichier.set(eux, [...(parCompteDuFichier.get(eux) ?? []), nous])
+  return [...parCompteDuFichier]
+    .filter(([, nous]) => nous.length > 1)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([eux, nous]) => {
+      const tries = [...nous].sort()
+      const noms = `${tries.slice(0, -1).join(', ')} et ${tries.at(-1)}`
+      return `Les comptes ${noms} du FEC deviendraient ${tries.length === 2 ? 'tous deux' : 'tous'} ${eux} dans le fichier : `
+        + 'deux comptes distincts s’y confondraient (un seul solde, un seul poste de la 2035 chez le logiciel) — renumérote l’un '
+        + 'd’eux dans l’application, ou, s’il n’est que dans les à-nouveaux, exporte sans eux.'
+    })
+}
+
 /** Combien de refus l'écran nomme un par un ; le reste se compte. */
 export const REFUS_NOMMES_AU_PLUS = 12
 
@@ -257,7 +280,7 @@ export function mettreEnFormePourAcd(fec: string, reglages: ReglagesDuProfil): E
     sortie.push(ligne)
   }
 
-  const tousLesRefus = [...plafonner([...tropLongs.values()]), ...plafonner(horsEncodage)]
+  const tousLesRefus = [...plafonner([...tropLongs.values()]), ...plafonner(comptesConfondus(comptes)), ...plafonner(horsEncodage)]
   if (tousLesRefus.length > 0) return { ok: false, refus: tousLesRefus }
   if (sortie.length === 1) return { ok: false, refus: ['Aucune écriture à exporter.'] }
 
@@ -326,15 +349,18 @@ export function justificatifsDeLExport(
   const parId = new Map(pieces.map((p) => [p.id, p]))
   const aJoindre: JustificatifAJoindre[] = []
   const ecartes: string[] = []
-  const joints = new Set<string>()
+  const vues = new Set<string>()
+  // Les pièces dont le fichier part VRAIMENT : une pièce écartée à sa première citation ne justifie ni les autres lignes de son
+  // écriture, ni une autre écriture qui la cite (relecture adverse du 28/11/2026 — elles se comptaient justifiées).
+  const jointes = new Set<string>()
   const references = new Map<string, string>()
   const ecrituresJustifiees = new Set<string>()
   for (const l of numerotation.lignes) {
     const numero = `${l.journal}${String(l.numero).padStart(5, '0')}`
     const pieceId = l.ecriture.piece_id
     if (!pieceId || !numeros.has(numero)) continue
-    if (joints.has(pieceId)) { ecrituresJustifiees.add(numero); continue }
-    joints.add(pieceId)
+    if (vues.has(pieceId)) { if (jointes.has(pieceId)) ecrituresJustifiees.add(numero); continue }
+    vues.add(pieceId)
     const piece = parId.get(pieceId)
     if (!piece) { ecartes.push(`Écriture ${numero} : sa pièce n’a pas été lue, aucun fichier joint.`); continue }
     if (!REFERENCE_NEUTRE.test(l.pieceRef)) {
@@ -351,6 +377,7 @@ export function justificatifsDeLExport(
     }
     references.set(l.pieceRef, pieceId)
     aJoindre.push({ pieceId, reference: l.pieceRef, chemin: piece.storage_path })
+    jointes.add(pieceId)
     ecrituresJustifiees.add(numero)
   }
   const ecrituresSansJustificatif = [...numeros.keys()].filter((n) => !ecrituresJustifiees.has(n)).length

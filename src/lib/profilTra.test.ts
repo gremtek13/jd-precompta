@@ -268,6 +268,23 @@ describe('les refus avant tout fichier', () => {
     ])
   })
 
+  it('une pièce de trente-cinq caractères, intacte, que la coupe d’une autre rendrait égale : refusée aussi (28/11/2026)', () => {
+    const trenteCinq = 'Compte personnel de l’exploitant du'
+    expect([...trenteCinq]).toHaveLength(35)
+    for (const ordre of [[trenteCinq, `${trenteCinq} 31/12/2025`], [`${trenteCinq} 31/12/2025`, trenteCinq]]) {
+      const r = mettreEnFormePourTra(fec(ligne({ ref: ordre[0] }), ligne({ num: 'AC00002', ref: ordre[1] })), reglages(), SANS)
+      expect(r.ok, ordre.join(' / ')).toBe(false)
+      if (!r.ok) expect(r.refus).toEqual([expect.stringMatching(/coupées à trente-cinq caractères, les pièces/)])
+    }
+  })
+
+  it('deux comptes distincts que le bourrage de zéros rendrait égaux : refusés, nommés (28/11/2026)', () => {
+    const r = mettreEnFormePourTra(fec(ligne({ compte: '6064' }), ligne({ compte: '606400', num: 'AC00002' }),
+      ligne({ compte: '512000', debit: '0,00', credit: '200,00' })), reglages(), SANS)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.refus).toEqual([expect.stringMatching(/^Les comptes 6064 et 606400 du FEC deviendraient tous deux 60640000/)])
+  })
+
   it('deux pièces que la coupe à trente-cinq confondrait se refusent ; un libellé long se coupe et se compte, sans auxiliaire ni lettrage', () => {
     const longue = 'Compte personnel de l’exploitant du 31/12/2025'
     const r = mettreEnFormePourTra(fec(ligne({ ref: longue }), ligne({ num: 'AC00002', ref: longue.replace('31/12', '30/12') })), reglages(), SANS)

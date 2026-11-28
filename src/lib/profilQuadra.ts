@@ -1,6 +1,6 @@
 import type { NumerotationFec } from './fec'
 import {
-  encoderWindows1252, horsDeWindows1252, justificatifsDeLExport, pointDeCode, REFUS_NOMMES_AU_PLUS,
+  comptesConfondus, encoderWindows1252, horsDeWindows1252, justificatifsDeLExport, pointDeCode, REFUS_NOMMES_AU_PLUS,
   type CompteDeLExport, type JournalDeLExport, type JustificatifAJoindre, type JustificatifsDeLExport, type PieceDesJustificatifs,
 } from './profilsDExport'
 
@@ -267,7 +267,9 @@ export function mettreEnFormePourQuadra(fec: string, reglages: ReglagesQuadra, j
   const horsEncodage: string[] = []
   const comptes = new Map<string, string>()
   const numeros = new Map<string, number>()
-  const piecesCoupees = new Map<string, string>()
+  // Chaque valeur écrite dans la zone de la pièce, coupée OU intacte → la référence du FEC qui l'a donnée : une référence
+  // intacte égale à la coupe d'une autre les confondrait tout autant (relecture adverse du 28/11/2026).
+  const piecesEcrites = new Map<string, string>()
   const confondues = new Set<string>()
   const ecrituresNommees = new Set<string>()
   const sortie: string[] = []
@@ -315,14 +317,12 @@ export function mettreEnFormePourQuadra(fec: string, reglages: ReglagesQuadra, j
     if (libelle.coupe) libellesCoupes++
     const reference = c[i.PieceRef]
     const piece = couper(reference, ZONES_DE_L_ENREGISTREMENT_M.piece[1])
-    if (piece.coupe) {
-      nombreDePiecesCoupees++
-      const autre = piecesCoupees.get(piece.valeur)
-      if (autre !== undefined && autre !== reference && !confondues.has(piece.valeur)) {
-        confondues.add(piece.valeur)
-        refus.push(`${ou} : coupés à vingt caractères, les numéros de pièce « ${autre} » et « ${reference} » se confondraient.`)
-      }
-      piecesCoupees.set(piece.valeur, reference)
+    if (piece.coupe) nombreDePiecesCoupees++
+    const autre = piecesEcrites.get(piece.valeur)
+    if (autre === undefined) piecesEcrites.set(piece.valeur, reference)
+    else if (autre !== reference && !confondues.has(piece.valeur)) {
+      confondues.add(piece.valeur)
+      refus.push(`${ou} : coupés à vingt caractères, les numéros de pièce « ${autre} » et « ${reference} » se confondraient.`)
     }
     // Le justificatif se nomme sur la PREMIÈRE ligne de son écriture : « pièce jointe à l'écriture », une fois.
     const joint = premiereDeLEcriture ? joints.get(reference) : undefined
@@ -345,7 +345,7 @@ export function mettreEnFormePourQuadra(fec: string, reglages: ReglagesQuadra, j
     }))
   }
 
-  const tousLesRefus = [...plafonner(refus), ...plafonner(horsEncodage)]
+  const tousLesRefus = [...plafonner(refus), ...plafonner(comptesConfondus(comptes)), ...plafonner(horsEncodage)]
   if (tousLesRefus.length > 0) return { ok: false, refus: tousLesRefus }
 
   const texte = sortie.join(FIN[reglages.finDEnregistrement]) + FIN[reglages.finDEnregistrement]
