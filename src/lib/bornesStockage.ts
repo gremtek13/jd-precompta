@@ -247,8 +247,14 @@ function refusDeFormat(genre: Genre, taille: number): RefusDuDepot {
  * bornes, pour ne lire par pdf.js qu'un fichier que le seau accepterait. Drapeau baissé, rien n'est lu. Un fichier qui n'est
  * pas un PDF n'est pas lu : une image n'a pas de texte, un CSV n'a pas de forme connue (NOE1).
  */
+//
+// UNE EXTENSION QUI MENT (relecture adverse du chemin d'une pièce, 28/11/2026) : le type d'une pièce se décide d'abord à son
+// extension (`typeDUnePiece`) — un PDF nommé « releve.csv » ou « photo.jpg » part sous `text/csv` ou `image/jpeg`. Un bordereau
+// ainsi renommé n'était pas lu, et sous `.csv` rien ne le lisait plus (ni Textract ni le classement) : il entrait au dossier en
+// relevé bancaire. Tout fichier dont les premiers octets sont ceux d'un PDF se lit donc, quel que soit son nom.
 async function sansBordereau(issue: IssueDuDepot, fichier: Blob): Promise<IssueDuDepot> {
-  if (!REFUS_DES_BORDEREAUX_PREVU || 'refus' in issue || issue.type !== 'application/pdf') return issue
+  if (!REFUS_DES_BORDEREAUX_PREVU || 'refus' in issue) return issue
+  if (issue.type !== 'application/pdf' && typeParSignature(await premiersOctets(fichier)) !== 'application/pdf') return issue
   if (!(await bordereauDansLeFichier(fichier))) return issue
   return { refus: { raison: 'bordereau', taille: issue.taille, message: REFUS_D_UN_BORDEREAU } }
 }

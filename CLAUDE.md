@@ -191,6 +191,7 @@ PLAN_DE_REPRISE.md  quoi faire quand quelque chose a disparu ; RGPD.md, les trai
 .github/workflows/  tests.yml (verifier : tests multi-fuseaux, lint, build), deploy.yml.
 outils/captures/  banc VERSIONNÉ : l'application et un faux Supabase sous Playwright (mode d'emploi en tête de
                   vitrine.mjs) ; les visites `ereporting/*` (horloge au 5/11/2027) restent EN FIN de `VISITES`.
+                  gestes.mjs : les gestes qui écrivent, sous le levier `banc-ecritures` du faux (l'effet seul, jamais un refus de la base).
 outils/cotisations/  oracle.mjs : les cas de référence Urssaf (moteur installé à la demande, jamais en dépendance).
 outils/facturation/  valider.mjs, cdar/valider.mjs, ereporting/valider.mjs : les exemples fictifs jugés par les
                   instruments officiels (hors du dépôt, à leur empreinte), confrontés par leurs tests.
@@ -1262,7 +1263,9 @@ cabinet autonome », triée par `Ordre` : le livré (phase 0), puis le restant d
   verrou ou une enveloppe (`sousVerrou`, `agir`) (`verrousEcritures.test.ts`) → « Un verrou d'exécution est un
   `useRef` », « LES GESTIONNAIRES D'ÉCRITURE SANS VERROU ».
 - **Une lecture plus lente écrit en dernier** : le drapeau d'annulation se pose avant la première écriture → « UNE
-  LECTURE PLUS LENTE ÉCRIT EN DERNIER ». `AuthContext` ne relit les rôles qu'au changement d'IDENTIFIANT → « UN RETOUR
+  LECTURE PLUS LENTE ÉCRIT EN DERNIER » ; une fonction de lecture qu'un effet appelle prend un numéro (`useDerniereLecture`,
+  `lib/derniereLecture.ts`), `if (!courante()) return` après chaque attente (`coursesDeLecture.test.ts`) → « LES COURSES DE
+  LECTURE DES ÉCRANS ». `AuthContext` ne relit les rôles qu'au changement d'IDENTIFIANT → « UN RETOUR
   SUR L'ONGLET RECHARGEAIT ». Banque : un seul verrou de rapprochement (`ecritureEnCours`) → « LE VOLET A OUVERT UNE
   COURSE ».
 - **Une recherche filtre l'affichage, jamais un total ni un export** (`recherchesEtTotaux.test.ts`). Un état qui porte

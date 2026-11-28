@@ -53,3 +53,15 @@ export async function retirerFichiers(
     )
   }
 }
+
+/**
+ * L'erreur est-elle un REFUS que la base a rendu (une erreur PostgREST qui porte un code : 42501, P0001, 23514…) ? Seule
+ * une réponse dit que rien n'a été écrit, et autorise à retirer le fichier déposé juste avant ; une coupure (le client rend
+ * alors un code vide) laisse l'écriture incertaine — retirer le fichier risquerait une ligne qui ne désigne plus rien, et un
+ * orphelin vaut mieux (relecture adverse du chemin d'une pièce, 28/11/2026 : FichePiece, CotisationsTab).
+ */
+export function refusRenduParLaBase(erreur: unknown): boolean {
+  if (erreur === null || typeof erreur !== 'object') return false
+  const code = (erreur as { code?: unknown }).code
+  return typeof code === 'string' && code.trim() !== ''
+}

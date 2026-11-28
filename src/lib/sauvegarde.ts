@@ -500,7 +500,10 @@ export function auGrapheDuDossierDuCabinet(r: Relation, prevu: boolean): boolean
 // relations : le dossier et la facture EN CASCADE (seul un brouillon se supprime), la lettre SANS ACTION (elle ne part qu'avec le dossier) ; son rang, après les lettres de mission et les
 // factures qu'elle cite ; son chemin, direct ; sa clé, la commune. La restauration la réinsère par la porte que sa policy
 // ouvre au super-administrateur, et sa garde accepte l'histoire telle qu'écrite — un lien d'une facture créditée en entier
-// à côté de celui qui facture de nouveau sa période. sauvegardeHonorairesFactures.test.ts éprouve les deux plans.
+// à côté de celui qui facture de nouveau sa période — mais pas dans un dossier que la base d'arrivée ne désigne pas encore,
+// le cas de toute restauration du dossier du cabinet : jusqu'à la préparée `honoraires_restaures_avant_la_designation`, la
+// restauration refuse de commencer (HR-Q1, src/lib/honorairesALaRestauration.ts). sauvegardeHonorairesFactures.test.ts
+// éprouve les deux plans.
 export const TABLES_DES_HONORAIRES_FACTURES: readonly string[] = ['honoraires_factures']
 
 /** Une table au plan, côté factures d'honoraires : toutes, sauf la leur tant que sa migration n'est pas exportée. */
@@ -516,7 +519,8 @@ export function auPlanDesHonorairesFactures(table: string, prevus: boolean): boo
 // clé (un autre dossier : la sauvegarde du dossier du cabinet ne les porte pas, et leur absence ne retient rien) ; son
 // rang, après les factures d'honoraires, dont sa garde lit le client ; son chemin, direct ; sa clé, la commune. La
 // restauration la réinsère par la porte que sa policy ouvre au super-administrateur, et sa garde accepte l'histoire telle
-// qu'écrite — un dépôt dont la pièce n'est plus chez le client à côté de celui qui l'y a redéposée.
+// qu'écrite — un dépôt dont la pièce n'est plus chez le client à côté de celui qui l'y a redéposée —, sous la même réserve
+// de la désignation (HR-Q1).
 // sauvegardeHonorairesDeposes.test.ts éprouve les deux plans.
 export const TABLES_DES_HONORAIRES_DEPOSES: readonly string[] = ['honoraires_deposes']
 

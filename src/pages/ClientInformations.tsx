@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import type { VehiculeType } from '../lib/types'
 import { messageErreur } from '../lib/messageErreur'
 import { chargerInformationsDossier, enregistrerInformationsDossier } from '../lib/informationsDossier'
+import { useDerniereLecture } from '../lib/derniereLecture'
 
 // Version client du même formulaire que InformationsTab (cabinet) — mêmes champs, même table
 // (informations_dossier, upsert sur dossier_id), juste un texte adapté à quelqu'un qui n'est pas
@@ -26,10 +27,14 @@ export default function ClientInformations() {
   // vide, et l'enregistrement porte TOUS les champs (voir lib/informationsDossier.ts).
   const [erreurChargement, setErreurChargement] = useState<string | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     if (!dossierId) return
     setLoading(true)
     const { informations, erreur } = await chargerInformationsDossier(dossierId)
+    if (!courante()) return
     setErreurChargement(erreur)
     if (informations) {
       setVehiculeType(informations.vehicule_type)

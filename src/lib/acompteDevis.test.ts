@@ -308,6 +308,8 @@ describe(`la batterie : ${NOMBRE_DE_DEVIS} devis tirés de la graine ${GRAINE}`,
   // La recherche exhaustive du meilleur HT d'un TTC (jusqu'à 800 HT par acompte) est le gros du calcul : elle se paie ici,
   // une fois, avec le tirage, pas dans le délai du test qui juge ses résultats. Mêmes cas, même seuil, même comparaison.
   const meilleurHtParAcompte = new WeakMap<object, number>()
+  // Le crochet porte son délai : seul il tient en moins de deux secondes, mais sous la suite entière et une machine
+  // chargée ses dix secondes par défaut ont été dépassées (28/11/2026) — le calcul, lui, ne se paie toujours qu'une fois.
   beforeAll(() => {
     cas = tirerLaBatterie()
     for (const c of cas) {
@@ -326,7 +328,7 @@ describe(`la batterie : ${NOMBRE_DE_DEVIS} devis tirés de la graine ${GRAINE}`,
         meilleurHtParAcompte.set(a, meilleur.ht)
       }
     }
-  })
+  }, 60_000)
 
   it('tire assez de cas de chaque sorte pour juger', () => {
     const tous = cas.flatMap((c) => c.acomptes)

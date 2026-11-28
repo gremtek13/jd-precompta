@@ -55699,3 +55699,76 @@ après par cas distinct. Gardé par `src/lib/misesAJourAvecLeurVersion.test.ts` 
 12 exceptions nommées et comptées à l'intégration (15 sur la branche de l'audit : les trois de Cotisations et d'Immobilisations traitées par `8e88fee1` en sortent), Suppléments, charte du cabinet, Équipe,
 super-administrateur, restauration, la redate du brouillon). Questions : VERS-Q1 (une colonne de version tenue par la base), VERS-Q2
 (le véhicule écrit à chaque frappe).
+### 28/11/2026 — RELECTURE ADVERSE DU CHEMIN D'UNE PIÈCE, DU DÉPÔT À LA VALIDATION (MVP)
+
+Les quatre chemins du dépôt (client, cabinet, fiche, e-mail) relus angle par angle sur ce qui a changé depuis le 05/11/2026. Trois défauts
+établis, corrigés, chacun rouge avant et vert après. (1) `receive-email` écrivait les montants que la lecture rend dans la monnaie du
+document : une facture en dollars entrait ses dollars écrits en euros, là où les trois autres dépôts convertissent (`montantsPourPiece`).
+Elle s'écrit désormais comme la conversion au taux introuvable — euros nuls, devise et montant d'origine gardés, la fiche convertissant au
+taux de la BCE d'un clic —, sans appel tiers ; la devise se lit par une copie de `deviseDuTexte` (bloc de `lib/devises.ts`,
+`deviseDuTexteCopie.test.ts`), le scénario HTTP « une facture en dollars » la garde. (2) La fiche d'une pièce et le dépôt d'un avis de
+Cotisations laissaient au stockage le fichier déposé dont la base refusait la ligne (une pièce figée, une policy) — les trois autres le
+retirent ; retiré désormais, sur une RÉPONSE de la base seulement (`refusRenduParLaBase`, `lib/stockage.ts`) : une coupure laisse l'écriture
+incertaine, et un orphelin vaut mieux qu'une ligne sans fichier. (3) Un bordereau renommé « .csv » ou « .jpg » prenait le type de son
+extension et n'était pas lu ; en « .csv », rien ne le lisait plus, il entrait en relevé bancaire : le navigateur (`sansBordereau`) et
+`receive-email` lisent tout fichier dont les premiers octets sont ceux d'un PDF. Plausibles, laissés au cabinet : `receive-email` n'enregistre
+pas le texte OCR (l'empreinte du texte n'attrape pas deux exports d'une facture reçue par e-mail, PIECE-Q1), l'ancien fichier d'une pièce
+remplacée reste au stockage (PIECE-Q2). Écartés : la réservation des empreintes en vol, le chemin hors du dossier, le plafond des lectures au
+jour de Paris (le PDF de plus de 10 Mio reçu par e-mail compte une lecture que la borne refuse avant Textract : sans dépense). La validation en
+lot sans version lue relève de l'audit des mises à jour en cours. `receive-email` à redéployer.
+
+### 28/11/2026 — LA RELECTURE ADVERSE DES HONORAIRES DU CABINET (LIGNE 47 : LM1, LM3, LM4, LM5-Q2, LM7, LM8)
+
+(Agent architecte ; rien en production, aucun outil de la base ; une copie de `replique_227` portée à 261 par l'export, supprimée.)
+**Établi et corrigé (HR-Q1)** : la restauration d'un dossier du cabinet s'arrêtait à son premier lien d'honoraires. La désignation
+(`cabinets.dossier_du_cabinet`) n'est d'aucune sauvegarde et un dossier restauré n'est jamais désigné ; or les gardes de
+`honoraires_factures` et de `honoraires_deposes` l'exigent pour tout auteur, la restauration comprise (LM3 avait excepté le
+super-administrateur, LM7 et LM8 non) : 23514 après le dossier, ses lettres et ses factures écrits ; et, le dossier désigné ensuite,
+la période dont le lien était perdu se facturait une seconde fois (constaté sur la réplique). `restauration.sql` ne le voyait pas :
+son dossier n'est pas le dossier du cabinet. La préparée `20261128100000_honoraires_restaures_avant_la_designation` (par l'outil,
+deux gardes remplacées à l'octet près plus la condition `and not public.is_super_admin()`, empreintes `079ede9a…`/`8ad5dec2…` →
+`4163f6b9…`/`1159501c…`, retour en 20261128100100) ; l'essai neuf `honorairesRestaures.sql` (14 étapes, le défaut constaté sans
+elle, corrigé avec elle, son retour rend l'état d'avant) ; `depotDesHonoraires.sql` (étape 47 suit la migration, 68/68),
+`honorairesFactures.sql` 75/75, `fichesLieesAuxDossiers.sql` 76/76, `dossierDuCabinet.sql` 31/31, `rls.sql` 297 invariants, 0 en
+faute, 178 mutations sur 178. D'ici au collage, la restauration REFUSE de commencer une sauvegarde qui porte des liens ou des dépôts
+d'honoraires (`lib/honorairesALaRestauration.ts`, `HONORAIRES_RESTAURES_AVANT_LA_DESIGNATION_PREVUS` baissé ; test rouge avant, vert
+après). **Établi à la lecture, non corrigé (LM7R-Q1)** : un avenant qui change la périodicité d'un forfait (mensuel → trimestriel), d'effet dans une
+période déjà facturée par la version d'avant (à échoir, ou avenant rétroactif), se facture de nouveau sur ces jours : la garde et
+`lienQuiCouvre` ne comparent d'une version à l'autre que les forfaits de même périodicité, et la carte « À facturer » le propose coché.
+**Plausible (LM7R-Q2)** : une résiliation dont la date de fin tombe dans une période déjà facturée ne se signale nulle part.
+**Écartés** : l'accès aux honoraires (lecture `admin_du_dossier` du seul dossier du cabinet, aucun accès client, les six fonctions
+jugeant l'accès avant toute lecture, sans fuite par le message) ; l'unicité, la suppression et le rattachement du dossier du cabinet ;
+l'acceptation en ligne (fermée pour tout auteur, restauration comprise) ; le dépôt (pièce « à valider » de son dossier, valeurs lues
+de la facture figée, une seule présente, l'avoir négatif après sa facture) ; le prorata et les dates (en entiers, au jour de Paris).
+### 28/11/2026 — LE BANC DES GESTES, SECONDE PASSE : LA VENTE, LA BANQUE, LA CAISSE, LES INFORMATIONS, L'ASSURANCE MALADIE
+
+(Agent dev ; rien en production, aucun code de l'application changé.) Le faux Supabase imite, sous le seul levier `banc-ecritures`,
+l'effet de trente et une fonctions de plus, d'après leur texte exporté : la facture (`enregistrer_facture` : le numéro de la série du
+mandataire ou du client par `MODELES_PAR_DEFAUT`, les mentions figées lues du dossier), l'avoir, l'encaissement, sa
+contre-passation et son retrait, le devis (`enregistrer_devis`, `decider_devis`, et l'acompte puis la finale par le module même,
+`preparerAcompte` et `lignesDeLaFinale`), `send-email` ; la ventilation, le virement personnel, le compte de bilan, le règlement
+groupé, l'échéance d'emprunt, `retirer_proposition`, `poser_modes_de_reglement` ; « Saisir un mois », `remplacer_operation_caisse`,
+`remplacer_paiement_par_la_caisse` ; le seuil du chiffre d'affaires, `changer_droits_acces` ; l'import des paiements de l'assurance
+maladie, l'association et son retrait, l'import du facturé. Il sème une fois ce qu'il ne servait pas (les comptes bancaires lus de
+leur table, `mentions_identite`, `mode_reglement`, l'identité légale de l'atelier) : sans lui, aucun formulaire de facture n'offrait
+« Valider ». `gestes.mjs` joue 63 gestes à 1 440 et 390 px, cabinet et client, refus compris — tous verts ; il compte aussi les
+voiles fixes que rien ne déclare `aria-modal`. La validation d'un exercice reste hors du banc, à dessein. **Relevé** : un seuil refusé
+remet son champ à la valeur relue, à dessein et testé (GESTES-Q2) ; le focus retombe sur le document (GESTES-Q1). Pas servis : le
+devis côté client, la transmission par une plateforme, le remplacement des journées d'un import, les retraits d'imports.
+
+### 28/11/2026 — LES COURSES DE LECTURE DES ÉCRANS
+
+(Agent architecte, sans base ni migration.) Recensé en partant de toute la source des pages et des composants : 498 fonctions ou
+effets qui attendent une lecture puis écrivent un état. **Les 99 effets** : 93 portaient déjà leur drapeau (`let annule`, `fermee`,
+`estPerimee`) ; 6 n'en avaient pas — l'assistant, l'import des relevés, l'aperçu, l'avoir et le formulaire d'une facture, la
+transmission —, tous remontés par leur clé dans l'usage d'aujourd'hui, durcis quand même (l'aperçu passé à une autre facture sans se
+démonter imprimait les lignes de la première, `FactureApercu.course.test.tsx`, rouge avant). **Les 37 fonctions de lecture qu'un
+effet appelle** (`load`, `charger`, `relire…`) : 12 avaient un compteur ; 25 non, dont 22 qu'un geste appelle aussi — Banque,
+Écritures, Cotisations, Immobilisations, Documents, Factures, Informations, Checklist, Statistiques, Véhicules, Virements,
+Suppléments, Packs, Super PDP, la transmission, la liste des dossiers, l'équipe, la charte, le super-administrateur, l'accueil et
+les informations du client. Deux relectures s'y chevauchaient sans que la clé de l'effet change : Cotisations, un avis rattaché
+puis une échéance ajoutée pendant la relecture, la plus ancienne revenait après et l'échéance écrite disparaissait de l'écran
+(`CotisationsTab.ecritures.test.tsx`, rouge avant). Remède commun : `lib/derniereLecture.ts` (`useDerniereLecture`, le démontage
+périme aussi), `if (!courante()) return` après chaque attente. Gardé par `coursesDeLecture.test.ts` (part de tout `src/`, place du
+témoin vérifiée, une exception comptée : la session d'`AuthContext`, hors des écrans ; défauts plantés). Restent, non jugées par le
+scanner : vingt relectures qu'aucun effet n'appelle, sérialisées par le verrou de leur geste.

@@ -23,7 +23,7 @@ import { messageErreur } from '../../lib/messageErreur'
 import { refusDeSuppressionParUneEcritureLibre } from '../../lib/pieceCiteeParUneEcritureLibre'
 import { NumerosEntiers } from '../../components/NumerosEntiers'
 import { cheminDuDossier, MOTIF_CHEMIN_HORS_DU_DOSSIER } from '../../lib/cheminDuDossier'
-import { retirerFichiers } from '../../lib/stockage'
+import { refusRenduParLaBase, retirerFichiers } from '../../lib/stockage'
 import { fichierAMontrer, fichiersDeLaPiece } from '../../lib/fichiersPiece'
 import { ouvrirJustificatif } from '../../lib/depot'
 import { libelleIssue, type PropositionCategorie } from '../../lib/categorisationIa'
@@ -696,6 +696,13 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     enregistrementEnCours.current = true
     setSaving(true)
     setError(null)
+    // LE FICHIER DÉPOSÉ QU'AUCUNE LIGNE NE DÉSIGNE (relecture adverse du chemin d'une pièce, 28/11/2026) : le chemin d'un fichier
+    // que cet enregistrement vient de déposer, tant que la ligne qui le désigne n'est pas écrite. La base la refusant — une
+    // pièce figée, une policy, une contrainte —, le fichier restait au stockage, désigné par rien et relu par aucun écran, et
+    // chaque nouvel essai en déposait un de plus : les trois autres dépôts (lib/depot.ts, lib/importFichiers.ts, receive-email)
+    // le retirent. Seulement sur une RÉPONSE de la base (un code) : sur une coupure, l'écriture a peut-être eu lieu, et retirer
+    // le fichier laisserait une ligne sans fichier — pire qu'un orphelin.
+    let deposeSansLigne: string | null = null
     try {
       if (statut === 'validee' && !montantTtc) {
         throw new Error('Le montant TTC est obligatoire pour valider une pièce.')
@@ -714,6 +721,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         throw new Error('Ce fichier est déjà présent dans ce dossier (Pièces ou Documents).')
       }
       const storagePath = await uploadFile()
+      if (file && storagePath) deposeSansLigne = storagePath
       const { data: userData } = await supabase.auth.getUser()
 
       const payload = {
@@ -756,6 +764,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         const { error } = await supabase.from('pieces').insert({ ...payload, uploaded_by: userData.user!.id })
         if (error) throw error
       }
+      deposeSansLigne = null
 
       // Mémorise la correspondance tiers → catégorie pour la reproposer automatiquement la prochaine
       // fois, sur ce dossier. Best-effort : un échec ici ne doit pas remettre en cause la sauvegarde
@@ -796,6 +805,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
       if (statut === 'validee' && piece && onValidee) onValidee(piece.id)
       else onClose()
     } catch (err) {
+      if (deposeSansLigne !== null && refusRenduParLaBase(err)) await retirerFichiers('pieces', [deposeSansLigne], 'FichePiece', dossierId)
       setError(messageErreur(err))
     } finally {
       enregistrementEnCours.current = false

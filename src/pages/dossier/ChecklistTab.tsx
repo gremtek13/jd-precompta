@@ -35,6 +35,7 @@ import {
   TITRE_DE_LA_CARTE_DES_BORDEREAUX, type RechercheDesBordereaux,
 } from '../../lib/bordereauxDeposes'
 import type { FicheDemandee } from '../../lib/ficheDemandee'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 const NB_MOIS_TRESORERIE = 12
 const NB_MOIS_COLONNES = 6
@@ -102,9 +103,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, periodiciteTva, 
   }
   const rechercheDesBordereaux = bordereaux !== null && bordereaux !== 'en_cours' && bordereaux.dossierId === dossierId ? bordereaux : null
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     setLoading(true)
-    setLecture(await lireLaChecklist(dossierId, ventesParLesFactures, modele.plan))
+    const lue = await lireLaChecklist(dossierId, ventesParLesFactures, modele.plan)
+    if (!courante()) return
+    setLecture(lue)
     setLoading(false)
   }
 

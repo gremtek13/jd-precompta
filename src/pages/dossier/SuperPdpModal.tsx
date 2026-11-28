@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { lireConnexionPlateforme } from '../../lib/receptionPlateforme'
 import { pourLEspace } from '../../lib/espaceVentes'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 interface Statut {
   configured: boolean
@@ -63,17 +64,22 @@ export default function SuperPdpModal(props: Props) {
   // `plateforme-agreee` ne lit que la base. Au cabinet seulement : le client ne reçoit rien d'ici.
   const [plateforme, setPlateforme] = useState<{ nom: string | null; erreur: string | null } | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function chargerStatut() {
+    const courante = commencerLecture()
     const { data, error: invokeError } = await supabase.functions.invoke<Statut>('superpdp-credentials', {
       body: { dossierId, action: 'status' },
     })
+    if (!courante()) return
     if (invokeError || !data) {
       // `extraireErreurFonction` et non un message générique : `invoke()` lève avant d'avoir lu le
       // corps, donc `data` est nul et seul `error.context` porte ce que la fonction a répondu
       // (voir lib/invokeErreur.ts). Un « Impossible de vérifier » écrase un motif précis — or le
       // diagnostic Super PDP passe déjà par les logs de production faute de pouvoir appeler l'API
       // d'ici, et masquer le message côté écran rallonge exactement ce chemin-là.
-      setError(motsDe(await extraireErreurFonction(invokeError, "Impossible de vérifier la configuration Super PDP.")))
+      const motif = await extraireErreurFonction(invokeError, "Impossible de vérifier la configuration Super PDP.")
+      if (courante()) setError(motsDe(motif))
       return
     }
     setStatut(data)

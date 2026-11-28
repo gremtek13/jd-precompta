@@ -106,7 +106,10 @@ describe('les copies de BOR6 dans receive-email', () => {
       expect(horsBlocs, nom).not.toMatch(new RegExp(`function ${nom}\\b`))
     }
     expect(horsBlocs).toContain('(page) => porteLaFormeDUnBordereau([page]),')
-    expect(horsBlocs).toContain('if (BORDEREAUX_ECARTES_A_LA_RECEPTION && type === "application/pdf") {')
+    // Un PDF à son type ou à ses premiers octets : une extension qui ment (« .csv », « .jpg ») ne le soustrait plus (28/11/2026).
+    expect(horsBlocs).toContain(
+      'if (BORDEREAUX_ECARTES_A_LA_RECEPTION && (type === "application/pdf" || typeParSignature(bytes.subarray(0, 16)) === "application/pdf")) {',
+    )
     const jugement = horsBlocs.indexOf('await formeDUnBordereauDansLePdf(bytes, finDesLecturesMs)')
     expect(jugement).toBeGreaterThan(horsBlocs.indexOf('bytes.byteLength > TAILLE_MAX_PIECE'))
     expect(jugement).toBeLessThan(horsBlocs.indexOf('const hash = await hashBytes(bytes)'))

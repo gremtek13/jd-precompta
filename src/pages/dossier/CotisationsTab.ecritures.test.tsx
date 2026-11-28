@@ -16,6 +16,9 @@ const faux = vi.hoisted(() => ({
   cotisations: [] as CotisationDeclaree[],
   documents: [] as DocumentDivers[],
   refusMaj: null as string | null,
+  // Posées par un test (audit des courses du 28/11/2026) : la n-ième lecture des documents qui suit attend la n-ième porte, et
+  // rend la base telle qu'elle était À SA DEMANDE — une relecture lente, donc périmée quand une plus récente l'a devancée.
+  portes: [] as Promise<void>[],
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -29,6 +32,14 @@ vi.mock('../../lib/supabase', async () => {
         Object.assign(c, {
           select: () => c,
           update: (valeur: Partial<DocumentDivers>) => { valeurMaj = valeur; return c },
+          // Une échéance ajoutée entre en base, et la relecture qui suit la rend (audit des courses du 28/11/2026).
+          insert: (valeur: Partial<CotisationDeclaree>) => {
+            faux.cotisations = [...faux.cotisations, {
+              id: `ins-${faux.cotisations.length}`, dossier_id: 'dossier-de-test', echeance: '', montant_appele: 0, montant_verse: null,
+              montant_csg_crds: null, previsionnel: false, created_at: '2026-01-05T09:00:00Z', paiement_personnel_le: null, ...valeur,
+            } as CotisationDeclaree]
+            return { then: (suite: (r: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(suite) }
+          },
           eq: (colonne: string, valeur: unknown) => {
             if (colonne !== 'dossier_id') predicats.push(predicatEq(colonne, valeur))
             return c
@@ -49,7 +60,9 @@ vi.mock('../../lib/supabase', async () => {
             const source: readonly unknown[] =
               table === 'cotisations_declarees' ? faux.cotisations : table === 'documents_divers' ? faux.documents : []
             const lignes = filtrer(source, predicats)
-            return Promise.resolve({ data: lignes, error: null, count: lignes.length }).then(suite)
+            const porte = table === 'documents_divers' ? faux.portes.shift() : undefined
+            const reponse = { data: lignes, error: null, count: lignes.length }
+            return (porte ? porte.then(() => reponse) : Promise.resolve(reponse)).then(suite)
           },
         })
         return c
@@ -88,6 +101,7 @@ beforeEach(() => {
   faux.cotisations = [cotisation()]
   faux.documents = [avis()]
   faux.refusMaj = null
+  faux.portes = []
 })
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -124,5 +138,32 @@ describe('CotisationsTab — le document d’une échéance', () => {
 
     expect(await screen.findByText('Le document n’a pas pu être détaché : JWT expired')).toBeTruthy()
     expect(faux.documents[0].attached_to_cotisation_id).toBe('cot-1')
+  })
+})
+
+// UNE RELECTURE PLUS LENTE N'ÉCRIT PLUS EN DERNIER (audit des courses du 28/11/2026, lib/derniereLecture.ts). Rattacher un avis
+// relit l'onglet sans attendre la relecture, et le formulaire « Ajouter une échéance » reste offert pendant qu'elle court : la
+// relecture du rattachement, partie AVANT l'ajout, revenait APRÈS celle de l'ajout — et l'échéance ajoutée, écrite en base,
+// disparaissait de l'écran (on la ressaisissait : un doublon). Rouge sur le code d'avant.
+describe('CotisationsTab — deux relectures qui se chevauchent', () => {
+  it('la relecture partie la première, revenue la dernière, n’écrit rien', async () => {
+    monter()
+    const liste = await screen.findByDisplayValue('Attacher…')
+    let ouvrirLaPremiere = () => {}
+    let ouvrirLaSeconde = () => {}
+    faux.portes = [new Promise((r) => { ouvrirLaPremiere = r }), new Promise((r) => { ouvrirLaSeconde = r })]
+    await act(async () => { fireEvent.change(liste, { target: { value: 'doc-avis' } }) })
+    fireEvent.change(screen.getByLabelText('Échéance'), { target: { value: '2026-09-05' } })
+    fireEvent.change(screen.getByLabelText('Montant appelé'), { target: { value: '300' } })
+    await act(async () => { fireEvent.submit(screen.getByLabelText('Échéance').closest('form')!) })
+    expect(faux.portes).toHaveLength(0)
+    // La plus récente revient d'abord : l'avis est joint, et l'échéance ajoutée paraît.
+    await act(async () => { ouvrirLaSeconde() })
+    expect(await screen.findByText('05/09/2026')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Détacher' })).toBeTruthy()
+    // La plus ancienne revient ensuite : elle ne connaissait pas l'échéance ajoutée, et ne remplace rien.
+    await act(async () => { ouvrirLaPremiere() })
+    expect(screen.getByText('05/09/2026')).toBeTruthy()
+    expect(faux.cotisations).toHaveLength(2)
   })
 })

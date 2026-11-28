@@ -24,6 +24,7 @@ import { lireLesDossiersDesCabinets } from '../lib/dossierDuCabinetLecture'
 import { MODELE_DU_CABINET_PREVU, modeleALaCreation, phraseDuModeleNonApplique, type LectureDuModele } from '../lib/modeleDuCabinet'
 import { appliquerLeModeleAuDossier, lireLeModeleDuCabinet } from '../lib/modeleDuCabinetLecture'
 import { messageErreur } from '../lib/messageErreur'
+import { useDerniereLecture } from '../lib/derniereLecture'
 
 interface DossierRow extends Dossier {
   nbAValider: number
@@ -117,7 +118,10 @@ export default function DossiersList() {
   // jamais ; gardée dans l'état, elle suit chaque rechargement de la liste.
   const [anneeChargee, setAnneeChargee] = useState(() => anneeEtMoisEcoules().annee)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load(userId: string | null) {
+    const courante = commencerLecture()
     setLoading(true)
     setErreurChargement(null)
     setErreurIndicateurs(false)
@@ -161,6 +165,7 @@ export default function DossiersList() {
     // Les dossiers que le cabinet ouvre au compte, eux seuls : leurs lignes, leurs chiffres et leurs dépôts. Ce qui n'a pas
     // pu être vérifié manque — la panne se dit comme une liste incomplète, et rien ne s'affirme.
     const ouverts = await garderLesDossiersOuverts(dossiersRes.lignes, accesRes)
+    if (!courante()) return
     const idsOuverts = new Set(ouverts.dossiers.map((d) => d.id))
 
     // Une lecture incomplète mène au MÊME avertissement qu'une lecture en échec : dans les deux cas

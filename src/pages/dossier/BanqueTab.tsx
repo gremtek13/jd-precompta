@@ -130,6 +130,7 @@ import { lireVentesEmises, type LectureVentesEmises } from '../../lib/ventesJume
 import {
   compteDeLaFiche, ecritureDuVirementInterne, messageDuVirementInacheve, virementsInternes, virementsInternesHorsDesLots,
 } from '../../lib/virementsInternes'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
@@ -345,7 +346,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
 
   // Les comptes bancaires du dossier (MCB3, ci-dessous), relus par `load` avec le relevé.
   const { lecture: lectureDesComptesDuReleve, relire: relireLesComptesDuReleve } = useComptesDuDossier(dossierId)
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     setLoading(true)
     setEnvoisDuClient(ENVOIS_EN_COURS)
     setAccesDuReleve(ACCES_DU_RELEVE_EN_COURS)
@@ -360,6 +364,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         .eq('dossier_id', dossierId)
         .order('date', { ascending: false }).order('id').range(debut, fin),
     )
+    if (!courante()) return
     const lignesData = lecture.lignes
     setLignesIncompletes(lecture.complete ? null : lecture.motif)
     // Ne rejette jamais : refusée ou partielle, elle revient « incomplète », avec son motif.
@@ -368,9 +373,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     // Ne rejette jamais ; le drapeau baissé, ne touche pas au réseau. Posée AVANT le relevé lu (`setLignes`, plus bas) : aucun
     // rendu ne voit les mouvements de ce dossier avec la caisse d'un autre, ou pas encore revenue.
     const lectureDeLaCaisse = await lireLaCaisse(dossierId)
+    if (!courante()) return
     setLectureCaisse(lectureDeLaCaisse)
     // La caisse hors de la base, elle ne lit rien (`null`) : la fiche d'un mouvement est celle d'hier.
-    setRepriseDeLaCaisse(await lireLaRepriseDeLaCaisse(dossierId, lectureDeLaCaisse.enBase))
+    const repriseLue = await lireLaRepriseDeLaCaisse(dossierId, lectureDeLaCaisse.enBase)
+    if (!courante()) return
+    setRepriseDeLaCaisse(repriseLue)
 
     // Les pièces encore à valider sont chargées elles aussi : c'est justement sur elles que porte
     // l'appariement certain (voir lib/appariementBanque.ts), qui sert à les valider plutôt qu'à
@@ -385,6 +393,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
         .eq('dossier_id', dossierId).in('statut', ['a_valider', 'validee'])
         .order('id').range(debut, fin),
     )
+    if (!courante()) return
     const piecesData = lecturePieces.lignes
     setPiecesIncompletes(lecturePieces.complete ? null : lecturePieces.motif)
 
@@ -399,6 +408,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       supabase.from('regles_bancaires_ignorees').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('motif').order('id').range(debut, fin),
     )
+    if (!courante()) return
     // Troisième drapeau, et sa conséquence n'est celle d'aucun des deux autres. Les cotisations sont
     // des CANDIDATES au rapprochement automatique et alimentent le compte « sans mouvement » ; les
     // règles, elles, décident du `statut` ÉCRIT EN BASE à l'import d'un relevé
@@ -415,6 +425,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       supabase.from('categories').select('*', { count: 'exact' })
         .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
     )
+    if (!courante()) return
     setCategoriesIncompletes(lectureCategories.complete ? null : lectureCategories.motif)
 
     // Une règle par motif et par sens : la liste grandit à chaque règle retenue. Tri TOTAL.
@@ -422,6 +433,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       supabase.from('regles_affectation_bancaire').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('motif').order('sens').order('id').range(debut, fin),
     )
+    if (!courante()) return
     setReglesAffectationIncompletes(lectureReglesAffectation.complete ? null : lectureReglesAffectation.motif)
 
     // Un emprunt par ligne de la carte Financement. Tri TOTAL : deux emprunts peuvent commencer le même jour.
@@ -429,6 +441,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       supabase.from('emprunts').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('date_debut').order('id').range(debut, fin),
     )
+    if (!courante()) return
     setEmpruntsIncomplets(lectureEmprunts.complete ? null : lectureEmprunts.motif)
 
     // Deux parts ou plus par mouvement ventilé. Tri TOTAL sur l'identifiant.
@@ -436,6 +449,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     )
+    if (!courante()) return
     setVentilationsIncompletes(lectureVentilations.complete ? null : lectureVentilations.motif)
 
     // Deux parts ou plus par virement qui règle plusieurs pièces. Tri TOTAL sur l'identifiant.
@@ -443,6 +457,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       supabase.from('reglements_groupes').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     )
+    if (!courante()) return
     setReglementsIncomplets(lectureReglements.complete ? null : lectureReglements.motif)
 
     // Une déclaration par période déposée. Tri TOTAL : deux déclarations ne partagent pas une période, mais l'ordre de
@@ -451,6 +466,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       supabase.from('declarations_tva').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
     )
+    if (!courante()) return
     setDeclarationsTvaIncompletes(lectureDeclarations.complete ? null : lectureDeclarations.motif)
 
     const lectureFigees = await lirePiecesFigees(dossierId)
@@ -462,6 +478,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
       console.error(err)
       return null
     })
+    if (!courante()) return
 
     setLignes(lignesData)
     // Les comptes bancaires se relisent avec le relevé, après lui (relecture adverse du 27/11/2026, lib/useBanquesDuDossier.ts).
@@ -479,6 +496,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
     setDeclarationsTva(lectureDeclarations.lignes)
     const envois = await lireLesEnvoisDuClient(dossierId)
     const accesLus = await lireLesAccesDuReleve(dossierId)
+    if (!courante()) return
 
     setControlesReleves(controles)
     setEnvoisDuClient(envois)
@@ -3061,14 +3079,18 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
 
   useEffect(() => {
     // Lue par tranches (voir lib/lectureComplete.ts) : un dossier accumule un relevé par mois et
-    // par compte, et cette liste est celle où l'on vient rechercher un fichier à importer.
+    // par compte, et cette liste est celle où l'on vient rechercher un fichier à importer. Une réponse revenue après le
+    // démontage ne s'écrit pas (audit des courses du 28/11/2026).
+    let annule = false
     lireTout<DocumentDivers>((debut, fin) =>
       supabase.from('documents_divers').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).eq('categorie', 'releve_bancaire').order('id').range(debut, fin),
     ).then((lecture) => {
+      if (annule) return
       setDocumentsReleve(lecture.lignes)
       setMotifReleves(lecture.complete ? null : lecture.motif)
     })
+    return () => { annule = true }
   }, [dossierId])
 
   // Même Blob générique que handlePdfBlob ci-dessous : un fichier fraîchement déposé (File) ou un CSV

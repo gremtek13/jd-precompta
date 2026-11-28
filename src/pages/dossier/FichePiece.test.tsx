@@ -282,6 +282,26 @@ describe('FichePiece — le verrou d’enregistrement d’une pièce', () => {
     expect(faux.inserts).toHaveLength(2)
   })
 
+  // LE FICHIER QU'AUCUNE LIGNE NE DÉSIGNE (relecture adverse du chemin d'une pièce, 28/11/2026) : la base refusant la ligne,
+  // le fichier déposé juste avant restait au stockage, et chaque nouvel essai en déposait un de plus — les trois autres dépôts
+  // le retirent. Sur une RÉPONSE de la base seulement : une coupure laisse l'écriture incertaine, et le fichier reste.
+  it('la base refuse la ligne : le fichier déposé est retiré ; une coupure le laisse', async () => {
+    faux.retraits = []
+    const bouton = monter()
+    await act(async () => { bouton.click() })
+    await act(async () => { faux.resoudreInsert?.({ error: { code: '42501', message: 'Refusée par la policy' } }) })
+    expect(screen.getByText(/Refusée par la policy/)).toBeTruthy()
+    expect(faux.uploads).toHaveLength(1)
+    expect(faux.retraits).toEqual([[faux.uploads[0]]])
+    expect(faux.uploads[0]).toMatch(/^d1\//)
+
+    // Le second essai : une coupure (le client rend un code vide). Rien n'est retiré.
+    await act(async () => { screen.getByRole('button', { name: 'Valider' }).click() })
+    await act(async () => { faux.resoudreInsert?.({ error: { code: '', message: 'TypeError: Failed to fetch' } }) })
+    expect(faux.uploads).toHaveLength(2)
+    expect(faux.retraits).toHaveLength(1)
+  })
+
   // Le second chemin d'enregistrement de la même fiche, et il porte le MÊME verrou — un test qui
   // n'exercerait que « Valider » laisserait « Enregistrer brouillon » à découvert, alors que c'est le
   // geste le plus courant sur une pièce qu'on vient de déposer.

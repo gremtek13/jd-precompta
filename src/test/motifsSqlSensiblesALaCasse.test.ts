@@ -115,11 +115,13 @@ describe('les motifs de définition SQL ne distinguent pas les capitales', () =>
   let lus: { chemin: string; source: string }[] = []
   let fautes: string[] = []
   let conformes = 0
+  // Le crochet porte son délai : seul il tient en moins de deux secondes, mais sous la suite entière et une machine
+  // chargée ses dix secondes par défaut ont été dépassées (28/11/2026) — le calcul, lui, ne se paie toujours qu'une fois.
   beforeAll(() => {
     lus = fichiersLus().map((chemin) => ({ chemin, source: readFileSync(join(RACINE, chemin), 'utf8') }))
     fautes = jugerLesFichiers(lus, EXCEPTIONS)
     conformes = motifsConformes(lus)
-  })
+  }, 60_000)
 
   it('aucun fichier du dépôt ne cherche une définition sans le drapeau « i » ni par un texte fixe, hors exceptions motivées', () => {
     expect(fautes, `Une recherche de définition en minuscules relit une ancienne version : passer par definitionsSql ou motifDeDefinition (src/test/schema.ts), ou ajouter /i.\n${fautes.join('\n')}`).toEqual([])

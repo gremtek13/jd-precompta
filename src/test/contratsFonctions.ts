@@ -349,8 +349,10 @@ function refusDUnBordereauLu(r: Resultat): string[] {
 // `bordereau` : Textract lit un bordereau de télétransmission (une photo, un PDF numérisé : BOR6, troisième partie) — le titre,
 // un nom de patient et un numéro d'assuré inventés, qu'aucun journal ni aucune réponse ne doit porter.
 function lecture(
-  monde: Monde, options: { textract?: 'echec'; modele?: 'panne' | 'illisible' | 'muet'; dateDeduite?: true; bordereau?: true } = {},
+  monde: Monde, options: { textract?: 'echec'; modele?: 'panne' | 'illisible' | 'muet'; dateDeduite?: true; bordereau?: true; dollars?: true } = {},
 ) {
+  // Une facture écrite en dollars (relecture du 28/11/2026) : la même, le symbole « $ » à la place de l'euro.
+  const monnaie = (texte: string) => (options.dollars ? texte.replace(/([\d,]+) €/, (_t, m: string) => 'US' + '$' + m) : texte)
   monde.sensibles.push(TIERS_LU)
   if (options.bordereau) monde.sensibles.push(...NOMINATIFS_LUS)
   monde.minuteriesImmediates = true
@@ -374,9 +376,9 @@ function lecture(
           { BlockType: 'LINE', Text: '15/05/2023', Confidence: 99 },
           { BlockType: 'LINE', Text: '01/01/2025', Confidence: 99 },
         ] : []),
-        { BlockType: 'LINE', Text: 'Total HT 823,04 €', Confidence: 99 },
-        { BlockType: 'LINE', Text: 'TVA 20 % 164,61 €', Confidence: 99 },
-        { BlockType: 'LINE', Text: 'Total TTC 987,65 €', Confidence: 99 },
+        { BlockType: 'LINE', Text: monnaie('Total HT 823,04 €'), Confidence: 99 },
+        { BlockType: 'LINE', Text: monnaie('TVA 20 % 164,61 €'), Confidence: 99 },
+        { BlockType: 'LINE', Text: monnaie('Total TTC 987,65 €'), Confidence: 99 },
       ],
     }
   }
@@ -391,7 +393,8 @@ function lecture(
     if (options.modele === 'illisible') return reponseModele(`{"tiers": ${TIERS_LU}, "totalTtc": "987,65 €"}`)
     // Les trois totaux, cohérents à 20 % : une lecture de confiance « haute », que seul un plafond fait redescendre.
     return reponseModele(JSON.stringify({
-      tiers: TIERS_LU, date: null, devise: '€', totalTtc: '987,65 €', totalHt: '823,04 €', totalTva: '164,61 €',
+      tiers: TIERS_LU, date: null, devise: options.dollars ? '$' : '€', totalTtc: monnaie('987,65 €'), totalHt: monnaie('823,04 €'),
+      totalTva: monnaie('164,61 €'),
     }))
   }
 }
@@ -703,10 +706,11 @@ function requeteWebhook(corps: string, options: { secret?: string; corpsSigne?: 
 function boiteAuxLettres(
   monde: Monde, voisine: (slug: string) => FonctionChargee,
   options: {
-    lecture?: 'refusee' | 'date-deduite' | 'bordereau'; octets?: Uint8Array<ArrayBuffer>; octetsPar?: Record<string, Uint8Array<ArrayBuffer>>
+    lecture?: 'refusee' | 'date-deduite' | 'bordereau' | 'dollars'; octets?: Uint8Array<ArrayBuffer>; octetsPar?: Record<string, Uint8Array<ArrayBuffer>>
   } = {},
 ) {
-  lecture(monde, options.lecture === 'date-deduite' ? { dateDeduite: true } : options.lecture === 'bordereau' ? { bordereau: true } : {})
+  lecture(monde, options.lecture === 'date-deduite' ? { dateDeduite: true } : options.lecture === 'bordereau' ? { bordereau: true }
+    : options.lecture === 'dollars' ? { dollars: true } : {})
   monde.resend.pieceJointe = (demande) => ({ data: { download_url: `https://${HOTE_PIECES_JOINTES}/${String(demande.id)}` }, error: null })
   monde.hotes[HOTE_PIECES_JOINTES] = (requete) =>
     new Response(options.octetsPar?.[new URL(requete.url).pathname.slice(1)] ?? options.octets ?? PNG)
@@ -1023,6 +1027,25 @@ const RECEIVE_EMAIL: ContratFonction = {
           return piece && piece.date_piece === '2023-05-15' && piece.confiance === 'moyenne'
             ? []
             : [`pièce posée : ${JSON.stringify(piece ? { date: piece.date_piece, confiance: piece.confiance } : null)}`]
+        },
+      },
+    },
+    {
+      // RELECTURE DU 28/11/2026 : une facture en dollars entrait au dossier ses dollars écrits en euros, là où les trois autres
+      // dépôts convertissent (`montantsPourPiece`). Elle s'écrit comme la conversion au taux introuvable — rien en euros, la
+      // devise et le montant d'origine gardés —, sans appeler la BCE (aucune dépense de plus).
+      nom: 'une facture en dollars : ni euros écrits, la devise et le montant d’origine gardés, sans appel à la BCE',
+      preparer: (m, voisine) => boiteAuxLettres(m, voisine, { lecture: 'dollars' }),
+      requete: requeteWebhook(evenementRecu()),
+      attendu: {
+        statut: 200,
+        depenses: [...deposeeApres('AWS textract DetectDocumentText', 'modèle'), 'écriture insert pieces'],
+        verifier: (_r, m) => {
+          const piece = lignes(m, 'pieces')[0]
+          const vue = piece ? { ht: piece.montant_ht, tva: piece.montant_tva, ttc: piece.montant_ttc, devise: piece.devise, origine: piece.montant_devise } : null
+          return vue && vue.ht === null && vue.tva === null && vue.ttc === null && vue.devise === 'USD' && vue.origine === 987.65
+            ? []
+            : [`pièce posée : ${JSON.stringify(vue)}`]
         },
       },
     },
@@ -7844,6 +7867,22 @@ export function scenariosDesBordereauxLeves(pdf: PdfDesBordereaux): Scenario[] {
         verifier: (_r, m) => [
           ...journalise(m, /^\[receive-email\] pièce jointe écartée NON consignée \(bordereau, \d+ octets\) : /, 'la trace refusée'),
           ...(m.fichiers.size === 0 ? [] : ['un fichier est arrivé au stockage']),
+          ...sansExtractPiece(m),
+        ],
+      },
+    },
+    {
+      // RELECTURE DU 28/11/2026 : sous une extension qui ment, le bordereau prenait le type de son nom et n'était pas lu — en
+      // « .csv », ni Textract ni le classement ne le lisaient, et il entrait au dossier en relevé bancaire.
+      nom: 'un bordereau renommé « .csv » : reconnu à ses premiers octets, écarté avant tout dépôt',
+      preparer: (m, voisine) => { boiteAuxLettres(m, voisine, { octets: pdf.bordereau }); m.sensibles.push(...NOMINATIFS_DU_BORDEREAU) },
+      requete: requeteWebhook(evenementRecu({ fichier: { nom: 'releve-0.csv', type: 'text/csv' } })),
+      attendu: {
+        statut: 200, depenses: ecartee('pj-0'),
+        verifier: (_r, m) => [
+          ...ecartsConsignes(m, [{ raison: 'bordereau', octets: pdf.bordereau.length }], NOMINATIFS_DU_BORDEREAU),
+          ...(m.fichiers.size === 0 ? [] : ['un fichier est arrivé au stockage']),
+          ...(lignes(m, 'documents_divers').length === 0 ? [] : ['un document posé']),
           ...sansExtractPiece(m),
         ],
       },

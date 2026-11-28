@@ -29,6 +29,7 @@ import PanneauDroit from '../../components/PanneauDroit'
 import { usePanneauDroit } from '../../lib/panneauDroit'
 import FicheDocument from './FicheDocument'
 import { demandePour, FICHE_DEMANDEE_INTROUVABLE, type FicheDemandee } from '../../lib/ficheDemandee'
+import { useDerniereLecture } from '../../lib/derniereLecture'
 
 // « C'est une facture » sur une lecture des citations partielle, ou pas encore revenue : la révision d'un solde parle
 // d'abord, sous les mots d'hier ; le dossier permanent, seul en défaut, se nomme.
@@ -153,7 +154,10 @@ export default function DocumentsTab({ dossierId, ficheDemandee = null, onFicheD
   // avant sa lecture : aucune marque ne se pose.
   const [facturesProbables, setFacturesProbables] = useState<LectureDesFacturesProbables | null>(null)
 
+  // Seule la dernière lecture partie écrit : une relecture plus ancienne, revenue après, ne remplace rien (lib/derniereLecture.ts).
+  const commencerLecture = useDerniereLecture()
   async function load() {
+    const courante = commencerLecture()
     setLoading(true)
     const [lectureDocuments, lectureSousDossiers] = await Promise.all([
       // Lue par tranches, triée sur un ordre TOTAL (voir lib/lectureComplete.ts) : un dossier
@@ -168,6 +172,7 @@ export default function DocumentsTab({ dossierId, ficheDemandee = null, onFicheD
           .eq('dossier_id', dossierId).order('ordre').order('nom').order('id').range(debut, fin),
       ),
     ])
+    if (!courante()) return
     setDocuments(lectureDocuments.lignes)
     setLectureIncomplete(lectureDocuments.complete ? null : lectureDocuments.motif)
     // À part de `lectureIncomplete` : une liste de sous-dossiers tronquée ne raccourcit pas la liste
@@ -177,6 +182,7 @@ export default function DocumentsTab({ dossierId, ficheDemandee = null, onFicheD
     setReferencesIncompletes(lectureSousDossiers.complete ? null : lectureSousDossiers.motif)
     setSousDossiers(lectureSousDossiers.lignes)
     const presence = await documentsAvecTexteOcr(dossierId)
+    if (!courante()) return
     setAvecTexteOcr(presence.avecTexte)
     setPresenceTexteIncertaine(presence.erreur)
     // Best-effort, et journalisé : un doublon non signalé laisse l'écran dans son état d'avant, il
@@ -185,14 +191,21 @@ export default function DocumentsTab({ dossierId, ficheDemandee = null, onFicheD
       console.error('Doublons de contenu illisibles :', err)
       return []
     })
+    if (!courante()) return
     const parDocument = new Map<string, number>()
     for (const doublon of doublons) {
       for (const id of doublon.documentIds) parDocument.set(id, doublon.pieceIds.length + doublon.documentIds.length)
     }
     setDoublonParDocument(parDocument)
-    setCitations(await lireCitationsDeLaRevision(dossierId))
-    setPapiers(await lireLesPapiersSignes(dossierId))
-    setFacturesProbables(await lireLesFacturesProbables(dossierId))
+    const citationsLues = await lireCitationsDeLaRevision(dossierId)
+    if (!courante()) return
+    setCitations(citationsLues)
+    const papiersLus = await lireLesPapiersSignes(dossierId)
+    if (!courante()) return
+    setPapiers(papiersLus)
+    const facturesProbablesLues = await lireLesFacturesProbables(dossierId)
+    if (!courante()) return
+    setFacturesProbables(facturesProbablesLues)
     setLoading(false)
   }
 

@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { LOGO_DES_FACTURES_EXPORTE } from './logoDesFactures'
 import { ORIGINAUX_DES_IMPORTS_PREVUS } from './bornesStockage'
+import { HONORAIRES_RESTAURES_AVANT_LA_DESIGNATION_PREVUS, refusDesHonorairesALaRestauration } from './honorairesALaRestauration'
 import { lireLeLogo } from './logoDesFacturesLecture'
 import { deposerLeLogo } from './logoDesFacturesEcriture'
 import { finDePhrase, messageErreur } from './messageErreur'
@@ -464,6 +465,9 @@ export async function restaurerSauvegarde(
   // Une note des anciennes colonnes que `notes_internes` ne peut pas recevoir (celle d'un dossier) : la restauration ne
   // l'écrit plus nulle part, donc elle la perdrait — elle se refuse (voir `sansAnciennesNotes`).
   refus.push(...sansAnciennesNotes(contenu).refus)
+  // Les honoraires d'un dossier du cabinet (HR-Q1) : sans la migration qui ouvre leurs gardes à la restauration, la base les
+  // refuserait dans un dossier qu'elle ne désigne pas encore — la restauration s'arrêterait à eux, le dossier à moitié écrit.
+  refus.push(...refusDesHonorairesALaRestauration(contenu, HONORAIRES_RESTAURES_AVANT_LA_DESIGNATION_PREVUS))
 
   // Le refus qui compte le plus. Un lien perdu sur une colonne nullable peut être « corrigé » en y
   // mettant NULL, et la restauration aboutit — en ayant défait le rapprochement bancaire ou orphelin

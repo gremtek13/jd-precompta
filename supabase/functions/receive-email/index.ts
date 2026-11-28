@@ -71,6 +71,8 @@ interface ExtractionPiece {
   // La date vient de la règle de dernier recours (la première du document) : la confiance écrite ne dépasse alors pas
   // « moyenne » (`confianceDeLExtraction`, bloc dateDeduite plus bas).
   _date_deduite?: boolean
+  // Le texte lu par Textract : la devise s'y lit (`deviseDuTexte`, bloc copié plus bas), comme aux trois autres dépôts.
+  texte_ocr?: string | null
 }
 
 // Où va un document une fois classé, et sous quelle forme. Copie assumée de `orientationDe`
@@ -314,6 +316,45 @@ export function confianceDeLExtraction(
   return dateDeduite(extraction) && extraction.confiance === 'haute' ? 'moyenne' : extraction.confiance
 }
 // ── FIN COPIE dateDeduite ────────────────────────────────────────────────────────────────────────────────────────────
+
+// ── DÉBUT COPIE deviseDuTexte ────────────────────────────────────────────────────────────────────────────────────────
+// LA DEVISE LUE SUR LE TEXTE D'UNE PIÈCE. L'original vit ici ; il est copié À L'IDENTIQUE dans receive-email, auto-portée (la
+// pièce jointe reçue par e-mail, qui écrivait en euros les montants d'une facture en dollars : relecture du 28/11/2026), et
+// deviseDuTexteCopie.test.ts compare la copie au caractère près et l'exécute contre l'original.
+export const DEVISE_PIVOT = 'EUR'
+
+// Les devises que la BCE cote et qu'on peut rencontrer sur une facture de fournisseur courant. La
+// liste sert à reconnaître un symbole, pas à restreindre : une devise absente d'ici reste saisissable
+// à la main, elle ne sera simplement pas devinée toute seule.
+const SYMBOLES: [RegExp, string][] = [
+  [/\bUSD\b|\$(?=\s?\d)|\bUS\$/, 'USD'],
+  [/\bGBP\b|£/, 'GBP'],
+  [/\bCHF\b/, 'CHF'],
+  [/\bJPY\b|¥/, 'JPY'],
+  [/\bCAD\b|\bCA\$/, 'CAD'],
+  [/\bAUD\b|\bAU\$/, 'AUD'],
+  [/\bSEK\b/, 'SEK'],
+  [/\bNOK\b/, 'NOK'],
+  [/\bDKK\b/, 'DKK'],
+  [/\bPLN\b/, 'PLN'],
+]
+
+// L'euro l'emporte dès qu'il est présent, même si un autre symbole traîne ailleurs sur le document.
+// Le cas courant est la facture d'un prestataire étranger libellée en euros qui rappelle ses tarifs
+// en dollars, ou qui porte une adresse américaine : y lire « USD » convertirait une facture déjà en
+// euros, et retrancherait un sixième du montant sans que rien ne le signale.
+const MARQUEURS_EURO = /€|\bEUR\b/
+
+export function deviseDuTexte(texte: string | null | undefined): string | null {
+  if (!texte) return null
+  const majuscules = texte.toUpperCase()
+  if (MARQUEURS_EURO.test(majuscules)) return DEVISE_PIVOT
+  for (const [motif, code] of SYMBOLES) {
+    if (motif.test(majuscules)) return code
+  }
+  return null
+}
+// ── FIN COPIE deviseDuTexte ──────────────────────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT COPIE formeDUnBordereau ────────────────────────────────────────────────────────────────────────────────────
 // LA FORME D'UN BORDEREAU DE TÉLÉTRANSMISSION, ET LES LIGNES D'UNE PAGE (BOR6). Ce bloc est copié À L'IDENTIQUE dans
@@ -1657,7 +1698,9 @@ Deno.serve(async (req: Request) => {
       }
       // UN BORDEREAU DE TÉLÉTRANSMISSION (BOR6) : jugé sur un PDF, après les bornes et AVANT le doublon, le stockage et Textract.
       // Reconnu, il s'écarte et se consigne au poids lu ; illisible, il part comme avant, et le journal n'en dit que le code.
-      if (BORDEREAUX_ECARTES_A_LA_RECEPTION && type === "application/pdf") {
+      // Un PDF à ses premiers octets aussi, quel que soit son nom (relecture du 28/11/2026) : sous « .csv » ou « .jpg », un
+      // bordereau prenait le type de son extension et n'était pas lu — et, en « .csv », ni Textract ni le classement ne le lisaient.
+      if (BORDEREAUX_ECARTES_A_LA_RECEPTION && (type === "application/pdf" || typeParSignature(bytes.subarray(0, 16)) === "application/pdf")) {
         const lecture = await formeDUnBordereauDansLePdf(bytes, finDesLecturesMs)
         if (lecture.forme === "bordereau") {
           console.warn(`Pièce jointe écartée, forme d'un bordereau de télétransmission : ${fichier.id}`)
@@ -1744,6 +1787,14 @@ Deno.serve(async (req: Request) => {
 
       const classification = estCsv ? "releve_bancaire" : (extraction?.classification ?? "facture")
       const orientation = orientationDe(classification)
+      // UNE PIÈCE ÉCRITE DANS UNE AUTRE DEVISE (relecture du 28/11/2026) : les montants d'une pièce sont TOUJOURS en euros
+      // (src/lib/devises.ts) ; ce chemin-ci écrivait ceux que la lecture rend, dans la monnaie du document — des dollars dans
+      // une comptabilité en euros, sans rien pour les distinguer —, là où les trois autres dépôts convertissent
+      // (`montantsPourPiece`). Sans appeler la BCE d'ici (aucun appel tiers hors d'un clic), la pièce s'écrit comme la
+      // conversion au taux introuvable : les montants en euros NULS, la devise et le montant d'origine gardés — visiblement
+      // incomplète, impossible à valider sans TTC, et la fiche la convertit au taux de la BCE d'un clic.
+      const deviseLue = extraction ? deviseDuTexte(extraction.texte_ocr) : null
+      const enDevise = deviseLue !== null && deviseLue !== DEVISE_PIVOT
 
       const insertError = orientation.destination === "pieces"
         ? (await supabase.from("pieces").insert({
@@ -1756,9 +1807,10 @@ Deno.serve(async (req: Request) => {
             statut: "a_valider",
             date_piece: extraction?.date_piece ?? null,
             tiers: extraction?.tiers ?? null,
-            montant_ht: extraction?.montant_ht ?? null,
-            montant_tva: extraction?.montant_tva ?? null,
-            montant_ttc: extraction?.montant_ttc ?? null,
+            montant_ht: enDevise ? null : extraction?.montant_ht ?? null,
+            montant_tva: enDevise ? null : extraction?.montant_tva ?? null,
+            montant_ttc: enDevise ? null : extraction?.montant_ttc ?? null,
+            ...(enDevise ? { devise: deviseLue, montant_devise: extraction?.montant_ttc ?? null } : {}),
             // Une date DÉDUITE plafonne la confiance à « moyenne », comme aux trois autres chemins du dépôt (PIECES-Q1).
             confiance: extraction ? confianceDeLExtraction(extraction) : null,
           })).error

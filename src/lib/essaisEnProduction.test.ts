@@ -364,10 +364,14 @@ describe('les essais de la base, rejoués en production', () => {
     // préparée) : comme celui de MCBR-Q2, il crée des dossiers, des comptes, des relevés et des exercices validés fictifs, rend les
     // contraintes immédiates et mute la fonction et le déclencheur du filet. Son catalogue se relit partout (signature.sql) ; il ne
     // touche à aucune policy.
+    // Le quarante-cinquième, honorairesRestaures, le 28/11/2026 (HR-Q1, migration `honoraires_restaures_avant_la_designation`,
+    // préparée) : il insère un dossier, une facture validée, un lien et un dépôt par la porte de la restauration, puis désigne le
+    // dossier du cabinet de la réplique, sous la garde ESSAI_HORS_REPLIQUE. Son catalogue se rejoue partout : les blocs HF et HD
+    // de rls.sql.
     expect(Object.entries(CLASSEMENT.replique).map(([e, q]) => `${e} (${q})`)).toEqual([
       'adresseDesAccesRetiresSuppression (son en-tête)', 'affectationDuResultat (son en-tête)', 'associationPaiementsAssuranceMaladieSuppression (son en-tête)', 'banquePartageeALaValidation (son en-tête)', 'caisseSuppression (son en-tête)', 'cheminsDansLeurDossier (son en-tête)', 'comptePropreHorsDesExercicesValides (son en-tête)', 'comptesBancairesSuppression (son en-tête)', 'consommationsDeLAssistantSuppression (son en-tête)', 'contrePassationDesEcrituresLibres (son en-tête)', 'departDuClient (son en-tête)', 'depotDesHonoraires (son en-tête)', 'deuxFacteurs (son en-tête)',
       'devisSuppression (son en-tête)', 'documentsCabinetSuppression (son en-tête)', 'dossierDuCabinet (son en-tête)', 'droitsHorsRls (son en-tête)', 'ecrituresLibres (son en-tête)', 'exercicesDuDossier (son en-tête)', 'facturesAssuranceMaladieSuppression (son en-tête)', 'fichesLieesAuxDossiers (son en-tête)', 'fichierCiteParUneEcritureLibre (son en-tête)',
-      'frontiereDesEncaissements (son en-tête)', 'hausseDuChiffreDAffairesSuppression (son en-tête)', 'honorairesFactures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
+      'frontiereDesEncaissements (son en-tête)', 'hausseDuChiffreDAffairesSuppression (son en-tête)', 'honorairesFactures (son en-tête)', 'honorairesRestaures (son en-tête)', 'lettresDeMission (son en-tête)', 'lettresDuClient (son en-tête)',
       'logoDesFacturesSuppression (son en-tête)', 'missionsDuClient (son en-tête)', 'modeleDuCabinetSuppression (son en-tête)', 'operationsDInventaire (son en-tête)', 'optionsDesCabinetsEnCours (son en-tête)', 'originalDUnImport (son en-tête)', 'ouvertureSuivanteALaValidation (son en-tête)', 'pieceFigeeDansLeStockage (son en-tête)',
       'provisions (son en-tête)',
       'recompositionDesVentes (son en-tête)', 'reglagesDExport (son en-tête)', 'remplacementDesJourneesAssuranceMaladieSuppression (son en-tête)', 'restauration (une méta-commande de psql)', 'saisies2035e (son en-tête)',

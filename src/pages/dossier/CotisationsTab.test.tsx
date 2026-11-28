@@ -46,7 +46,9 @@ const faux = vi.hoisted(() => ({
   // La réponse d'une insertion attend `porteInsertion` quand le test la pose (la fenêtre pendant laquelle un second
   // envoi arrive), et rend `erreurInsertion`.
   porteInsertion: null as Promise<void> | null,
-  erreurInsertion: null as { message: string } | null,
+  erreurInsertion: null as { message: string; code?: string } | null,
+  // Les fichiers retirés du stockage : un dépôt dont la base refuse la ligne retire son fichier (relecture du 28/11/2026).
+  retraits: [] as string[][],
   // Les fichiers envoyés au stockage, et les lectures d'avis demandées : un double dépôt en ferait deux de chaque, la
   // seconde lecture FACTURÉE.
   envois: [] as string[],
@@ -161,6 +163,7 @@ vi.mock('../../lib/supabase', async () => {
             faux.typesEnvoyes.push(corps?.type ?? '(aucun corps)')
             return (faux.porteEnvoi ?? Promise.resolve()).then(() => ({ error: faux.erreurEnvoi }))
           },
+          remove: (chemins: string[]) => { faux.retraits.push(chemins); return Promise.resolve({ error: null }) },
         }),
       },
     },
@@ -235,6 +238,7 @@ beforeEach(() => {
   faux.echeancesLues = []
   faux.porteInsertion = null
   faux.erreurInsertion = null
+  faux.retraits = []
   faux.envois = []
   faux.typesEnvoyes = []
   faux.porteEnvoi = null
@@ -1020,6 +1024,23 @@ describe('CotisationsTab — les bornes du seau', () => {
     expect(faux.envois).toEqual([])
     expect(faux.insertions.filter((i) => i.table === 'documents_divers')).toEqual([])
     expect(faux.extractions).toBe(0)
+  })
+
+  // LE FICHIER QU'AUCUNE LIGNE NE DÉSIGNE (relecture adverse du chemin d'une pièce, 28/11/2026) : la base refusant la ligne
+  // du document, l'avis déposé restait au stockage. Retiré sur une réponse de la base ; une coupure le laisse.
+  it('la base refuse la ligne de l’avis : le fichier déposé est retiré ; une coupure le laisse', async () => {
+    faux.erreurInsertion = { code: '42501', message: 'permission denied' }
+    monter()
+    await screen.findByText(/Ajouter une échéance/)
+    await act(async () => { fireEvent.change(champDeDepot(), { target: { files: [new File(['jpeg'], 'avis.jpg', { type: '' })] } }) })
+    expect(faux.envois).toHaveLength(1)
+    expect(faux.retraits).toEqual([[faux.envois[0]]])
+    expect(faux.envois[0]).toMatch(/^dossier-de-test\/documents\//)
+
+    faux.erreurInsertion = { code: '', message: 'TypeError: Failed to fetch' }
+    await act(async () => { fireEvent.change(champDeDepot(), { target: { files: [new File(['jpeg2'], 'avis2.jpg', { type: '' })] } }) })
+    expect(faux.envois).toHaveLength(2)
+    expect(faux.retraits).toHaveLength(1)
   })
 
   it('un avis dans les bornes part sous le type décidé', async () => {
