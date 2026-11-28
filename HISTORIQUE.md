@@ -55565,3 +55565,20 @@ qu'il reste à envoyer » (« Mes pièces ») sous sa pastille ; « (1 j) » et 
 qu'on proposait de remplacer par « Cabinet infirmier Moreau EI » ; les listes de colonnes de l'import nommées par leur titre ; une
 visite `import/releve-csv`. **À l'architecte** : la colonne du solde courant d'un CSV n'alimente pas le contrôle de solde (IMPORT-Q1) ;
 le « Nom et Prénom » de la 2035-SD (2035SD-Q4). Un geste qui écrit ne se juge pas au banc (ses écritures ne changent rien).
+### 28/11/2026 — LES TROIS PRÉPARÉES D'APRÈS LA RÉPÉTITION, RÉPÉTÉES SEULES ET EN CHAÎNE ; LE CONTRÔLE 141 ATTENDAIT LA GARDE D'ASSIST-Q1
+
+(Agent architecte ; rien en production, aucun outil de la base ; une copie neuve de `replique_227` portée à 261 par l'export, ses
+trois contrôles égaux, supprimée.) SECU4-Q2, MCBR2-Q2 et ASSIST-Q1 (sous 232000 : plus rien ne nomme l'ancienne version) **seules**
+sur 261 : chacune s'applique, une seconde se refuse, ses essais (16/16 ; 17/17 et 8 sur 8 ; 8/8 et 4/4) et ceux des tables partagées
+justes, `rls.sql` sans faute, les 220 jeux d'essais ceux de 261 hors de ses attentes levées, son retour rend la signature d'avant.
+**Ensemble**, dans leurs six ordres : la même base, les retours rendent 261. **En chaîne** avec les 18 — d'abord, après la double
+authentification, et dans l'ordre de collage recommandé (19 ter, les trois, 19 quater, les seize, 20) — : 282 migrations, `rls.sql`
+354 · 1 721 · 0 · 224 sur 224, les 220 jeux identiques d'un ordre à l'autre et à la chaîne d'hier hors des six attentes levées, la
+même base au bout ; le filet de MCBR2-Q2 juste avant comme après INV3 ; la restrictive du journal la même que 20 la pose ou elle ;
+la règle de SECU4-Q2 la dernière des gardes BEFORE avec celles de B4, B7, INAL5 et INV3 — sans elle, la pièce qu'une pièce vue de B4
+cite change encore de dossier (sondé) : SECU4-Q2 avant B2 et B4 ; `restauration.sql` IDENTIQUE ; socle 100 `3ccceb27…`, inventaire
+4 354 `fa931de8…` égaux aux fichiers simulés (265 : 85, 3 572 `6224d8e7…`) ; retours → 261. **Établi et corrigé**, sous un commit à
+part : le contrôle 141 de `validationExercice.sql`, joué en production, aurait viré au rouge au collage d'ASSIST-Q1 (85 gardes
+observées, 84 attendues ; `gardesDeSuppressionAttendues.test.ts` rouge, les deux branches réunies) ; la ligne sous la forme OBSERVÉE,
+`dossier` (la mise à nul du dossier retiré), comptée quand la table existe : 250/250 partout, SÛR au banc, gardée par
+`consommationDeLAssistant.test.ts`. Aucune préparée n'a dérivé. Le tableau : la conception 60 ; question : REPET4-Q1.
