@@ -58,7 +58,8 @@ describe('le contrôle 141 de validationExercice.sql attend chaque garde de supp
   it('le plancher : le relevé voit les gardes de la production et celles des préparées', () => {
     const gardes = gardesDeSuppression(TOUS)
     // 109 le 27/11/2026 : les 107 que le contrôle observe au bout de la chaîne des préparées, et les deux de la caisse — dont
-    // 23 des préparées. Le plancher dépasse les 86 de l'export seul : sans les préparées, le relevé tomberait dessous ; une
+    // 23 des préparées ; 110 le 28/11/2026, avec la garde du journal de consommation de l'assistant (ASSIST-Q1), dont 24 des
+    // préparées. Le plancher dépasse les 86 de l'export seul : sans les préparées, le relevé tomberait dessous ; une
     // préparée rangée dans l'export le jour de son collage y reste comptée.
     expect(gardes.length).toBeGreaterThanOrEqual(105)
     expect(gardes.filter((d) => ECARTEES_PAR_LA_REQUETE.includes(d.fonction))).toHaveLength(2)
@@ -81,5 +82,9 @@ describe('le contrôle 141 de validationExercice.sql attend chaque garde de supp
     // L'essai d'hier, sans la ligne de NOE4R-Q2 : la garde oubliée se dit.
     const sansLaLigne = ESSAI.replace(`'remplacements_assurance_maladie.remplacements_assurance_maladie_garde:garder_remplacements_assurance_maladie:dossier:O'`, `''`)
     expect(oubliees(gardesDeSuppression(TOUS), sansLaLigne).map((d) => `${d.table}.${d.nom}`)).toEqual(['remplacements_assurance_maladie.remplacements_assurance_maladie_garde'])
+    // Et celui d'avant le 28/11/2026, sans la ligne d'ASSIST-Q1 (le défaut que la répétition de ce jour a trouvé).
+    const sansLaConsommation = ESSAI.replace(`'consommations_de_l_assistant.consommations_de_l_assistant_garde:garder_consommations_de_l_assistant:dossier:O'`, `''`)
+    expect(sansLaConsommation).not.toBe(ESSAI)
+    expect(oubliees(gardesDeSuppression(TOUS), sansLaConsommation).map((d) => `${d.table}.${d.nom}`)).toEqual(['consommations_de_l_assistant.consommations_de_l_assistant_garde'])
   })
 })
