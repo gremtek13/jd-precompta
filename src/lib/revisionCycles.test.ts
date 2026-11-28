@@ -350,7 +350,7 @@ describe('le rangement des contrôles existants', () => {
     tiers: ['lettrages-qui-ne-tiennent-plus'],
     stocks: [],
     ensemble: [
-      'exercice-en-cours', 'deja-valide', 'ordre', 'avant-ouverture', 'ouverture-d-abord', 'ecritures-anterieures',
+      'exercice-hors-bornes', 'exercice-en-cours', 'deja-valide', 'ordre', 'avant-ouverture', 'ouverture-d-abord', 'ecritures-anterieures',
       'exercice-anterieur-d-abord', 'ecritures-orphelines', 'ecritures-desequilibrees', 'desequilibrees', 'numerotation',
       'ecritures-a-repartir', 'champs-bnc',
       'inventaire-mal-numerote', 'inventaire-non-declare', 'inventaire-a-recomposer', 'extourne-manquante', 'provisions-a-ventiler',

@@ -55582,3 +55582,19 @@ part : le contrôle 141 de `validationExercice.sql`, joué en production, aurait
 observées, 84 attendues ; `gardesDeSuppressionAttendues.test.ts` rouge, les deux branches réunies) ; la ligne sous la forme OBSERVÉE,
 `dossier` (la mise à nul du dossier retiré), comptée quand la table existe : 250/250 partout, SÛR au banc, gardée par
 `consommationDeLAssistant.test.ts`. Aucune préparée n'a dérivé. Le tableau : la conception 60 ; question : REPET4-Q1.
+
+### 28/11/2026 — LES REFUS DE LA VALIDATION CONFRONTÉS AUX PRÉALABLES DE L'ÉCRAN
+
+(Agent architecte ; rien en base, aucun outil Supabase.) Le texte exporté relu refus par refus : `valider_exercice` (le corps de
+`codes_des_clients`, 50 refus, dont les onze messages des deux `case` qu'un `raise '%'` lève), les fonctions des trois
+déclencheurs de `exercices_valides` (frontière de la tenue, ouverture éclatée de l'exercice, ouverture suivante différée, et
+`ouverture_eclatee_attendue` qu'appellent les deux filets : 8 refus), et les 24 déclencheurs de ces tables et de celles que la validation écrit.
+**Établi** : 51 des 58 refus se disent avant le clic (49 par un préalable nommé, deux par l'écran — la carte au chef seul,
+l'onglet Clôture du module `tenue`), sept sont inatteignables par construction (les deux tableaux illisibles, la couverture des
+à-nouveaux, l'écriture restée proposée, les deux refus de la 2035, l'à-nouveau incomplet), les 21 déclencheurs des tables écrites
+se taisent sous la validation (hors RLS, `jd.validation_exercice`, un `update of` sur des colonnes qu'elle ne pose pas — vérifié
+contre son `set`). **Un manquait** : « Exercice invalide. » hors de 2000 à 2100 — aucune date de pièce, de mouvement ni
+d'écriture n'est bornée, et l'exercice d'une date mal lue (1999) se proposait validable ; le préalable `exercice-hors-bornes`
+(rouge avant, vert après). À l'inverse, 50 préalables bloquants sont « écran seul » (l'API validerait), chacun avec sa raison,
+deux « en partie ». Gardé par `src/lib/refusDeLaValidation.test.ts`, qui part de tout et vire au rouge sur un refus, un
+déclencheur ou un préalable bloquant neuf (mutations plantées). Question : VALREF-Q1.

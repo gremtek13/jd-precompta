@@ -312,6 +312,7 @@ export const CYCLE_DES_CONTROLES: Readonly<Record<string, CycleRevision | Readon
   'lettrages-qui-ne-tiennent-plus': 'tiers',
   // L'ensemble : l'ordre des exercices, la numérotation, l'ouverture qui suivra, la 2035, la piste d'audit, et les
   // informations du dossier.
+  'exercice-hors-bornes': 'ensemble',
   'exercice-en-cours': 'ensemble',
   'deja-valide': 'ensemble',
   ordre: 'ensemble',
