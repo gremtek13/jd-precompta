@@ -30,13 +30,9 @@ import { describe, expect, it } from 'vitest'
  */
 const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
   'pages/dossier/CotisationsTab.tsx': {
-    nombre: 4,
-    raison: 'hors du périmètre de l’audit : la relecture des cotisations du 28/11/2026 (commit 8e88fee1) traite la confirmation et '
-      + 'le remplacement d’une prévisionnelle (deux, classe a) ; le rattachement et le détachement d’un avis (deux, classe b) restent à traiter',
-  },
-  'pages/dossier/ImmobilisationsTab.tsx': {
-    nombre: 1,
-    raison: 'hors du périmètre de l’audit : la fiche d’un bien (classe a) est traitée par le commit 8e88fee1, qui la fait lire sa ligne',
+    nombre: 2,
+    raison: 'le rattachement et le détachement d’un avis (deux, classe b) restent à traiter ; la confirmation et le remplacement '
+      + 'd’une prévisionnelle, comme la fiche d’un bien, lisent leur ligne depuis la relecture des cotisations du 28/11/2026',
   },
   'lib/contrepartieBanque.ts': {
     nombre: 2,
