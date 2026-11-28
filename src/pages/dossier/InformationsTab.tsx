@@ -391,7 +391,7 @@ export default function InformationsTab({
     <div className="card" style={{ maxWidth: 640, marginBottom: 20 }}>
       <h3 style={{ marginTop: 0 }}>Identité du dossier</h3>
       <p className="muted" style={{ marginTop: -8 }}>
-        SIRET et adresse de "{dossierNom}" — repris automatiquement sur chaque nouvelle facture émise
+        SIRET et adresse de « {dossierNom} » — repris automatiquement sur chaque nouvelle facture émise
         et requis pour la transmettre via Super PDP.
       </p>
       <p className="muted" style={{ marginTop: -4 }}>

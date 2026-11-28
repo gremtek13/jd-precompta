@@ -30,6 +30,7 @@ import { partDuRythme, periodeDuRaccord } from '../../src/lib/planTresorerie'
 import { AUCUN_PAIEMENT_PAR_LA_CAISSE, paiementsDesPieces } from '../../src/lib/rattachement'
 import { PLAN_PAR_DEFAUT, ROLES_COMPTABLES, type LibellesDuPlan } from '../../src/lib/planComptable'
 import { MODULES_OPTIONNELS } from '../../src/lib/modulesDuCabinet'
+import { MODELES_PAR_DEFAUT } from '../../src/lib/numerotationContinue'
 import { ROLES_DU_CHANGE } from '../../src/lib/rolesDuChange'
 import { ROLE_AUTRES_IMPOTS } from '../../src/lib/autresImpotsDesCotisations'
 import { mouvementsDeCloture, soldesAReporter } from '../../src/lib/reportDesSoldes'
@@ -2333,9 +2334,25 @@ const COMPTES_DU_BANC: Ligne[] = ['d1', 'd7'].flatMap((dossier) => [
   { id: `cb-${dossier}-1`, dossier_id: dossier, libelle: 'Compte courant professionnel', principal: true, compte: null, compte_propre_depuis: null, ouvert_le: '2025-01-01', clos_le: null, fin_d_identifiant: '4412', created_by: 'u1', created_at: MAINTENANT },
   { id: `cb-${dossier}-2`, dossier_id: dossier, libelle: 'Compte épargne professionnelle (livret de trésorerie)', principal: false, compte: '512100', compte_propre_depuis: '2026-01-01', ouvert_le: '2026-01-01', clos_le: null, fin_d_identifiant: '9087', created_by: 'u1', created_at: MAINTENANT },
 ])
+const COMPTE_PRINCIPAL_DU_BANC: Ligne = {
+  libelle: 'Compte courant professionnel', principal: true, compte: null, compte_propre_depuis: null, ouvert_le: null, clos_le: null,
+  fin_d_identifiant: null, created_by: 'u1', created_at: MAINTENANT,
+}
 function lignesDuBanc(table: string): Ligne[] {
   const base = TABLES[table] ?? []
-  if (typeof localStorage === 'undefined' || localStorage.getItem('banc-comptes') !== '1') return base
+  // SANS LE LEVIER, UN COMPTE PRINCIPAL PAR DOSSIER (28/11/2026). En base, chaque dossier a son compte principal et chaque mouvement,
+  // chaque relevé contrôlé, son compte (MCB1, NOT NULL) ; `COMPTES_BANCAIRES_PREVUS` est levé depuis le 27/11/2026. Le banc ne servait
+  // aucun compte et des mouvements sans compte : « Ma banque » du client (`partageDesComptes`) y lisait un mouvement d'un compte que
+  // la lecture n'avait pas rendu, et taisait le solde, les mois, « Mon année » et « Comparer les années » à chaque visite (vu au
+  // parcours du MVP). Un seul compte : les écrans se lisent comme avant les comptes multiples.
+  const levier = typeof localStorage === 'undefined' ? null : localStorage.getItem('banc-comptes')
+  if (levier !== '1') {
+    if (table === 'comptes_bancaires') return (TABLES.dossiers ?? []).map((d) => ({ ...COMPTE_PRINCIPAL_DU_BANC, id: `cb-${String(d.id)}-1`, dossier_id: d.id }))
+    if (table === 'lignes_bancaires' || table === 'controles_releves_bancaires') {
+      return base.map((l) => ({ ...l, compte_bancaire_id: l.compte_bancaire_id ?? `cb-${String(l.dossier_id)}-1` }))
+    }
+    return base
+  }
   if (table === 'comptes_bancaires') return COMPTES_DU_BANC
   if (table === 'lignes_bancaires' || table === 'controles_releves_bancaires') {
     return base.map((l, i) => ({ ...l, compte_bancaire_id: `cb-${String(l.dossier_id)}-${i % 2 === 0 ? 1 : 2}` }))
@@ -3097,6 +3114,22 @@ function rpcDuBanc(nom: string, dossierId: string | undefined): { data: unknown;
   // `plan_du_dossier` (ligne 43, étape PC3) : le plan effectif d'un dossier, un rôle par ligne dans l'ordre du catalogue ;
   // aucun dossier du banc n'en règle un, chacun lit donc le défaut de chaque rôle, comme en base — les deux du change compris
   // depuis leur migration (12/11/2026), que la lecture exige le drapeau levé.
+  // TROIS LECTURES DE L'ONGLET INFORMATIONS QUE LE BANC NE SERVAIT PAS (28/11/2026, parcours du MVP) : la réponse par défaut
+  // (`false`) n'a la forme d'aucune, et chaque carte disait sa lecture manquée à chaque visite. `modele_du_cabinet` (PC5) a la forme
+  // de `plan_du_dossier` : aucun cabinet du banc n'en règle un, chaque rôle a l'origine « application ». `missions_du_client` (LM5-Q2) :
+  // aucun dossier du cabinet désigné, aucune lettre. `etat_de_la_numerotation` (A9a) : les quatre séries de l'année sous leur modèle
+  // par défaut, rien d'émis, d'importé ni de validé — le banc ne rejoue pas la numérotation, la carte se mesure.
+  if (nom === 'modele_du_cabinet') return rpcDuBanc('plan_du_dossier', dossierId)
+  if (nom === 'missions_du_client') return { data: { dossier_du_cabinet_designe: false, lettres: [] }, error: null }
+  if (nom === 'etat_de_la_numerotation') {
+    return {
+      data: (['client', 'mandataire'] as const).flatMap((emetteur) => (['facture', 'avoir'] as const).map((nature) => ({
+        nature, emetteur, modele: MODELES_PAR_DEFAUT[emetteur][nature], annuel: true, depuis: null, modele_par_defaut: true, premier: 1,
+        emis: null, importes: 0, valides: 0, fin: null, trous: [], refus: null, prochain_numero: null,
+      }))),
+      error: null,
+    }
+  }
   if (nom === 'plan_du_dossier') {
     return {
       // Le rôle des autres impôts (EXP58-Q6, en production depuis le 19/11/2026, 243) aussi : sans lui, le plan était
@@ -3266,6 +3299,18 @@ export const supabase = {
       // Le levier `banc-super` : le compte du banc est super-administrateur (la page des cabinets et de leurs modules, /comptes-master).
       : nom === 'is_super_admin' && levierDuBanc('banc-super') === '1'
         ? Promise.resolve({ data: true, error: null })
+      // `honoraires_deposes_au_dossier` (LM8, migration `depot_des_honoraires`, en production depuis le 12/11/2026), que « Mes pièces »
+      // lit pour nommer une facture d'honoraires du cabinet : le banc n'en dépose aucune, une liste vide lue en entier. Sans elle, la
+      // réponse par défaut (`false`) n'est pas une liste, et « Mes pièces » disait au client « On n'a pas pu lire quelles pièces ton
+      // cabinet a déposées pour ses honoraires » à chaque visite (vu au parcours du MVP, 28/11/2026).
+      : nom === 'honoraires_deposes_au_dossier'
+        ? Promise.resolve({ data: [], error: null, count: 0 })
+      // `ventes_facturees_de_la_simulation` (VF8e), que « Ma simulation » lit pour toute société : un dossier qui n'a pas basculé
+      // n'en a aucune, et la fonction le rend ainsi (« Un dossier qui n'a pas basculé : rien », migration
+      // `simulation_des_ventes_facturees`). Sans cette réponse, la simulation de l'atelier (d7) disait ses factures « pas affichées
+      // en entier » et ne se calculait pas. Le dossier basculé (d12) n'est pas servi : sa simulation le dit.
+      : nom === 'ventes_facturees_de_la_simulation' && (TABLES.dossiers ?? []).some((d) => d.id === args?.p_dossier_id && d.ventes_par_les_factures !== true)
+        ? Promise.resolve({ data: { par_mois: {}, sources: [] }, error: null })
       : Promise.resolve(rpcDesParametres(nom, args) ?? rpcDesEcrituresLibres(nom, args) ?? rpcDesReglagesDExport(nom, args)
         ?? rpcDuBanc(nom, args?.p_dossier_id))),
   from: (table: string) => requete(table),

@@ -456,7 +456,7 @@ export default function ClientHome() {
           </div>
           {/* « À encaisser » et « À déclarer » (étape P4b) et l'encart « Facture électronique » (étape A6b2), d'après UNE lecture
               des ventes : seulement si « Mes ventes » est ouvert sur la société affichée. */}
-          {ventesOuvertes && <AccueilVentesClient key={dossierId} dossierId={dossierId} />}
+          {ventesOuvertes && <AccueilVentesClient key={`ventes-${dossierId}`} dossierId={dossierId} />}
 
           <Widget
             className="span-7"
@@ -512,11 +512,11 @@ export default function ClientHome() {
               <DerniersEnvoisAccueil envois={depots.slice(0, NB_DERNIERS_DEPOTS)} />
             )}
           </Widget>
-          <CarteEtatDuDossier key={dossierId} dossierId={dossierId} />
+          <CarteEtatDuDossier key={`etat-${dossierId}`} dossierId={dossierId} />
 
           {/* « Mes prochaines échéances » (ligne 51.5, étape C1) : sa propre lecture, à part de `load`, clée par société ; la
               carte lit elle-même la case « Banque » de la société affichée, pour ses montants seulement. */}
-          <EcheancierAccueil key={dossierId} dossierId={dossierId} />
+          <EcheancierAccueil key={`echeancier-${dossierId}`} dossierId={dossierId} />
         </div>
       )}
 
@@ -551,7 +551,7 @@ export default function ClientHome() {
                 <span className="etape-num">3</span>
                 <div>
                   <div className="etape-titre">Suis ce qu'il reste</div>
-                  <div className="etape-desc">Le bloc "Ce qu'il reste à envoyer" te dit ce qui manque.</div>
+                  <div className="etape-desc">Le bloc « Ce qu'il reste à envoyer » te dit ce qui manque.</div>
                 </div>
               </div>
             </div>

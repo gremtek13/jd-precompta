@@ -2289,7 +2289,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva, ventesParLe
                     <td data-libelle="Mouvement">
                       <div>
                         {formatDate(a.ligne.date)}
-                        <span className="muted" style={{ marginLeft: 6 }}>({a.ecartJours} j)</span>
+                        <span className="muted" style={{ marginLeft: 6, whiteSpace: 'nowrap' }}>({a.ecartJours} j)</span>
                       </div>
                     </td>
                     <td data-libelle="Libellé bancaire" className="muted">
@@ -3129,6 +3129,14 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
   const { donnees: dataRows, retirees } = useMemo(
     () => (rows ? lignesDeDonnees(rows, hasHeader, ligneEnTete) : { donnees: [], retirees: [] }), [rows, hasHeader, ligneEnTete],
   )
+  // Le nom d'une colonne dans les listes de choix (28/11/2026, parcours du MVP) : son numéro, celui que les refus citent (« La
+  // colonne 3 est déjà lue comme le libellé »), suivi de son titre quand le fichier a une ligne d'en-tête — la même que
+  // `lignesDeDonnees` retire. Sans lui, le cabinet comptait les colonnes de l'aperçu pour savoir laquelle est « Colonne 3 ».
+  const ligneDesTitres = rows && hasHeader ? rows[ligneEnTete ?? 0] ?? null : null
+  const nomDeColonne = (i: number) => {
+    const titre = (ligneDesTitres?.[i] ?? '').trim()
+    return titre === '' ? `Colonne ${i + 1}` : `Colonne ${i + 1} — ${titre.length > 40 ? `${titre.slice(0, 40)}…` : titre}`
+  }
   const reglage: ReglageDeLImport = {
     colDate, colLibelle, hasHeader, format: mode, colMontant, colDebit, colCredit, colSolde,
     ...(DATE_DE_VALEUR_PREVUE ? { colDateValeur } : {}),
@@ -3551,7 +3559,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
             <table>
               <tbody>
                 {rows.slice(0, 4).map((r, i) => (
-                  <tr key={i}>{r.map((cell, j) => <td key={j}>{cell}</td>)}</tr>
+                  // Les cellules du fichier telles quelles, sur une ligne : « 1 250,40 », écrit par la banque avec une espace
+                  // ordinaire, se coupait en « 1 » et « 250,40 » à 390 px ; le tableau défile plutôt (28/11/2026).
+                  <tr key={i}>{r.map((cell, j) => <td key={j} style={{ whiteSpace: 'nowrap' }}>{cell}</td>)}</tr>
                 ))}
               </tbody>
             </table>
@@ -3561,13 +3571,13 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
             <div className="field">
               <label htmlFor="colDate">Colonne Date</label>
               <select id="colDate" value={colDate} onChange={(e) => setColDate(+e.target.value)}>
-                {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
+                {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>{nomDeColonne(i)}</option>)}
               </select>
             </div>
             <div className="field">
               <label htmlFor="colLibelle">Colonne Libellé</label>
               <select id="colLibelle" value={colLibelle} onChange={(e) => setColLibelle(+e.target.value)}>
-                {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
+                {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>{nomDeColonne(i)}</option>)}
               </select>
             </div>
           </div>
@@ -3584,7 +3594,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
             <div className="field">
               <label htmlFor="colMontant">Colonne Montant</label>
               <select id="colMontant" value={colMontant} onChange={(e) => setColMontant(+e.target.value)}>
-                {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
+                {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>{nomDeColonne(i)}</option>)}
               </select>
             </div>
           ) : (
@@ -3592,13 +3602,13 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
               <div className="field">
                 <label htmlFor="colDebit">Colonne Débit</label>
                 <select id="colDebit" value={colDebit} onChange={(e) => setColDebit(+e.target.value)}>
-                  {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
+                  {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>{nomDeColonne(i)}</option>)}
                 </select>
               </div>
               <div className="field">
                 <label htmlFor="colCredit">Colonne Crédit</label>
                 <select id="colCredit" value={colCredit} onChange={(e) => setColCredit(+e.target.value)}>
-                  {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
+                  {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>{nomDeColonne(i)}</option>)}
                 </select>
               </div>
             </div>
@@ -3608,7 +3618,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
             <label htmlFor="colSolde">Colonne du solde courant (jamais importée comme montant)</label>
             <select id="colSolde" value={colSolde ?? ''} onChange={(e) => setColSolde(e.target.value === '' ? null : +e.target.value)}>
               <option value="">Aucune</option>
-              {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
+              {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>{nomDeColonne(i)}</option>)}
             </select>
           </div>
           {DATE_DE_VALEUR_PREVUE && (
@@ -3616,7 +3626,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
               <label htmlFor="colDateValeur">Colonne de la date de valeur (facultative, gardée avec le mouvement)</label>
               <select id="colDateValeur" value={colDateValeur ?? ''} onChange={(e) => setColDateValeur(e.target.value === '' ? null : +e.target.value)}>
                 <option value="">Aucune</option>
-                {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>Colonne {i + 1}</option>)}
+                {Array.from({ length: nbColonnes }).map((_, i) => <option key={i} value={i}>{nomDeColonne(i)}</option>)}
               </select>
             </div>
           )}

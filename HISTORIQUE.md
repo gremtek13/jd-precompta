@@ -55550,3 +55550,18 @@ contributions sociales » de l'assiette, le renvoi (26) ne rend que BK et BV : R
 sociales personnelles » hors des cotisations de l'estimation, sous « Cotisations sociales personnelles » dedans, et jamais en
 BT (REL2035-Q2) ; les écritures libres hors de `comptes-sur-plusieurs-postes` (REL2035-Q3) ; la projection d'une première année
 divisée par les mois écoulés depuis le 1er janvier, pas depuis le début d'activité (REL2035-Q4).
+### 28/11/2026 — LE PARCOURS DU MVP ÉPROUVÉ DANS UN VRAI NAVIGATEUR
+
+(Agent dev ; rien en production, ni base ni Edge Function.) Le banc (`outils/captures/`) rejoué onglet par onglet sur le cabinet
+infirmier, à 1 440 et 390 px, puis côté client (« Caisse », « Ventes », « Banque ») : console, lectures que le faux Supabase ne
+servait pas (une sonde temporaire, retirée), débordements, gestes cliqués (import CSV, OFX et windows-1252, PDF de la 2035 et de la
+2035-SD, FEC, rapprochement). **Le banc était en retard sur la production** : sans compte bancaire depuis MCB5g, « Ma banque », « Mon
+année » et « Ma trésorerie » du client se taisaient à chaque visite ; cinq fonctions répondaient `false` (honoraires déposés, ventes
+de la simulation, numérotation, missions, modèle de plan) et leurs cartes disaient une lecture manquée ; une visite qui ne se jouait
+pas arrêtait tout le passage de `debordements.mjs` — servis, et la visite fautive se compte désormais. **Corrigé à l'écran** : trois
+cartes sœurs de l'accueil du client sous la même clé (avertissement React à chaque accueil « Ventes ») ; l'état du dossier sans sa
+pastille, un retrait vide de 40 px à sa place ; la pastille d'un titre (« à vérifier ») pliée en bulle à 390 px ; le texte de « Ce
+qu'il reste à envoyer » (« Mes pièces ») sous sa pastille ; « (1 j) » et « 1 250,40 » coupés ; la dénomination « Claire Moreau EI »
+qu'on proposait de remplacer par « Cabinet infirmier Moreau EI » ; les listes de colonnes de l'import nommées par leur titre ; une
+visite `import/releve-csv`. **À l'architecte** : la colonne du solde courant d'un CSV n'alimente pas le contrôle de solde (IMPORT-Q1) ;
+le « Nom et Prénom » de la 2035-SD (2035SD-Q4). Un geste qui écrit ne se juge pas au banc (ses écritures ne changent rien).

@@ -3,7 +3,10 @@
 // (moins de 700 pixels de contenu à 1 440) : une rangée de boutons ou de champs qui ne passe pas à la
 // ligne déborde alors, et son dernier élément disparaît sous le volet sans que rien ne casse ailleurs.
 //
-//   npx vite --config outils/captures/vite.config.ts        # sert l'application (voir vitrine.mjs)
+//   npx vite --config outils/captures/vite.config.ts        # sert l'application (voir vitrine.mjs) ; deux visites mesurent un
+//                                                           # écran derrière son drapeau baissé : servir avec
+//                                                           # BANC_DRAPEAUX=SAISIES_2035_EXPORTEES,DU_CONTRE_PAYE_PREVU, sinon
+//                                                           # elles se disent « pas jouées » (et se comptent)
 //   node outils/captures/debordements.mjs [largeur] [sans]  # « sans » : panneau de droite fermé
 //                                                           # sans « sans », il ne s'ouvre qu'à partir de 1 280 px : dessous il
 //                                                           # se superpose et ne rétrécit rien (le total le dit), et sur
@@ -519,6 +522,22 @@ const VISITES = [
   // (A8d2b, `IMPORT_DES_FACTURES_OFFERT` levé le même jour).
   { dossier: 'd12', onglet: 'cloture', nom: 'cipav/cloture' },
   { dossier: 'd12', onglet: 'factures', nom: 'import/factures-de-l-ancien-logiciel' },
+  // L'IMPORT D'UN RELEVÉ PAR FICHIER (MVP, 28/11/2026), que le banc n'ouvrait pas : un CSV FICTIF à cinq colonnes — Débit, Crédit
+  // et le solde courant, une ligne « SOLDE PRECEDENT » —, son aperçu, les listes de choix des colonnes sous leur titre d'en-tête et ce
+  // que l'import lira, ramenés à l'écran. Le fichier est donné à la page : rien ne s'importe tant qu'on ne clique pas.
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'import/releve-csv',
+    apres: async (page) => {
+      const carte = page.locator('.card', { hasText: 'Importer un relevé bancaire' }).first()
+      await carte.locator('input[type=file]').first().setInputFiles({
+        name: 'releve-fictif-octobre.csv', mimeType: 'text/csv',
+        buffer: Buffer.from('Date;Libellé;Débit;Crédit;Solde\n01/10/2026;SOLDE PRECEDENT;;;1 000,00\n'
+          + '02/10/2026;VIR CPAM REMBOURSEMENTS SEPT;;1 250,40;2 250,40\n05/10/2026;CB PHARMACIE CENTRALE;45,90;;2 204,50\n'),
+      })
+      await carte.getByText('Ce que l’import lira').waitFor({ timeout: 10000 })
+      await carte.locator('#colDate').scrollIntoViewIfNeeded()
+    },
+  },
   // Le registre des immobilisations déplié : le tableau d'amortissement d'un bien, le formulaire qui le
   // modifie et celui d'une nature n'apparaissent qu'après un clic. Puis un bien sans nature et plusieurs
   // candidates (dossier assujetti), et une dotation d'un exercice fini qui manque (engagement).
@@ -1514,6 +1533,10 @@ const VISITES = [
   {
     dossier: 'd1', onglet: 'informations', nom: 'informations/identite-ei',
     apres: async (page) => {
+      // La dénomination du cabinet infirmier porte déjà la mention (« Claire Moreau EI ») : la carte ne propose plus rien
+      // (28/11/2026). Une dénomination effacée fait paraître la proposition que la visite mesure.
+      await page.locator('#identite-denomination').waitFor({ timeout: 10000 })
+      await page.locator('#identite-denomination').fill('')
       await page.getByRole('button', { name: /^Utiliser « /u }).waitFor({ timeout: 10000 })
       await page.locator('#identite-forme').scrollIntoViewIfNeeded()
     },
@@ -2823,8 +2846,18 @@ for (const { dossier, onglet, chemin, nom, apres, fenetre, nav, sansAssistant } 
     if ((await bouton.getAttribute('aria-pressed')) !== 'true') await bouton.click()
   }
   await page.waitForTimeout(300)
+  // UNE VISITE QUI NE SE JOUE PAS EST UNE FAUTE DE LA VISITE, PAS LA FIN DU PASSAGE (28/11/2026) : un écran derrière un drapeau
+  // baissé (`cloture/saisies-du-cabinet` sans `BANC_DRAPEAUX=SAISIES_2035_EXPORTEES`), un texte attendu qui a changé — `apres`
+  // levait, et le passage s'arrêtait au milieu sans total, les visites suivantes jamais mesurées. Elle se compte et se nomme.
   if (apres) {
-    await apres(page)
+    try {
+      await apres(page)
+    } catch (e) {
+      const raison = String(e?.message ?? e).split('\n')[0].slice(0, 160)
+      total += 1
+      console.log(`${nom} : \n   la visite ne s’est pas jouée (${raison})`)
+      continue
+    }
     await page.waitForTimeout(300)
   }
   const fautes = await page.evaluate(({ fenetre, nav }) => {
