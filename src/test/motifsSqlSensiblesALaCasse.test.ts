@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { LecturePerdue, lire, nommeUneDefinition, trouvailles, type Trouvaille } from './motifsSql'
 
 // UN MOTIF QUI CHERCHE UNE DÉFINITION SQL EN MINUSCULES RELIT UNE ANCIENNE VERSION, SANS RIEN DIRE.
@@ -111,10 +111,17 @@ export function motifsConformes(fichiers: { chemin: string; source: string }[]):
 }
 
 describe('les motifs de définition SQL ne distinguent pas les capitales', () => {
-  const lus = fichiersLus().map((chemin) => ({ chemin, source: readFileSync(join(RACINE, chemin), 'utf8') }))
+  // Le relevé du dépôt et son lexage (sept cents fichiers) se paient UNE fois, ici, pas dans le délai d'un test.
+  let lus: { chemin: string; source: string }[] = []
+  let fautes: string[] = []
+  let conformes = 0
+  beforeAll(() => {
+    lus = fichiersLus().map((chemin) => ({ chemin, source: readFileSync(join(RACINE, chemin), 'utf8') }))
+    fautes = jugerLesFichiers(lus, EXCEPTIONS)
+    conformes = motifsConformes(lus)
+  })
 
   it('aucun fichier du dépôt ne cherche une définition sans le drapeau « i » ni par un texte fixe, hors exceptions motivées', () => {
-    const fautes = jugerLesFichiers(lus, EXCEPTIONS)
     expect(fautes, `Une recherche de définition en minuscules relit une ancienne version : passer par definitionsSql ou motifDeDefinition (src/test/schema.ts), ou ajouter /i.\n${fautes.join('\n')}`).toEqual([])
   })
 
@@ -124,7 +131,7 @@ describe('les motifs de définition SQL ne distinguent pas les capitales', () =>
 
   it('le contrôle n\'est pas aveugle : il voit les fichiers du dépôt et des motifs conformes', () => {
     expect(lus.length).toBeGreaterThanOrEqual(PLANCHER_DE_FICHIERS)
-    expect(motifsConformes(lus)).toBeGreaterThanOrEqual(PLANCHER_DE_MOTIFS_CONFORMES)
+    expect(conformes).toBeGreaterThanOrEqual(PLANCHER_DE_MOTIFS_CONFORMES)
     // Il lit aussi les fichiers de `src/test/` et les `.tsx`.
     expect(lus.some((l) => l.chemin === 'src/test/schema.ts')).toBe(true)
     expect(lus.some((l) => l.chemin.endsWith('.test.tsx'))).toBe(true)

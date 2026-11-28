@@ -65,7 +65,12 @@ const ATTENDUES = {
 }
 
 let a: AnneeDeCharge
-beforeAll(() => { a = genererAnnee(1, false) })
+// Les empreintes de tous les calculs se relèvent ici, une fois, avec l'année générée : dans le test, elles approchaient son délai sous la charge.
+let relevees: Record<keyof typeof ATTENDUES, string>
+beforeAll(() => {
+  a = genererAnnee(1, false)
+  relevees = releve()
+})
 
 const VALEURS = [0, -0, 0.005, 0.015, 1, -1, 12.34, -12.345, 999.995, 1234.5, -98765.43, 1e9 + 0.01, 0.1 + 0.2, Number.NaN, null]
 // Des instants autour des changements d'heure de Paris, du Nouvel An et de minuit UTC.
@@ -78,7 +83,7 @@ const INSTANTS = [
 describe('les optimisations du banc de charge rendent le rendu d\'avant', () => {
   it('relève les empreintes', () => {
     // Comparées une à une : l'écart nomme le calcul qui a changé.
-    expect(releve()).toEqual(ATTENDUES)
+    expect(relevees).toEqual(ATTENDUES)
   })
   // La table de la liste de l'onglet Banque (lib/propositionsDuReleve.ts) : les candidates de chaque mouvement, bâties une fois
   // sur l'index, rendent l'empreinte du parcours ligne à ligne — sur l'année, et aux bornes de la tolérance du montant.

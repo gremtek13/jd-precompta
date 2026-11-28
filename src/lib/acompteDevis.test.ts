@@ -305,8 +305,27 @@ const TVA_NEGATIVE = 20
 
 describe(`la batterie : ${NOMBRE_DE_DEVIS} devis tirés de la graine ${GRAINE}`, () => {
   let cas: CasDeLaBatterie[] = []
+  // La recherche exhaustive du meilleur HT d'un TTC (jusqu'à 800 HT par acompte) est le gros du calcul : elle se paie ici,
+  // une fois, avec le tirage, pas dans le délai du test qui juge ses résultats. Mêmes cas, même seuil, même comparaison.
+  const meilleurHtParAcompte = new WeakMap<object, number>()
   beforeAll(() => {
     cas = tirerLaBatterie()
+    for (const c of cas) {
+      for (const a of c.acomptes) {
+        if (a.demande.mode !== 'ttc' || !a.resultat.ok) continue
+        const restes = restesDuDevis(c.devis, a.avant)
+        if (!restes.ok) continue
+        const g = restes.groupes
+        const total = g.reduce((s, x) => s + x.reste, 0)
+        if (total > 800) continue
+        let meilleur = { ht: 0, ecart: Number.POSITIVE_INFINITY }
+        for (let ht = 1; ht <= total; ht++) {
+          const ecart = Math.abs(ttcDuHt(g, ht) - a.demande.ttcCentimes)
+          if (ecart < meilleur.ecart) meilleur = { ht, ecart }
+        }
+        meilleurHtParAcompte.set(a, meilleur.ht)
+      }
+    }
   })
 
   it('tire assez de cas de chaque sorte pour juger', () => {
@@ -385,13 +404,10 @@ describe(`la batterie : ${NOMBRE_DE_DEVIS} devis tirés de la graine ${GRAINE}`,
         const total = g.reduce((s, x) => s + x.reste, 0)
         if (total > 800) continue
         confrontes++
-        let meilleur = { ht: 0, ecart: Number.POSITIVE_INFINITY }
-        for (let ht = 1; ht <= total; ht++) {
-          const ecart = Math.abs(ttcDuHt(g, ht) - a.demande.ttcCentimes)
-          if (ecart < meilleur.ecart) meilleur = { ht, ecart }
-        }
-        expect(a.resultat.cibleHt).toBe(meilleur.ht)
-        expect(cibleDuTtc(g, a.demande.ttcCentimes).ht).toBe(meilleur.ht)
+        const meilleur = meilleurHtParAcompte.get(a)
+        expect(meilleur).toBeDefined()
+        expect(a.resultat.cibleHt).toBe(meilleur)
+        expect(cibleDuTtc(g, a.demande.ttcCentimes).ht).toBe(meilleur)
       }
     }
     expect(confrontes).toBeGreaterThan(400)

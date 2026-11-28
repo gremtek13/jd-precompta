@@ -55665,3 +55665,18 @@ l'écran et dans un autre onglet, double clic du même instant écrit une fois, 
 **Corrigé** : les montants « 1000.00 € » de l'alerte d'un relevé qui ne boucle pas (`phraseDuReleveQuiNeBouclePas`) ; le second point
 d'un refus déjà fini, dans quatorze messages (`finDePhrase`). **Relevé** : le focus retombe sur le document après presque chaque
 geste (GESTES-Q1). Pas servis : la facture, la validation d'un exercice, la ventilation, le virement personnel, « Saisir un mois ».
+
+## 28/11/2026 — Tests : le calcul commun se paie une fois (suite du 27/11)
+
+Mesure de toute la suite (24 916 tests, 0 échec, machine chargée, charge ~9 sur 4 cœurs) : dix-neuf tests au-dessus de 1 500 ms. Traités, sans
+délai relevé, sans assertion ni graine changées : `acompteDevis.test.ts` (la recherche exhaustive du meilleur HT d'un TTC, jusqu'à 800 HT par
+acompte, passée dans le `beforeAll` du tirage ; le test garde ses comparaisons : 2 025 ms → 600 ms sous la charge) ; `motifsSql.ts` (`lire`
+retient les jetons par texte : le contrôle et le plancher lexaient deux fois les mêmes 700 fichiers) et le relevé du dépôt passé dans le
+`beforeAll` de `motifsSqlSensiblesALaCasse.test.ts` (2 301 ms → absent des tests lents) ; `edgeFunctionsCodeMort.test.ts` (une source
+virtuelle ne juge que ses propres fichiers : elle refaisait le contrôle des quatorze vraies fonctions ; 11 914, 7 267, 4 894, 2 404 ms → moins de 50 ms
+chacun) ; `chargeEmpreintes.test.ts` (les empreintes relevées avec l'année générée) ; `bordereauOutilLocal.test.ts` (les cinq lancements du
+lanceur partent ensemble au `beforeAll`, chaque test attend le sien). Mordent encore : un défaut planté dans `cibleDuTtc`, dans `CODE_MORT`, dans la
+sortie du lanceur, dans une empreinte, et un motif en minuscules planté dans un fichier de test. Laissés : `verrousEcritures` (9 s seul, l'analyse
+TypeScript des 200 fichiers de production ; déjà mémoïsée, son `describe` porte 120 s ; un `beforeAll` la mettrait sous les 10 s du crochet, pire), le
+contrôle des quatorze fonctions de `edgeFunctionsCodeMort` (3 s seul, un seul programme TypeScript, 60 s au `describe`) et les lancements de processus de `bordereauOutilLocal`
+(60 s) ; les écrans et batteries entre 1 et 1,5 s seuls (`FacturesTabAcomptes`, `caisseDuClient`, `edgeFunctionsOptionDuCabinet`, `encaissementsFactures`).
