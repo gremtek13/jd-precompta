@@ -222,6 +222,32 @@ describe('EL4 — la situation intermédiaire et l’estimation lisent les même
     expect(s.ecrituresLibresHorsDeLa2035).toEqual([])
   })
 
+  // RELECTURE ADVERSE DU 28/11/2026 : la situation POSAIT les amortissements et les cotisations de la période sur leur poste
+  // (`set`), après les écritures libres — une ligne que l'expert comptait sous « Cotisations sociales personnelles » ou
+  // « Amortissements » disparaissait dès qu'une échéance ou une dotation tombait dans la période, quand la 2035 l'additionne.
+  it('une ligne sous le poste des cotisations ou des amortissements s’ajoute aux échéances et aux dotations de la période', () => {
+    const libres = lues([
+      ecriture({ id: 'el-cotis', numero: 5, date: '2025-03-31', lignes: [ligneLibre('646000', 'debit', 4000, 'Cotisations sociales personnelles'), ligneLibre('108000', 'credit', 4000)] }),
+      ecriture({ id: 'el-amort', numero: 6, date: '2025-04-30', lignes: [ligneLibre('681100', 'debit', 2500, 'Amortissements'), ligneLibre('108000', 'credit', 2500)] }),
+    ])
+    const echeances = cotisationsComptees([{
+      id: 'cot', dossier_id: 'd1', echeance: '2025-02-05', montant_appele: 300, montant_verse: null, montant_csg_crds: null,
+      previsionnel: false, created_at: '2025-01-05T09:00:00Z', paiement_personnel_le: null,
+    }], [], 'tresorerie')
+    const bien = { id: 'i', dossier_id: 'd1', piece_id: null, nature_id: null, libelle: 'Matériel', valeur: 3600, duree_annees: 3,
+      date_acquisition: '2025-01-01', date_mise_en_service: '2025-01-01' } as unknown as Parameters<typeof calculerSituationIntermediaire>[2][number]
+    const situer = (l: EcrituresLibresDesExports) => calculerSituationIntermediaire(
+      [], [], [bien], echeances, '2025-01-01', '2025-09-30', false, new Map(), 'tresorerie', [], ventesFactureesVides('d1'), PLAN_PAR_DEFAUT,
+      { etat: 'sans_bascule' }, CAISSE_ABSENTE, l,
+    )
+    const sans = Object.fromEntries(situer(lues([])).totauxParPoste)
+    const avec = Object.fromEntries(situer(libres).totauxParPoste)
+    expect(sans['Cotisations sociales personnelles']).toBe(-300)
+    expect(avec['Cotisations sociales personnelles']).toBeCloseTo(-340, 9)
+    expect(avec.Amortissements).toBeCloseTo(sans.Amortissements - 25, 9)
+    expect(situer(libres).resultat).toBeCloseTo(situer(lues([])).resultat - 65, 9)
+  })
+
   it('absentes : la situation d’hier, sans un champ de plus', () => {
     expect(situation()).toStrictEqual(situation(ECRITURES_LIBRES_ABSENTES))
     expect('ecrituresLibresHorsDeLa2035' in situation()).toBe(false)

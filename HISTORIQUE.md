@@ -55516,3 +55516,21 @@ coupe à vingt de Quadra refuse deux « Compte personnel du … » de dates diff
 caractère hors de Windows-1252 dans un libellé d'à-nouveau repris ne se corrige pas dans l'application. **Écartés** : montants
 toujours positifs au FEC (contrainte `montant > 0`), lignes d'une écriture contiguës (`ordonnerLignes`), aucun nom de client
 particulier au FEC (`nomDuClientEcrit`), noms du ZIP sur la seule référence neutre. Question : EXPR-Q1, EXPR-Q2.
+
+### 28/11/2026 — LA RELECTURE ADVERSE DE L'ÉCRITURE LIBRE (EL1 À EL8) : DEUX DÉFAUTS CORRIGÉS
+
+(Agent architecte ; aucun outil Supabase, aucune migration.) Relus : le module, la lecture, la 2035, la situation, l'estimation,
+l'alerte du chiffre d'affaires, la concordance, la révision, le détail des comptes, le FEC, la piste d'audit, l'état, la section
+de l'onglet Écritures, la contre-passation, les migrations 250, 251, 254 et 260, et l'outil de l'assistant. **Établi et corrigé (1)** :
+la situation intermédiaire POSAIT ses amortissements et ses cotisations de la période sur leur poste (`set`), après les écritures
+libres — une ligne que l'expert comptait sous « Amortissements » ou « Cotisations sociales personnelles » (EL4-Q1) disparaissait
+dès qu'une dotation ou une échéance tombait dans la période, quand la 2035 l'additionne (`ajouter`) ; une pièce rangée sous l'un
+de ces postes de même. Les deux s'ajoutent désormais ; sans rien d'autre au poste, le chiffre d'hier au centime (test rouge puis
+vert, `ecrituresLibresDeLa2035.test.ts`). **(2)** : le choix du poste ne se montre que sur une ligne de charge ou de produit ; le
+compte changé vers un compte de bilan ou l'autre classe, le poste restait dans la saisie, invisible, et le refus de la base se
+disait sous la ligne sans rien pour le lever. Il se remet à « hors de la 2035 » (`ligneAuCompteChange`, lib/ecrituresLibresVue.ts ;
+tests d'écran et purs). **Écartés** : l'ordre et les mots des refus (confrontés par leurs tests), l'équilibre en centimes, le
+signe de l'extourne et de la contre-passation, chaque écriture comptée une fois (2035, concordance, FEC par écriture et par date),
+les verrous `useRef` et la relecture après chaque geste, la version lue, l'assistant (ni libellé, ni motif, ni `compte_lib`).
+**Plausibles, laissés** : l'état des écritures libres se télécharge sur des pièces lues en partie (« hors du jeu chargé ») ; le
+libellé saisi d'un compte part au FEC (CompteLib) sans l'avertissement du libellé de l'écriture. Questions : ELRA-Q1, ELRA-Q2.

@@ -20,7 +20,7 @@ import {
 import { auteurDeLaVersion, instantDeLaVersion, referenceDeLEcritureLibre } from '../../lib/ecrituresLibresDesExports'
 import {
   LIGNE_VIDE, compteDuFormulaire, confirmationDeLEcriture, confirmationDuRetrait, contexteDuJugement, ecrituresDeLExercice,
-  equilibreDeLaSaisie, euros, formulaireDeLEcriture, formulaireVide, ligneDeLaPieceCitee, optionDeLaPieceCitee,
+  equilibreDeLaSaisie, euros, formulaireDeLEcriture, formulaireVide, ligneAuCompteChange, ligneDeLaPieceCitee, optionDeLaPieceCitee,
   optionsDesPiecesDUneEcritureLibre, saisieDuFormulaire, type FormulaireDEcritureLibre, type LectureDesEcrituresLibres,
   type LigneDuFormulaire,
 } from '../../lib/ecrituresLibresVue'
@@ -344,7 +344,9 @@ export default function EcrituresLibresSection({
               <fieldset key={i} style={{ border: 'none', padding: 0, margin: '8px 0', minWidth: 0 }} aria-label={`Ligne ${i + 1}`}>
                 <div className="field-row aligne-bas" style={{ flexWrap: 'wrap' }}>
                   <label className="field">Compte
-                    <input type="text" inputMode="numeric" value={l.compte} onChange={(ev) => changerLigne(i, { compte: ev.target.value })} />
+                    <input type="text" inputMode="numeric" value={l.compte}
+                      onChange={(ev) => { const saisi = ev.target.value; setFormulaire((f) => f === null ? f
+                        : { ...f, lignes: f.lignes.map((x, j) => (j === i ? ligneAuCompteChange(x, saisi, mode) : x)) }) }} />
                   </label>
                   <label className="field">Libellé du compte (s’il n’en a pas)
                     <input type="text" value={l.compteLib} onChange={(ev) => changerLigne(i, { compteLib: ev.target.value })} />

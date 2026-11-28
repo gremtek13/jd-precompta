@@ -11,7 +11,7 @@
 // LE CLIENT n'a aucune branche sur la table (la policy est `admin_du_dossier`) : ses écrans ne la lisent pas, et ce qu'ils
 // calculent de la 2035 (« Ma simulation ») le dit — EL5-Q1, le côté fermé (`ECRITURES_LIBRES_DU_CLIENT`).
 import {
-  ECRITURES_LIBRES_PREVUES, classeDeResultat, ecartDeclare, type ContexteDEcritureLibre, type LigneDEcritureLibre, type ModeComptableDeLEcriture,
+  ECRITURES_LIBRES_PREVUES, classeDeResultat, ecartDeclare, posteDeLaClasse, type ContexteDEcritureLibre, type LigneDEcritureLibre, type ModeComptableDeLEcriture,
   type SaisieDEcritureLibre, type SensDUneLigne,
 } from './ecritureLibre'
 import {
@@ -182,6 +182,19 @@ export function centimesDuMontant(saisi: string): number {
 /** Un compte tapé, lu comme l'application le lit (`lireCompteSaisi`) ; illisible, le texte tel quel — le module le refusera. */
 export function compteDuFormulaire(saisi: string): string {
   return lireCompteSaisi(saisi).compte ?? saisi.trim()
+}
+
+/**
+ * Une ligne dont le compte change : le poste choisi se garde tant que le nouveau compte est de la classe qu'il sert ; sinon il
+ * se remet à « hors de la 2035 » dans la même écriture (la règle d'un champ devenu sans objet). Le choix du poste ne se montre
+ * que sur une ligne de charge ou de produit en trésorerie : un poste resté sur un compte de bilan, ou sur l'autre classe, partait
+ * invisible, et le refus de la base se disait sous la ligne sans rien à l'écran pour le lever (relecture adverse du 28/11/2026).
+ */
+export function ligneAuCompteChange(l: LigneDuFormulaire, compteSaisi: string, mode: ModeComptableDeLEcriture): LigneDuFormulaire {
+  if (l.poste === '') return { ...l, compte: compteSaisi }
+  const compte = compteDuFormulaire(compteSaisi)
+  const garde = mode === 'tresorerie' && posteDeLaClasse(compte, l.poste)
+  return { ...l, compte: compteSaisi, poste: garde ? l.poste : '' }
 }
 
 /** La saisie TELLE QU'ELLE PART : ce que le module juge, ce que la base reçoit. */

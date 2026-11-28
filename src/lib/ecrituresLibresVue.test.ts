@@ -6,7 +6,7 @@ import {
   ligneDeLaPieceCitee, optionDeLaPieceCitee, optionDeLaPieceDUneEcritureLibre, optionsDesPiecesDUneEcritureLibre,
   piecesCitablesParUneEcritureLibre, piecesCiteesParDesEcrituresLibres,
   centimesDuMontant, confirmationDeLEcriture, confirmationDuRetrait, ecritureLibreDeLaLigne, ecrituresLibresPourLesMoteurs,
-  effetSurLa2035, equilibreDeLaSaisie, formulaireDeLEcriture, formulaireVide, motifDesEcrituresLibres, saisieDuFormulaire,
+  effetSurLa2035, equilibreDeLaSaisie, formulaireDeLEcriture, formulaireVide, ligneAuCompteChange, motifDesEcrituresLibres, saisieDuFormulaire,
   simulationTaitLesEcrituresLibres, type FormulaireDEcritureLibre,
 } from './ecrituresLibresVue'
 
@@ -159,5 +159,21 @@ describe('la pièce citée, facultative (EL-Q8 (A)), toute pièce du dossier (EL
   it('la confirmation porte la ligne de la pièce citée', () => {
     const ligne = ligneDeLaPieceCitee('p1', PIECES, 'd1')
     expect(confirmationDeLEcriture(formulaire({ pieceCiteeId: 'p1' }), 'tresorerie', [], ligne).split('\n')).toContain(ligne)
+  })
+})
+
+// RELECTURE ADVERSE DU 28/11/2026 : un poste devenu sans objet par le compte changé se remet à « hors de la 2035 ».
+describe('ligneAuCompteChange', () => {
+  const ligne = { compte: '6262', sens: 'credit' as const, montant: '120', poste: 'Fournitures de bureau', compteLib: '' }
+  it('garde le poste sur un compte de la même classe, même tapé en partie', () => {
+    expect(ligneAuCompteChange(ligne, '6261', 'tresorerie')).toEqual({ ...ligne, compte: '6261' })
+    expect(ligneAuCompteChange(ligne, '62', 'tresorerie').poste).toBe('Fournitures de bureau')
+  })
+  it('le retire sur un compte de bilan, de l’autre classe, effacé, ou en engagement', () => {
+    for (const compte of ['401', '706', '']) expect(ligneAuCompteChange(ligne, compte, 'tresorerie')).toEqual({ ...ligne, compte, poste: '' })
+    expect(ligneAuCompteChange(ligne, '6262', 'engagement').poste).toBe('')
+  })
+  it('une ligne sans poste ne change que de compte', () => {
+    expect(ligneAuCompteChange({ ...ligne, poste: '' }, '706', 'tresorerie')).toEqual({ ...ligne, poste: '', compte: '706' })
   })
 })
