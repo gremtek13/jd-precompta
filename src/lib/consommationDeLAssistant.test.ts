@@ -57,6 +57,21 @@ describe('le module redit la migration', () => {
     expect(RETOUR).toMatch(/drop table public\.consommations_de_l_assistant;/i)
   })
 
+  it('sa garde laisse passer la cascade d’un dossier qu’on supprime, et le contrôle 141 de validationExercice.sql l’attend quand sa table existe', () => {
+    // La répétition des préparées du 28/11/2026 : sans la ligne de l'essai, le contrôle 141 (« tout déclencheur qui garde une
+    // suppression laisse passer la cascade d'un dossier qu'on supprime »), joué en production, virait au rouge au collage de cette
+    // migration — 85 gardes observées, 84 attendues. La forme OBSERVÉE sur une réplique est « dossier » : la lecture que le
+    // contrôle reconnaît est celle de la mise à nul du dossier retiré, que sa clé étrangère fait quand on supprime un dossier.
+    expect(MIGRATION).toContain('create trigger consommations_de_l_assistant_garde\n  before insert or update or delete on public.consommations_de_l_assistant\n'
+      + '  for each row execute function public.garder_consommations_de_l_assistant();')
+    expect(MIGRATION).toContain('dossier_id uuid references public.dossiers (id) on delete set null,')
+    expect(MIGRATION).toContain('and not exists (select 1 from public.dossiers d where d.id = old.dossier_id) then\n      return new;')
+    const validation = readFileSync(new URL('../../supabase/essais/validationExercice.sql', import.meta.url), 'utf8')
+    expect(validation).toContain('|| case when to_regclass(\'public.consommations_de_l_assistant\') is null then array[]::text[] else '
+      + 'array[\'consommations_de_l_assistant.consommations_de_l_assistant_garde:garder_consommations_de_l_assistant:dossier:O\'] end')
+    expect(validation).toContain('and to_regclass(\'public.consommations_de_l_assistant\') is null then iv')
+  })
+
   it('le drapeau ne se lève qu’avec la migration rangée dans l’export', () => {
     const rangee = fichiersDuSchema().some((f) => /\/\d{14}_consommations_de_l_assistant\.sql$/.test(f.chemin))
     expect(CONSOMMATION_TENUE_PAR_LA_FONCTION).toBe(rangee)
